@@ -74,9 +74,8 @@ mod resolve;
 use manifest::parse;
 use resolve::{check_left_strips, check_variants, resolve_animations, resolve_behaviors};
 
-/// A Character Package as bytes: file name to contents, as a directory walk or
-/// an archive reader would produce it. The Shell does the reading; the loader
-/// never touches a path.
+/// A Character Package as bytes: file name to contents. The Shell does the
+/// reading; the loader never touches a path.
 pub type PackageBytes = BTreeMap<String, Vec<u8>>;
 
 /// The Character Manifest, at the root of the package.
@@ -87,92 +86,59 @@ pub const CHARACTER_MANIFEST_FILE: &str = "character.manifest";
 pub const PERSONALITY_FILE: &str = "personality.txt";
 
 /// The animations every Character must supply, fixed at nine so a hobbyist
-/// package stays an evening's drawing (ADR-0002, #98). Any other Animation a
-/// package declares is optional: used when present, absent silently when not.
+/// package stays an evening's drawing. Any other Animation a package declares
+/// is optional: used when present, absent silently when not.
 pub const REQUIRED_ANIMATIONS: [&str; 9] = [
     "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
 ];
 
-/// How long a Personality Prompt may be, in characters.
-///
-/// The prompt is untrusted text that goes into every Character Prompt the
-/// Director sends, so an unbounded one spends a user's tokens and buries the
-/// sensing context under prose. Generous enough for a paragraph of personality.
+/// How long a Personality Prompt may be, in characters. Untrusted text in every
+/// Character Prompt the Director sends, so an unbounded one spends tokens and
+/// buries sensing under prose. Generous enough for a paragraph of personality.
 pub(crate) const PERSONALITY_LIMIT: usize = 2000;
 
-/// How large a Character Manifest may be, in bytes.
-///
-/// A bound rather than a preference, and the same kind of bound as
-/// `MAX_FRAME_SIDE`: every declaration the loader reads costs an error String
-/// when it is malformed, so a manifest of junk lines that compresses to
-/// kilobytes in the archive spends gigabytes being rejected. Generous for a
-/// file that is one short line per Animation and Behavior.
+/// How large a Character Manifest may be, in bytes. Every malformed declaration
+/// costs an error String, so junk that compresses to kilobytes spends gigabytes
+/// being rejected. Generous for one short line per Animation and Behavior.
 pub(crate) const MANIFEST_LIMIT: usize = 1024 * 1024;
 
 /// Frames per second an Animation plays at when it does not say.
-///
-/// Eight is the cadence the Engine already runs every Animation at, so a
-/// package that declares no fps looks exactly as it did before fps existed.
+/// Eight is the cadence the Engine already runs every Animation at.
 pub(crate) const DEFAULT_FPS: u32 = 8;
 
 /// How likely a Behavior, or a member of a variant ring, is to be picked when
-/// it does not say.
-///
-/// Not zero, so that a Character declaring no weights has everything in the
-/// running and equally, which is what makes a ring nobody weighs an even
-/// split.
-///
-/// Ten rather than one so that a declaration can go down as well as up. At a
-/// default of one the default is also the floor, and making a single member
-/// rarer than its siblings means raising every other member to say it. At ten,
-/// `weight = 5` is half as often and nothing else in the ring moves.
+/// it does not say. Not zero. Ten rather than one so a declaration can go
+/// down: a default of one is also the floor.
 pub(crate) const DEFAULT_WEIGHT: u32 = 10;
 
 /// The scale the renderer uses when a Character does not say.
-///
-/// Four is what the shipped pixel-art Characters have always been drawn at;
-/// a package written before `scale` existed renders exactly as it did.
+/// Four is what the shipped pixel-art Characters have always been drawn at.
 pub(crate) const DEFAULT_SCALE: u32 = 4;
 
 /// How proactive model-call waits grow when no one addresses the buddy.
-///
 /// `wait * model_base.pow(model_power)` after each proactive model call.
-/// Two and one is the doubling Pace already had, so a package written
-/// before `[director]` existed backs off exactly as it did.
+/// Two and one is the doubling Pace already had.
 pub const DEFAULT_MODEL_BASE: u32 = 2;
 pub const DEFAULT_MODEL_POWER: u32 = 1;
 
 /// The largest integer factor a Character may ask to be drawn at.
-///
-/// ADR-0006 constrains display scaling to small integer factors; art wanting
-/// to be bigger on screen should be authored bigger instead.
+/// Display scaling is small integer factors; art wanting to be bigger on
+/// screen should be authored bigger instead.
 pub(crate) const MAX_SCALE: u32 = 4;
 
-/// The largest either side of a frame may be, in pixels.
-///
-/// A PNG header costs the same few dozen bytes whatever size it claims, so a
-/// package can declare a 100000x100000 frame for nothing and leave the renderer
-/// to allocate forty gigabytes for one sprite. A desktop mascot is a couple of
-/// hundred pixels tall, so 1024 is generous even for art drawn at twice the
-/// size of a Retina display.
+/// The largest either side of a frame may be, in pixels. A PNG header costs the
+/// same few dozen bytes whatever size it claims, so a 100000x100000 frame spends
+/// forty gigabytes. 1024 is generous even for art at twice Retina size.
 pub(crate) const MAX_FRAME_SIDE: u32 = 1024;
 
-/// The most frames an Animation may declare.
-///
-/// The bound `MAX_FRAME_SIDE` is missing half of: a frame reference costs eight
-/// bytes of manifest and buys a whole copy of the art in the renderer, so a
-/// manifest that fits the package budget can still name one frame often enough
-/// to ask for terabytes. A hand-drawn Animation is a handful of frames.
+/// The most frames an Animation may declare. A frame reference costs eight bytes
+/// of manifest and buys a whole copy of the art, so a fitting manifest can still
+/// ask for terabytes. A hand-drawn Animation is a handful of frames.
 pub(crate) const MAX_FRAMES: usize = 256;
 
 /// The most pixels all of a Character's distinct frames may add up to.
-///
-/// The half `MAX_FRAMES` is still missing: it bounds one Animation, and a
-/// Character may declare as many Animations as it likes. Every distinct frame
-/// buys a whole alpha mask, a byte per pixel held for as long as the Character
-/// is loaded, so four thousand full-size frames are twenty-five megabytes of
-/// package and four gigabytes of mask. This is 256 frames at the largest size a
-/// frame may be.
+/// `MAX_FRAMES` bounds one Animation; this is 256 frames at max size, because
+/// every distinct frame buys an alpha mask held while loaded.
 pub(crate) const MAX_CHARACTER_PIXELS: u64 =
     256 * (MAX_FRAME_SIDE as u64) * (MAX_FRAME_SIDE as u64);
 
@@ -182,18 +148,13 @@ pub(crate) const MAX_CHARACTER_PIXELS: u64 =
 pub(crate) const MAX_FPS: u32 = 60;
 
 /// Alpha at or above this counts as drawn, when a frame's mask is built.
-///
 /// A threshold rather than "alpha > 0" so anti-aliased edges on hand-drawn art
 /// do not grow an invisible one-pixel border that swallows clicks.
 pub const ALPHA_THRESHOLD: u8 = 128;
 
 /// A unit of motion or expression the Engine owns. A Character composes these
-/// into Behaviors and can never define one (ADR-0002).
-///
-/// The set is what the Engine can already drive: the States it moves the sprite
-/// through, the moment a fall ends, and the one thing it can say. Anything a
-/// Character needs beyond them is a Primitive added here for everyone, never a
-/// scripting runtime handed to a package (ADR-0002).
+/// into Behaviors and can never define one. Anything a Character needs beyond
+/// them is a Primitive added here for everyone, never a scripting runtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum Primitive {
     Idle,
@@ -203,17 +164,15 @@ pub enum Primitive {
     Sleep,
     React,
     Talk,
-    /// Gripping a moving Perch. The Engine plays this itself (#98); a
-    /// Character may also compose it.
+    /// Gripping a moving Perch. The Engine plays this itself; a Character may
+    /// also compose it.
     Hold,
-    /// Steer walk velocity toward the cursor's x along the ground (#153).
-    /// Reach cursor x: one react swat, then disengage. Timeout if never
-    /// arrives: give up. The cursor is up on the screen; the buddy chases
-    /// its shadow on the floor.
+    /// Steer walk velocity toward the cursor's x along the ground. The cursor
+    /// is up on the screen; the buddy chases its shadow on the floor.
     Chase,
-    /// Leave the ground under the sprite's own power (#374). The launch is an
-    /// upward velocity and nothing more. `Falling` carries the arc and the
-    /// existing landing path ends it, so a jump reuses the Throw's physics.
+    /// Leave the ground under the sprite's own power. The launch is an upward
+    /// velocity and nothing more. `Falling` carries the arc and the existing
+    /// landing path ends it, so a jump reuses the Throw's physics.
     Jump,
 }
 
@@ -243,32 +202,22 @@ pub struct Animation {
     /// Whether the Animation repeats or holds its last frame.
     pub looping: bool,
     /// Names of the Animations that declared `variant_of` this one, in name
-    /// order. Whenever the engine starts this Animation, one of this one and
-    /// each of those is drawn by weight and plays until the engine asks for
-    /// something else.
+    /// order. Starting this Animation draws one of this and those by weight
+    /// until the engine asks for something else.
     pub variants: Vec<String>,
     /// The Animation drawn in this one's place when the sprite travels left,
-    /// from the package's `left_of` (#345). `None` — every package before
-    /// #345, and every symmetric one after it — mirrors this Animation's own
-    /// art instead, as the renderer always has.
+    /// from the package's `left_of`. `None` mirrors this Animation's own art.
     pub left_strip: Option<String>,
-    /// This Animation's share of the variant ring it belongs to, against its
-    /// fellow members' — the same unbounded relative count a Behavior's
-    /// `weight` is, and `DEFAULT_WEIGHT` when the manifest does not say. An
-    /// Animation in no ring carries the default all the same, and nothing
-    /// reads it.
+    /// This Animation's share of the variant ring, `DEFAULT_WEIGHT` when the
+    /// manifest does not say. An Animation in no ring carries the default all
+    /// the same, and nothing reads it.
     pub weight: u32,
 }
 
 impl Animation {
     /// Which frame is on screen `elapsed_ms` after this Animation started.
-    ///
-    /// The whole of frame selection, and why the renderer needs no clock of its
-    /// own.
-    ///
-    /// Multiplying before dividing keeps the cadence exact for every fps rather
-    /// than only for the ones that divide a second evenly — 12fps is 83.33ms a
-    /// frame, and rounding it to 83 drifts a frame every three seconds.
+    /// The renderer needs no clock of its own because this is the whole of
+    /// frame selection.
     pub fn frame_at(&self, elapsed_ms: u32) -> usize {
         // Validation rejects a package with either of these, so this guards the
         // struct rather than the format: the fields are public, and a divide by
@@ -278,6 +227,9 @@ impl Animation {
             return 0;
         }
 
+        // Multiplying before dividing keeps the cadence exact for every fps rather
+        // than only for the ones that divide a second evenly. 12fps is 83.33ms a
+        // frame, and rounding it to 83 drifts a frame every three seconds.
         let elapsed = u64::from(elapsed_ms) * u64::from(self.fps) / 1000;
         let index = if self.looping {
             elapsed % count
@@ -326,10 +278,8 @@ pub struct Behavior {
 }
 
 /// One distinct frame's art, decoded once at load.
-///
 /// Two readers need the pixels and neither can afford to open a file per tick:
-/// the hit-test asks the mask whether the cursor is over a drawn pixel, and
-/// the webview draws the PNG. A frame two Animations share is one `Art`.
+/// the hit-test and the webview. A frame two Animations share is one `Art`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Art {
     /// The frame as the package shipped it, for whatever encoding the
@@ -351,17 +301,17 @@ pub struct Character {
     /// Every distinct frame any Animation names, by the name it is named.
     pub art: BTreeMap<String, Art>,
     /// The renderer smooths this art when scaling instead of keeping hard
-    /// pixels — the `render_mode` ADR-0006 reserved, for Characters whose
-    /// frames are drawn rather than gridded.
+    /// pixels. The manifest `render_mode`, for Characters whose frames are
+    /// drawn rather than gridded.
     pub smooth: bool,
     /// The integer factor the renderer draws the art at.
     pub scale: u32,
     /// Proactive model-call wait grows by `model_base.pow(model_power)`.
     pub model_base: u32,
     pub model_power: u32,
-    /// How the Character reacts when the cursor enters its Near radius (#152).
+    /// How the Character reacts when the cursor enters its Near radius.
     pub near_reaction: CursorReaction,
-    /// How the Character reacts to a cursor rushing at it (#152).
+    /// How the Character reacts to a cursor rushing at it.
     pub rush_reaction: CursorReaction,
     /// Where the art came from, when the package says. `None` is silence, not
     /// a claim: a package that declares no `[source]` gets no attribution
@@ -369,12 +319,9 @@ pub struct Character {
     pub source: Option<Source>,
 }
 
-/// Where a Character's art came from, as the package declares it (#289).
-///
-/// Prose and not an identifier: a package is prose, a manifest and art, and
-/// those halves can answer differently. `license` is required whenever
-/// `[source]` is present, because a gallery publishing this at a public URL
-/// can lose the caveat by omission, and only a required key stops that.
+/// Where a Character's art came from, as the package declares it. Prose, not
+/// an identifier, so the package and the art can answer differently. `license`
+/// is required with `[source]`: a gallery can lose the caveat by omission.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Source {
     /// What the art is and where it came from.
@@ -385,7 +332,7 @@ pub struct Source {
     pub license: String,
 }
 
-/// How a Character reacts to the cursor entering its Near radius or rushing at it (#152).
+/// How a Character reacts to the cursor entering its Near radius or rushing at it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CursorReaction {
     /// Keep doing whatever it was doing.
@@ -405,57 +352,34 @@ pub enum CursorReaction {
 
 /// What the renderer needs to draw one tick.
 pub struct Drawn<'a> {
-    /// The Animation actually drawing — the one asked for, its optional
-    /// fallback, or the member of its variant ring the draw landed on. The
-    /// renderer indexes its art by this name, never by the one the engine
-    /// asked with.
+    /// The Animation actually drawing: the one asked for, its fallback, or the
+    /// variant-ring member the draw landed on. The renderer indexes art by this
+    /// name, never by the one the engine asked with.
     pub animation: &'a str,
     pub mask: &'a AlphaMask,
     /// The frame's size in pixels, before any scaling.
     pub frame_size: (u32, u32),
     /// Which frame of the Animation is on screen.
     pub index: usize,
-    /// Whether this art is drawn flipped horizontally.
-    ///
-    /// The one mirroring decision (#345): the hit-test mask and the webview's
-    /// transform both read it, so the clickable region is the visible art
-    /// whichever strip drew. Leftward travel mirrors, unless the Animation
-    /// named a left strip — that art is already facing left, and mirroring it
-    /// would turn it back round.
+    /// Whether this art is drawn flipped horizontally. The hit-test and the
+    /// webview both read it, so the clickable region is the visible art.
+    /// Leftward travel mirrors unless a left strip already faces left.
     pub mirrored: bool,
 }
 
 impl Character {
     /// How tall this Character stands, in points: the idle Animation's frame
-    /// at this Character's scale.
-    ///
-    /// The art hangs above the feet, so this is the room a Perch near the top
-    /// of a display has to leave. Animations may declare different frame
-    /// sizes; idle is what the Character is usually drawn at. #395.
+    /// at this Character's scale. The art hangs above the feet, so this is the
+    /// room a Perch near the top has to leave. Idle is the usual drawn size.
     pub fn sprite_height(&self) -> f64 {
         self.draw("idle", 0, 0, 1.0)
             .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
             * f64::from(self.scale)
     }
 
-    /// Which frame of `animation` is on screen `animation_ms` after it
-    /// started, and the mask that outlines it.
-    ///
-    /// The arithmetic is `Animation::frame_at`, which is where fps and loop
-    /// mode come from the Character Manifest rather than a constant. This only
-    /// looks up the Animation and the art the index lands on.
-    ///
-    /// `variant_draw` is the Engine's draw for the Animation now playing —
-    /// taken when it started, held while it plays — and it decides which
-    /// member of the Animation's variant ring is on screen. Zero draws the
-    /// base, which is what a caller measuring a frame rather than playing one
-    /// wants.
-    ///
-    /// `None` only for an Animation this Character does not have, which a
-    /// validated Character cannot be asked for: the Engine names one of the
-    /// nine required Animations, and a package missing one was rejected.
-    /// Substituting a different Animation would be worse than drawing nothing,
-    /// because the renderer would still be told the name it asked for.
+    /// Which frame of `animation` is on screen `animation_ms` after it started.
+    /// `variant_draw` is held while it plays; zero draws the base. `None` rather
+    /// than a substitute, because the renderer was told the name it asked for.
     pub fn draw(
         &self,
         animation: &str,
@@ -466,7 +390,7 @@ impl Character {
         let (name, animation) = self.resolve(animation, variant_draw)?;
         // Strip first, mirror second, and never both: an Animation that draws
         // its own leftward art is handed over as authored, and one that does
-        // not is mirrored exactly as before #345.
+        // not is mirrored.
         let (name, animation, mirrored) = match animation
             .left_strip
             .as_deref()
@@ -488,18 +412,9 @@ impl Character {
         })
     }
 
-    /// Which Animation actually draws: the one asked for, its optional
-    /// fallback, or — when it anchors a variant ring — the member the draw
-    /// weighs out.
-    ///
-    /// Pure in the same sense as `frame_at`: a draw in, art out. The engine
-    /// keeps saying "idle"; that a Character skateboards through some of its
-    /// idling is the art's own business, and how often is the weights'.
-    ///
-    /// The same mixer the Static Director picks a Behavior with, so one seed
-    /// and one Character behave identically on every machine — and members in
-    /// `BTreeMap` order, because the draw is taken over a running total and
-    /// the order therefore decides the answer.
+    /// Which Animation actually draws: the one asked for, its fallback, or the
+    /// variant-ring member the draw weighs out. Same mixer as the Static
+    /// Director, and members in `BTreeMap` order: the draw walks a running total.
     fn resolve(&self, requested: &str, draw: u64) -> Option<(&str, &Animation)> {
         let (name, base) = match self.animations.get_key_value(requested) {
             Some(found) => found,
@@ -534,20 +449,17 @@ impl Character {
 const OPTIONAL_FALLBACKS: [(&str, &str); 3] = [
     ("climb", "walk"),
     ("grab", "fall"),
-    // The Required Animation Set is closed at nine (ADR-0007), so a jump is
-    // optional art. A Character without it rises and falls in its `fall`. #374.
+    // The Required Animation Set is closed at nine, so a jump is optional art.
+    // A Character without it rises and falls in its `fall`.
     ("jump", "fall"),
 ];
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
-///
 /// A bound on the error rather than on the package: an author wants to see
-/// where their loop closes, and a package built to be awkward can chain twenty
-/// thousand Behaviors into one.
+/// where their loop closes, and an awkward package can chain twenty thousand.
 const SHOWN_LOOP_BEHAVIORS: usize = 8;
 
 /// Validate a Character Package.
-///
 /// Returns every error at once rather than the first, so an author fixes their
 /// package in one pass instead of one rejection per attempt.
 pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
@@ -602,10 +514,9 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             }
         }
     }
-    // Linked after resolution for the same reason variants are, and the frame
-    // size is compared here because it is read from the art rather than
-    // declared: the two strips are drawn one in the other's place, so art of a
-    // different size would move the sprite when it turned round.
+    // Linked after resolution for the same reason variants are. Frame size is
+    // compared here because it is read from the art: the strips replace each
+    // other, so a different size would move the sprite when it turned round.
     for (strip, base) in left_pairs {
         let Some(size) = animations.get(&strip).map(|strip| strip.frame_size) else {
             continue;
@@ -723,7 +634,6 @@ mod tests {
         );
     }
 
-    /// An Animation with `frames` frames, playing at `fps`.
     fn animation(frames: usize, fps: u32, looping: bool) -> Animation {
         Animation {
             frames: (0..frames).map(|i| format!("f-{i}.png")).collect(),
@@ -989,8 +899,7 @@ mod tests {
     }
 
     /// A Behavior that says nothing about when it happens is one the Static
-    /// Director may pick at any moment, which is what every Character written
-    /// before weights existed declares.
+    /// Director may pick at any moment.
     #[test]
     fn a_behavior_that_says_neither_weighs_one_and_waits_for_nothing() {
         let manifest = format!(
@@ -1076,9 +985,7 @@ mod tests {
         assert_eq!(character.model_power, 2);
     }
 
-    /// The render_mode ADR-0006 reserved: undeclared stays pixelated at the
-    /// default scale, so every package written before the fields existed
-    /// renders exactly as it did.
+    /// Undeclared stays pixelated at the default scale.
     #[test]
     fn render_mode_and_scale_are_declared_or_defaulted() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
@@ -1167,8 +1074,7 @@ mod tests {
     /// its fellow members', unbounded and never a percentage of anything.
     #[test]
     fn a_declared_weight_decides_how_often_a_variant_is_drawn() {
-        // The seasoning default #316 asked for, and it needs no machinery: a
-        // base at eighty against two members that say nothing is 80 : 10 : 10.
+        // A base at eighty against two members that say nothing is 80 : 10 : 10.
         let ring = ringing("weight = 80\n", &[("spin", ""), ("wave", "")]);
         let counts = drawn(&ring, &["idle", "spin", "wave"]);
         assert!(
@@ -1201,11 +1107,9 @@ mod tests {
         assert_eq!(drawn(&ring, &["idle", "spin"]), vec![4000, 0]);
     }
 
-    /// Determinism, which the draw cannot buy back once it is lost: one seed
-    /// and one Character pick the same members in the same order everywhere.
-    /// The literal is the point — comparing two runs of the same process would
-    /// pass over any arithmetic that rounds differently on another machine,
-    /// and the weights are integers precisely so that none does.
+    /// One seed and one Character pick the same members in the same order
+    /// everywhere. The literal is the point: two runs of the same process
+    /// would pass over arithmetic that rounds differently on another machine.
     #[test]
     fn the_same_seed_draws_the_same_members_in_the_same_order() {
         let ring = ringing("weight = 20\n", &[("spin", ""), ("wave", "")]);
@@ -1227,10 +1131,9 @@ mod tests {
         );
     }
 
-    /// A weight is a whole number and nothing else. The percent string the
-    /// ring briefly took is the one thing an author might carry over, and
-    /// ignoring it would draw art at a rate nobody asked for — so it is
-    /// refused at load, by the message a Behavior's bad weight already gets.
+    /// A weight is a whole number and nothing else. Ignoring a percent string
+    /// would draw art at a rate nobody asked for, so it is refused at load by
+    /// the message a Behavior's bad weight already gets.
     #[test]
     fn a_weight_that_is_not_a_whole_number_is_refused() {
         let refused = errors(load_manifest(&ring_manifest(
@@ -1287,9 +1190,8 @@ mod tests {
         );
     }
 
-    /// #374: jump art is optional, so the Required Animation Set stays at nine
-    /// and every shipped package stays valid. A Character without it uses its
-    /// `fall`.
+    /// Jump art is optional, so the Required Animation Set stays at nine. A
+    /// Character without it uses its `fall`.
     #[test]
     fn jump_is_optional_and_falls_back_to_fall() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
@@ -1334,9 +1236,7 @@ mod tests {
         assert!(character.draw("saunter", 0, 0, 1.0).is_none());
     }
 
-    /// The same contract for the other optional Animation. A package that
-    /// draws no pickup pose keeps the behavior every package had before #364:
-    /// dangling from the cursor in its `fall`.
+    /// A package that draws no pickup pose dangles from the cursor in its `fall`.
     #[test]
     fn grab_is_optional_and_falls_back_to_fall() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
@@ -1356,11 +1256,9 @@ mod tests {
         );
     }
 
-    /// #345: the art is authored facing right and the renderer mirrors it for
-    /// leftward travel, which puts an asymmetric mark — Buddy Bot's cheek LED
-    /// — on the wrong cheek. A package that draws its own left strip gets it
-    /// drawn as authored instead, and one that does not walks exactly as every
-    /// package did before.
+    /// Art is authored facing right and leftward travel mirrors it, which puts
+    /// Buddy Bot's cheek LED on the wrong cheek. A left strip is drawn as
+    /// authored instead.
     #[test]
     fn a_left_strip_replaces_the_mirror_for_the_package_that_draws_one() {
         let mirroring = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
@@ -1457,10 +1355,9 @@ mod tests {
         assert_eq!(character.source, None);
     }
 
-    /// The failure this key exists to prevent: `cat` and `jotaro-kujo` have no
-    /// license to name, and the sentence saying so is the one thing a public
-    /// page cannot afford to drop. An author can only be made to write it by
-    /// the key being required.
+    /// `cat` and `jotaro-kujo` have no license to name, and a public page
+    /// cannot afford to drop that sentence. Only a required key makes the
+    /// author write it.
     #[test]
     fn a_source_that_names_no_license_is_rejected() {
         let manifest = format!(

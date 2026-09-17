@@ -29,11 +29,8 @@ pub use prompt::happened_word;
 pub(crate) use prompt::{character_prompt, follow_up};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
-///
-/// A tuning knob. Long enough that the sprite is not constantly interrupting
-/// itself, short enough that a glance at the desktop usually catches it doing
-/// something. This path costs nothing to wake. A session wake is `Pace`, not
-/// this number.
+/// Long enough that the sprite is not constantly interrupting itself, short
+/// enough that a glance at the desktop usually catches it doing something.
 pub const WAKE_EVERY: Duration = Duration::from_secs(20);
 
 /// Idle duration that counts as the user leaving.
@@ -44,20 +41,13 @@ pub const IDLE_OVER: Duration = Duration::from_secs(5 * 60);
 pub const STATE_BOUND: Duration = Duration::from_secs(90);
 
 /// How many Behaviors back the Director is asked to remember.
-///
-/// A tuning knob, and the reason suppression has to be able to give way: a
-/// Character declaring fewer Behaviors than this would otherwise run out of
-/// things it is allowed to do.
+/// Suppression has to be able to give way: a Character declaring fewer
+/// Behaviors than this would otherwise run out of things it is allowed to do.
 pub const REMEMBERED: usize = 3;
 
 /// How long a typed line may be, in characters.
-///
-/// A bound on one turn's input, so a paste cannot quietly take over a
-/// session's context. ADR-0008 keeps one session per Instance, so the line is
-/// paid once on the way in and then carried — by the provider's context under
-/// the HTTP Completer, by the Harness's own accounting under the other. Sized
-/// to the largest single file a user would reasonably paste and ask about,
-/// about 4000 tokens (#685).
+/// A paste cap: ADR-0008 keeps one session per Instance, so the line is paid
+/// once. Sized to a large pasted file, about 4000 tokens.
 pub const CHAT_LIMIT: usize = 16_000;
 
 /// What the user (or the clock) just did, and what was said with it.
@@ -77,14 +67,8 @@ pub enum Happened {
     Ambient,
 }
 
-/// The same word again, as the Chat surface labels the row it draws.
-///
-/// Derived from `happened_cell` so the row and the bar cell under it cannot
-/// disagree. Every one of those words is a past participle, so one preposition
-/// in front is all the label needs.
-///
-/// `Ambient` names no trigger instead: it is the one wake nobody caused, and
-/// that is what a reader should be able to pick out of a log.
+/// The Chat surface's row label. Derived from `happened_cell` so the row and
+/// the bar cell under it cannot disagree.
 pub fn reacting_to(happened: &Happened) -> String {
     match happened {
         Happened::Ambient => "unprompted".to_string(),
@@ -93,11 +77,8 @@ pub fn reacting_to(happened: &Happened) -> String {
 }
 
 /// The same fact as `happened_word`, in the Chat surface's status bar.
-///
-/// A second vocabulary because the budgets differ: the prompt writes a
-/// fragment the Director reads ("placed on a perch"), the bar draws one line
-/// that must not wrap on a 420-point window. Nine characters is the longest
-/// word here, and `chat-status.js` measures the rest of the line against it.
+/// A second vocabulary because the bar must not wrap on a 420-point window.
+/// Nine characters is the longest word here; `chat-status.js` measures against it.
 pub fn happened_cell(happened: &Happened) -> &'static str {
     match happened {
         Happened::Poke => "poked",
@@ -111,10 +92,8 @@ pub fn happened_cell(happened: &Happened) -> &'static str {
 }
 
 /// What the Director is told about the world on one wake.
-///
-/// The Free tier and the recent past, which is the whole of v1's context per
-/// `docs/SPEC.md`. Recent Behavior identifiers are handed back rather than
-/// remembered here, so the Director stays a function of what it is given.
+/// Recent Behavior identifiers are handed back rather than remembered here,
+/// so the Director stays a function of what it is given.
 #[derive(Clone, Debug)]
 pub struct Context {
     pub activity: Activity,
@@ -123,10 +102,9 @@ pub struct Context {
     /// The active Character's Personality Prompt. Empty when the package
     /// shipped none.
     pub personality: String,
-    /// This Instance's own layer, which the user wrote. Empty when they wrote
-    /// none, which is the default. Beside `personality` rather than folded
-    /// into it: two authored layers with two authors, and the empty case has
-    /// to assemble the payload it always did (ADR-0012).
+    /// This Instance's own layer, which the user wrote. Beside `personality`
+    /// rather than folded into it: two authored layers with two authors, and
+    /// the empty case has to assemble the payload it always did (ADR-0012).
     pub instance_prompt: String,
     pub state: State,
     pub happened: Happened,
@@ -136,12 +114,8 @@ pub struct Context {
 }
 
 /// One wake on its way to a Completer: the Character Prompt, and who is
-/// asking for it.
-///
-/// This seam is all the Harness Completer is handed, so identity travels with
-/// the prompt. The HTTP Completer ignores those fields; the Harness writes
-/// them to the Action Log and, for ACP, keys the session by Instance and
-/// Character. #435.
+/// asking for it. This seam is all the Harness Completer is handed, so
+/// identity travels with the prompt; the Harness keys the session by both.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WakeRequest {
     pub prompt: String,
@@ -150,28 +124,24 @@ pub struct WakeRequest {
     pub instance: InstanceId,
     /// Which Character this Instance is right now. A retarget keeps the
     /// Instance id and changes the Character Prompt (ADR-0012), so the
-    /// Harness cannot key a session on the Instance alone (#558).
+    /// Harness cannot key a session on the Instance alone.
     pub character: String,
     /// Whether the user addressed the buddy, as against a proactive wake.
-    /// ADR-0008's wake policy names the two.
     pub reactive: bool,
-    /// Whether this wake is blank-AI mode's: built-in layers emptied (#657).
-    /// On the wire rather than read off a switch where the session is kept,
-    /// because it is what this conversation is — a Completer that remembers a
-    /// session must not serve one mode's opening into the other's history.
+    /// Whether this wake is blank-AI mode's: built-in layers emptied.
+    /// On the wire rather than a switch: a Completer that remembers a session
+    /// must not serve one mode's opening into the other's history.
     pub blank: bool,
 }
 
 /// Whether this wake answers something the user did.
-///
-/// One definition, because the Shell's slot bookkeeping and the request the
-/// Completer is handed must not be able to disagree about the same wake.
+/// One definition, because the Shell's slot bookkeeping and the Completer
+/// request must not disagree about the same wake.
 pub fn reactive(happened: &Happened) -> bool {
     *happened != Happened::Ambient
 }
 
 /// Completes a Character Prompt.
-///
 /// The attached Harness, or the HTTP stand-in in the shell when none is
 /// attached. Tests put a double here.
 pub trait Completer {
@@ -179,22 +149,13 @@ pub trait Completer {
 }
 
 /// What a reply the token cap ended is marked with, in the one place it is
-/// written down: the remembered reply — the session the next turn is built
-/// from, and the Chat history row a reader sees. Exactly once, so neither can
-/// be marked twice, and nowhere else: not in what the buddy speaks, and not
-/// as a glyph a surface paints beside the words.
-///
-/// Never added before `parse_proposal` sees the reply: it reads the first
-/// line that is a whole Behavior name and says the rest, so a mark in the
-/// parsed text is a mark the buddy speaks (#610).
+/// written down: the remembered reply. Nowhere else: not in what the buddy
+/// speaks, and never before `parse_proposal` sees the reply.
 pub const TRUNCATED_MARK: &str = "[response truncated]";
 
 /// `text` as it is written down: with the mark under it when the cap ended
-/// the turn, and untouched when it did not.
-///
-/// One place, so the session and the Chat history carry the same string and
-/// neither can be marked twice. Never applied to what the buddy speaks or to
-/// what `parse_proposal` reads (#610).
+/// the turn, and untouched when it did not. One place, so the session and
+/// the Chat history carry the same string and neither can be marked twice.
 pub fn marked(text: &str, truncated: bool) -> String {
     match truncated {
         true => format!("{text}\n{TRUNCATED_MARK}"),
@@ -203,14 +164,8 @@ pub fn marked(text: &str, truncated: bool) -> String {
 }
 
 /// One completed turn: what the model said, and whether it was still saying it
-/// when the cap stopped it.
-///
-/// `truncated` travels beside the text rather than in it for the reason
-/// `near_miss` does: the parser cannot infer it, and a mark written into the
-/// string would be spoken as the model's own words and fed back as its last
-/// turn. A truncated turn is never a successful one on the wire — it is never
-/// retried and the Action Log names the cap — but what it managed to write is
-/// still parsed and still shown, because we are the ones who cut it off (#610).
+/// when the cap stopped it. `truncated` travels beside the text: a mark in
+/// the string would be spoken as the model's own words and fed back.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reply {
     pub text: String,
@@ -248,12 +203,8 @@ impl From<&str> for Reply {
 }
 
 /// One wake, parsed, with the two facts about the reply the parse result
-/// cannot carry.
-///
-/// Both are about the turn rather than about the animation, and neither can be
-/// recovered from the `Wake`: a near miss is speech that named something, and
-/// a truncation is words that stop early. The Shell reports them; the Engine
-/// never sees them.
+/// cannot carry. Neither can be recovered from the `Wake`. The Shell reports
+/// them; the Engine never sees them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Woken {
     pub wake: Wake,
@@ -262,7 +213,7 @@ pub struct Woken {
     pub near_miss: Option<String>,
     /// The cap ended this turn, so what is in `wake` is as far as the model
     /// got. Written into the remembered reply by `marked`, never spoken and
-    /// never parsed (#610).
+    /// never parsed.
     pub truncated: bool,
 }
 
@@ -283,18 +234,14 @@ pub struct ModelDirector<C> {
     /// and a request that named no buddy would log as none.
     instance: InstanceId,
     /// Which Character this Instance is. A retarget keeps `instance` and
-    /// changes this, so the Harness can keep both sessions (#558).
+    /// changes this, so the Harness can keep both sessions.
     character: String,
     /// The Character Prompt is the opening turn only. After a successful
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
-    /// Blank-AI mode: built-in layers emptied, Instance Prompt still sent
-    /// (#657).
-    ///
-    /// Fixed for this Director's life, the way the Endpoint bakes in the
-    /// timeout and the reply cap: the mode decides the opening turn, and
-    /// `opened` has no way back to one. A toggle rebuilds the Director, which
-    /// is what every other Completer change already does.
+    /// Blank-AI mode: built-in layers emptied, Instance Prompt still sent.
+    /// Fixed for this Director's life: the mode decides the opening turn, and
+    /// `opened` has no way back to one. A toggle rebuilds the Director.
     blank: bool,
 }
 
@@ -343,18 +290,12 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     /// The wake, and the Behavior name the reply proposed that this Character
-    /// declares none of.
-    ///
-    /// A near miss (`prowll`, `Inspectt`) arrives as speech exactly like a
-    /// model that chose to talk, so without this it is invisible. Reported,
-    /// never corrected: guessing a correction is ruled out. #243.
+    /// declares none of. A near miss arrives as speech, so without this it is
+    /// invisible. Reported, never corrected: guessing a correction is ruled out.
     pub fn wake_and_near_miss(&self, context: &Context) -> Woken {
         match self.completer.complete(&self.request(context)) {
             // Parsed exactly as a whole reply is. The cap ended the turn, not
-            // the contract: a Behavior the model named before it ran out is
-            // still the Behavior it chose, and the words after it are still
-            // what it said. The fact that it was cut off rides out beside
-            // them (#610).
+            // the contract. The fact that it was cut off rides out beside them.
             Ok(reply) => {
                 let (wake, near_miss) = self.parsed(&reply.text);
                 Woken {
@@ -380,8 +321,7 @@ impl<C: Completer> ModelDirector<C> {
                 match parse_proposal(reply) {
                     // The declared spelling, not the model's: a name written
                     // at the start of a line comes back capitalised, and the
-                    // Engine looks a Behavior up by the name its Character
-                    // declared (#231).
+                    // Engine looks a Behavior up by the name its Character declared.
                     Ok(proposal) => match self.declared(&proposal.behavior) {
                         Some(behavior) => (
                             Wake::Proposed(BehaviorProposal {
@@ -419,11 +359,8 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     /// The Character's own spelling of `name`, when it declared one.
-    ///
     /// Compared without case because that is the only way the two ever
-    /// differ in practice, and because `say` beside it is already matched
-    /// that way. A name nobody declared stays unknown, so loosening the
-    /// comparison never invents a Behavior (#231).
+    /// differ in practice. A name nobody declared stays unknown.
     fn declared(&self, name: &str) -> Option<String> {
         self.behaviors
             .iter()
@@ -442,11 +379,8 @@ fn spoken_or_failed(reply: &str) -> Wake {
 }
 
 /// A reply that is not a declared Behavior. Empty name: the Engine plays
-/// `talk` and speaks.
-///
-/// Length is not judged here. A reply too long for the bubble is drawn to six
-/// wrapped lines with a way into Chat for the rest (#588), so refusing to
-/// speak one would be a second, stricter ceiling on the same situation.
+/// `talk` and speaks. Length is not judged here: refusing a long reply
+/// would be a second, stricter ceiling on a bubble that already clamps.
 fn as_speech(reply: &str) -> Option<BehaviorProposal> {
     let text = reply.trim();
     let text = text
@@ -473,10 +407,8 @@ pub fn fallback(
 }
 
 /// Record a Behavior as just played, forgetting whatever fell off the end.
-///
-/// The caller keeps the list because the Director is a function of what it is
-/// handed: what has been played is the Shell's to know, since the Shell is what
-/// plays it.
+/// The caller keeps the list because the Director is a function of what it
+/// is handed: what has been played is the Shell's to know.
 pub fn remember(recent: &mut Vec<String>, behavior: String) {
     recent.insert(0, behavior);
     recent.truncate(REMEMBERED);
@@ -484,7 +416,7 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
 
 /// Wait between proactive model calls. Grows by `model_base.pow(model_power)`
 /// after each proactive call, resets when the user addresses the buddy.
-/// The Character Manifest names those two. ADR-0015.
+/// The Character Manifest names those two.
 #[derive(Clone, Debug)]
 pub struct Pace {
     first: Duration,
@@ -540,10 +472,8 @@ impl Default for Pace {
 }
 
 /// Whether to wake the Static Director.
-///
-/// True on frontmost-app change, idle crossing `IDLE_OVER`, time in one State
-/// reaching `STATE_BOUND`, or `since_wake >= every`. Free, so it may be chatty.
-/// Quiet under Do Not Disturb: no Director wakes cost less than refused proposals.
+/// Free, so it may be chatty. Quiet under Do Not Disturb: no Director wakes
+/// cost less than refused proposals.
 pub fn due(
     since_wake: Duration,
     every: Duration,
@@ -562,14 +492,8 @@ pub fn due(
 }
 
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
-///
-/// Reactive when the user addressed the buddy. Proactive when `since_ambient`
-/// has reached the current `Pace` and ambient wakes are allowed. Never while
-/// the display is asleep. Quiet under Do Not Disturb so the Character stays
-/// visible and Poke still works; displays-asleep would drop Poke too.
-///
-/// Ambient is its own switch: off keeps Poke and Summon on the session path
-/// and leaves Static weights to fill the idle life. #18.
+/// Ambient off keeps Poke and Summon on the session path and leaves Static
+/// weights to fill the idle life.
 pub fn session_due(
     addressed: bool,
     since_ambient: Duration,
@@ -579,9 +503,11 @@ pub fn session_due(
     ambient_allowed: bool,
 ) -> bool {
     if do_not_disturb {
+        // Character stays visible and Poke still works.
         return false;
     }
     if displays_asleep {
+        // Unlike Do Not Disturb, this would drop Poke too.
         return false;
     }
     addressed || (ambient_allowed && since_ambient >= pace.wait())
@@ -591,14 +517,9 @@ pub fn session_due(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseError;
 
-/// Strip known Harness startup banners from `reply`, by wire markers specific
-/// enough that real sentences are kept.
-///
-/// Pi's banner: `pi v{version}`, a `---` rule, optional blank line, `## Skills`,
-/// then skill paths. Recognized by those markers in sequence at the start of
-/// the reply, and removed as a block through the last skill path. A reply that
-/// names Pi in a sentence, or mentions skills, or draws a horizontal rule in
-/// the middle of an answer, is not the banner and is kept (#632).
+/// Strip known Harness startup banners from `reply` by wire markers.
+/// Pi's banner is `pi v{version}`, `---`, optional blank, `## Skills`, then paths.
+/// A sentence that names Pi, or a rule in the middle of an answer, is kept.
 fn strip_harness_banners(reply: &str) -> String {
     let lines: Vec<&str> = reply.lines().collect();
 
@@ -606,7 +527,6 @@ fn strip_harness_banners(reply: &str) -> String {
         return reply.to_string();
     }
 
-    // Pi banner markers: version line, horizontal rule, then Skills heading.
     let has_pi_version = lines[0].trim().starts_with("pi v");
     let has_rule = lines.get(1).is_some_and(|l| l.trim() == "---");
 
@@ -614,7 +534,7 @@ fn strip_harness_banners(reply: &str) -> String {
         return reply.to_string();
     }
 
-    // Find the Skills heading (may have a blank line before it).
+    // May have a blank line before the Skills heading.
     let skills_idx = lines
         .iter()
         .skip(2)
@@ -627,7 +547,6 @@ fn strip_harness_banners(reply: &str) -> String {
         None => return reply.to_string(),
     };
 
-    // Find where the banner ends: after the last consecutive line starting with "- ".
     let mut banner_end = skills_idx + 1;
     for (idx, line) in lines.iter().enumerate().skip(skills_idx + 1) {
         if line.trim_start().starts_with("- ") {
@@ -641,44 +560,23 @@ fn strip_harness_banners(reply: &str) -> String {
 }
 
 /// Parse a reply as a Behavior name on a line of its own, and everything
-/// else as the spoken line. Anything else is `ParseError`.
-///
-/// The name is looked for on the first line that is the contract's shape and
-/// nothing else, not on line one, because a Harness may put its own text
-/// ahead of the model's answer: Pi writes a version banner and a list of the
-/// user's skill files as the turn's first `agent_message_chunk`, and nothing
-/// on the ACP wire marks it as not the answer (#632).
-///
-/// Scanning is safe because a candidate must be the *whole* line. A Behavior
-/// named inside a sentence never matches, and a word no Character declared
-/// falls through to speech.
-///
-/// Every other line is dialogue, whichever side of the name it falls. Keeping
-/// beats dropping while nothing tells the two apart: a model that writes
-/// `I'll rest now.` above `nap` is answering, and dropping that line to spare
-/// a banner would lose the answer far more often than it spares one.
-///
-/// Known Harness banners are filtered by their specific markers before the
-/// name is read. A targeted filter, not a heuristic: a sentence that happens
-/// to mention Pi or skills is not a banner and is kept.
-///
-/// Public for `harness probe`, which reports whether a live session obeys the
-/// one-line format. The rest of the model path is crate-private.
+/// else as the spoken line. Public for `harness probe`. The rest of the
+/// model path is crate-private.
 pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
     let cleaned = strip_harness_banners(reply);
     let lines: Vec<&str> = cleaned.lines().collect();
-    // Trimmed only to test the line against the contract. The name has to be
-    // the whole line, so a line indented or padded still names a Behavior.
+    // First contract-shaped line, not line one: a Harness may put its own
+    // text ahead of the answer, and nothing on the ACP wire marks it. Trimmed
+    // only to test the line: a padded line still names a Behavior.
     let (at, (name, inline)) = lines
         .iter()
         .enumerate()
         .find_map(|(at, line)| contract_line(line.trim()).map(|found| (at, found)))
         .ok_or(ParseError)?;
 
-    // Everything that is not the action line, as it was written (#701). The
-    // lines are normalised to find the name, never to rebuild the speech:
-    // trimming and joining them cost every consumer its paragraphs, blank
-    // lines and indentation to spare the bubble, which clamps its own.
+    // Everything that is not the action line, as it was written. The lines
+    // are normalised to find the name, never to rebuild the speech: trimming
+    // them would cost every consumer its paragraphs to spare the bubble.
     let mut said: Vec<&str> = lines[..at].to_vec();
     said.extend(inline.filter(|line| !line.is_empty()));
     said.extend_from_slice(&lines[at + 1..]);
@@ -716,7 +614,6 @@ fn contract_line(line: &str) -> Option<(&str, Option<&str>)> {
 }
 
 /// True if `name` is a single token. The Engine still rejects unknown names.
-///
 /// One alphanumeric at least, so punctuation alone is not a name: `---` is a
 /// line of Pi's banner and is otherwise all characters a name may contain.
 fn identifier(name: &str) -> bool {
@@ -743,16 +640,8 @@ impl StaticDirector {
     }
 
     /// Pick among the Behaviors this moment permits, by weight.
-    ///
-    /// Three filters and a draw. A Behavior of no weight is one the author took
-    /// out of the running; a trigger that does not match is a Behavior this
-    /// moment is not for; and a Behavior played recently is one the user has
-    /// just seen.
-    ///
     /// Suppression gives way when it would leave nothing, because a Character
-    /// with two Behaviors and three of them remembered would otherwise go still
-    /// for ever. Repeating is worse than pausing only while there is something
-    /// else to do.
+    /// with two Behaviors and three of them remembered would otherwise go still.
     pub fn propose(&mut self, context: &Context) -> Option<BehaviorProposal> {
         let suits = |(name, behavior): (&String, &Behavior)| {
             let triggered = match &behavior.trigger {
@@ -785,7 +674,6 @@ impl StaticDirector {
     }
 }
 
-/// Whether the moment matches what a Behavior asked for.
 fn triggered(trigger: &Trigger, activity: &Activity) -> bool {
     match trigger {
         Trigger::IdleOver(span) => activity.idle > *span,
@@ -796,17 +684,9 @@ fn triggered(trigger: &Trigger, activity: &Activity) -> bool {
     }
 }
 
-/// A seeded source of randomness, so that "unpredictable to the user" and
-/// "unpredictable to a test" are different things.
-///
-/// splitmix64: five lines, no dependency, no seed it degenerates on — which a
-/// bare xorshift has at zero. `rand` would be a dependency and a trait object
-/// for a coin toss the Engine performs once every twenty seconds.
-///
-/// Public because the Shell needs draws of its own — where each Instance's wake
-/// clock starts — and the Engine needs one to pick a variant. A second
-/// generator would be a second thing to reason about at a second quality.
-/// One mixer, one set of properties, whoever is drawing.
+/// A seeded source of randomness for tests vs the user. splitmix64 rather than
+/// xorshift (degenerates at 0) or `rand`. One mixer: the Shell and the Engine
+/// both draw, and a second generator would be a second quality.
 pub struct Seeded(u64);
 
 impl Seeded {
@@ -824,23 +704,14 @@ impl Seeded {
         z ^ (z >> 31)
     }
 
-    /// One name out of `choices`, each as likely as its weight says.
     fn pick(&mut self, choices: &[(String, u32)]) -> Option<String> {
         let weights: Vec<u32> = choices.iter().map(|(_, weight)| *weight).collect();
         Some(choices[self.pick_index(&weights)?].0.clone())
     }
 
-    /// Which of `weights` the next draw lands on, each as likely as its weight
-    /// says, and `None` when none of them has any.
-    ///
-    /// The draw is taken over the running total, which is why the order matters
-    /// and why a `BTreeMap` feeds it: the same seed and the same Character must
-    /// pick the same Behavior — and the same variant — on every machine and
-    /// every run.
-    ///
-    /// Modulo bias is real and irrelevant here — the weights of one Character
-    /// sum to something astronomically smaller than 2^64, so the bias is a part
-    /// in billions of billions.
+    /// Which of `weights` the next draw lands on. Order matters, so a
+    /// `BTreeMap` feeds it: the same seed must pick the same Behavior every run.
+    /// Modulo bias is real and irrelevant: weights sum to far less than 2^64.
     pub(crate) fn pick_index(&mut self, weights: &[u32]) -> Option<usize> {
         let total: u64 = weights.iter().map(|weight| u64::from(*weight)).sum();
         if total == 0 {
@@ -906,7 +777,6 @@ mod tests {
         }
     }
 
-    /// The Behaviors a Character declares, as `(name, weight, trigger)`.
     fn declaring(behaviors: &[(&str, u32, Option<Trigger>)]) -> BTreeMap<String, Behavior> {
         behaviors
             .iter()
@@ -939,7 +809,6 @@ mod tests {
         }
     }
 
-    /// What the Director proposes over `wakes` wakes into the same moment.
     fn proposed(director: &mut StaticDirector, context: &Context, wakes: usize) -> Vec<String> {
         (0..wakes)
             .filter_map(|_| director.propose(context).map(|proposal| proposal.behavior))
@@ -964,16 +833,10 @@ mod tests {
     }
 
     /// Two Instances of one Character, seeded a bit apart the way the Shell
-    /// seeds them, and each keeping its own record of what it has played.
-    ///
-    /// #13 asks for Instances that play Behaviors independently, and a
-    /// difference in seed alone does not buy it: suppression walks each
-    /// Director through what it has not lately done, so with a Character
-    /// declaring few enough Behaviors both are steered onto the same one and
-    /// stay in step. This pins where the line actually falls.
+    /// seeds them. A difference in seed alone does not buy independence:
+    /// suppression can steer both onto the same Behavior and keep them in step.
     #[test]
     fn two_instances_of_one_character_do_not_pick_in_lockstep() {
-        // BMO's own set, which is what the lockstep was first seen with.
         let behaviors = declaring(&[
             ("walk", 1, None),
             ("patrol", 3, None),
@@ -1422,7 +1285,6 @@ mod tests {
         }
     }
 
-    /// A `ModelDirector` for one Instance, which every test here has.
     fn directing<C>(
         completer: C,
         behaviors: impl IntoIterator<Item = impl Into<String>>,
@@ -1444,8 +1306,8 @@ mod tests {
         }
     }
 
-    /// #435: the Action Log's `prompt` event can only name the buddy that woke
-    /// and say whether the user caused it if the request carries both — the
+    /// The Action Log's `prompt` event can only name the buddy that woke and
+    /// say whether the user caused it if the request carries both. The
     /// Completer is handed nothing else.
     #[test]
     fn the_request_names_the_instance_and_whether_the_wake_was_reactive() {
@@ -1471,8 +1333,7 @@ mod tests {
     }
 
     /// A model writes the Behavior name at the start of a line, so it
-    /// capitalises it: `Prowl` where the manifest declares `prowl`. Matched
-    /// case-insensitively, the same way `say` two arms below is. #231.
+    /// capitalises it. Matched case-insensitively, the same way `say` is.
     #[test]
     fn a_declared_behavior_is_known_however_the_model_capitalises_it() {
         let director = directing(Scripted::says("Prowl\nMine now."), ["prowl"]);
@@ -1508,9 +1369,9 @@ mod tests {
         }
     }
 
-    /// #243: `prowll` and a model that simply chose to talk both arrive as
-    /// speech, so a contract miss is invisible in a trace. The name is handed
-    /// back rather than corrected — the Shell is what prints it.
+    /// `prowll` and a model that simply chose to talk both arrive as speech,
+    /// so a contract miss is invisible in a trace. The name is handed back
+    /// rather than corrected: the Shell is what prints it.
     #[test]
     fn an_undeclared_name_is_handed_back_as_a_near_miss() {
         let director = directing(Scripted::says("prowll\nMine now."), ["prowl", "wave"]);
@@ -1543,7 +1404,7 @@ mod tests {
 
     /// Written down once and only where a reader is meant to see it: the mark
     /// is under the words, never spliced into them, and a line that was not
-    /// cut off is returned exactly as the model wrote it (#610).
+    /// cut off is returned exactly as the model wrote it.
     #[test]
     fn a_written_down_reply_carries_the_mark_under_it() {
         assert_eq!(
@@ -1559,9 +1420,8 @@ mod tests {
     }
 
     /// We are the ones who cut the model off, so what it wrote before the cap
-    /// is acted on: the Behavior plays and the words are said. The fact that
-    /// it stopped early rides out beside them, for `marked` to write into the
-    /// remembered copy, and is nowhere in what is parsed or spoken (#610).
+    /// is acted on. The fact that it stopped early rides out beside them,
+    /// and is nowhere in what is parsed or spoken.
     #[test]
     fn a_truncated_reply_is_parsed_and_carries_its_mark() {
         let director = directing(
@@ -1681,13 +1541,9 @@ mod tests {
         assert_eq!(proposal.dialogue.as_deref(), Some("I'll rest now."));
     }
 
-    /// #701: the parser normalises lines to find the name, and used to
-    /// rebuild the speech from those same normalised lines. That flattened
-    /// every reply that obeyed the contract — a bubble's six-line ceiling
-    /// applied in a parser that has no idea a bubble exists.
-    ///
     /// Production change that would fail this: rebuilding the dialogue from
-    /// the trimmed, blank-stripped list again instead of from `reply.lines()`.
+    /// the trimmed, blank-stripped list instead of from `reply.lines()`.
+    /// That applies a bubble ceiling in a parser that has no idea a bubble exists.
     #[test]
     fn a_reply_keeps_its_own_line_structure() {
         let reply = "wave\nHere's what I found:\n\n  - the roster loads\n  - the session resumed";
@@ -1734,15 +1590,13 @@ mod tests {
         assert_eq!(silent.dialogue, None, "whitespace is not something said");
     }
 
-    /// Pi's startup banner, captured from pi v0.85.1 through `pi-acp` 0.0.33
-    /// on a fresh session: 1.6 KB the model never wrote, delivered as the
-    /// turn's first `agent_message_chunk`. Its paths are replaced with
-    /// neutral ones — the fixture's README says what was and was not.
+    /// Pi's startup banner: 1.6 KB the model never wrote. Paths are replaced
+    /// with neutral ones; the fixture's README says what was and was not.
     const PI_BANNER: &str = include_str!("../tests/fixtures/pi-acp-banner.txt");
 
-    /// #609: a Harness may put its own text ahead of the model's answer, and
-    /// nothing on the ACP wire marks it. The name is read past it, in both of
-    /// the shapes the contract allows, and no line of it is promoted.
+    /// A Harness may put its own text ahead of the model's answer, and
+    /// nothing on the ACP wire marks it. The name is read past it, in both
+    /// of the shapes the contract allows, and no line of it is promoted.
     #[test]
     fn a_behavior_name_is_read_past_a_harness_banner() {
         for reply in [
@@ -1757,9 +1611,8 @@ mod tests {
         }
     }
 
-    /// #632: Pi's startup banner is filtered from Speech by recognizing its
-    /// specific markers: version line, horizontal rule, Skills heading. A
-    /// targeted filter, not a heuristic.
+    /// Pi's startup banner is filtered from speech by recognizing its
+    /// specific markers. A targeted filter, not a heuristic.
     #[test]
     fn pi_banner_is_filtered_from_dialogue() {
         for reply in [
@@ -1784,7 +1637,7 @@ mod tests {
         }
     }
 
-    /// #632: A banner-like structure that is not Pi's is kept, because the
+    /// A banner-like structure that is not Pi's is kept, because the
     /// filter is targeted to known markers, not a general heuristic.
     #[test]
     fn a_non_pi_banner_is_not_filtered() {
@@ -1798,7 +1651,7 @@ mod tests {
         );
     }
 
-    /// #632: Real sentences that happen to mention Pi or skills are not
+    /// Real sentences that happen to mention Pi or skills are not
     /// filtered, because the filter requires the specific banner structure.
     #[test]
     fn real_sentences_are_not_filtered_as_banners() {
@@ -1967,7 +1820,7 @@ mod tests {
 
     /// Blank AI empties the built-in layers, the package Personality Prompt
     /// and the app-level instructions, and still passes an Instance Prompt the
-    /// user wrote. Without one, the opening is the moment alone. #657.
+    /// user wrote. Without one, the opening is the moment alone.
     #[test]
     fn blank_mode_empties_built_in_layers_and_keeps_the_instance_prompt() {
         let moment = Context {
@@ -2181,9 +2034,8 @@ mod tests {
         );
     }
 
-    /// #685: the story the bound is sized for. A source file pasted with a
-    /// question has to reach the model whole, or the answer refactors a file
-    /// that stops mid-function.
+    /// A source file pasted with a question has to reach the model whole, or
+    /// the answer refactors a file that stops mid-function.
     #[test]
     fn a_pasted_source_file_reaches_the_model_whole() {
         let pasted = "fn main() {\n    println!(\"hello\");\n}\n".repeat(100);
@@ -2235,7 +2087,7 @@ mod tests {
     }
 
     /// Summon then type is the whole gesture, so the first thing a session
-    /// ever hears can be a typed line — which is why `character_prompt` needs
+    /// ever hears can be a typed line. That is why `character_prompt` needs
     /// no chat branch of its own.
     #[test]
     fn a_chat_turn_is_the_opening_turn_when_it_is_the_first_thing_that_happens() {
