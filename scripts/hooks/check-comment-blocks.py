@@ -11,6 +11,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# One table. is_comment_line and the known-ext skip used to copy this list,
+# and Swift was in neither, so every .swift file vacuously Passed. #804.
+C_STYLE_EXTS = {'.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h', '.swift'}
+HASH_STYLE_EXTS = {'.py', '.sh', '.yaml', '.yml', '.toml'}
+HTML_STYLE_EXTS = {'.html'}
+KNOWN_EXTS = C_STYLE_EXTS | HASH_STYLE_EXTS | HTML_STYLE_EXTS
+
 
 def get_added_lines(filename):
     """Get line numbers of added lines from git diff."""
@@ -45,11 +52,11 @@ def is_comment_line(line, ext):
     """Check if a line is a comment."""
     stripped = line.lstrip()
 
-    if ext in ['.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h']:
+    if ext in C_STYLE_EXTS:
         return stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*')
-    elif ext in ['.py', '.sh', '.yaml', '.yml', '.toml']:
+    elif ext in HASH_STYLE_EXTS:
         return stripped.startswith('#')
-    elif ext in ['.html']:
+    elif ext in HTML_STYLE_EXTS:
         return '<!--' in stripped or '-->' in stripped
 
     return False
@@ -60,7 +67,7 @@ def find_new_long_blocks(filename):
     path = Path(filename)
     ext = path.suffix
 
-    if ext not in ['.rs', '.js', '.ts', '.py', '.css', '.sh', '.html', '.toml', '.yaml', '.yml']:
+    if ext not in KNOWN_EXTS:
         return []
 
     try:
@@ -93,7 +100,7 @@ def find_new_long_blocks(filename):
 
         is_comment = is_comment_line(line, ext)
 
-        if ext in ['.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h']:
+        if ext in C_STYLE_EXTS:
             if '/*' in stripped:
                 in_multiline = True
             if '*/' in stripped:
