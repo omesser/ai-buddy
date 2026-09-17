@@ -69,10 +69,8 @@ fn intern(conn: &RustConnection, name: &str) -> Option<Atom> {
 }
 
 /// Parse WM_CLASS property bytes into the application name.
-///
-/// WM_CLASS holds two null-terminated strings: instance then class. Tries to
-/// parse as UTF-8 and return the class (second string), falling back to the
-/// instance (first string) if UTF-8 parsing fails.
+/// Two NUL-terminated strings, instance then class; class wins, instance
+/// is the UTF-8 fallback.
 pub(super) fn parse_wm_class(property_bytes: &[u8]) -> Option<String> {
     String::from_utf8(property_bytes.to_vec())
         .ok()

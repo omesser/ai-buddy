@@ -68,9 +68,7 @@ impl Log {
 
     /// Drop what one Instance's replaced session said.
     ///
-    /// One Instance, not all of them: a Character switch replaces the session
-    /// behind that buddy alone, and wiping the others would empty windows whose
-    /// session is still standing. #476.
+    /// One Instance, not all of them: wiping the others would empty windows still standing.
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
     }
@@ -113,22 +111,14 @@ pub fn replay(app: &tauri::AppHandle, instance: &str) -> Vec<Turn> {
 
 /// A dismissed Instance's turns go with it.
 ///
-/// No new session and nothing to tell: the window is closed in the same breath,
-/// and the id is never handed out again. Its own call because the blanket wipe
-/// that used to sweep these on the next Retarget is gone — one Instance's new
-/// session must not empty another's window.
+/// Own call so one Instance's new session does not empty another's window.
 pub fn forget(app: &tauri::AppHandle, instance: &str) {
     with_log(app, |log| log.forget(instance));
 }
 
 /// The Completer session behind `instance` was replaced, for the reason `why`.
 ///
-/// Three things at once because they are one fact: the held turns go, an open
-/// surface is told, and the Action Log takes the boundary so what leaves the
-/// window is not lost. `chat.js` carries the argument for all three. #476.
-///
-/// Called beside `model::retarget_model`, which is where a session is actually
-/// replaced; the two sites that call one call the other.
+/// Turns, the Chat surface, and the Action Log move together. Call beside `model::retarget_model`.
 pub fn new_session(app: &tauri::AppHandle, instance: &str, why: &str) {
     forget(app, instance);
     crate::action_log::append(
@@ -225,9 +215,8 @@ mod tests {
     }
 
     /// Production change that would fail this: forgetting every Instance's
-    /// turns when one Instance's session is reopened. Saving an Instance
-    /// Prompt reopens that Instance's session and no other (ADR-0012), and the
-    /// buddy beside it is still mid-conversation.
+    /// turns when one Instance's session is reopened. Saving an Instance Prompt
+    /// reopens that session only; the buddy beside it is still mid-conversation.
     #[test]
     fn forgetting_one_instance_leaves_the_others_conversation() {
         let mut log = Log::new();

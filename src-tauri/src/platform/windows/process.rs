@@ -1,8 +1,6 @@
 //! The application name behind a window, from the process that owns it.
-//!
-//! `GetWindowThreadProcessId` then `QueryFullProcessImageNameW`, file stem.
-//! Shared by `window_source` and `sensing` because both feed the same Sensing
-//! exclusion list, and both used to report the title bar text instead (#197).
+//! Shared by `window_source` and `sensing` because both feed the same
+//! Sensing exclusion list, which matches application names not titles.
 
 use std::path::Path;
 
@@ -17,11 +15,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 const MAX_PATH_LENGTH: usize = 512;
 
 /// The application behind `hwnd`, as an application name.
-///
-/// #197: this used to be the title bar text, which no other platform reports —
-/// macOS gives `kCGWindowOwnerName` and `localizedName`, X11 gives `WM_CLASS`.
-/// A Sensing exclusion list holds application names, so `Notepad` never matched
-/// a window titled `Untitled - Notepad` and the exclusion silently did nothing.
+/// Sensing exclusions match application names, not titles: `Notepad` never
+/// matched `Untitled - Notepad`.
 pub(super) fn window_owner(hwnd: HWND) -> Option<String> {
     let mut pid: u32 = 0;
     // SAFETY: GetWindowThreadProcessId writes the process ID into the
@@ -33,10 +28,8 @@ pub(super) fn window_owner(hwnd: HWND) -> Option<String> {
     }
 
     // PROCESS_QUERY_LIMITED_INFORMATION is the least right that reads an image
-    // path, and unlike PROCESS_QUERY_INFORMATION it is granted across integrity
-    // levels — an elevated window still gets a name.
-    // SAFETY: OpenProcess takes its arguments by value and returns a handle
-    // this function closes before returning.
+    // path and is granted across integrity levels, so an elevated window still
+    // gets a name. SAFETY: OpenProcess returns a handle this function closes.
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if process.is_null() {
         return None;

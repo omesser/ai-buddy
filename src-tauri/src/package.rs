@@ -35,10 +35,7 @@ const ARCHIVE_EXTENSION: &str = "zip";
 
 /// The most bytes a package may expand to, across every file in it.
 ///
-/// A bound on us rather than on the author: an archive advertises its
-/// uncompressed size for free, so without this a few kilobytes of zip can ask
-/// for every byte of memory the machine has. Generous for a mascot — the whole
-/// Required Animation Set at 1024x1024 is a fraction of it.
+/// Without this a few kilobytes of zip can ask for every byte of memory. Generous for a mascot.
 const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// The most files a package may contain. Frames, a manifest, a prompt, and room
@@ -57,18 +54,12 @@ pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
 
 /// The Character a new user meets, when nothing has chosen another.
 ///
-/// Name order is not a decision: without this, adding a package that sorts
-/// earlier would silently replace the buddy everybody sees. A preference and
-/// not a requirement — if it will not load, the search carries on behind it.
-/// Settings remembering a choice is #18. This is the first-run fallback.
+/// Name order is not a decision: without this, adding a package that sorts earlier would silently replace the buddy everybody sees.
 pub const DEFAULT_CHARACTER: &str = "bmo";
 
-/// The environment variable that starts one named Character rather than the
-/// first one found.
+/// The environment variable that starts one named Character rather than the first one found.
 ///
-/// The search takes the first package that loads, so name order alone decides
-/// which Character a developer sees, and the others cannot be reached at all.
-/// A user picks from the menu instead, which is #18.
+/// The search takes the first package that loads, so without this name order alone decides which Character a developer sees.
 pub const CHARACTER_VAR: &str = "AI_BUDDY_CHARACTER";
 
 /// Why a location did not yield a package's bytes.
@@ -99,8 +90,7 @@ impl std::error::Error for ReadError {}
 
 /// Read a Character Package's bytes from a directory or an archive.
 ///
-/// Bytes, not a Character: whether they are one is `character::load`'s answer,
-/// asked by the caller.
+/// Bytes, not a Character: whether they are one is `character::load`'s answer.
 pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
     let unreadable = |why: String| ReadError::Unreadable {
         path: path.to_path_buf(),
@@ -125,9 +115,7 @@ pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
 
 /// Where ai-buddy looks for Character Packages, in the order it looks.
 ///
-/// `bundled` is where the shipped Characters were installed alongside the app,
-/// which only the Shell can say. A package the user added wins over a shipped
-/// one of the same name, because the user's copy is the one they can edit.
+/// A package the user added wins over a shipped one of the same name, because the user's copy is the one they can edit.
 pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
     if let Some(override_paths) = std::env::var_os(SEARCH_PATH_VAR) {
         return std::env::split_paths(&override_paths).collect();
@@ -147,10 +135,7 @@ pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
 
 /// The candidates named `wanted`, or all of them when nothing is named.
 ///
-/// A package is named by its file name without the extension, so `bmo` names
-/// `bmo/` and `bmo.zip` alike. Naming a Character that is not installed
-/// leaves nothing rather than falling through to the next one: starting some
-/// other Character than the one asked for is a worse answer than saying so.
+/// Naming a Character that is not installed leaves nothing rather than falling through: starting some other Character is a worse answer than saying so.
 pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
     let Some(wanted) = wanted else {
         return candidates;
@@ -164,8 +149,7 @@ pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
 
 /// The candidates with `first` at the front, in the order given otherwise.
 ///
-/// Ordering rather than filtering, so a default that turns out to be broken
-/// costs the user the Character they expected and not the app.
+/// Ordering rather than filtering, so a broken default costs the Character they expected, not the app.
 pub fn preferring(candidates: Vec<PathBuf>, first: &str) -> Vec<PathBuf> {
     let (preferred, rest): (Vec<PathBuf>, Vec<PathBuf>) = candidates
         .into_iter()
@@ -176,8 +160,7 @@ pub fn preferring(candidates: Vec<PathBuf>, first: &str) -> Vec<PathBuf> {
 
 /// Every Character Package visible in `search_paths`, in the order found.
 ///
-/// A candidate rather than a Character: this only says "a directory or an
-/// archive is here". Whether it is a package at all is `read`'s answer.
+/// A candidate rather than a Character: this only says a directory or an archive is here.
 pub fn installed(search_paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut packages = Vec::new();
 
@@ -253,7 +236,6 @@ fn read_directory(root: &Path) -> Result<PackageBytes, String> {
     Ok(files)
 }
 
-/// Every file in a zip archive, keyed by the name it carries.
 fn read_archive(path: &Path) -> Result<PackageBytes, String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut archive =
@@ -270,10 +252,9 @@ fn read_archive(path: &Path) -> Result<PackageBytes, String> {
             continue;
         }
 
-        // `enclosed_name` refuses absolute paths and `..` components, so a
-        // hostile archive cannot name a file outside the package. Nothing is
-        // written to disk here, but the names it yields are the ones the
-        // manifest resolves against, and those should mean what they say.
+        // `enclosed_name` refuses absolute paths and `..`, so a hostile archive
+        // cannot name a file outside the package. The names it yields are the
+        // ones the manifest resolves against.
         let Some(name) = entry.enclosed_name() else {
             continue;
         };
@@ -290,10 +271,9 @@ fn read_archive(path: &Path) -> Result<PackageBytes, String> {
         // rather than allocated for.
         let allowed = budget.charge(entry.size())?;
 
-        // And read under that same cap, because the header is the archive's
-        // own claim about itself. An entry declaring one byte and inflating to
-        // a gigabyte is the ordinary shape of a zip bomb, and `read_to_end`
-        // would follow it all the way down.
+        // Read under that same cap: the header is the archive's own claim.
+        // An entry declaring one byte and inflating to a gigabyte is a zip bomb,
+        // and `read_to_end` would follow it all the way down.
         let mut bytes = Vec::new();
         entry
             .by_ref()
@@ -313,20 +293,14 @@ fn read_archive(path: &Path) -> Result<PackageBytes, String> {
 
 /// Whether an archive entry is macOS bookkeeping rather than package content.
 ///
-/// Finder's Compress writes a sibling `__MACOSX/` tree holding the extended
-/// attributes of every file that carries any, and Finder drops a `.DS_Store` in
-/// every folder it has displayed. Both describe the Mac the archive was made
-/// on, not the Character, so they are dropped rather than offered to
-/// `character::load` — and dropping the `__MACOSX/` tree is what leaves the
-/// package under one top-level directory for `strip_single_root` to unwrap.
+/// Finder's `__MACOSX/` and `.DS_Store` describe the Mac, not the Character; dropping `__MACOSX/` also leaves one top-level directory for `strip_single_root`.
 fn is_macos_litter(name: &str) -> bool {
     name.starts_with("__MACOSX/") || name == ".DS_Store" || name.ends_with("/.DS_Store")
 }
 
 /// What a package has left to spend. Each reader keeps its own.
 ///
-/// One piece of arithmetic rather than one per reader: the two bounds have to
-/// agree, and two copies of the same sum is how they stop agreeing.
+/// One piece of arithmetic rather than one per reader, so the two bounds stay agreed.
 struct Budget {
     bytes: u64,
     files: usize,
@@ -342,9 +316,7 @@ impl Budget {
 
     /// Charge one file of `size` bytes, or refuse the package.
     ///
-    /// Returns how many bytes the file may still occupy, so a reader that
-    /// cannot trust the size it was told — an archive header, which the archive
-    /// itself supplies — can cap what it decompresses at the same number.
+    /// Returns how many bytes remain so a reader that cannot trust an archive header can cap decompression.
     fn charge(&mut self, size: u64) -> Result<u64, String> {
         if self.files == 0 {
             return Err(format!(
@@ -363,7 +335,6 @@ impl Budget {
     }
 }
 
-/// The path of `file` relative to `root`, with `/` separators.
 fn relative_name(root: &Path, file: &Path) -> Option<String> {
     let relative = file.strip_prefix(root).ok()?;
     let parts: Vec<&str> = relative
@@ -375,10 +346,7 @@ fn relative_name(root: &Path, file: &Path) -> Option<String> {
 
 /// Drop a single wrapping directory, if that is all the package has at its top.
 ///
-/// `zip -r mochi.zip mochi/` — and Finder's Compress — put every file under one
-/// directory named after the folder. Without this, the same package as a
-/// directory and as an archive would not load identically, which is the whole
-/// point of supporting both.
+/// `zip -r` and Finder's Compress wrap files under one folder; without this, directory and archive would not load identically.
 fn strip_single_root(files: PackageBytes) -> PackageBytes {
     if files.contains_key(CHARACTER_MANIFEST_FILE) {
         return files;
@@ -447,28 +415,9 @@ mod tests {
         }
     }
 
-    /// The Characters that ship in the bundle, read from the repository rather
-    /// than built here. Nothing else checks them, and a manifest that stops
-    /// loading is an app that refuses to start.
-    ///
-    /// The three properties asserted are about the arc a Character's `when`
-    /// conditions cut its day into, not about parsing. Every sampled idle
-    /// leaves it something it may do, so no stretch of the day is dead; the
-    /// Behavior that greets an arrival is out of reach once the user has
-    /// plainly gone; and the one that belongs to an empty desk is out of reach
-    /// while they are still typing. A Character that declares weights and no
-    /// triggers passes the first and fails the other two, which is the hole
-    /// this test had for BMO and Nim while everything they own was always
-    /// eligible.
-    ///
-    /// The idles sample inside each declared phase rather than on its seam,
-    /// so that a phase boundary at exactly one of the sample durations does
-    /// not skip checking that phase.
-    ///
-    /// `weight` is read directly: every Behavior has one, so only the number
-    /// says whether the manifest's balance survived loading. Each Character
-    /// below names one Behavior it deliberately weights away from the default,
-    /// which is what stops a balance silently going flat.
+    /// Shipped Characters from the repo. Sample idles inside each `when` phase so a
+    /// seam at a sample duration does not skip it. Read `weight` directly so a
+    /// balance cannot go flat.
     #[test]
     fn every_shipped_character_loads_and_has_a_life() {
         let shipped = [
@@ -514,10 +463,8 @@ mod tests {
         }
     }
 
-    /// The two balances rewritten off the pet importer's starter set, pinned
-    /// by the claim their manifests make rather than by one number each. Both
-    /// claims are comparative — Jotaro stands more than he speaks, Cat leads
-    /// with curiosity — and a single weight in the table above cannot say so.
+    /// Comparative claims a single weight cannot pin: Jotaro stands more than
+    /// he speaks, Cat leads with curiosity.
     #[test]
     fn a_rewritten_balance_says_what_its_manifest_claims() {
         let jotaro = shipped_character("jotaro-kujo");
@@ -589,7 +536,6 @@ mod tests {
         files
     }
 
-    /// Write a package into `root` as a directory.
     fn write_package(root: &Path) {
         for (name, bytes) in package_files() {
             let path = root.join(&name);
@@ -600,10 +546,8 @@ mod tests {
     }
 
     /// Write the same package as an archive, wrapped in one directory the way
-    /// `zip -r` and Finder's Compress both produce.
-    ///
-    /// With `macos_litter`, add what Finder writes on top of the package: the
-    /// `__MACOSX/` shadow of every file, and a `.DS_Store`.
+    /// `zip -r` and Finder's Compress both produce. `macos_litter` adds `__MACOSX/`
+    /// and `.DS_Store`.
     fn write_archive(path: &Path, root_name: &str, macos_litter: bool) {
         let file = fs::File::create(path).expect("archive is creatable");
         let mut zip = zip::ZipWriter::new(file);
@@ -636,9 +580,7 @@ mod tests {
     }
 
     /// The rejection, or a failure naming the path that read instead.
-    ///
-    /// The bytes carry every frame of the art, so they are never
-    /// `Debug`-printed.
+    /// Never `Debug`-printed: the bytes carry every frame of the art.
     fn refusal(result: Result<PackageBytes, ReadError>) -> ReadError {
         match result {
             Ok(_) => panic!("expected a refusal, read a package"),
@@ -683,10 +625,8 @@ mod tests {
         );
     }
 
-    /// What an author actually hands you, since Finder's Compress is why this
-    /// reads zip at all. The `__MACOSX/` tree is a second top-level directory,
-    /// so leaving it in place hides the Character Manifest one level down and
-    /// the package is disowned.
+    /// Finder's `__MACOSX/` is a second top-level directory; leaving it in place
+    /// hides the Character Manifest one level down and the package is disowned.
     #[test]
     fn an_archive_carrying_finders_litter_loads_identically() {
         let dir = TempDir::new("finder-archive");
@@ -826,7 +766,7 @@ mod tests {
     }
 
     /// Unix only: Windows has no equivalent of a file its owner cannot open, and
-    /// a directory does not stand in because the walker recurses into it. #247.
+    /// a directory does not stand in because the walker recurses into it.
     #[cfg(unix)]
     #[test]
     fn a_file_that_cannot_be_opened_is_reported_with_its_path() {
@@ -885,9 +825,8 @@ mod tests {
         );
     }
 
-    /// Without this there is no way to start a particular Character: the search
-    /// takes the first package that loads, so `nim` wins on name order and
-    /// `bmo` is unreachable until #18 ships a menu to choose from.
+    /// The search takes the first package that loads, so without this name
+    /// order would make every other Character unreachable.
     #[test]
     fn a_named_character_is_the_only_candidate_left() {
         let candidates = vec![
@@ -980,11 +919,9 @@ mod tests {
         seen
     }
 
-    /// #9's first criterion, and its fourth. A Primitive is the Engine's and
-    /// plays one of the nine Animations every Character must supply, so
-    /// "neither package needs a Primitive the other cannot use" is the same
-    /// claim as "both draw all nine" — which is what fails here if a shipped
-    /// package loses a frame or names one it does not carry.
+    /// Both packages must draw all nine required Animations. A Primitive plays
+    /// one of those nine, so a missing frame or a named frame the package does
+    /// not carry is what fails here.
     #[test]
     fn both_shipped_characters_load_through_the_same_loader() {
         for (directory, name) in [("bmo", "BMO"), ("nim", "Nim")] {
@@ -1005,16 +942,9 @@ mod tests {
         }
     }
 
-    /// #9's third criterion, which is about the Behaviors and not the drawing.
-    ///
-    /// Nothing a Character declares decides when it sits: `animation_for`
-    /// perches it on a window and puts it to sleep after a minute whoever it
-    /// is. What a Character declares is what a Director may set it doing, and
-    /// there the two disagree — no Behavior of BMO's ever settles, and every
-    /// Behavior of Nim's that is not bare motion does.
-    ///
-    /// `walk` and `jump` are both a lone motion Primitive, and a Character that
-    /// ends on its feet has not settled. #374.
+    /// Nothing a Character declares decides when it sits. BMO never settles;
+    /// Nim does except on bare `walk`/`jump`, which are lone motion and leave
+    /// it on its feet.
     #[test]
     fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
         let bmo = shipped_character("bmo");
@@ -1041,10 +971,8 @@ mod tests {
         }
     }
 
-    /// The failure mode #9 names: one Character shipped twice with the palette
-    /// swapped. BMO is drawn shimeji art on its own large grid and Nim is
-    /// pixel art on 32x32, so the packages may not share a frame's geometry,
-    /// let alone its bytes — and Nim still carries more frames overall.
+    /// One Character shipped twice with the palette swapped. BMO and Nim must
+    /// not share a frame's geometry, and Nim still carries more frames overall.
     #[test]
     fn the_two_shipped_characters_are_not_one_character_twice() {
         let bmo = shipped_character("bmo");
@@ -1099,11 +1027,8 @@ mod tests {
         })
     }
 
-    /// A contact shadow drawn where there is no contact is not a contact
-    /// shadow. `fall` is the one Animation the Engine plays with the sprite off
-    /// the ground — it draws a throw as well as a fall, and a drag too in a
-    /// package like Nim's that declares no optional `grab` — so it is the one
-    /// Animation of Nim's with nothing under its feet.
+    /// `fall` is the Animation the Engine plays off the ground (throw, fall, and
+    /// drag when there is no `grab`), so it is the one of Nim's with nothing under its feet.
     #[test]
     fn nim_casts_a_shadow_only_when_it_has_something_to_cast_it_on() {
         let nim = shipped_character("nim");

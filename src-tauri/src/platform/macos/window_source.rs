@@ -19,11 +19,8 @@ use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource,
 /// The macOS window server's view of the desktop.
 pub struct MacosWindowSource {
     /// Where the usable part of each display comes from, and the Dock's true
-    /// bounds when Accessibility lets the Shell read them.
-    ///
-    /// Supplied rather than read here, because the reserved strips are the
-    /// window manager's answer and this module only speaks to the window
-    /// server.
+    /// bounds when Accessibility lets the Shell read them. Supplied rather
+    /// than read here: reserved strips are the window manager's answer.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
 }
 
@@ -56,18 +53,8 @@ impl WindowSource for MacosWindowSource {
 }
 
 /// Visible windows, frontmost first — ours among them.
-///
-/// `OnScreenOnly` already returns the list in front-to-back order, which is the
-/// descending z-order the Engine wants, and `ExcludeDesktopElements` drops the
-/// desktop image and its icons — a sprite should stand on the desktop, not on a
-/// window covering it.
-///
-/// Our own process is not excluded. The overlay is the one window that has to
-/// stay invisible — it covers the display, so a sprite that could see it would
-/// find a Perch under its own feet and never fall again — and it is a floating
-/// panel at layer 3, which the level filter in `ai_buddy_core::snapshot`
-/// already drops. Excluding the process took the Chat surface (#362) and
-/// Settings with it.
+/// The overlay is a layer-3 panel `snapshot` already drops. Excluding our
+/// process took Chat (#362) and Settings with it.
 fn visible_windows() -> Vec<WindowRect> {
     let options =
         CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
@@ -75,10 +62,9 @@ fn visible_windows() -> Vec<WindowRect> {
         return Vec::new();
     };
 
-    // SAFETY: CFArray is toll-free bridged to NSArray, and this call's contract
-    // is that every element is a CFDictionary keyed by CFString — bridged to
-    // NSDictionary and NSString. Reading through the bridge costs nothing and
-    // buys safe iteration and safe downcasts.
+    // SAFETY: CFArray is toll-free bridged to NSArray; every element is a
+    // CFDictionary keyed by CFString, bridged to NSDictionary and NSString.
+    // The bridge buys safe iteration and downcasts.
     let entries: &NSArray<NSDictionary<NSString, AnyObject>> =
         unsafe { &*std::ptr::from_ref(&*list).cast() };
 
@@ -86,10 +72,8 @@ fn visible_windows() -> Vec<WindowRect> {
 }
 
 /// One window-list entry, or `None` for entries we cannot or should not use.
-///
-/// The keys are spelled as literals because their `kCGWindow*` constants are
-/// defined as exactly these strings, and a bridged dictionary compares string
-/// keys by value.
+/// Keys are literals because `kCGWindow*` constants are exactly these strings,
+/// and a bridged dictionary compares string keys by value.
 fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
     let bounds = entry.objectForKey(ns_string!("kCGWindowBounds"))?;
     let mut cg_rect = CGRect::ZERO;
@@ -107,11 +91,9 @@ fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
     }
 
     Some(WindowRect {
-        // The window server's own id, and the one key here that costs nothing
-        // extra: same dictionary, same call, no permission. A `CGWindowID` is
-        // 32-bit and `WindowId` is the platform-free 64-bit token, so widening
-        // is where this platform meets the core, and `from` rather than `as`
-        // says the direction can never truncate. #85.
+        // The window server's id, same call, no permission. `CGWindowID` is
+        // 32-bit and `WindowId` is 64-bit, so `from` rather than `as` cannot
+        // truncate. #85.
         id: u64::from(number(entry, ns_string!("kCGWindowNumber"))?.as_u32()),
         bounds: rect(cg_rect),
         owner: entry
@@ -146,8 +128,6 @@ mod tests {
     /// Hand verification, deliberately not part of the suite: it needs a real
     /// window server and it reads a clock, both of which `docs/SPEC.md` rules
     /// out for `cargo test`. `#[ignore]` keeps the suite pure and fast.
-    ///
-    /// Run it with:
     ///
     /// ```text
     /// cargo test \

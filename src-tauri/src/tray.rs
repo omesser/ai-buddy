@@ -11,9 +11,7 @@ use tauri::AppHandle;
 
 /// Put the shared menu on a menu bar icon.
 ///
-/// Left-click opens the same menu as right-click: settings has to be
-/// reachable without finding the sprite, and a click that did nothing would
-/// look like a broken icon.
+/// Left-click opens the same menu as right-click so settings is reachable without the sprite.
 pub fn install(
     app: &AppHandle,
     description: &MenuDescription,

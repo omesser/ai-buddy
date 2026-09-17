@@ -59,9 +59,7 @@ impl ActivitySource for MacosActivitySource {
     fn displays_asleep(&self) -> bool {
         // One display is enough: a lid-closed Mac sleeps the main one.
         // `boolean_t` is a C int, not Rust `bool`.
-        // SAFETY: both are documented thread-safe, which is what this needs —
-        // sensing runs off the main thread. Neither takes a pointer, and the
-        // display id comes from CoreGraphics itself.
+        // SAFETY: both are thread-safe (sensing is off the main thread); neither takes a pointer.
         unsafe { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
     }
 }
@@ -73,11 +71,8 @@ unsafe extern "C" {
 }
 
 /// Turn the window server's reading into a duration.
-///
-/// Negative, infinite and NaN all mean it told us something we cannot use. Zero
-/// is the safe reading: it says the user is here, which at worst keeps the
-/// Character awake, where a wrong large value would put it to sleep on a machine
-/// somebody is working at.
+/// Negative, infinite and NaN are unusable; Zero says the user is here,
+/// where a wrong large value would put the Character to sleep at a live desk.
 fn idle_from_seconds(seconds: f64) -> Duration {
     Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)
 }
@@ -91,8 +86,6 @@ mod tests {
     /// window server, it reads the real clock and it sleeps, all of which
     /// `docs/SPEC.md` rules out for `cargo test`. `#[ignore]` keeps the suite
     /// pure and fast.
-    ///
-    /// Run it with:
     ///
     /// ```text
     /// cargo test \

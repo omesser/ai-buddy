@@ -17,9 +17,7 @@ use x11rb::rust_connection::RustConnection;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 /// Float above other windows, non-activating, skip the taskbar and pager.
-///
-/// Returns Err when the window handle is not available yet, so the caller can
-/// retry on subsequent frames once the GTK widget is realized.
+/// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let raw_window_handle = match window.window_handle() {
         Ok(handle) => handle,
@@ -51,9 +49,6 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// `XShapeCombineMask` sets the input region: `None` makes the entire window
 /// click-through, `Some` gives clicks only to the opaque pixels and any
 /// hotspot rectangles the renderer reported.
-///
-/// Returns Err when the window handle is not available yet, so the caller can
-/// retry on subsequent frames once the GTK widget is realized.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
@@ -102,7 +97,6 @@ pub fn update_input_region(
     Ok(())
 }
 
-/// Apply the alpha mask as the input region using XShapeCombineMask.
 #[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     conn: &RustConnection,
@@ -234,7 +228,6 @@ fn apply_input_mask(
     Ok(())
 }
 
-/// Clear the input region, making the entire window click-through.
 fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> {
     shape::mask(conn, shape::SO::SET, SK::INPUT, window, 0, 0, x11rb::NONE)
         .map_err(|e| format!("Failed to clear input region: {e}"))?
@@ -248,8 +241,6 @@ fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> 
 }
 
 /// The overlay is not an application window, so the window manager must not treat it as one.
-///
-/// `_NET_WM_STATE_ABOVE`, `_NET_WM_STATE_SKIP_TASKBAR`, `_NET_WM_STATE_SKIP_PAGER`.
 fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     let atoms = super::atoms::atoms().ok_or("Failed to intern EWMH atoms")?;
 

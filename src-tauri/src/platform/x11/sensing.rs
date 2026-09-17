@@ -51,7 +51,6 @@ fn frontmost_window_class() -> Option<String> {
     super::atoms::window_class(conn, active_window)
 }
 
-/// Read idle duration from X11 Screensaver extension.
 fn idle_duration() -> Option<Duration> {
     let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
