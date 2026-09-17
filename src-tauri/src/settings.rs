@@ -3900,8 +3900,9 @@ mod tests {
                 harness: "hermes".into(),
                 ..Settings::default()
             };
+            let other_dir = std::env::temp_dir().join("other-project");
             let mut other = SettingsPatch::default();
-            other.set_text(TextField::HarnessCwd, "/tmp/other-project");
+            other.set_text(TextField::HarnessCwd, &other_dir.to_string_lossy());
             assert!(harness_retargets(&settings, &other));
 
             let mut same_empty = SettingsPatch::default();

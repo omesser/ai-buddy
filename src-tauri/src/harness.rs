@@ -2328,9 +2328,10 @@ mod tests {
                 "empty and an explicit home path resolve equal"
             );
 
+            let other_dir = std::env::temp_dir();
             let other = Target {
                 launch: hermes.launch.clone(),
-                cwd: AttachCwd::resolve("/tmp"),
+                cwd: AttachCwd::resolve(&other_dir.to_string_lossy()),
             };
             assert!(
                 matches!(
@@ -2349,20 +2350,27 @@ mod tests {
             let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
             assert_eq!(AttachCwd::resolve("").unwrap().as_path(), home.as_path());
             assert_eq!(AttachCwd::resolve("   ").unwrap().as_path(), home.as_path());
+            // `/tmp/...` is relative on Windows (`Path::is_absolute` wants a drive).
+            let kept = std::env::temp_dir().join("kept");
             assert_eq!(
-                AttachCwd::resolve("/tmp/kept").unwrap().as_path(),
-                Path::new("/tmp/kept")
+                AttachCwd::resolve(&kept.to_string_lossy())
+                    .unwrap()
+                    .as_path(),
+                kept.as_path()
             );
             assert_eq!(
                 AttachCwd::resolve("relative/project"),
                 Err(CwdError::Relative(PathBuf::from("relative/project")))
             );
 
-            std::env::set_var(CWD, "/tmp/from-env");
-            let target = Target::from_settings(Some("hermes"), "/tmp/from-file").unwrap();
+            let from_env = std::env::temp_dir().join("from-env");
+            let from_file = std::env::temp_dir().join("from-file");
+            std::env::set_var(CWD, from_env.as_os_str());
+            let target =
+                Target::from_settings(Some("hermes"), &from_file.to_string_lossy()).unwrap();
             assert_eq!(
                 target.cwd.unwrap().as_path(),
-                Path::new("/tmp/from-env"),
+                from_env.as_path(),
                 "env outranks the file row"
             );
             std::env::remove_var(CWD);
