@@ -34,6 +34,15 @@ drawn. Answer 6 and ranked option 2 carry the correction and the measurement
 behind it. Round two also added `codex` and `cursor-agent`, two named rows in
 `harness.rs` that round one's matrix did not cover at all.
 
+Round three (2026-09-18, #786) reran the computer-use probe on the same
+Mac. `npx -y @agentclientprotocol/claude-agent-acp@latest` was 0.79.0,
+spawning bundled `claude` 2.1.274. ACP `_auth/status_update` reported
+`account.plan` as `team` and then `Claude Team`. `~/.claude.json`
+`oauthAccount.organizationType` is `claude_team` and `seatTier` is
+`team_tier_1`. Claim 11 stays Assumption. This machine is still Team, so
+the interactive-session gate is still behind the plan gate. The fixture
+run is in the round-three section below.
+
 ## How claims are marked
 
 **Fact** is something read off a live ACP session, a shipped file, or a
@@ -143,8 +152,8 @@ causes are Assumptions.
 | 7 | Project-scope `.mcp.json` loads relative to `cwd` | **Fact** | measured in round two against a fixture directory holding only a `.mcp.json`; `probe-project-scope` appeared in `init.mcp_servers` |
 | 8 | Computer use needs macOS, Pro or Max (not Team or Enterprise), claude.ai auth, and an interactive session | Fact | code.claude.com/docs/en/computer-use |
 | 9 | The computer-use opt-in is `enabledMcpServers`, recorded per project in `~/.claude.json` | Fact | code.claude.com/docs/en/mcp, "an opt-in list for built-in servers that default to off, such as `computer-use`" |
-| 10 | No `computer-use` server appears in an ACP session on this machine, with or without `ALLOW_ANT_COMPUTER_USE_MCP=1` | Fact | measured, `init.mcp_servers` |
-| 11 | On a Pro or Max machine with the opt-in recorded for ai-buddy's `cwd`, the interactive gate would still keep `computer-use` out of an ACP session | Assumption | follows from claim 8's fourth clause; not observable on a Team plan |
+| 10 | No `computer-use` server appears in an ACP session on this machine, with or without `ALLOW_ANT_COMPUTER_USE_MCP=1` | Fact | measured, `init.mcp_servers`; round three: still absent with `enabledMcpServers: ["computer-use"]` on a throwaway fixture `cwd` |
+| 11 | On a Pro or Max machine with the opt-in recorded for ai-buddy's `cwd`, the interactive gate would still keep `computer-use` out of an ACP session | Assumption | follows from claim 8's fourth clause. Round three (2026-09-18): this Mac is still Team (`account.plan` = `team` / `Claude Team`). The interactive gate is still not observable |
 | 12 | The Harness turn budget is 120 seconds by default | Fact | `harness.rs` tests for #690 at anchor |
 | 13 | ACP has no computer-use client capability; `fs/*` and `terminal/*` are methods the agent calls on the client | Fact | agentclientprotocol.com/protocol/initialization |
 | 14 | Grok's ACP session carries web, shell, file, subagent, scheduler and media tools | Fact about the self-report, Inference about the actual list | measured `AGENT_TEXT`, 33 names |
@@ -273,6 +282,10 @@ PROBE_META='{"claudeCode":{"emitRawSDKMessages":[{"type":"system","subtype":"ini
 node acp-probe.mjs "<DIR>" 90 'Reply with the single word ok.' \
   -- npx -y @agentclientprotocol/claude-agent-acp@latest
 ```
+
+On `@agentclientprotocol/claude-agent-acp@0.79.0`, set
+`emitRawSDKMessages` to `true` instead of the 0.78.0 filter array. Round
+three needed that boolean or `init.mcp_servers` never arrived.
 
 Success signal, read off the one `_claude/sdkMessage` notification:
 
@@ -451,9 +464,48 @@ For the `elicitation.form` probe, one line of the client changes:
 then `PROBE_CAPS='{"elicitation":{"form":true}}'`. Diff `INIT tools` against a
 run without it. They are identical, which is claim 4.
 
+## Round three: this machine is still Team (#786)
+
+Same probe client, same Mac, 2026-09-18. The adapter was
+`@agentclientprotocol/claude-agent-acp@0.79.0`. `session/new` used
+`_meta.claudeCode.emitRawSDKMessages: true` (boolean). The 0.78.0 filter
+array in the recipe above does not forward `_claude/sdkMessage` on this
+adapter version.
+
+The opt-in was `enabledMcpServers: ["computer-use"]` under
+`projects["/private/tmp/ai-buddy-786-probe/fixture"]` in `~/.claude.json`,
+and under the `/tmp/...` symlink path. That directory was created for
+this probe and removed afterwards. It was not the user's home project
+and not ai-buddy's data folder.
+
+ACP `_auth/status_update` on the live session (email omitted):
+
+```json
+{"authStatus":{"kind":"account","label":"Claude Team","account":{"plan":"team","organization":"Prisma Photonics"}}}
+```
+
+A later update used `"plan":"Claude Team"` with the same label.
+`oauthAccount.userRateLimitTier` is `default_claude_max_5x`. That is a
+rate-limit label, not a consumer Max plan. The ACP account object and
+`organizationType` are the plan fields, and both say Team.
+
+`init.mcp_servers` from the resolved-cwd run, session
+`2b70ef07-7414-468f-9011-9078aa69a521`, `claude_code_version` 2.1.274,
+`apiKeySource` `none`:
+
+```json
+[{"name":"plugin:context-mode:context-mode","status":"connected","source":"plugin"},{"name":"claude.ai Claude Docs","status":"connected","source":"claudeai"},{"name":"claude.ai Gmail","status":"needs-auth","source":"claudeai"},{"name":"claude.ai Google Drive","status":"needs-auth","source":"claudeai"},{"name":"claude.ai Slack","status":"needs-auth","source":"claudeai"},{"name":"claude.ai Atlassian Rovo","status":"needs-auth","source":"claudeai"},{"name":"claude.ai Canva","status":"needs-auth","source":"claudeai"}]
+```
+
+No `computer-use` name. No `mcp__computer-use__*` tool. Claim 10 still
+holds with the per-project opt-in recorded. Claim 11 is still
+Assumption. A Team plan trips the plan gate first, so this run cannot
+say whether the interactive-session gate would bind on Pro or Max.
+
 ## Open, not resolved here
 
-- Claim 11 needs a Pro or Max Mac.
+- Claim 11 still needs a Pro or Max Mac. Round three measured Team on
+  this machine and left the cell open.
 - hermes' and opencode's lists are self-reported through a model turn, except
   hermes' `/tools`, which is the adapter's own registry and therefore stronger
   evidence. cursor-agent's and codex's are self-reported. Only the `claude` row
