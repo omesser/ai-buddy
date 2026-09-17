@@ -1,17 +1,6 @@
 //! The attached Harness as the Completer.
-//!
-//! The sibling of `model.rs`. Where that file posts a Character Prompt to a
-//! chat-completions host, this one spawns the Harness in ACP mode and makes
-//! every wake one `session/prompt` on that Instance's session (ADR-0008,
-//! ADR-0010, #558). The protocol itself lives in `acp_wire.rs`; this file owns the policy around
-//! it: which Harness, when to spawn and respawn, what a failure means, where
-//! the session id is kept, and what reaches the Action Log and the Chat
-//! surface. The frame loop never sees any of it: `complete` runs on a `Slots`
-//! worker.
-//!
-//! Authentication is the Harness's own. Nothing here sets a provider key,
-//! reads a credential, or calls `authenticate`; `auth_required` becomes a
-//! command the user runs in their own terminal (ADR-0010's eight rules).
+//! Spawns the Harness in ACP mode; every wake is one `session/prompt`
+//! (ADR-0008, ADR-0010). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -32,16 +21,15 @@ use crate::action_log;
 
 pub use crate::acp_wire::{PermissionAsk, PlanStep};
 
-/// `pub(crate)` like `model::API_KEY`: the settings window names the variable
-/// that owns a row.
+/// `pub(crate)` so the settings window can name the variable that owns a row.
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
 pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
 /// How long an unauthenticated Harness is left alone, in seconds. Named here
-/// with the two above so the Development row it owns can print it (#447).
+/// so the Development row it owns can print it.
 pub(crate) const AUTH_RETRY_SECS: &str = "AI_BUDDY_HARNESS_AUTH_RETRY_SECS";
 /// How long a Harness `session/prompt` may run, in seconds. Named here so
-/// the Development row it owns can print it (#690).
+/// the Development row it owns can print it.
 pub(crate) const TURN_TIMEOUT_SECS: &str = "AI_BUDDY_HARNESS_TURN_TIMEOUT";
 
 /// The one file the session survives a restart in.
@@ -50,24 +38,16 @@ const SESSION_FILE: &str = "harness-session.json";
 /// How long a not-yet-authenticated Harness is left alone before `session/new`
 /// is tried again. Long enough not to hammer it, short enough that a user who
 /// runs the login command sees the buddy pick it up without a restart.
-///
-/// The default the Development row's blank means. A test that has to watch the
-/// retry cannot wait a minute for it, and neither can a smoke run (#447).
 const AUTH_RETRY: Duration = Duration::from_secs(60);
 
-/// What an empty auth-retry field means, in seconds. `model`'s placeholders
-/// are the same idea for the Completer limits.
+/// What an empty auth-retry field means, in seconds.
 pub(crate) fn auth_retry_placeholder() -> String {
     AUTH_RETRY.as_secs().to_string()
 }
 
 /// How long a Harness `session/prompt` may run before `session/cancel`.
-///
-/// `model::TIMEOUT` is the Model API hop (then Static). A tool-using Ask is
-/// not that hop — twenty seconds cancelled a web lookup mid-search (#690).
-/// Forever would leave a hung child uncancelable. Two minutes is long enough
-/// for a lookup and short enough that expiry still maps to `session/cancel`
-/// (ADR-0017). The Model API field does not override this.
+/// Twenty seconds cancelled a web lookup. Forever leaves a hung child.
+/// Two minutes covers a lookup and still maps expiry to cancel (ADR-0017).
 pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Settings / `AI_BUDDY_HARNESS_TURN_TIMEOUT` still wins when set.
@@ -79,7 +59,7 @@ pub(crate) fn turn_timeout_placeholder() -> String {
     TURN_TIMEOUT.as_secs().to_string()
 }
 
-/// Respawn backoff after a wake the child could not serve: doubles from the
+/// Respawn backoff after a wake the child could not serve. Doubles from the
 /// first up to the cap, so a missing binary costs one attempt every five
 /// minutes, not a loop.
 const BACKOFF_FIRST: Duration = Duration::from_secs(5);
@@ -96,8 +76,7 @@ const LOST: &str = "harness exited";
 
 /// How long a withdrawal waits for the `parsed` line that belongs to it. The
 /// Shell writes that line frames after the turn ended, so this only has to
-/// outlast one frame; it is generous because the cost of being wrong is one
-/// mislabelled wake, not a leak (the map is one entry per Instance).
+/// outlast one frame. Being wrong mislabels one wake and does not leak.
 const WITHDRAWAL_GRACE: Duration = Duration::from_secs(30);
 
 /// The stop reason a cancelled turn comes back with. A turn the Completer gave
@@ -112,33 +91,16 @@ pub struct Launch {
     pub argv: Vec<String>,
 }
 
-/// The launch table. `None` means the HTTP Completer path, unchanged.
-///
-/// Claude Code goes through Zed's adapter because it has no first-party ACP
-/// mode; `cursor-agent acp`, `grok agent stdio`, `hermes acp` and `opencode
-/// acp` are first-party. Pi is a named row through Zed's registry adapter,
-/// same shape as `claude`. Anything else is a command line of the user's own,
-/// which is how Copilot CLI attaches until it is smoked. Google has no row:
-/// Antigravity (`agy`) does not speak ACP (#604).
-///
-/// The README's Harness Support table is this table's user-facing half and is
-/// maintained by hand: a name or command changed here, or a new
-/// `scripts/probe-harness.sh` standing, has to be carried over there too.
-/// Named rows show the vendor's own Simple Icons mark, unrecoloured — and no
-/// mark at all when the vendor has none, which is why Grok Build sits there
-/// bare. The only near-match is `ngrok`, an unrelated product.
+/// The launch table. `None` is the HTTP Completer path. Unknown values are a
+/// command line of the user's own. Antigravity (`agy`) does not speak ACP, so
+/// Google has no row. Keep the README Harness Support table in step.
 pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
     let (name, argv): (&str, Vec<&str>) = match value {
         "" => return None,
-        // `@latest` is load-bearing: npx serves whatever it cached the first
-        // time, and the adapter bundles the Claude Code it was built against,
-        // so a cache from months ago answers every turn `API Error: 400 ...
-        // does not support this model` for a model newer than that CLI —
-        // which `claude update` cannot fix, because it updates a different
-        // install. One registry round-trip per spawn buys a Harness that
-        // matches the configured model (#514). Pinning a version drifts the
-        // same way in slower motion.
+        // `@latest` is load-bearing. npx serves the first cache it built, and
+        // the adapter bundles the Claude Code it was built against. A pin
+        // drifts the same way, slower. `claude update` hits a different install.
         "claude" => (
             value,
             vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"],
@@ -148,12 +110,11 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
         // `acp` is absent from `cursor-agent --help`, which lists `agent`,
-        // `login` and `mcp` and not this one. It answers `initialize` all the
-        // same — the `grok` shape below. #636.
+        // `login` and `mcp`. It answers `initialize` all the same.
         "cursor-agent" => (value, vec!["cursor-agent", "acp"]),
-        // `grok` alone is the interactive TUI; the ACP agent is the
+        // `grok` alone is the interactive TUI. The ACP agent is the
         // subcommand. Without this arm the escape hatch below launches that
-        // TUI on stdio and the attach times out (#457).
+        // TUI on stdio and the attach times out.
         "grok" => (value, vec!["grok", "agent", "stdio"]),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
@@ -170,12 +131,8 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
 }
 
 /// The exported variable, else the Completer source row Settings saved.
-///
-/// The variable outranks the file the way it does on every other Director row.
-/// Exported-and-empty is not the same as unexported here, which is where this
-/// parts company with `model::env_override`: `AI_BUDDY_HARNESS=` is the kill
-/// switch, and falling through to the row would spawn the very Harness the
-/// export was clearing (#452).
+/// Exported-and-empty is not unexported. `AI_BUDDY_HARNESS=` is the kill
+/// switch, and falling through would spawn the Harness the export cleared.
 pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
     match std::env::var(VAR) {
         Ok(exported) => launch(Some(&exported)),
@@ -184,11 +141,9 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
 }
 
 impl Launch {
-    /// The child, inheriting our environment untouched. ADR-0010 rules 4 and
-    /// 5: no provider key, no `CLAUDE_CONFIG_DIR`, no `--bare`. A test pins it.
-    ///
-    /// Own process group once `own_interrupt` has taken Ctrl+C, so a SIGINT
-    /// aimed at `cargo run` does not dump inside Claude's ACP adapter.
+    /// The child, inheriting our environment untouched. ADR-0010. No provider
+    /// key, no `CLAUDE_CONFIG_DIR`, no `--bare`. Own process group once
+    /// `own_interrupt` has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
     fn command(&self, cwd: &Path) -> Command {
         let mut command = Command::new(&self.argv[0]);
         command.args(&self.argv[1..]).current_dir(cwd);
@@ -202,12 +157,12 @@ impl Launch {
 }
 
 /// Tests isolate without installing a `ctrlc` handler. Production stays
-/// false until `own_interrupt` — a failed handler must not orphan a tree
+/// false until `own_interrupt`. A failed handler must not orphan a tree
 /// Ctrl+C can no longer reach.
 static INTERRUPT_OWNED: AtomicBool = AtomicBool::new(cfg!(test));
 static INTERRUPT_QUITTING: AtomicBool = AtomicBool::new(false);
 
-/// Isolation is on: Ctrl+C is ours, so the child may leave this process group.
+/// Isolation is on. Ctrl+C is ours, so the child may leave this process group.
 pub fn own_interrupt() {
     INTERRUPT_OWNED.store(true, Ordering::SeqCst);
 }
@@ -241,8 +196,7 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
         use std::os::windows::process::CommandExt;
         // The Job Object is created and assigned at spawn time in
         // `acp_wire::windows_job::spawn_in_job`, so descendants die on
-        // shutdown (#515). Still a new process group, so Ctrl+C does not
-        // reach the child.
+        // shutdown. Still a new process group, so Ctrl+C does not reach the child.
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
@@ -255,40 +209,38 @@ pub struct HarnessInspect {
     pub command: String,
     pub agent: Option<String>,
     pub session_id: Option<String>,
-    /// Attached but not authenticated: the one command that fixes it.
+    /// Attached but not authenticated. The one command that fixes it.
     pub login: Option<String>,
-    /// Whether `initialize` offered HTTP MCP. #166 branches on it.
+    /// Whether `initialize` offered HTTP MCP.
     pub mcp_http: bool,
     pub alive: bool,
     /// The binary `PATH` has not got, when that is why nothing is running.
     /// Told apart from a child that died because no respawn mends it and the
-    /// sentence a user needs is a different one (#659).
+    /// sentence a user needs is a different one.
     pub missing: Option<String>,
     /// What the last turn came back with, when it came back with an error, and
     /// `None` once a turn answers. A Harness that refuses every prompt is
-    /// attached, alive and authenticated, so nothing else here tells it apart
-    /// from one that is proposing nothing (#514).
+    /// attached, alive, and authenticated, so nothing else here tells it apart.
     pub last_error: Option<String>,
 }
 
 /// One remembered ACP session, keyed so a restart can load it for that
-/// identity and no other (#558).
+/// identity and no other.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct SavedSlot {
     instance: String,
     character: String,
-    /// Blank-AI mode's slot, kept apart from the shaped one (#657). Defaulted
-    /// so a file written before the mode existed loads as what it was: a
-    /// session opened with a Character Prompt in it.
+    /// Blank-AI mode's slot, kept apart from the shaped one. Defaulted so a
+    /// file written before the mode existed loads as a session opened with a
+    /// Character Prompt in it.
     #[serde(default)]
     blank: bool,
     session_id: String,
 }
 
-/// What `harness-session.json` holds. The map is the format that shipped
-/// with #558; `session_id` is the older single pointer, kept so an existing
-/// file still parses. That leftover is unattributed: it is not applied to
-/// any Character Instance.
+/// What `harness-session.json` holds. `session_id` is the older single
+/// pointer, kept so an existing file still parses. That leftover is not
+/// applied to any Character Instance.
 #[derive(Deserialize, Serialize)]
 struct SavedSession {
     harness: String,
@@ -302,7 +254,7 @@ struct SavedSession {
 impl SavedSlot {
     /// The identity half of a remembered slot. One place, so the three sites
     /// that match a slot against a key cannot drift apart when the key gains
-    /// a field — which is what it just did (#657).
+    /// a field.
     fn key(&self) -> SessionKey {
         SessionKey {
             instance: self.instance.clone(),
@@ -312,14 +264,9 @@ impl SavedSlot {
     }
 }
 
-/// Instance plus Character: two Instances of one Character do not share, and
-/// a retarget on one Instance is a different Character Prompt (ADR-0012).
-///
-/// Blank-AI mode joins them for the same reason (#657). The agent holds this
-/// lane's history, so a session opened with a Character Prompt in it would
-/// keep shaping replies after the mode was switched on, and the mode would
-/// measure a prompt it claims not to have sent. Two keys, two sessions: the
-/// switch cannot mix them, and nothing has to remember to drop one.
+/// Instance plus Character. Two Instances of one Character do not share, and
+/// a retarget is a different Character Prompt (ADR-0012). Blank-AI mode joins
+/// them so a shaped session cannot keep answering after the mode switches on.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SessionKey {
     instance: String,
@@ -338,14 +285,12 @@ impl SessionKey {
 }
 
 /// What the session on the wire tells the Chat surface, live.
-///
-/// `Settled` exists because an ask goes to every open surface and only one of
-/// them takes the click: without it the others keep offering live buttons on a
-/// question already answered, cancelled, or dead with its turn.
+/// `Settled` exists because an ask goes to every open surface and only one
+/// takes the click. Without it the others keep offering live buttons.
 #[derive(Debug)]
 pub enum Forwarded {
     Ask(PermissionAsk),
-    /// A request that is no longer answerable, and the option that won it —
+    /// A request that is no longer answerable, and the option that won it.
     /// `None` when nothing was picked and the turn simply ended.
     Settled {
         request: String,
@@ -359,8 +304,8 @@ pub enum Forwarded {
 
 type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
 
-/// The attached Harness: one child, one ACP connection, and one conversation
-/// per Character Instance identity (#558).
+/// The attached Harness. One child, one ACP connection, and one conversation
+/// per Character Instance identity.
 pub struct Session {
     launch: Launch,
     dir: PathBuf,
@@ -376,20 +321,16 @@ pub struct Session {
     /// the lock rather than inside it because it is read exactly when the lock
     /// cannot be taken, which is the moment the ordering rule is decided.
     serving_reactive: AtomicBool,
-    /// The Instance whose wake holds `turn`, and `None` when no wake does.
-    /// Beside the lock for the same reason the flag above is: one child serves
-    /// every Instance (ADR-0008), so a cancel sent without asking who holds
-    /// the turn lands on whichever buddy is mid-reply (#704). `Serving` is
-    /// what keeps it honest either way.
+    /// Instance whose wake holds `turn`. One child serves every Instance
+    /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
+    /// name lands on whichever buddy is mid-reply.
     serving_instance: Mutex<Option<String>>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
     withdrawing: Mutex<Option<String>>,
-    /// Withdrawn turn to the Instance whose wake took the session, from the
-    /// turn that lost it until the `parsed` line for that wake. Keyed by loser
-    /// rather than kept in the slot above, because a later cancel would erase
-    /// a withdrawal whose `parsed` line has not been written yet — leaving a
-    /// `turn` line that says withdrawn beside a `parsed` line that says failed.
+    /// Withdrawn turn to the Instance whose wake took the session, until the
+    /// `parsed` line for that wake. Keyed by loser so a later cancel cannot
+    /// pair a withdrawn `turn` line with a `parsed` line that says failed.
     withdrawn: Mutex<HashMap<String, (String, Instant)>>,
     /// Bookkeeping, and the blocking `initialize`/`session/*` hop under it, so
     /// two wakes cannot open two sessions.
@@ -406,7 +347,7 @@ pub struct Session {
 struct OpenedSession {
     id: String,
     /// Whether this id came from `session/load` and has not served a turn
-    /// yet — the one condition #448's reopen answers to.
+    /// yet. That is the one condition `reopen_loaded` answers to.
     loaded: bool,
 }
 
@@ -422,7 +363,7 @@ struct State {
 
 impl State {
     /// The child answered, so no earlier death is a death in a row any more.
-    /// Every outcome but a loss proves it: a stop reason, and even a turn we
+    /// Every outcome but a loss proves it. A stop reason, and even a turn we
     /// gave up waiting on, came back from a process that is still there.
     fn answered(&mut self) {
         self.spawn_failures = 0;
@@ -431,9 +372,8 @@ impl State {
 }
 
 /// Names the Instance whose wake holds the turn lock, for exactly as long as
-/// it holds it. A save reads that name to decide whether the turn in flight is
-/// the one it is entitled to cancel, so a slot left behind by a turn that has
-/// ended would aim the cancel at the turn that replaced it (#704).
+/// it holds it. A save reads that name before cancelling. A leftover slot
+/// would aim the cancel at the turn that replaced it.
 struct Serving<'a>(&'a Session);
 
 impl<'a> Serving<'a> {
@@ -498,17 +438,15 @@ impl Session {
         self
     }
 
-    /// The wait a wake the child could not serve buys, doubling to the cap.
     fn backoff(&self, failures: u32) -> Duration {
         self.backoff_first
             .saturating_mul(1u32 << failures.saturating_sub(1).min(16))
             .min(BACKOFF_CAP)
     }
 
-    /// One counter and one offset for every way a wake goes unserved: a spawn
+    /// One counter and one offset for every way a wake goes unserved. A spawn
     /// that never started, an `initialize` that never came back, and a child
-    /// that died under a turn all cost the same respawn, so reading the ladder
-    /// at two offsets would price the same failure twice (#437).
+    /// that died under a turn must not price the same failure twice.
     fn charge_loss(&self, state: &mut State) {
         state.spawn_failures += 1;
         state.spawn_wait_until = Some(Instant::now() + self.backoff(state.spawn_failures));
@@ -527,8 +465,8 @@ impl Session {
         }
     }
 
-    /// `initialize` and `session/*` get at least ten seconds whatever the turn
-    /// timeout is: `npx` starting Zed's adapter cold is slower than any reply.
+    /// `initialize` and `session` methods get at least ten seconds whatever
+    /// the turn timeout is. `npx` starting Zed's adapter cold is slower than any reply.
     fn attach_timeout(&self) -> Duration {
         self.timeout.max(Duration::from_secs(10))
     }
@@ -544,24 +482,8 @@ impl Session {
     }
 
     /// Take the turn lock from the wake in flight by cancelling it, or `None`
-    /// for the one wake that may not.
-    ///
-    /// ADR-0016's newest-wins reaches the Harness here. The rule was
-    /// implemented in the HTTP Completer alone, so every Poke arriving under a
-    /// turn — five seconds wide, and a proactive tick is often in one — was
-    /// refused and the buddy never reacted (#472). The protocol half already
-    /// existed: `session/cancel` and the `cancelled` stop reason are how a
-    /// timeout is handled. This is only the trigger, and it stays one session
-    /// (ADR-0008): a cancel and a resend on the same conversation.
-    ///
-    /// A proactive wake never displaces a reactive one — that a Poke gives way
-    /// to the next ambient tick would be worse than today. It is refused
-    /// instead, which costs nothing: Static weights are the Director whenever
-    /// a session call does not land.
-    ///
-    /// The wait is bounded because the cancel is advisory: a Harness that
-    /// ignores it costs one refused wake rather than a worker parked on the
-    /// lock until the turn times out.
+    /// for the one wake that may not. Newest-wins (ADR-0016) on one session
+    /// (ADR-0008). A reactive Poke must not give way to the next ambient tick.
     fn supersede(&self, request: &WakeRequest) -> Option<MutexGuard<'_, ()>> {
         if !request.reactive && self.serving_reactive.load(Ordering::SeqCst) {
             return None;
@@ -586,11 +508,8 @@ impl Session {
     }
 
     /// Say that the turn in flight is being taken for `winner`'s wake, or that
-    /// no turn was taken after all.
-    ///
-    /// Written before the cancel goes out, because the loser holds the turn
-    /// lock until it has written its own log line: anything set after the
-    /// handover would be too late for the turn that has to read it.
+    /// no turn was taken after all. Written before the cancel goes out. The
+    /// loser holds the lock until it has written its log line.
     fn note_withdrawal(&self, winner: Option<String>) {
         if let Ok(mut slot) = self.withdrawing.lock() {
             *slot = winner;
@@ -610,21 +529,14 @@ impl Session {
         Some(winner)
     }
 
-    /// The same withdrawal, taken by the wake that lost the session.
-    ///
-    /// Taken rather than read, for the reason the `turn` line is written once:
-    /// one wake leaves one line, so a withdrawal cannot colour the next wake
-    /// this Instance takes (#435).
-    ///
-    /// The grace bounds the one entry no `parsed` line ever comes for: the
-    /// Shell drops a reply the Instance has already moved past (ADR-0016), and
-    /// the next failed wake for that Instance is a different wake.
+    /// The same withdrawal, taken by the wake that lost the session. Taken
+    /// rather than read so it cannot colour this Instance's next wake. The
+    /// grace bounds the entry no `parsed` line comes for (ADR-0016).
     fn claim_withdrawn_wake(&self, instance: &str) -> Option<String> {
         let (winner, at) = self.withdrawn.lock().ok()?.remove(instance)?;
         (at.elapsed() < WITHDRAWAL_GRACE).then_some(winner)
     }
 
-    /// One turn. The whole of `Completer::complete`, minus the trace.
     fn turn(&self, request: &WakeRequest) -> Result<Reply, String> {
         let _turn = match self.turn.try_lock() {
             Ok(turn) => turn,
@@ -636,23 +548,13 @@ impl Session {
         self.serving_reactive
             .store(request.reactive, Ordering::SeqCst);
         // Declared after the turn lock, so it is cleared before the lock is
-        // released: no window has the lock free and this slot still naming a
+        // released. No window has the lock free and this slot still naming a
         // turn that has ended.
         let _serving = Serving::new(self, &request.instance);
         let (session_id, outcome) = self.attempt(request)?;
-        // A `session/load` answered with a success the Harness could not honour
-        // leaves an id nothing can be prompted on, and the only place it says
-        // so is the turn. So the first turn on a loaded session is the evidence
-        // the load was not: throw the id away, open a fresh session, and ask
-        // once more. `reopen_loaded` clears the flag it reads, so the second
-        // answer is the caller's however it turns out (#448).
-        //
-        // A loss is not one of these: the child is gone rather than the
-        // session, and `lost` has already charged the respawn. Nor is a
-        // timeout, which says nothing about the id and would spend the
-        // Completer's budget twice. Nor is a turn we cancelled ourselves: it
-        // says nothing about the id either, and asking again would put the old
-        // Instance Prompt back on a fresh session after a save (ADR-0012).
+        // `session/load` can succeed with a dead id (`hermes`). The first turn
+        // is the evidence. Reopen once. Not a loss (already charged), a
+        // timeout (would spend the budget twice), or our own cancel (ADR-0012).
         let key = SessionKey::from_request(request);
         let (session_id, outcome) = match &outcome {
             Err(TurnError::Stopped(reason)) if reason != CANCELLED && self.reopen_loaded(&key) => {
@@ -685,12 +587,9 @@ impl Session {
                 ))
             }
             Err(TurnError::Stopped(reason)) => {
-                // One child serves every Instance (ADR-0008), so a cancel
-                // sent for another buddy's wake reaches this turn without
-                // anything having superseded this Instance's own slot. The
-                // outcome is a wake with nothing to show either way; the log
-                // line is what has to say the turn was given up rather than
-                // broken (#499).
+                // One child serves every Instance (ADR-0008), so a cancel for
+                // another buddy's wake reaches this turn without superseding
+                // this Instance's slot. The log line must say it was given up.
                 let withdrawn_for = self.claim_withdrawn_turn(&request.instance, &reason);
                 withdrawn = withdrawn_for.is_some();
                 action_log::append(
@@ -706,12 +605,9 @@ impl Session {
                 Err(format!("harness: {why}"))
             }
         };
-        // Kept for the readers on the other side of the Completer, which is
-        // where `Result<String, String>` narrows to "no proposal".
-        //
-        // A withdrawal is not among them. The turn came back `cancelled`
-        // because we cancelled it, so naming that to the Chat surface would
-        // report the buddy that won the session as a Harness fault (#499).
+        // Kept for the readers on the other side of the Completer, where
+        // `Result<String, String>` narrows to "no proposal". A withdrawal is
+        // not among them. Naming our own cancel would report a Harness fault.
         self.update_inspect(|inspect| {
             inspect.last_error = (!withdrawn)
                 .then(|| answer.as_ref().err().cloned())
@@ -720,20 +616,16 @@ impl Session {
         answer
     }
 
-    /// One `session/prompt` on the session `attach` hands over: the id it went
-    /// to, and what came back.
-    ///
-    /// Split out of `turn` for #448's one retry, which has to pay the same
-    /// bookkeeping the first attempt did rather than have the caller remember
-    /// to. `Err` is a wake that never reached the wire, already refused.
+    /// One `session/prompt` on the session `attach` hands over. Split out of
+    /// `turn` so the load retry pays the same bookkeeping the first attempt
+    /// did. `Err` is a wake that never reached the wire, already refused.
     fn attempt(&self, request: &WakeRequest) -> Result<(String, Result<Reply, TurnError>), String> {
         let (wire, session_id) = self
             .attach(Some(&SessionKey::from_request(request)))
             .map_err(|why| self.refused(request, &why))?;
         // The Instance and the wake kind come through the seam rather than
-        // from anything here: one child serves every buddy, so the process is
-        // not whose wake this is, and the session id is that Instance's
-        // conversation (#435).
+        // from anything here. One child serves every buddy, so the process is
+        // not whose wake this is.
         action_log::append(
             &self.dir,
             "prompt",
@@ -745,17 +637,16 @@ impl Session {
             }),
         );
         let outcome = wire.prompt(&session_id, &request.prompt, self.timeout);
-        // Before the outcome is dressed for the caller: a child that dies under
-        // every turn is respawned on every wake unless the death pays the same
-        // backoff a failed spawn does, and a child that is answering must not
-        // carry a death from hours ago (#437).
+        // Charge the loss before the outcome is dressed for the caller. A
+        // death under every turn must pay the same backoff a failed spawn
+        // does. An answering child must not carry a death from hours ago.
         if let Ok(mut state) = self.state.lock() {
             match &outcome {
                 Err(TurnError::Lost) => self.lost(&wire, &mut state),
                 _ => state.answered(),
             }
             // A finished turn is the proof `session/load` was not, so any
-            // later failure on this session is the Harness's own answer (#448).
+            // later failure on this session is the Harness's own answer.
             if outcome.is_ok() {
                 if let Some(opened) = state.sessions.get_mut(&SessionKey::from_request(request)) {
                     opened.loaded = false;
@@ -765,14 +656,9 @@ impl Session {
         Ok((session_id, outcome))
     }
 
-    /// Drop a session that came from `session/load`, so the next `attach`
-    /// opens a fresh one. Whether there was one to drop (#448).
-    ///
-    /// Only a loaded id earns it: a `session/new` the Harness refuses is the
-    /// Harness answering, not a stale pointer, and reopening that would loop.
-    /// The session file goes first, which is both how the reopen is kept from
-    /// loading the same id straight back and how a restart is kept from
-    /// resurrecting it.
+    /// Drop a loaded session so the next `attach` opens a fresh one. A refused
+    /// `session/new` is the Harness answering, and reopening it would loop.
+    /// The file goes first so a restart cannot load the same id back.
     fn reopen_loaded(&self, key: &SessionKey) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
@@ -794,13 +680,9 @@ impl Session {
         true
     }
 
-    /// A wake that never reached `session/prompt`: the Harness was busy with
-    /// another, or there was no session to send it to.
-    ///
-    /// Logged because the Shell writes a `parsed` line for every reply it
-    /// takes, this refusal included — and a `parsed` with no line of its own
-    /// to join would read as the outcome of whichever wake was logged last.
-    /// Returns `why` so the one call site stays one line (#435).
+    /// A wake that never reached `session/prompt`. Logged because the Shell
+    /// writes a `parsed` line for every reply it takes, this refusal included.
+    /// A `parsed` with no line of its own would join the last logged wake.
     fn refused(&self, request: &WakeRequest, why: &str) -> String {
         action_log::append(
             &self.dir,
@@ -815,15 +697,8 @@ impl Session {
     }
 
     /// The wire died. Drop it, charge the loss, and let a later wake respawn.
-    ///
-    /// Every path that finds the child gone comes through here — a turn, and
-    /// `session/new` on a child that answered `initialize` and then exited —
-    /// so this is the one place the backoff can be charged without a caller
-    /// forgetting to (#437).
-    ///
-    /// The slot is emptied here rather than left for `alive()` to notice:
-    /// that flag flips only once the wire's thread has dropped its receiver,
-    /// and a wake arriving before then would reuse a dead wire.
+    /// Empty the slot here. `alive()` flips only once the wire's thread has
+    /// dropped its receiver, and a wake arriving before then would reuse it.
     fn lost(&self, wire: &Wire, state: &mut State) {
         wire.shutdown();
         if let Ok(mut slot) = self.wire.lock() {
@@ -833,12 +708,9 @@ impl Session {
         self.charge_loss(state);
     }
 
-    /// Record - and say - that the binary we spawn is not on `PATH`.
-    ///
-    /// The name is `argv[0]`, the file that was actually looked for, and never
-    /// the preset: `codex` attaches through `npx` and logs in through `codex`,
-    /// so `npx` can be there while the vendor CLI is not. Naming the preset
-    /// would accuse whichever of the two happens to be installed (#659).
+    /// Record that the binary we spawn is not on `PATH`. The name is
+    /// `argv[0]`, never the preset. `codex` attaches through `npx` and logs
+    /// in through `codex`, so naming the preset would accuse the wrong binary.
     fn note_missing(&self) -> String {
         let command = self.launch.argv[0].clone();
         self.update_inspect(|inspect| {
@@ -862,10 +734,8 @@ impl Session {
     }
 
     /// Cancel in-flight work, kill the child, and wait until it is reaped.
-    ///
     /// The child is in its own process group, so ending this process does not
-    /// take it with us; the wait is what does. `npx` does not reliably die on
-    /// stdin EOF (`acp_wire`), which is why this kills rather than hanging up.
+    /// take it with us. `npx` does not reliably die on stdin EOF.
     pub fn shutdown(&self) {
         self.wanted.store(false, Ordering::SeqCst);
         let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
@@ -889,7 +759,6 @@ impl Session {
             .filter(|wire| wire.alive())
     }
 
-    /// A live child and an open session, spawning and negotiating as needed.
     fn attach(&self, key: Option<&SessionKey>) -> Result<(Arc<Wire>, String), String> {
         if !self.wanted.load(Ordering::SeqCst) {
             return Err("harness detached".to_string());
@@ -912,9 +781,8 @@ impl Session {
                 match self.spawn_and_initialize(&mut state) {
                     Ok(wire) => wire,
                     // A file `PATH` has not got is not a child that might come
-                    // back, so the ladder buys nothing but a slower way to say
-                    // the same thing - and leaves the next wake refused for up
-                    // to five minutes after the user installs the CLI (#659).
+                    // back. Backoff would only refuse the next wake for up to
+                    // five minutes after the user installs the CLI.
                     Err(SpawnError::Missing) => return Err(self.note_missing()),
                     Err(SpawnError::Failed(why)) => {
                         self.charge_loss(&mut state);
@@ -948,12 +816,9 @@ impl Session {
             self.attach_timeout(),
             Box::new(move |event| note_event(&dir, &forward, event)),
         );
-        // Anything but `Missing` means `PATH` had the file to run, so this is
-        // the one place that knows whether the CLI is installed - and it has
-        // to answer on the failing edge too. A machine that installs the CLI
-        // and then fails to initialize kept the old `missing`, so Settings
-        // told the user to install what they had just installed, and said
-        // nothing about the adapter that actually failed (#659).
+        // Anything but `Missing` means `PATH` had the file to run. Clear the
+        // old `missing` on the failing edge too, or Settings keeps telling the
+        // user to install a CLI that is already there.
         if !matches!(spawned, Err(SpawnError::Missing)) {
             self.update_inspect(|inspect| inspect.missing = None);
         }
@@ -964,7 +829,7 @@ impl Session {
             }
         })?;
         state.handshake = wire.handshake().clone();
-        // A fresh process is a fresh chance to sign in: the gate belonged to
+        // A fresh process is a fresh chance to sign in. The gate belonged to
         // the one that died.
         state.login = None;
         state.auth_tried = None;
@@ -1033,7 +898,7 @@ impl Session {
         action_log::append(
             &self.dir,
             "attach",
-            // The label, never the choice: an `McpChoice::Http` carries the
+            // The label, never the choice. An `McpChoice::Http` carries the
             // loopback token and the Action Log is a file on disk.
             json!({
                 "harness": self.launch.name,
@@ -1060,18 +925,9 @@ impl Session {
             .find_map(|slot| (slot.key() == *key).then_some(slot.session_id))
     }
 
-    /// Cancel the turn in flight when it is this Instance's own, recording the
-    /// withdrawal `supersede` records so the wake it ends reads as given up
-    /// rather than as a Harness fault (ADR-0016). The Instance is named as its
-    /// own winner: the turn goes for that buddy's new prompt layer.
-    ///
-    /// One child serves every Instance (ADR-0008) and `wire.cancel()` names no
-    /// session, so cancelling without asking who holds the turn would take
-    /// buddy B's reply because buddy A saved a prompt (#704).
-    ///
-    /// Unlike `supersede` nothing waits for the handover: the caller is the
-    /// frame loop committing a save, which must not sit on a turn it is
-    /// throwing away, and no wake is waiting for the lock.
+    /// Cancel this Instance's own turn, recording the withdrawal so it reads
+    /// as given up (ADR-0016). `wire.cancel()` names no session (ADR-0008), so
+    /// ask who holds it first. The caller is the frame loop and must not wait.
     fn cancel_own_turn(&self, instance: &str) {
         let ours = self
             .serving_instance
@@ -1088,12 +944,8 @@ impl Session {
     }
 
     /// Forget this Instance's ACP conversations so the next wake is
-    /// `session/new`. Every lane (Character and Blank AI) opened with the
-    /// old Instance Prompt; leaving one would load it back (#698, ADR-0012).
-    ///
-    /// The in-memory ids and the saved slots both go, or a restart would
-    /// `session/load` the transcript that just got torn down. Other
-    /// Instances stay.
+    /// `session/new`. Every lane opened with the old Instance Prompt
+    /// (ADR-0012). In-memory ids and saved slots both go, or a restart loads it.
     pub fn drop_conversation(&self, instance: &str) {
         self.cancel_own_turn(instance);
         let Ok(mut state) = self.state.lock() else {
@@ -1185,13 +1037,9 @@ impl Completer for Session {
     }
 }
 
-/// The one prompt the probe sends.
-///
-/// Shaped like the last line of a Character Prompt — a Behavior name, a bar,
-/// then dialogue — because whether a real Harness's reply comes back in that
-/// shape is the fact the probe exists to report. Asked for explicitly rather
-/// than left to the Harness's own idea of a good answer, so a reply that does
-/// not parse is the Harness's doing and not the prompt's.
+/// The one prompt the probe sends. Shaped like the last line of a Character
+/// Prompt so a reply that does not parse is the Harness's doing, not the
+/// prompt's. Asked for explicitly rather than left to the Harness.
 const PROBE_PROMPT: &str =
     "Reply with exactly this one line and nothing else: Wave | Hello from the probe.";
 
@@ -1199,40 +1047,27 @@ const PROBE_PROMPT: &str =
 const REAP: Duration = Duration::from_secs(2);
 
 /// Attach the configured Harness and run one turn, with no overlay.
-///
-/// `scripts/probe-harness.sh` is the face of this and `model::run_probe` is
-/// the sibling it is shaped after: same env as `cargo run`, no window, an
-/// exit code a script can read. The code splits on the two phases the probe
-/// prints: 2 is never having asked — nothing configured, no binary, not
-/// signed in — 1 is asked and not answered, and 0 is `end_turn`.
-///
-/// No credential is read, printed or set. A Harness that is not signed in
-/// comes back as the command the user runs in their own terminal, which is
-/// ADR-0010's rule and the whole of what the probe does about it.
+/// Exit 2 means never asked, 1 means asked and unanswered, 0 is `end_turn`.
+/// A Harness that is not signed in names the command the user runs (ADR-0010).
 pub fn run_probe() -> i32 {
-    // No settings file on this path, and `dev_flags::seed` is where the
-    // exported timeout is read (#273).
+    // No settings file on this path. `dev_flags::seed` is where the exported
+    // timeout is read.
     crate::dev_flags::seed(&crate::settings::Settings::default());
-    // `None` rather than the saved row: the probe loads no settings file, so
-    // the exported variable is the only source it has (#436).
+    // The probe loads no settings file, so the exported variable is the only
+    // source it has.
     let Some(launch) = from_settings(None) else {
         eprintln!("probe-harness: {VAR} is unset, so there is no Harness to attach");
         return 2;
     };
     let session = Arc::new(Session::new(
         launch,
-        // The probe's own folder under the app's, which keeps the session file
-        // and the Action Log out of a real install's — a probe is still the way
-        // to reach a Harness that resumes badly (#448), so it wants both of its
-        // own. Memory is not isolated by this and cannot be: the MCP server
-        // resolves it from the data folder, not from the session's cwd, so a
-        // `remember` during a probe writes the real `memory.md`.
+        // The probe's own folder keeps the session file and Action Log out of a
+        // real install. Memory cannot be isolated. The MCP server resolves it
+        // from the data folder, so a probe `remember` writes the real `memory.md`.
         ai_buddy_core::memory::data_dir().join("probe"),
-        // Named, never answered: only a click on the Chat surface may answer a
+        // Named, never answered. Only a click on the Chat surface may answer a
         // permission request (ADR-0017), and the probe has no surface. The ask
-        // then times out with the turn, which is itself the report. A
-        // settlement earns no line, because the only one a probe can reach is
-        // that timeout.
+        // times out with the turn, which is itself the report.
         Arc::new(Box::new(|forwarded| {
             if let Forwarded::Ask(ask) = forwarded {
                 println!(
@@ -1243,13 +1078,9 @@ pub fn run_probe() -> i32 {
             }
         }) as Forward),
     ));
-    // Ctrl+C is ours before the child spawns, so the child gets its own
-    // process group and `acp_wire::kill_harness_tree` can reap the `npx`
-    // grandchildren that would otherwise outlive the probe (#457). The
-    // handler is what keeps that from orphaning the child: once the child has
-    // left this group, a Ctrl+C mid-probe no longer reaches it, so shutting
-    // the session down is now our job. 130 is the shell's code for SIGINT,
-    // and none of the three codes the probe otherwise reports.
+    // Ctrl+C is ours before spawn so the child leaves this process group and
+    // `kill_harness_tree` can reap `npx` grandchildren. The handler shuts the
+    // session down. 130 is the shell's SIGINT code, not a probe verdict.
     let interrupted = session.clone();
     match ctrlc::set_handler(move || {
         interrupted.shutdown();
@@ -1286,10 +1117,9 @@ fn probe(session: &Session) -> i32 {
         blank: false,
     })) {
         Ok((_, id)) => id,
-        // Nothing was asked, so this is configuration and not a turn: a
-        // missing binary, a Harness that wants a login, a `session/new` the
-        // Harness refused. The message says which; the code says only that
-        // the prompt below never went out.
+        // Nothing was asked, so this is configuration and not a turn. The
+        // message names a missing binary, a login, or a refused `session/new`.
+        // The code says only that the prompt never went out.
         Err(why) => {
             println!("  {why}");
             return 2;
@@ -1311,9 +1141,8 @@ fn probe(session: &Session) -> i32 {
     );
     println!("  loadSession  {}", handshake.load_session);
     println!("  mcp http     {}", handshake.mcp_http);
-    // What the session was actually handed, not what was on offer: #470 closed
-    // on a probe that reported `mcp none` on every run and so never exercised
-    // a tool call. The label never carries the loopback token.
+    // What the session was actually handed, not what was on offer. The label
+    // never carries the loopback token.
     println!(
         "  mcp          {}",
         mcp_server(&handshake).map_or_else(|| "none".to_string(), |choice| choice.label())
@@ -1333,9 +1162,8 @@ fn probe(session: &Session) -> i32 {
     println!("  prompt       {PROBE_PROMPT}");
     match session.turn(&WakeRequest {
         prompt: PROBE_PROMPT.to_string(),
-        // Reactive, because a probe is someone asking on purpose. The Instance
-        // is named for the probe so the line it leaves in the Action Log cannot
-        // be read as a buddy's own wake (#435).
+        // Reactive, because a probe is someone asking on purpose. Named for
+        // the probe so the Action Log line cannot be read as a buddy's own wake.
         instance: "probe".to_string(),
         character: "probe".to_string(),
         reactive: true,
@@ -1354,9 +1182,9 @@ fn probe(session: &Session) -> i32 {
                 }
             );
             println!("  reply        {text}");
-            // Reported, not part of the verdict: whether a model obeys a
-            // one-line format is the Director's problem, and a turn that
-            // reached `end_turn` proved the wire either way.
+            // Reported, not part of the verdict. Whether a model obeys a
+            // one-line format is the Director's problem. `end_turn` proved
+            // the wire either way.
             match ai_buddy_core::director::parse_proposal(&text) {
                 Ok(proposal) => println!(
                     "  proposal     {} | {}",
@@ -1374,14 +1202,13 @@ fn probe(session: &Session) -> i32 {
     }
 }
 
-/// What the session stream said, into the Action Log — and, for a permission
-/// request, on to the Chat surface. Runs on the wire thread.
+/// What the session stream said, into the Action Log, and a permission
+/// request on to the Chat surface. Runs on the wire thread.
 fn note_event(dir: &Path, forward: &Forward, event: Event) {
     match event {
         // A tool call and a usage tick are logged and never forwarded, so a
-        // turn shows the surface no phases: a slow one looks the same whether
-        // it is on its third tool call or stalled. The events to draw one from
-        // already arrive here; ADR-0028 bounds what it draws. #697 closes it.
+        // turn shows the surface no phases. ADR-0028 bounds what a later
+        // surface may draw from events that already arrive here.
         Event::ToolCall {
             id,
             title,
@@ -1415,28 +1242,24 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
             forward(Forwarded::Settled { request, option })
         }
         // Forwarded and not logged. The Action Log points at the Harness's own
-        // session dump rather than copying it (CONTEXT.md), and a line per
-        // thought chunk is that copy — of the one part the Harness itself
-        // treats as disposable (ADR-0025).
+        // session dump rather than copying it (CONTEXT.md). A thought chunk is
+        // the part the Harness treats as disposable (ADR-0025).
         Event::Thought(line) => forward(Forwarded::Thought(line)),
     }
 }
 
 /// The Action Log line for what one reply parsed to.
-///
-/// Written by the Shell where it takes the wake out of `Slots`, because
-/// `crates/core` parses and does no I/O. A Harness session writes beside
-/// that session; an HTTP wake writes to the same data dir Memory uses (#435).
+/// The Shell writes it where it takes the wake out of `Slots`, because
+/// `crates/core` parses and does no I/O.
 pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) {
     let session = attached();
     let dir = session
         .as_ref()
         .map(|session| session.dir.clone())
         .unwrap_or_else(ai_buddy_core::memory::data_dir);
-    // Both asked here rather than carried through `crates/core`: the caller has
-    // the wake and not the words, whose wake took the session is a property of
-    // the one Harness session, and this already holds the session that knows
-    // each (#499).
+    // Asked here rather than carried through `crates/core`. The caller has the
+    // wake and not the words, and this already holds the session that knows
+    // whose wake took it.
     let withdrawn_for = match (&session, wake) {
         (Some(session), Wake::Failed) => session.claim_withdrawn_wake(instance),
         _ => None,
@@ -1458,27 +1281,9 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
     );
 }
 
-/// The six answers the Shell has to "what did the reply parse to".
-///
-/// A Near Miss is its own outcome and not `speech`, though it arrives as
-/// speech: a Character that declares `prowl` and a model that answers `prowll`
-/// is a contract miss the log has to be able to show, which is what CONTEXT.md
-/// asks.
-///
-/// `failed` says only that no reply was usable; why is already a line of its
-/// own, written where the failure was seen. `error` is the one a reader cannot
-/// join to anything: the Harness answered, and its answer was an error, so the
-/// line carries the words as well as the verdict.
-///
-/// `withdrawn` is the one failure that is not one: the turn was cancelled so
-/// another Instance's wake could be answered, which the Instance named in
-/// `withdrawn_for` won. It outranks `error` because our own cancel reaches this
-/// function as one — `harness stopped: cancelled` is a Harness reporting what
-/// we asked it to do, so a line reading `error` there would name the buddy that
-/// won the session as a fault (#499).
-///
-/// The wake kind rides along so a reader can join this to the `prompt` or
-/// `refused` line for the same wake.
+/// The six answers: `near_miss`, `proposal`, `speech`, `failed`, `error`,
+/// `withdrawn`. `near_miss` arrives as speech but is not `speech`.
+/// `withdrawn` outranks `error` because our own cancel arrives as one.
 fn parsed_fields(
     instance: &str,
     wake: &Wake,
@@ -1524,18 +1329,15 @@ fn not_authenticated(command: &str) -> String {
 }
 
 /// A Harness is the user's to install and never ours to ship (ADR-0018), so
-/// the only fix is one the user makes outside the app - which is the same
-/// shape as `not_authenticated`, and for the same reason.
+/// the only fix is one the user makes outside the app, the same shape as
+/// `not_authenticated` and for the same reason.
 fn not_installed(command: &str) -> String {
     format!("`{command}` is not installed; ai-buddy does not bundle a Harness")
 }
 
-/// The command that logs the user in. The table outranks the handshake:
-/// adapters describe an `authMethods` entry in prose ("Use Claude
-/// subscription", "ChatGPT") because ACP never asked for a command. Only a
-/// `terminal` method carries one, in `args`, and ADR-0018 hosts no terminal
-/// to run it. A custom command has no row, so it keeps whatever the adapter
-/// said, then the unnamed hint.
+/// The command that logs the user in. The table outranks the handshake,
+/// because ACP describes `authMethods` in prose and ADR-0018 hosts no
+/// terminal to run a `terminal` method. A custom command keeps the adapter's text.
 fn login_command(name: &str, handshake: &Handshake) -> String {
     named_login(name).map(str::to_string).unwrap_or_else(|| {
         handshake
@@ -1551,20 +1353,9 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
     })
 }
 
-/// The documented sign-in line for a named Harness, before any handshake has
-/// had the chance to name its own.
-///
-/// The one table. Settings reads it through `HarnessInspect::login` once
-/// `session/new` has answered `-32000` (ADR-0022), and Chat's Connect button
-/// reads it through `select_harness` before that, because it has nothing else
-/// to offer at the moment of the pick.
-///
-/// ai-buddy never runs it. #654: Chat spawned `codex login` from a GUI process
-/// with no terminal of its own, on inherited stdio. The browser flow finished
-/// but the CLI handshake and the token reached nothing Chat could use, and
-/// every Connect click spawned another `localhost:1455` server. Naming the
-/// command is the whole of what we can do — ADR-0018 has the Harness
-/// authenticate itself.
+/// The documented sign-in line for a named Harness, before any handshake.
+/// Chat's Connect reads it at the pick, Settings after `-32000` (ADR-0022).
+/// ai-buddy never runs it (ADR-0018).
 pub(crate) fn login_hint(name: &str) -> String {
     named_login(name)
         .map(str::to_string)
@@ -1575,10 +1366,9 @@ fn named_login(name: &str) -> Option<&'static str> {
     Some(match name {
         "claude" => "claude /login",
         "codex" => "codex login",
-        // Not the line the handshake offers. Cursor's one auth method
-        // describes itself as "Run 'agent login' first", and `agent` is what
-        // the binary calls itself, not what the installer puts on `PATH`
-        // (`cursor-agent`), so following it verbatim is a command not found.
+        // Not the line the handshake offers. Cursor describes "agent login",
+        // and `agent` is what the binary calls itself, not the `cursor-agent`
+        // the installer puts on `PATH`. Following it verbatim is a command not found.
         "cursor-agent" => "cursor-agent login",
         "grok" => "grok login",
         "hermes" => "hermes login",
@@ -1588,25 +1378,14 @@ fn named_login(name: &str) -> Option<&'static str> {
     })
 }
 
-/// The MCP server to hand this session, in the transport the Harness takes.
-///
-/// The app's own loopback server first, because its tools dispatch against the
-/// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023).
-/// A Harness that does not advertise `mcpCapabilities.http` on `initialize` —
-/// `hermes` does not — gets `mcp_launch`'s stdio server instead, which relays
-/// to that same loopback server and so reaches the same Instances (ADR-0026).
-/// The test is that handshake bit and only that bit: a Harness may be a fluent
-/// HTTP MCP client and still not set it, and one that starts setting it takes
-/// the loopback branch above with nothing to change here. The shim is handed
-/// the endpoint in its environment; with no loopback server to name, it answers
-/// every call with a failure rather than a stubbed success. That fallback
-/// always exists (#497), so `None` here is only ever an exe this code cannot
-/// recognise.
+/// The MCP server to hand this session. Loopback first (ADR-0023). No
+/// `mcpCapabilities.http` on handshake means the stdio shim (ADR-0026).
+/// Branch on that bit only. Token in the Authorization header, never URL or argv.
 fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
     choose_mcp(handshake, crate::mcp_http::endpoint(), mcp_stdio())
 }
 
-/// The choice itself, with both candidates handed in: a test binary is not
+/// The choice itself, with both candidates handed in. A test binary is not
 /// named `ai-buddy` and has no sidecar beside it, so `mcp_stdio` finds nothing
 /// there and the stdio branch would never be exercised.
 fn choose_mcp(
@@ -1630,13 +1409,8 @@ fn choose_mcp(
 }
 
 /// The stdio MCP server to hand the session, when one can be launched.
-///
-/// The Development row or `AI_BUDDY_MCP_BIN`, else a sidecar beside the app,
-/// else the app binary re-executed as its own server.
-///
-/// Read here rather than at construction, so a path typed in the window is the
-/// one the next attach hands over (#447). `AI_BUDDY_MCP_BIN` still outranks
-/// the file; `dev_flags` holds that decision for every row.
+/// Read here rather than at construction, so a path typed in the window is
+/// the one the next attach hands over. `AI_BUDDY_MCP_BIN` still outranks the file.
 fn mcp_stdio() -> Option<McpLaunch> {
     let configured = crate::dev_flags::mcp_bin();
     mcp_launch(
@@ -1677,10 +1451,8 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
 }
 
 /// The one attachment, and what it needs to be opened again.
-///
-/// `forward` outlives the Session it was handed to: it belongs to the Shell's
-/// window handle, not to any one child, and `retarget` has no other way to get
-/// one (#500).
+/// `forward` belongs to the Shell's window handle, not to any one child, and
+/// `retarget` has no other way to get one.
 struct Attachment {
     session: Option<Arc<Session>>,
     forward: Option<Arc<Forward>>,
@@ -1697,13 +1469,9 @@ fn attachment() -> MutexGuard<'static, Attachment> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Read the source — the variable, else `saved` from Settings — and hold the
-/// Session until the row moves it or the process exits.
-///
-/// A process global rather than a field threaded through `DirectorSettings`:
-/// the session is one per app (ADR-0008), and a Retarget from Settings
-/// rebuilds `DirectorSettings` from scratch, which would drop a field. The row
-/// reaches it through `retarget` (#500).
+/// Read the source, the variable, else `saved` from Settings, and hold the
+/// Session until the row moves it or the process exits. Process-global because
+/// the session is one per app (ADR-0008) and a Retarget rebuilds `DirectorSettings`.
 pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
     let mut slot = attachment();
     if slot.forward.is_some() {
@@ -1726,16 +1494,11 @@ fn open(launch: Option<Launch>, forward: Arc<Forward>) -> Option<Arc<Session>> {
 }
 
 /// What a Completer source row now in force asks of the attachment.
-///
-/// Whether the child is alive is deliberately not an input, and that is the
-/// decision #500 turns on: a Harness that is set and not answering is still
-/// the Completer (ADR-0008), and `Session::attach` respawns it on its own
-/// backoff. So `Drop` — the one arm that leaves the HTTP Completer in charge —
-/// is only ever reached by a row that names no Harness, which is the user
-/// picking Off and not a session failing.
+/// Alive is not an input. A set Harness is still the Completer (ADR-0008).
+/// `Drop` is only a row that names no Harness, never a session failing.
 #[derive(Debug, PartialEq, Eq)]
 enum Reattach {
-    /// The row still names what is attached. A dead one included: a fresh
+    /// The row still names what is attached, a dead one included. A fresh
     /// Session for the same command line would throw away the backoff the old
     /// one earned and respawn on every Apply.
     Stand,
@@ -1752,14 +1515,9 @@ fn reattach(attached: Option<&Launch>, wanted: Option<Launch>) -> Reattach {
     }
 }
 
-/// Re-open the attachment for the Completer source now in force. #500.
-///
-/// This is the whole of what moves the handle `attach` took at startup. A wire
-/// that dies is not: that is the Session's own business, and the respawn
-/// `charge_loss` paces needs nothing from here.
-///
-/// `spawning` is the Director's switch, as it is for `startup_lines`: opening
-/// a session no wake will ever reach spends a child process for nothing.
+/// Re-open the attachment for the Completer source now in force.
+/// A wire that dies is the Session's own business. `spawning` is the
+/// Director's switch, so a session no wake will reach is not opened.
 pub fn retarget(saved: Option<&str>, spawning: bool) {
     let wanted = from_settings(saved);
     let mut slot = attachment();
@@ -1774,18 +1532,14 @@ pub fn retarget(saved: Option<&str>, spawning: bool) {
         Reattach::Drop => None,
         Reattach::Open(launch) => open(Some(launch), forward),
     };
-    // Swapped under the one lock `attached` reads: a gap here is a wake landing
+    // Swapped under the one lock `attached` reads. A gap here is a wake landing
     // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
     let old = std::mem::replace(&mut slot.session, opened.clone());
     drop(slot);
     if let Some(old) = old {
-        // On the calling thread, which for the only caller is the UI thread —
-        // a Settings row committing inside the popup's own action. That is
-        // affordable because `Msg::Shutdown` now ends a turn in flight rather
-        // than being swallowed by it (`acp_wire::turn`), so `wait_for_exit`
-        // returns as fast as the kill does. It used to wait out the whole
-        // `REAP`, which froze the window for two seconds and left the menu the
-        // pick came from still down when the next one arrived (#634).
+        // On the calling thread, the UI thread for the only caller. Affordable
+        // because `Msg::Shutdown` ends a turn in flight rather than being
+        // swallowed by it, so `wait_for_exit` returns as fast as the kill does.
         old.shutdown();
     }
     match &opened {
@@ -1804,35 +1558,22 @@ pub fn attached() -> Option<Arc<Session>> {
 }
 
 /// Whether an attached Harness is actually answering, not merely configured.
-///
-/// `attach` holds the handle until Off or process exit whether or not the child
-/// ever spawned, so a source row naming a Harness this machine has not got
-/// leaves a `Some` that never answers a wake — and `ModelDirector` has already
-/// fallen back to Static. Settings asks this rather than `attached`, because
-/// freezing the HTTP rows on a Harness that never started leaves no reachable
-/// Completer at all and no way back but a hand-edit of the file (#452).
-///
-/// A wire lost mid-session reads the same way: `lost` clears the flag, and the
-/// next wake respawns.
+/// `attach` holds the handle even when the child never spawned. Settings asks
+/// this rather than `attached`, or a missing CLI freezes every Completer.
 pub fn driving() -> bool {
     attached().is_some_and(|session| session.inspect().alive)
 }
 
 /// The error the attached Harness answered the last turn with, if it did.
-///
-/// The Completer seam hands core a bare `Err`, and core has one word for every
-/// way a wake can produce no proposal. So a version refusal, a signed-out CLI
-/// and an unparsable reply all reach the Shell as `Wake::Failed` — and the day
-/// #514 describes is what that costs. Read only where the wake failed.
+/// The Completer seam hands core a bare `Err`, so a version refusal and an
+/// unparsable reply both reach the Shell as `Wake::Failed`. Read only on failure.
 pub fn last_error() -> Option<String> {
     attached().and_then(|session| session.inspect().last_error)
 }
 
 /// What `startup_lines` says about the attachment, if there is one.
-///
-/// `spawning` is whether one is actually coming: the Director's own switch
-/// gates `spawn_preflight`, and a line promising a spawn that the switch has
-/// already refused is worse than no line.
+/// `spawning` is whether one is actually coming. A line promising a spawn
+/// the Director's switch has already refused is worse than no line.
 pub fn startup_lines(spawning: bool) -> Vec<String> {
     let Some(session) = attached() else {
         return Vec::new();
@@ -1861,10 +1602,9 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
             (None, None) => "harness: no MCP server; the session gets no tools".to_string(),
         },
     ];
-    // Startup cannot report a spawn that has not happened: `attach` runs on the
-    // preflight thread and lands after these lines. Said here so the `harness:`
-    // line that follows reads as this attachment's outcome rather than as
-    // unrelated noise a moment later.
+    // Startup cannot report a spawn that has not happened. `attach` runs on
+    // the preflight thread and lands after these lines. Said here so the next
+    // `harness:` line reads as this attachment's outcome.
     if spawning {
         lines.push(
             "harness: attaching now; the next `harness:` line on this stream is how it went"
@@ -1887,7 +1627,7 @@ mod tests {
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
 
-    /// #690: a tool-using Ask is not the Model API hop.
+    /// A tool-using Ask is not the Model API hop.
     #[test]
     fn an_unset_timeout_gives_a_harness_turn_minutes_not_the_http_hop() {
         crate::model::tests::with_env(None, None, None, || {
@@ -1901,7 +1641,7 @@ mod tests {
         });
     }
 
-    /// The Model API field is not this budget (#690).
+    /// The Model API field is not this budget.
     #[test]
     fn a_director_timeout_does_not_set_the_harness_turn() {
         crate::model::tests::with_env(None, None, None, || {
@@ -1913,8 +1653,7 @@ mod tests {
         });
     }
 
-    /// The Development field and `AI_BUDDY_HARNESS_TURN_TIMEOUT` still win
-    /// (#690).
+    /// The Development field and `AI_BUDDY_HARNESS_TURN_TIMEOUT` still win.
     #[test]
     fn a_set_timeout_is_the_harness_turn_budget() {
         crate::model::tests::with_env(None, None, None, || {
@@ -1926,7 +1665,7 @@ mod tests {
         });
     }
 
-    /// The fake ACP agent: this test binary re-executed with `script=<name>`
+    /// The fake ACP agent. This test binary re-executed with `script=<name>`
     /// among its filters, speaking newline JSON-RPC on stdio. Returns at once
     /// under a normal `cargo test`, where no script is named.
     #[test]
@@ -1993,8 +1732,8 @@ mod tests {
             };
             let id = message.get("id").cloned().unwrap_or(Value::Null);
             match message.get("method").and_then(Value::as_str) {
-                // A child that starts and then fails: the spawn is not
-                // `Missing`, which is what #659 turns on.
+                // A child that starts and then fails. The spawn is not
+                // `Missing`.
                 Some("initialize") if script == "die-initializing" => std::process::exit(3),
                 Some("initialize") => say(json!({"jsonrpc": "2.0", "id": id, "result": {
                     "protocolVersion": 1,
@@ -2013,10 +1752,8 @@ mod tests {
                         );
                     } else {
                         // A new session is a new id. Without the reset the fake
-                        // would hand back whichever id the last prompt named,
-                        // and a reopen could not be told apart from the dead
-                        // session it replaced. Counted so two Instances cannot
-                        // share a minted id (#558).
+                        // would hand back whichever id the last prompt named.
+                        // Counted so two Instances cannot share a minted id.
                         let n = recorded(count, "new");
                         session = if n <= 1 {
                             "fresh-id".to_string()
@@ -2047,8 +1784,8 @@ mod tests {
                     let prompts = recorded(count, "prompt");
                     match script {
                         "refusal" => stop(&id, "refusal"),
-                        // #448: the session the load claimed to restore is
-                        // not there, so the first prompt refuses and the one
+                        // The session the load claimed to restore is not
+                        // there, so the first prompt refuses and the one
                         // after the reopen is served.
                         "load-dead" if prompts == 1 => stop(&id, "refusal"),
                         "load-refusal" => stop(&id, "refusal"),
@@ -2173,7 +1910,7 @@ mod tests {
             }
         }
 
-        /// The next forwarded settlement: the request, and what won it.
+        /// The next forwarded settlement, the request and what won it.
         fn settled(&self) -> (String, Option<String>) {
             match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Settled { request, option }) => (request, option),
@@ -2274,8 +2011,7 @@ mod tests {
 
     /// A thought is forwarded to the Chat surface and written nowhere. The
     /// Action Log points at the Harness's own session dump rather than copying
-    /// it (CONTEXT.md), and streamed reasoning is exactly the copy it refuses
-    /// (ADR-0025).
+    /// it (CONTEXT.md). Streamed reasoning is the copy it refuses (ADR-0025).
     #[test]
     fn a_thought_reaches_the_surface_and_not_the_action_log() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-thought-{}", uuid::Uuid::new_v4()));
@@ -2299,10 +2035,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The split #697 landed on: the steps go to the reader on the Chat
-    /// surface, and the Action Log keeps the count. The log points at the
-    /// Harness's own session dump rather than copying it (CONTEXT.md), and the
-    /// step text is that copy.
+    /// The steps go to the reader on the Chat surface, and the Action Log
+    /// keeps the count. The log points at the Harness's own session dump
+    /// rather than copying it (CONTEXT.md). The step text is that copy.
     #[test]
     fn a_plan_reaches_the_surface_and_the_action_log_keeps_the_count() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-plan-{}", uuid::Uuid::new_v4()));
@@ -2332,9 +2067,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The clear `end_turn` fires on every turn. It has to reach the surface,
-    /// and it has to leave the Action Log alone: a line per turn saying zero
-    /// steps is noise about a turn that never planned.
+    /// The clear `end_turn` fires on every turn. It has to reach the surface
+    /// and leave the Action Log alone. A line per turn saying zero steps is
+    /// noise about a turn that never planned.
     #[test]
     fn an_empty_plan_clears_the_surface_and_writes_no_log_line() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-plan-end-{}", uuid::Uuid::new_v4()));
@@ -2354,13 +2089,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// #500's whole policy, at the seam that decides it. Asserted through
-    /// `reattach` rather than a live retarget: the attachment is a process
-    /// global one test may not set for the whole binary.
-    ///
-    /// The two `Stand` cases are the ADR-0008 half. A Harness that is set is
-    /// the Completer whether or not its child answers, so nothing here can
-    /// reach `Drop` from a death — only from a row that names no Harness.
+    /// Asserted through `reattach` rather than a live retarget, because the
+    /// attachment is process-global. A set Harness is the Completer even if
+    /// silent (ADR-0008). Only Off reaches `Drop`.
     #[test]
     fn only_the_source_row_moves_the_attachment_and_only_off_drops_it() {
         let hermes = launch(Some("hermes")).unwrap();
@@ -2389,7 +2120,7 @@ mod tests {
         assert_eq!(reattach(Some(&hermes), None), Reattach::Drop);
     }
 
-    /// ADR-0010 rules 4 and 5, as code: the child gets our environment as
+    /// ADR-0010 rules 4 and 5, as code. The child gets our environment as
     /// it is, with no key set, no config dir moved, and no `--bare`.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
@@ -2417,7 +2148,7 @@ mod tests {
         }
     }
 
-    /// Production change that would fail this: the child stays in the app's
+    /// Production change that would fail this. The child stays in the app's
     /// process group, so Ctrl+C SIGINTs Claude's adapter and it dumps
     /// `Query closed before response received` on the way down.
     #[cfg(unix)]
@@ -2460,15 +2191,9 @@ mod tests {
         );
     }
 
-    /// Production change that would fail this: `kill_harness_tree` SIGKILLs a
-    /// group without checking whose it is, and a child that never left ours
-    /// takes this process with it. That is how `--probe-harness` died at -9
-    /// after printing `end_turn` (#457).
-    ///
-    /// Asserted through the predicate rather than by calling
-    /// `kill_harness_tree` on a child in our own group. That call is the bug
-    /// itself: were the guard to regress, it would SIGKILL this test binary,
-    /// `cargo test` and the terminal running them, with no failure printed.
+    /// `kill_harness_tree` SIGKILLs a group without checking whose it is, so a
+    /// child that never left ours takes this process with it. Asserted through
+    /// the predicate. Calling it on our group would SIGKILL this test binary.
     #[cfg(unix)]
     #[test]
     fn our_own_group_is_never_killable() {
@@ -2628,9 +2353,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #558: the file is a map of remembered ids, not one pointer the next
-    /// buddy would inherit. Instance and Character together, because a
-    /// retarget keeps the Instance and changes the Character Prompt.
+    /// The file is a map of remembered ids, not one pointer the next buddy
+    /// would inherit. Instance and Character together, because a retarget
+    /// keeps the Instance and changes the Character Prompt.
     #[test]
     fn the_session_file_keys_the_id_by_instance_and_character() {
         let (fx, session) = Fixture::new("happy");
@@ -2648,8 +2373,8 @@ mod tests {
         session.shutdown();
     }
 
-    /// #558: two Character Instances never share an ACP session, even when
-    /// they are the same Character. One Harness child throughout.
+    /// Two Character Instances never share an ACP session, even when they
+    /// are the same Character. One Harness child throughout.
     #[test]
     fn two_character_instances_do_not_share_an_acp_session() {
         let (fx, session) = Fixture::new("happy");
@@ -2676,8 +2401,8 @@ mod tests {
         assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
     }
 
-    /// #698 / ADR-0012: an Instance Prompt change cannot retrofit the opening
-    /// turn, so the next wake must be `session/new`, not a turn on the old id.
+    /// An Instance Prompt change cannot retrofit the opening turn (ADR-0012),
+    /// so the next wake must be `session/new`, not a turn on the old id.
     #[test]
     fn dropping_a_conversation_opens_a_new_acp_session() {
         let (fx, session) = Fixture::new("happy");
@@ -2703,8 +2428,8 @@ mod tests {
         assert_eq!(saved.sessions[0].session_id, "fresh-id-2");
     }
 
-    /// #698: the Instance Prompt is in every lane, so dropping the Instance
-    /// must forget Blank AI as well as the shaped conversation.
+    /// The Instance Prompt is in every lane, so dropping the Instance must
+    /// forget Blank AI as well as the shaped conversation.
     #[test]
     fn dropping_an_instance_forgets_every_lane() {
         let (fx, session) = Fixture::new("happy");
@@ -2735,7 +2460,7 @@ mod tests {
         assert_eq!(fx.count("new"), 4);
     }
 
-    /// #698: a restart must not `session/load` the id that save just tore down.
+    /// A restart must not `session/load` the id that save just tore down.
     #[test]
     fn dropping_a_conversation_forgets_the_saved_id() {
         let (fx, session) = Fixture::new("load");
@@ -2756,9 +2481,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #679: Start a new session drops every live Instance, so every lane has
-    /// to open with `session/new`. A restart between the two would be enough
-    /// to load one of the torn-down ids back, which is the box this is for.
+    /// Start a new session drops every live Instance, so every lane has to
+    /// open with `session/new`. A restart between the two would load a
+    /// torn-down id back, which is the box this is for.
     #[test]
     fn a_new_session_for_every_instance_loads_no_old_id() {
         let (fx, session) = Fixture::new("load");
@@ -2801,8 +2526,8 @@ mod tests {
         );
     }
 
-    /// #698: dropping one Instance's conversation must not mint a new session
-    /// for another Instance that still holds its opening turn.
+    /// Dropping one Instance's conversation must not mint a new session for
+    /// another Instance that still holds its opening turn.
     #[test]
     fn dropping_one_instance_leaves_the_other_conversation() {
         let (fx, session) = Fixture::new("happy");
@@ -2829,11 +2554,9 @@ mod tests {
         );
     }
 
-    /// #657: blank-AI mode is a different conversation, not a different turn
-    /// in the same one. The agent holds this lane's history, so one session
-    /// serving both modes would answer a blank prompt out of a Character it
-    /// was told to forget — and the mode would measure the prompt it claims
-    /// not to have sent.
+    /// Blank-AI mode is a different conversation. One session serving both
+    /// would answer a blank prompt out of a Character it was told to forget,
+    /// and the mode would measure a prompt it claims not to have sent.
     #[test]
     fn a_blank_wake_does_not_continue_the_shaped_session() {
         let (fx, session) = Fixture::new("happy");
@@ -2867,8 +2590,8 @@ mod tests {
         );
     }
 
-    /// #558: switching away and back resumes the first Instance's session;
-    /// the second Instance's id is still remembered.
+    /// Switching away and back resumes the first Instance's session. The
+    /// second Instance's id is still remembered.
     #[test]
     fn switching_back_resumes_the_first_instance_session() {
         let (fx, session) = Fixture::new("happy");
@@ -2899,9 +2622,9 @@ mod tests {
         assert_eq!(fx.count("spawn"), 1);
     }
 
-    /// #558: a Character switch is a different identity. Switching back
-    /// loads the previous Character's session rather than leaving the new
-    /// Character holding the old transcript.
+    /// A Character switch is a different identity. Switching back loads the
+    /// previous Character's session rather than leaving the new Character
+    /// holding the old transcript.
     #[test]
     fn a_character_switch_does_not_keep_the_previous_transcript() {
         let (fx, session) = Fixture::new("happy");
@@ -2929,7 +2652,7 @@ mod tests {
         assert_eq!(fx.count("new"), 2);
     }
 
-    /// #558: a new Session reading the file restores each identity's id.
+    /// A new Session reading the file restores each identity's id.
     #[test]
     fn a_restart_loads_each_instance_session_from_the_file() {
         let (fx, session) = Fixture::new("load");
@@ -2954,8 +2677,8 @@ mod tests {
         assert_eq!(fx.count("new"), 0, "restart minted instead of loading");
     }
 
-    /// #558: the old single pointer cannot be attributed, so it is not
-    /// applied to every buddy.
+    /// The old single pointer cannot be attributed, so it is not applied
+    /// to every buddy.
     #[test]
     fn an_unattributed_legacy_id_is_not_applied_to_an_instance() {
         let (fx, session) = Fixture::new("load");
@@ -2984,7 +2707,7 @@ mod tests {
     }
 
     /// `session_id` names the conversation, not the wake. Which Instance woke,
-    /// and whether the user asked for it, come through the `WakeRequest`. #435.
+    /// and whether the user asked for it, come through the `WakeRequest`.
     #[test]
     fn the_prompt_event_names_the_instance_and_the_wake_kind() {
         let (fx, session) = Fixture::new("happy");
@@ -3005,8 +2728,8 @@ mod tests {
         assert_eq!(prompts[1]["session_id"], json!("fresh-id"));
     }
 
-    /// #435: without this the log said a prompt went out and never what came
-    /// of it, so "did we take what the Harness proposed" needed the trace flag.
+    /// Without this the log said a prompt went out and never what came of it.
+    /// Taking what the Harness proposed would have needed the trace flag.
     #[test]
     fn the_parsed_event_says_what_the_reply_became() {
         let spoke = |line: &str| {
@@ -3032,15 +2755,15 @@ mod tests {
         assert_eq!(named["result"], json!("proposal"));
         assert_eq!(named["behavior"], json!("prowl"));
 
-        // An empty name is the Engine's "talk and speak": the model chose to
+        // An empty name is the Engine's "talk and speak". The model chose to
         // talk rather than name a Behavior.
         let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None, None, None);
         assert_eq!(talked["wake"], json!("proactive"));
         assert_eq!(talked["result"], json!("speech"));
         assert_eq!(talked["behavior"], json!(null));
 
-        // #243: the same shape as speech on the wire, and a different thing —
-        // the name it named is what makes it readable as a miss.
+        // The same shape as speech on the wire, and a different thing. The
+        // name it named is what makes it readable as a miss.
         let missed = parsed_fields(
             "buddy-1",
             &spoke("prowll"),
@@ -3057,9 +2780,8 @@ mod tests {
         assert_eq!(failed["behavior"], json!(null));
         assert_eq!(failed["withdrawn_for"], json!(null));
 
-        // #514: the Harness answered, and what it answered was an error. That
-        // is not the same outcome as a reply nothing could be parsed out of,
-        // and reading it as one is what hid a version refusal for a whole day.
+        // The Harness answered, and what it answered was an error. That is
+        // not the same outcome as a reply nothing could be parsed out of.
         let errored = parsed_fields(
             "buddy-1",
             &Wake::Failed,
@@ -3075,7 +2797,7 @@ mod tests {
         );
 
         // Our own cancel reaches this as an error, and the withdrawal is what
-        // the line has to say. #499.
+        // the line has to say.
         let withdrawn = parsed_fields(
             "buddy-1",
             &Wake::Failed,
@@ -3097,13 +2819,13 @@ mod tests {
             reply.as_ref().is_err_and(|why| why.contains("refusal")),
             "{reply:?}"
         );
-        // #448: only a loaded id is reopened. This session came from
-        // `session/new`, so the refusal is the Harness's answer to the prompt.
+        // Only a loaded id is reopened. This session came from `session/new`,
+        // so the refusal is the Harness's answer to the prompt.
         assert_eq!(fx.count("new"), 1);
         assert_eq!(fx.count("prompt"), 1);
-        // #514: the words the turn came back with outlive it, because every
-        // reader downstream — the `parsed` line, the Chat surface — otherwise
-        // has only "no proposal" to say about a Harness that is answering.
+        // The words the turn came back with outlive it, because every reader
+        // downstream otherwise has only "no proposal" to say about a Harness
+        // that is answering.
         assert!(
             session
                 .inspect()
@@ -3133,8 +2855,8 @@ mod tests {
         let ask = fx.ask();
         assert_eq!(ask.title.as_deref(), Some("rm -rf /"));
         assert_eq!(ask.kind.as_deref(), Some("execute"));
-        // #678: what the tool call says about itself has to survive the trip,
-        // or the surface is left asking the user to approve a kind.
+        // What the tool call says about itself has to survive the trip, or
+        // the surface is left asking the user to approve a kind.
         assert_eq!(ask.content, ["Delete everything?"]);
         assert_eq!(ask.input, Some(json!({"command": "rm -rf /"})));
         assert_eq!(ask.locations, ["/"]);
@@ -3158,7 +2880,7 @@ mod tests {
         assert!(fx.wait_for("cancel", 1));
         assert!(fx.wait_for("perm:cancelled", 1));
         // A row nobody answered is retired too, or its buttons outlive the
-        // turn — with no option, because nothing was chosen.
+        // turn, with no option, because nothing was chosen.
         assert_eq!(fx.settled(), (ask.request, None));
         session.shutdown();
     }
@@ -3201,8 +2923,8 @@ mod tests {
         session.shutdown();
     }
 
-    /// #437: one count is shared by every way a wake goes unserved that leaves
-    /// a child which might come back, so a Harness that dies is not respawned
+    /// One count is shared by every way a wake goes unserved that leaves a
+    /// child which might come back, so a Harness that dies is not respawned
     /// on the very next wake.
     #[test]
     fn a_death_under_a_turn_buys_the_same_wait_a_failed_spawn_does() {
@@ -3217,10 +2939,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// The death that reaches nobody: `initialize` is answered and the child
-    /// exits before `session/new`, so the loss surfaces in `open_session`
-    /// rather than in a turn. Charged all the same, or this Harness is
-    /// respawned on every wake forever.
+    /// The death that reaches nobody. `initialize` is answered and the child
+    /// exits before `session/new`, so the loss surfaces in `open_session`.
+    /// Charged all the same, or this Harness is respawned on every wake forever.
     #[test]
     fn a_death_before_the_session_opens_buys_the_same_wait() {
         let (fx, session) = Fixture::new("die-opening");
@@ -3235,7 +2956,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// The other half of one counter: a turn the child answered clears a death
+    /// The other half of one counter. A turn the child answered clears a death
     /// from earlier, whether the answer was a reply, a stop reason, or a
     /// timeout we gave up on.
     #[test]
@@ -3266,7 +2987,7 @@ mod tests {
         let reply = session.complete(&asking("hi"));
         assert_eq!(reply, Err(not_authenticated("fake --login")));
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
-        // Inside the gate: fails fast, no second session/new on the wire.
+        // Inside the gate. Fails fast, no second session/new on the wire.
         assert!(session.complete(&asking("hi")).is_err());
         assert_eq!(fx.count("new"), 1);
         session.shutdown();
@@ -3319,7 +3040,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// #448: `hermes` answers a `session/load` it cannot honour with an empty
+    /// `hermes` answers a `session/load` it cannot honour with an empty
     /// success result, so the id is dead and only a turn says so. One reopen,
     /// and the retry lands on a session the Harness actually has.
     #[test]
@@ -3342,8 +3063,8 @@ mod tests {
         session.shutdown();
     }
 
-    /// The other half of #448: the reopen is one attempt, not a ladder. A
-    /// Harness that refuses the fresh session too has answered.
+    /// The reopen is one attempt, not a ladder. A Harness that refuses the
+    /// fresh session too has answered.
     #[test]
     fn a_reopened_session_that_refuses_again_is_a_refusal() {
         let (fx, session) = Fixture::new("load-refusal");
@@ -3362,10 +3083,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// `cancelled` is a stop reason, so a turn cancelled on a loaded session
-    /// must not read as evidence the load did not restore: reopening would
-    /// re-send a prompt nothing waits for, carrying the Instance Prompt a save
-    /// just replaced (ADR-0012). A cancel says nothing about the id. #704.
+    /// `cancelled` is a stop reason, not evidence the load failed. Reopening
+    /// would re-send a prompt carrying the Instance Prompt a save just
+    /// replaced (ADR-0012). A cancel says nothing about the id.
     #[test]
     fn a_cancelled_turn_is_not_reopened_as_a_failed_load() {
         let (fx, session) = Fixture::new("load-slow");
@@ -3381,7 +3101,7 @@ mod tests {
         };
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         // The cancel arrives the way a save's does, through the path a newer
-        // wake already takes: the loser writes its own line before the winner
+        // wake already takes. The loser writes its own line before the winner
         // gets the lock, so what it did with the cancel is settled here.
         assert_eq!(
             session.complete(&asking("again")),
@@ -3395,11 +3115,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #659, and the reversal of what this test used to pin. A binary `PATH`
-    /// has not got was charged the respawn ladder, so a Harness this machine
-    /// never had was retried every five minutes as though the child might come
-    /// back, and every surface got an errno instead of a sentence. The ladder
-    /// itself is untouched, which the three `backoff` reads below still hold.
+    /// A binary that `PATH` has not got is not charged the respawn ladder. The
+    /// next wake asks again. The ladder itself is untouched, which the three
+    /// `backoff` reads below still hold.
     #[test]
     fn a_missing_binary_says_so_instead_of_backing_off() {
         const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
@@ -3434,11 +3152,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// #659's other half: `missing` has to be cleared by a spawn that fails,
-    /// not only by one that works. A machine that installs the CLI and then
-    /// fails to initialize used to keep the old `missing`, so the Settings row
-    /// told the user to install what they had just installed and never named
-    /// the real failure.
+    /// `missing` has to be cleared by a spawn that fails, not only by one
+    /// that works. Otherwise Settings tells the user to install what they
+    /// just installed and never names the real failure.
     #[test]
     fn a_spawn_that_fails_for_another_reason_stops_saying_not_installed() {
         let (fx, session) = Fixture::new("die-initializing");
@@ -3457,10 +3173,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&fx.dir);
     }
 
-    /// #659's subtle half: `codex` attaches through `npx` and logs in through
-    /// `codex`, so `argv[0]` being present says nothing about the vendor CLI
-    /// and the two argvs can disagree about what this machine has got. What is
-    /// named is the file that was looked for, never the preset.
+    /// `codex` attaches through `npx` and logs in through `codex`, so `argv[0]`
+    /// being present says nothing about the vendor CLI. What is named is the
+    /// file that was looked for, never the preset.
     #[test]
     fn a_missing_launcher_is_not_a_missing_vendor_cli() {
         let launch = launch(Some("codex")).unwrap();
@@ -3471,8 +3186,8 @@ mod tests {
         assert_eq!(session.inspect().missing.as_deref(), Some("npx"));
     }
 
-    /// ADR-0016's newest-wins, at the Harness seam: the Poke that arrives
-    /// under a turn takes it rather than being refused (#472).
+    /// ADR-0016's newest-wins, at the Harness seam. The Poke that arrives
+    /// under a turn takes it rather than being refused.
     #[test]
     fn a_newer_wake_cancels_the_turn_in_flight_and_takes_it() {
         let (fx, session) = Fixture::new("slow");
@@ -3494,8 +3209,8 @@ mod tests {
             "the displaced turn was not cancelled"
         );
         assert_eq!(fx.count("prompt"), 2, "the second prompt never went out");
-        // A withdrawal, not a failure: cancelled by name in the log, no
-        // `refused` line, and no respawn backoff charged (#437).
+        // A withdrawal, not a failure. Cancelled by name in the log, no
+        // `refused` line, and no respawn backoff charged.
         let displaced = worker.join().unwrap().unwrap_err();
         assert!(displaced.contains("cancelled"), "{displaced}");
         assert!(
@@ -3509,17 +3224,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #634: switching the AI source commits on the UI thread, so `retarget`
-    /// must not wait on the child it is dropping. It does wait — `shutdown`
-    /// calls `wait_for_exit(REAP)`, because a caller that must not outlive its
-    /// child has to — and that is only cheap because `Msg::Shutdown` ends the
-    /// turn in flight instead of being swallowed by it.
-    ///
-    /// Production change that would fail this: `acp_wire::turn` handling
-    /// `Msg::Shutdown` like `Msg::Cancel` again. The turn then loops for a
-    /// `cancelled` stop the fake never sends, the break waits for the second
-    /// Shutdown `Drop for Wire` posts, and `retarget` pays the full `REAP` —
-    /// 2.0s against the 133µs it costs with the fix.
+    /// Switching the AI source commits on the UI thread, so `retarget` must
+    /// not wait on the child it is dropping. That is cheap only because
+    /// `Msg::Shutdown` ends the turn in flight instead of being swallowed by it.
     #[test]
     fn retarget_does_not_wait_out_a_turn_in_flight() {
         let (fx, session) = Fixture::new("slow");
@@ -3528,8 +3235,8 @@ mod tests {
             let session = Arc::clone(&session);
             thread::spawn(move || session.complete(&asking("hi")))
         };
-        // The prompt is on the wire and unanswered, which is the state the
-        // freeze needed: `shutdown` posts into a `turn`, not into `serve`.
+        // The prompt is on the wire and unanswered. `shutdown` posts into a
+        // `turn`, not into `serve`.
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
         {
             let mut slot = attachment();
@@ -3537,7 +3244,7 @@ mod tests {
             slot.session = Some(Arc::clone(&session));
         }
         let start = Instant::now();
-        // `""` is Off, which `reattach` reads as `Drop`: the session goes and
+        // `""` is Off, which `reattach` reads as `Drop`. The session goes and
         // nothing replaces it.
         retarget(Some(""), false);
         let waited = start.elapsed();
@@ -3548,18 +3255,15 @@ mod tests {
             slot.session = None;
             slot.forward = None;
         }
-        // Fast and reaped are the same fact: `shutdown` returns either when
-        // `wait_for_exit` sees the wire thread end — which `run` does only
-        // after `kill_harness_tree` — or when `REAP` runs out at a flat 2s. So
-        // anything under half a second is the child killed, and 2s is the
-        // child still running, which is exactly what stderr says when this
-        // assert fails: "was still running 2s after shutdown".
+        // Fast and reaped are the same fact. `shutdown` returns when the
+        // wire thread ends after `kill_harness_tree`, or when `REAP` runs
+        // out at 2s. Under half a second is killed. 2s is still running.
         assert!(
             waited < Duration::from_millis(500),
             "retarget waited {waited:?} on the dropped session"
         );
         assert!(attached().is_none(), "the Off pick did not take");
-        // And the child really was killed rather than left behind: the wire
+        // And the child really was killed rather than left behind. The wire
         // thread ends only after `kill_harness_tree`, and the turn's caller
         // only returns once that thread has hung up on it.
         assert!(
@@ -3572,8 +3276,8 @@ mod tests {
         );
     }
 
-    /// #499: one child serves every Instance (ADR-0008), so buddy B's wake
-    /// takes buddy A's turn without A's own slot ever having been superseded.
+    /// One child serves every Instance (ADR-0008), so buddy B's wake takes
+    /// buddy A's turn without A's own slot ever having been superseded.
     /// Nothing raised A's abandon flag, so A took a wake that read as broken.
     #[test]
     fn a_turn_taken_for_another_instance_is_recorded_as_withdrawn() {
@@ -3611,16 +3315,15 @@ mod tests {
         );
         assert_eq!(parsed["result"], json!("withdrawn"), "{parsed}");
         assert_eq!(parsed["withdrawn_for"], json!("buddy-2"), "{parsed}");
-        // One wake, one withdrawal: the next wake this Instance takes is its
+        // One wake, one withdrawal. The next wake this Instance takes is its
         // own however that one ends.
         assert_eq!(session.claim_withdrawn_wake("buddy-1"), None);
         session.shutdown();
     }
 
-    /// #704: ADR-0012 says saving an Instance Prompt cancels the reply in
-    /// flight as well as tearing the conversation down. Dropping the
-    /// conversation alone left the old ACP session generating, spending
-    /// tokens on a transcript the surface had already replaced.
+    /// Saving an Instance Prompt cancels the reply in flight as well as
+    /// tearing the conversation down (ADR-0012). Dropping the conversation
+    /// alone leaves the old ACP session generating on a replaced transcript.
     #[test]
     fn saving_an_instance_prompt_cancels_that_instances_turn() {
         let (fx, session) = Fixture::new("slow");
@@ -3637,8 +3340,8 @@ mod tests {
         );
         let stopped = worker.join().unwrap().unwrap_err();
         assert!(stopped.contains("cancelled"), "{stopped}");
-        // A withdrawal, not a fault: the turn line says who the turn was given
-        // up for, and the Chat surface is told nothing broke (#499).
+        // A withdrawal, not a fault. The turn line says who the turn was given
+        // up for, and the Chat surface is told nothing broke.
         let turns = fx.events("turn");
         assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
         assert_eq!(turns[0]["withdrawn_for"], json!("buddy-1"), "{turns:?}");
@@ -3650,9 +3353,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #704, the other direction: one child serves every Instance (ADR-0008),
-    /// so a save that cancelled whatever held the turn would stop buddy B
-    /// mid-reply because buddy A edited a prompt B has nothing to do with.
+    /// One child serves every Instance (ADR-0008), so a save that cancelled
+    /// whatever held the turn would stop buddy B mid-reply because buddy A
+    /// edited a prompt B has nothing to do with.
     #[test]
     fn saving_one_instances_prompt_leaves_another_instances_turn_alone() {
         let (fx, session) = Fixture::new("slow");
@@ -3664,7 +3367,7 @@ mod tests {
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
         session.drop_conversation("buddy-2");
         // Long enough for a cancel to have reached the child and been
-        // recorded: the one below is recorded well inside this wait.
+        // recorded. The one below is recorded well inside this wait.
         thread::sleep(Duration::from_millis(250));
         assert_eq!(
             fx.count("cancel"),
@@ -3687,10 +3390,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// The withdrawal a later supersede must not erase (#499). The `parsed`
-    /// line for the wake that lost the session is written on the Shell side,
-    /// frames after the turn ended, and one session serves every Instance — so
-    /// by then a third wake may already have taken the session from a fourth.
+    /// The withdrawal a later supersede must not erase. The `parsed` line is
+    /// written on the Shell side, frames after the turn ended, so a third
+    /// wake may already have taken the session from a fourth.
     #[test]
     fn a_later_supersede_does_not_erase_an_unclaimed_withdrawal() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
@@ -3700,7 +3402,6 @@ mod tests {
         };
         let session = Session::new(launch, dir.clone(), silent());
 
-        // buddy-2 takes the session from buddy-1, whose turn names itself.
         session.note_withdrawal(Some("buddy-2".to_string()));
         assert_eq!(
             session
@@ -3709,8 +3410,8 @@ mod tests {
             Some("buddy-2")
         );
 
-        // Then buddy-3 takes it from someone else, and the handover it does
-        // not win clears the pending slot — neither of which is buddy-1's.
+        // buddy-3 takes it from someone else, and the handover it does not win
+        // clears the pending slot. Neither is buddy-1's.
         session.note_withdrawal(Some("buddy-3".to_string()));
         session.note_withdrawal(None);
 
@@ -3733,8 +3434,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// The one wake that waits instead: an ambient tick cancelling the Poke it
-    /// arrived behind would be worse than the refusal (#472).
+    /// The one wake that waits instead. An ambient tick cancelling the Poke
+    /// it arrived behind would be worse than the refusal.
     #[test]
     fn a_proactive_wake_never_cancels_a_reactive_turn() {
         let (fx, session) = Fixture::new("slow");
@@ -3754,9 +3455,9 @@ mod tests {
         let _ = worker.join();
         session.shutdown();
 
-        // #435: the refused wake sent no prompt, so without a line of its own
-        // the `parsed` line the Shell writes for it would read against the
-        // prompt the wake before it logged.
+        // The refused wake sent no prompt, so without a line of its own the
+        // `parsed` line the Shell writes for it would read against the prompt
+        // the wake before it logged.
         let refused = fx.events("refused");
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert_eq!(refused[0]["instance"], json!("buddy-1"));
@@ -3765,7 +3466,7 @@ mod tests {
         assert_eq!(fx.events("prompt").len(), 1, "the refused wake sent none");
     }
 
-    /// The probe's two exit codes are its two phases: 1 is a turn that did
+    /// The probe's two exit codes are its two phases. 1 is a turn that did
     /// not finish, whatever the reply text turns out to be, and 2 is never
     /// having asked.
     #[test]
@@ -3829,8 +3530,8 @@ mod tests {
         );
     }
 
-    /// #654: Chat's Connect button answers with this line instead of spawning
-    /// the login itself, and it answers at the moment of the pick — before any
+    /// Chat's Connect button answers with this line instead of spawning the
+    /// login itself, and it answers at the moment of the pick, before any
     /// handshake. A named row without one would leave that answer a shrug.
     #[test]
     fn every_named_harness_documents_a_login_for_the_users_own_terminal() {
@@ -3929,10 +3630,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// ADR-0023's branch: the loopback server for a Harness whose ACP
-    /// `initialize` advertised `agentCapabilities.mcpCapabilities.http`, and
-    /// never for one that did not — a future Hermes with that bit set would get
-    /// the HTTP server directly.
+    /// ADR-0023's branch. The loopback server for a Harness whose ACP
+    /// `initialize` advertised `mcpCapabilities.http`, and never for one that
+    /// did not. A future Hermes with that bit set would get the HTTP server directly.
     #[test]
     fn the_loopback_server_goes_only_to_a_harness_that_advertised_http_mcp() {
         let (calls, _held) = mpsc::channel();
@@ -3960,9 +3660,9 @@ mod tests {
         );
     }
 
-    /// #501: the stdio server is a shim that dials the app, so the choice has
-    /// to carry the endpoint the shim reads — and carry it in the environment,
-    /// never in the line the Action Log takes.
+    /// The stdio server is a shim that dials the app, so the choice has to
+    /// carry the endpoint the shim reads, in the environment, never in the
+    /// line the Action Log takes.
     #[test]
     fn the_stdio_server_is_handed_the_endpoint_in_its_environment() {
         let (calls, _held) = mpsc::channel();
