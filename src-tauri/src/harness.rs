@@ -168,7 +168,7 @@ struct SessionDataDir(PathBuf);
 
 /// Retarget identity. Launch alone would Stand on a cwd-only edit.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Target {
+pub(crate) struct Target {
     launch: Launch,
     cwd: Result<AttachCwd, CwdError>,
 }
@@ -183,7 +183,9 @@ impl fmt::Display for CwdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CwdError::NoHome => write!(f, "home directory is unset"),
-            CwdError::Relative(path) => write!(f, "{}", path.display()),
+            CwdError::Relative(path) => {
+                write!(f, "relative path {} is not a project", path.display())
+            }
         }
     }
 }
@@ -253,7 +255,7 @@ impl SessionDataDir {
 }
 
 impl Target {
-    pub fn from_settings(source: Option<&str>, cwd_row: &str) -> Option<Self> {
+    pub(crate) fn from_settings(source: Option<&str>, cwd_row: &str) -> Option<Self> {
         from_settings(source).map(|launch| Self {
             launch,
             cwd: AttachCwd::resolve(&crate::model::env_or_file(CWD, cwd_row)),
@@ -1608,7 +1610,7 @@ fn attachment() -> MutexGuard<'static, Attachment> {
 /// Read the source, the variable, else `saved` from Settings, and hold the
 /// Session until the row moves it or the process exits. Process-global because
 /// the session is one per app (ADR-0008) and a Retarget rebuilds `DirectorSettings`.
-pub fn attach(target: Option<Target>, forward: Forward) -> Option<Arc<Session>> {
+pub(crate) fn attach(target: Option<Target>, forward: Forward) -> Option<Arc<Session>> {
     let mut slot = attachment();
     if slot.forward.is_some() {
         return slot.session.clone();
@@ -1655,7 +1657,7 @@ fn reattach(attached: Option<&Target>, wanted: Option<Target>) -> Reattach {
 /// Re-open the attachment for the Completer source now in force.
 /// A wire that dies is the Session's own business. `spawning` is the
 /// Director's switch, so a session no wake will reach is not opened.
-pub fn retarget(wanted: Option<Target>, spawning: bool) {
+pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
     let mut slot = attachment();
     // The probe and the tests never call `attach`, so there is no forward to
     // rebuild a Session with and nothing of theirs to move.
@@ -2385,6 +2387,33 @@ mod tests {
         assert!(fx.dir.join(action_log::FILE).is_file());
         assert!(!fx.cwd.join(SESSION_FILE).exists());
         assert!(!fx.cwd.join(action_log::FILE).exists());
+        assert!(
+            std::fs::read_dir(&fx.cwd).unwrap().next().is_none(),
+            "ai-buddy writes nothing into the user's directory"
+        );
+        session.shutdown();
+    }
+
+    #[test]
+    fn session_load_cwd_is_the_attach_dir_not_the_store() {
+        let (fx, session) = Fixture::split("load");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(
+            fx.count(&format!("cwd={}", fx.cwd.display())),
+            1,
+            "session/load cwd was not the attach dir"
+        );
+        assert_eq!(
+            fx.count(&format!("cwd={}", fx.dir.display())),
+            0,
+            "session/load cwd was the store"
+        );
         session.shutdown();
     }
 
