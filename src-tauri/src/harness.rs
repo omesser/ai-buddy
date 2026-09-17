@@ -301,6 +301,9 @@ pub enum Forwarded {
     Thought(String),
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
+    /// Preflight finished. Chat's first ReloadChat races this thread, so a
+    /// missing launcher would otherwise never reach the landing (#726).
+    AttachSettled,
 }
 
 type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
@@ -476,9 +479,16 @@ impl Session {
     /// so startup does not wait on `npx`; the outcome is one stderr line.
     pub fn spawn_preflight(self: &Arc<Self>) {
         let session = Arc::clone(self);
-        thread::spawn(move || match session.attach(None) {
-            Ok(_) => eprintln!("harness: {} attached", session.launch.name),
-            Err(why) => eprintln!("harness: {why}; StaticDirector is in force until it answers"),
+        thread::spawn(move || {
+            match session.attach(None) {
+                Ok(_) => eprintln!("harness: {} attached", session.launch.name),
+                Err(why) => {
+                    eprintln!("harness: {why}; StaticDirector is in force until it answers")
+                }
+            }
+            // Chat's ReloadChat after a pick races this thread. A second
+            // opening is how `inspect.missing` reaches the landing (#726).
+            (session.forward)(Forwarded::AttachSettled);
         });
     }
 
@@ -3290,6 +3300,35 @@ mod tests {
         assert_eq!(session.backoff(1), BACKOFF_FIRST);
         assert_eq!(session.backoff(2), Duration::from_secs(10));
         assert_eq!(session.backoff(40), BACKOFF_CAP);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Chat's first ReloadChat races preflight. The forwarded settle is how
+    /// a missing launcher reaches an already-open surface (#726).
+    #[test]
+    fn spawn_preflight_forwards_when_the_launcher_is_missing() {
+        const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
+        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let (tx, rx) = mpsc::channel();
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec![NOPE.into()],
+        };
+        let session = Arc::new(Session::new(
+            launch,
+            dir.clone(),
+            Arc::new(Box::new(move |forwarded| {
+                let _ = tx.send(forwarded);
+            }) as Forward),
+        ));
+        session.spawn_preflight();
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Forwarded::AttachSettled) => {}
+            other => panic!("expected AttachSettled, got {other:?}"),
+        }
+        let inspect = session.inspect();
+        assert_eq!(inspect.missing.as_deref(), Some(NOPE));
+        assert!(!inspect.alive);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -37,6 +37,38 @@ test("when nothing can answer, the composer keeps the disabled string", () => {
   );
 });
 
+// #726: configured is not ready. A named Harness whose launcher is missing
+// must not enable Ask {name} the way a live session does.
+test("a missing launcher is not something that can answer", () => {
+  assert.equal(
+    composerPlaceholder({
+      name: "bmo",
+      configured: true,
+      enabled: true,
+      harness: {
+        name: "codex",
+        session: null,
+        alive: false,
+        login: null,
+        missing: "npx",
+      },
+    }),
+    "Nothing can answer yet",
+  );
+});
+
+test("a Harness that is set but not running is not something that can answer", () => {
+  assert.equal(
+    composerPlaceholder({
+      name: "bmo",
+      configured: true,
+      enabled: true,
+      harness: { name: "hermes", session: null, alive: false, login: null },
+    }),
+    "Nothing can answer yet",
+  );
+});
+
 test("the composer markup does not ship Say something as the live placeholder", () => {
   assert.doesNotMatch(html, /placeholder="Say something"/);
 });
