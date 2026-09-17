@@ -25,6 +25,13 @@ them and moved both.** Read "What the 369 is made of" below before this
 table: half the wakeups belong to WebKit display-link threads and the 16ms
 tick holds 12% of them, which is not what any of the issues above assumed.
 
+**#761 has since named the 313 leftover, after #760 and #790.** The
+display-link rows are gone. The host `libpas` scavenger is still the
+largest named leftover besides the 16 ms frame loop, it is one thread per
+process rather than per webview, and no public `WKWebViewConfiguration` or
+JSC environment knob bounds it. See "The leftover after #760 and #790
+(#761)".
+
 ## What this means
 
 **14.6% of a CPU to animate a still sprite, and it did not move.** That is the
@@ -163,6 +170,136 @@ tighter, because it samples every second rather than the idle-animation ones:
 
 Every column separates cleanly, and the middle row is the same split again:
 the emit fix takes a quarter of the family's CPU and none of its wakeups.
+
+## The leftover after #760 and #790 (#761)
+
+Attribute before fixing. #761 asked whether the `libpas` scavenger that
+held 38% of the pre-#741 table is reachable from this repository at all.
+The answer is no, as a public knob. The measurements that settle the three
+unknowns are below. Closing with "not reachable from here, documented" is
+the Done.
+
+Same machine as the rest of this note (`Mac15,7`, macOS 26.6.2), same
+`ktrace trace -f S0x0140 --csv` filter, same kernel-context
+`MACH_MKRUNNABLE` count, `sample` for names. Two 20-second windows on a
+still perched sprite, release binary at `0393f222`. One display this
+round (`overlay: 1 display(s)`), so there is no second `CVDisplayLink`
+row to compare. `sample` names a thread as `Thread_<tid>: <name>` with a
+colon; a regex that expects whitespace after the id misses the scavenger
+entirely.
+
+The binary was built with one local compile fix in `harness.rs`
+(`self.dir` → `self.data.as_path()`) so `origin/main` would link. That
+path is elicitation logging. It is not on the overlay, the frame loop, or
+WebKit.
+
+### Per-thread census, idle perched
+
+Kernel `MACH_MKRUNNABLE` for threads `sample` named in the host and in
+the WebKit XPC services this launch spawned. Two 20-second windows:
+
+| Thread | Process | Wakeups/sec |
+|---|---|---|
+| `JavaScriptCore libpas scavenger` | `ai-buddy` (host) | 28.0, 26.1 |
+| frame loop (`run_frame_loop`) | `ai-buddy` (host) | 35.0, 35.1 |
+| WebContent main thread | `WebKit.WebContent` | 11.45, 13.45 |
+| `JavaScriptCore libpas scavenger` | `WebKit.GPU` | 4.65, 4.65 |
+| `JavaScriptCore libpas scavenger` | `WebKit.WebContent` | 4.0, 4.1 |
+| host `main` | `ai-buddy` | 0.45, 0.3 |
+| `CVDisplayLink` | `ai-buddy` (host) | 0, 0 |
+| `JavaScriptCore libpas scavenger` | `WebKit.Networking` | 0, 0 |
+
+Named family total 85.5 and 87.7 interrupt wakeups/sec. The frame loop is
+the same 35/sec #741 already measured. The scavenger in the host is the
+row that moved: 113.0 and 111.3 before the rAF stop, 28.0 and 26.1 now.
+A `CVDisplayLink` thread still exists in `sample` and posts no kernel
+`MACH_MKRUNNABLE` in either window, which is the #760 / #790 display-link
+win on a one-display desk.
+
+`powermetrics --samplers tasks` on the same binary, one 30-second idle
+launch, idle-family bucket (n=21 seconds): **187 interrupt wakeups/sec**
+and **2.8% CPU** for the host pid. Walk seconds in that same capture
+read 300/sec. That 187 is the leftover to read against #741's 313, not
+the 86 from named ktrace rows. ktrace only names threads `sample` saw;
+powermetrics counts the whole process. They are different columns, as
+they were in #741.
+
+### Whether the scavenger rate follows webview allocation
+
+**It followed the rAF stop. It does not look like a remaining per-frame
+knob on the overlay.** Measured, not guessed.
+
+The host scavenger dropped from 113/sec to 27/sec once the overlay
+stopped asking for a display frame every refresh and stopped evaluating
+unchanged ticks. That is the #741 / #760 / #790 work. The WebContent
+scavenger that remains is 4/sec, so a renderer that allocated still less
+per frame would be working on a 4/sec row, not the 27.
+
+A `JSC_libpasScavengeContinuously=true` launch, which the host JSC
+honored (`Modified JSC options: libpasScavengeContinuously=true`), left
+the family scavenger at 33.0/sec against idle's 36.7. The option does
+not bound the rate, and turning it on did not inflate it either.
+
+A chat-open window is not a clean "more allocation" arm. Summon
+confirmed, then the frame loop itself fell to 6.9/sec and the scavenger
+to 0.6/sec, so both columns moved and no percentage is derived from that
+pair.
+
+Walk versus idle in powermetrics (300 vs 187) says process wakeups still
+follow animation. It does not say the leftover scavenger would follow a
+smaller overlay allocation, because the leftover scavenger is mostly in
+the host process, where Tauri's `evaluateJavaScript` lives, not in
+WebContent.
+
+### Whether one scavenger runs per WebContent
+
+**One scavenger thread per process that links libpas, not per webview.**
+`sample` named exactly one `JavaScriptCore libpas scavenger` in the host,
+one in `WebKit.WebContent`, one in `WebKit.GPU`, and one in
+`WebKit.Networking` (the last posted no kernel wakeups in these
+windows).
+
+This capture had one overlay and one WebContent (`overlay: 1
+display(s)`). Two overlays sharing one webview is therefore
+**cannot-measure here**. The per-process finding still prices that idea:
+sharing would drop the extra WebContent's ~4/sec scavenger, not the
+host's ~27/sec. `WKProcessPool` is deprecated on the SDK this machine
+ships (`macos(10.10, 12.0)`) and "no longer has any effect".
+
+### Whether any WKWebView or JSC knob bounds it
+
+**Not from here.** The public `WKWebViewConfiguration` on this Mac's SDK
+(`MacOSX.sdk/.../WKWebViewConfiguration.h`) has process pool (deprecated),
+preferences, user content, website data store, media, HTTPS upgrade,
+inline predictions, and similar. It has no scavenger period, no
+scavenger disable, and no libpas field. `WKWebpagePreferences` can
+disable content JavaScript or turn on lockdown / security-restriction
+mode. Those are not a bound on the allocator thread, and lockdown is not
+a product setting this overlay should flip to save 27 wakeups/sec.
+
+JSC options are overridable as `JSC_<name>` before the first VM.
+`libpasScavengeContinuously` is the only scavenger-shaped option in
+`OptionsList.h`. Default already `false`. The host process applies it
+(the `Modified JSC options` line above). It does not expose
+`pas_scavenger_period_in_milliseconds`, and it does not disable the
+thread. `pas_scavenger_suspend` exists in JavaScriptCore as SPI. It is
+not a `WKWebViewConfiguration` property and not a JSC environment knob.
+
+WebKit's `pas_scavenger.c` sleeps `pas_scavenger_period_in_milliseconds`
+(100 ms on Darwin ARM in that source) and shuts the thread down after
+10 s with no eligible pages. The leftover host scavenger is still posting
+27/sec after a 15-second settle plus two 20-second windows, so it has not
+shut down. 10 Hz would be 10/sec. This repository does not own that
+thread's timer.
+
+### What a small fix would have to be, and why it is not in this change
+
+A reachable fix would be a public WebKit configuration that lengthens or
+stops the scavenger, or a host-side stop to in-process JSC allocation
+that lets it deep-sleep. Neither is present. Guessing `dlsym` of
+`pas_scavenger_suspend`, or merging two overlays into one webview for a
+4/sec WebContent row, is out of scope. The 16 ms frame loop is still
+35/sec and is #183's line, not this issue's.
 
 ## How much to trust these numbers
 
@@ -430,3 +567,7 @@ Scoped out per this task's instructions, not fabricated:
   since, under #741. See "What the 369 is made of". The candidates this
   document originally named (the async runtime, log rotation, the tray icon)
   are none of them.
+- **Two overlays sharing one webview** — #761 needed one scavenger per
+  `WebContent` first. This capture had one display and one `WebContent`,
+  so a share-the-webview experiment is cannot-measure here. The
+  per-process census is the answer that experiment would have used.
