@@ -254,6 +254,21 @@ test("a Composite spreads into one control per member, its text field included",
 // above and is unreachable by a screen reader.
 const source = readFileSync(new URL("../src/settings.js", import.meta.url), "utf8");
 
+test("AI source option titles are not prefixes of each other", () => {
+  // ax-settings pick types the title into a WKWebView <select> menu (#797).
+  const aiTab = MODEL_API.form.tabs.find((candidate) => candidate.title === "AI");
+  assert.ok(aiTab, "the snapshot carries an AI tab");
+  const row = aiTab.sections.flatMap((section) => section.rows).find((candidate) => candidate.id === "harness");
+  assert.ok(row, "the AI source popup exists");
+  for (const a of row.options) {
+    for (const b of row.options) {
+      if (a !== b) {
+        assert.ok(!b.startsWith(a), `${JSON.stringify(a)} is a prefix of ${JSON.stringify(b)}`);
+      }
+    }
+  }
+});
+
 test("the controls are the platform's own elements", () => {
   for (const tag of ["select", "option", "details", "summary", "textarea", "ul", "li"]) {
     assert.match(source, new RegExp(`el\\("${tag}"`), `${tag} is not what render() builds`);

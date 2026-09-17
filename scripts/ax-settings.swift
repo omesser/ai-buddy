@@ -166,6 +166,56 @@ func settledWindow(titled title: String) -> AXUIElement? {
     return window
 }
 
+/// Windows this pid owns on the menu layer (100+). WebKit's <select> menu
+/// is not in the AX tree; a new layer-101 window is the evidence it opened. #797
+func menuWindowCount() -> Int {
+    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+    return ((info as? [[String: AnyObject]]) ?? []).filter {
+        ($0[kCGWindowOwnerPID as String] as? pid_t) == pid
+            && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 100
+    }.count
+}
+
+/// Type the option title into an already-open menu, then Return. macOS menus
+/// select by typed prefix. Only call while a menu tracks, so keys cannot land
+/// in the page. Return is consumed by the menu, not the #774 Enter handler.
+func typeSelect(_ title: String) {
+    for character in title {
+        var utf16 = Array(String(character).utf16)
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+            else { continue }
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+            event.post(tap: .cghidEventTap)
+        }
+        usleep(50_000)
+    }
+    // 36 is Return. The tracking menu consumes it, so Settings stays open.
+    for down in [true, false] {
+        CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)?.post(tap: .cghidEventTap)
+        usleep(30_000)
+    }
+}
+
+/// The popup whose preceding static text is `label`. Render order, not index.
+func labelledPopup(_ label: String) -> AXUIElement? {
+    guard let window = settingsWindow(), webContentSettled(window) else { return nil }
+    var lastLabel = ""
+    var popup: AXUIElement?
+    func scan(_ element: AXUIElement, depth: Int) {
+        guard depth < 30, popup == nil else { return }
+        let role = string(element, kAXRoleAttribute) ?? ""
+        if role == "AXStaticText" { lastLabel = string(element, kAXValueAttribute) ?? "" }
+        if role == "AXPopUpButton", lastLabel == label {
+            popup = element
+            return
+        }
+        for child in children(element) { scan(child, depth: depth + 1) }
+    }
+    scan(window, depth: 0)
+    return popup
+}
+
 switch args[0] {
 case "open":
     // The status item, not the app's own menu bar: Settings has no keyboard
@@ -206,46 +256,47 @@ case "pick":
     // two launches. The popup is addressed by the label above it, because the
     // tree is in render order and a label is stabler than an index.
     guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
-    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
-    var lastLabel = ""
-    var popup: AXUIElement?
-    func scan(_ element: AXUIElement, depth: Int) {
-        guard depth < 30, popup == nil else { return }
-        let role = string(element, kAXRoleAttribute) ?? ""
-        if role == "AXStaticText" { lastLabel = string(element, kAXValueAttribute) ?? "" }
-        if role == "AXPopUpButton", lastLabel == args[2] {
-            popup = element
-            return
-        }
-        for child in children(element) { scan(child, depth: depth + 1) }
-    }
-    scan(window, depth: 0)
-    guard let target = popup else { die("no popup labelled \(args[2])") }
+    guard settledWindow(titled: "Settings") != nil else { die("Settings is not open") }
+    guard let target = labelledPopup(args[2]) else { die("no popup labelled \(args[2])") }
     // Setting AXValue is refused by NSPopUpButton, so open it and press the
     // row: the same path a person takes, and the only one that fires the
     // action the renderer listens for.
+    let menusBefore = menuWindowCount()
     guard press(target) else { die("could not open the \(args[2]) popup") }
-    guard let option = waitFor(5, { find(target) { string($0, kAXTitleAttribute) == args[3] } })
-    else {
-        die("the \(args[2]) popup has no option \(args[3])")
+    // AppKit publishes AXMenu under the popup. WebKit's <select> does not, so
+    // a new menu-layer window is the only signal it drew. Race them. #797
+    var option: AXUIElement?
+    var drew = false
+    let deadline = Date().addingTimeInterval(5)
+    repeat {
+        option = find(target) { string($0, kAXTitleAttribute) == args[3] }
+        drew = menuWindowCount() > menusBefore
+        if option != nil || drew { break }
+        usleep(100_000)
+    } while Date() < deadline
+    if let option = option {
+        guard press(option) else { die("could not pick \(args[3])") }
+    } else if drew {
+        typeSelect(args[3])
+    } else {
+        die("the \(args[2]) popup drew no menu; last: \(lastError)")
     }
-    guard press(option) else { die("could not pick \(args[3])") }
-    // The row commits on the app's own thread and the window redraws the line
-    // under it from what was saved, so neither is true the instant the press
-    // returns. Waiting for the new title is what makes `pick` mean "the row took it".
+    // The row commits off-thread and the webview rebuilds the tree, so the
+    // captured element then reads nil. Wait on a freshly resolved popup. #797
     guard
         waitFor(
             10,
             {
-                guard string(target, kAXValueAttribute) == args[3],
-                    find(target, where: { string($0, kAXRoleAttribute) == "AXMenu" }) == nil
+                guard let fresh = labelledPopup(args[2]),
+                    string(fresh, kAXValueAttribute) == args[3],
+                    find(fresh, where: { string($0, kAXRoleAttribute) == "AXMenu" }) == nil
                 else { return nil }
-                return target
+                return fresh
             }) != nil
     else {
-        die(
-            "the \(args[2]) popup still reads "
-                + "\(string(target, kAXValueAttribute) ?? "nothing") after picking \(args[3])")
+        let current =
+            labelledPopup(args[2]).flatMap { string($0, kAXValueAttribute) } ?? "nothing"
+        die("the \(args[2]) popup still reads \(current) after picking \(args[3])")
     }
 
 case "frame":

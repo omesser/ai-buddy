@@ -79,6 +79,17 @@ expect "$TEMP_DIR/live.txt" "Model" true "a toolbar tab does not shadow the row 
 # fails whichever one asked - a renamed row is a red line, not a silent pass.
 expect "$TEMP_DIR/live.txt" "Nonexistent row" "" "a label that appears nowhere answers nothing"
 
+# Webview Settings (#797): the <select> publishes its label as AXTitle and the
+# chosen option as AXValue. NSPopUpButton puts the option in the title instead.
+cat > "$TEMP_DIR/webview.txt" << 'EOF'
+AXStaticText||AI source||true|false
+AXPopUpButton|AI source|Model API||true|false
+AXStaticText||Base URL||true|false
+AXTextField||https://api.anthropic.com/v1||true|true
+EOF
+expect "$TEMP_DIR/webview.txt" "AI source" true "a webview select labelled AI source is live"
+expect "$TEMP_DIR/webview.txt" "Base URL" true "a webview labelled field is live"
+
 echo
 if [ "$failures" -eq 0 ]; then
   echo "All row_live tests passed."
