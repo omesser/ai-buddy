@@ -76,7 +76,7 @@ export function landingCopy(opening) {
   if (missing) {
     return {
       title: `${name} needs \`${missing}\``,
-      lede: `\`${missing}\` is not installed. ai-buddy does not bundle a Harness. Install it, then press ${name} again, or pick a different Harness below.`,
+      lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`. Install it, then press ${name} again, or pick a different Harness below.`,
       command: null,
       hint: null,
     };

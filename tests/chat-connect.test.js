@@ -52,7 +52,7 @@ test("a missing npx launcher cannot answer, for every adapter preset", () => {
     const copy = landingCopy(opening);
     assert.match(copy.title, /needs `npx`/, name);
     assert.match(copy.lede, /`npx` is not installed/, name);
-    assert.match(copy.lede, /does not bundle a Harness/, name);
+    assert.match(copy.lede, /does not bundle `npx`/, name);
     assert.equal(copy.command, null, name);
   }
 });
@@ -74,6 +74,7 @@ test("a missing first-party CLI names that binary, not npx", () => {
   const copy = landingCopy(opening);
   assert.equal(copy.title, "Cursor needs `cursor-agent`");
   assert.match(copy.lede, /`cursor-agent` is not installed/);
+  assert.match(copy.lede, /does not bundle `cursor-agent`/);
   assert.doesNotMatch(copy.lede, /`npx`/);
 });
 
