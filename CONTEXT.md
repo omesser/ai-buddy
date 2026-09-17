@@ -127,7 +127,8 @@ weights fill Behaviors and never speak; an attached Harness is that role and
 proposes Speech by calling speak. Never runs in the frame loop and never
 drives animation directly. Covers both Static Director and AI Director (ModelDirector).
 The environment variables `AI_BUDDY_DIRECTOR_*` configure the HTTP Completer,
-which is one fill of this role (#466).
+which is one fill of this role (#466). `DirectorSettings` and `DirectorConfig`
+keep those names. They hold the HTTP knobs under this role (#589).
 _Avoid_: Brain, agent, planner. In user-facing Settings and README: the role
 name "Director" when it means the on/off switch or HTTP configuration — say
 "AI" / "AI on" for the toggle, "Model" / "API" for HTTP knobs instead
@@ -209,7 +210,8 @@ fill's timeout and reply cap. A Harness turn has its own budget
 (#690). The environment variables
 `AI_BUDDY_DIRECTOR_BASE_URL`, `AI_BUDDY_DIRECTOR_MODEL`, and
 `AI_BUDDY_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
-_Avoid_: Using "Completer" as user-facing brand, or as synonym for HTTP-only fill
+_Avoid_: Using "Completer" as Settings or README brand (say AI, Model, API, AI
+source, or Harness), or as synonym for HTTP-only fill
 
 **Executor**:
 Whatever posts synthetic mouse and keyboard events to the operating system.
