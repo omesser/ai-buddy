@@ -3366,6 +3366,30 @@ mod tests {
         assert_eq!(session.inspect().missing.as_deref(), Some("npx"));
     }
 
+    /// Documents the missing-binary contract: `missing` = `argv[0]` for every
+    /// preset. npx adapters (claude, codex, pi) report `npx` missing, not the
+    /// vendor CLI. First-party CLIs (cursor-agent, grok, hermes, opencode)
+    /// report their own name.
+    #[test]
+    fn each_preset_reports_its_argv_0_as_missing() {
+        let cases = [
+            ("claude", "npx"),
+            ("codex", "npx"),
+            ("pi", "npx"),
+            ("cursor-agent", "cursor-agent"),
+            ("grok", "grok"),
+            ("hermes", "hermes"),
+            ("opencode", "opencode"),
+        ];
+        for (preset, expected_argv0) in cases {
+            let launch = launch(Some(preset)).unwrap();
+            assert_eq!(
+                launch.argv[0], expected_argv0,
+                "preset {preset} should have argv[0]={expected_argv0}"
+            );
+        }
+    }
+
     /// ADR-0016's newest-wins, at the Harness seam. The Poke that arrives
     /// under a turn takes it rather than being refused.
     #[test]

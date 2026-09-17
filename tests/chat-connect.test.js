@@ -58,24 +58,26 @@ test("a missing npx launcher cannot answer, for every adapter preset", () => {
 });
 
 test("a missing first-party CLI names that binary, not npx", () => {
-  const opening = {
-    name: "bmo",
-    configured: true,
-    enabled: true,
-    harness_name: "cursor-agent",
-    harness: {
-      name: "cursor-agent",
-      session: null,
-      alive: false,
-      login: null,
-      missing: "cursor-agent",
-    },
-  };
-  const copy = landingCopy(opening);
-  assert.equal(copy.title, "Cursor needs `cursor-agent`");
-  assert.match(copy.lede, /`cursor-agent` is not installed/);
-  assert.match(copy.lede, /does not bundle `cursor-agent`/);
-  assert.doesNotMatch(copy.lede, /`npx`/);
+  for (const name of ["cursor-agent", "grok", "hermes", "opencode"]) {
+    const opening = {
+      name: "bmo",
+      configured: true,
+      enabled: true,
+      harness_name: name,
+      harness: {
+        name,
+        session: null,
+        alive: false,
+        login: null,
+        missing: name,
+      },
+    };
+    const copy = landingCopy(opening);
+    assert.match(copy.title, new RegExp(`needs \`${name}\``), name);
+    assert.match(copy.lede, new RegExp(`\`${name}\` is not installed`), name);
+    assert.match(copy.lede, new RegExp(`does not bundle \`${name}\``), name);
+    assert.doesNotMatch(copy.lede, /`npx`/, name);
+  }
 });
 
 test("a named Harness that has not come up stays on the landing", () => {
