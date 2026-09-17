@@ -156,14 +156,9 @@
 
     <!-- Three layers of the Character Prompt, app then Character then instance.
          Empty frozen blocks say Empty, same as the Instance Prompt placeholder.
-         Actions sit outside the scrolling body so Save is never below the fold. -->
+         Actions sit after the scrolling body, a sticky footer like Chat's
+         composer, so Save is never below the fold. -->
     <section class="prompt" id="prompt" hidden>
-      <div class="prompt-actions">
-        <button type="button" id="prompt-save">Save</button>
-        <button type="button" id="prompt-confirm" hidden>Save and start over</button>
-        <button type="button" id="prompt-cancel" hidden>Cancel</button>
-        <span class="prompt-said" id="prompt-said" aria-live="polite"></span>
-      </div>
       <div class="prompt-body">
         <p class="hint">
           The Character Prompt concatenates these three layers. You can edit the
@@ -209,6 +204,12 @@
           one means a new session: anything still being answered is dropped, and the chat so far is
           gone from the model's side. What is worth keeping lives in Memory.
         </p>
+      </div>
+      <div class="prompt-actions">
+        <button type="button" id="prompt-save">Save</button>
+        <button type="button" id="prompt-confirm" hidden>Save and start over</button>
+        <button type="button" id="prompt-cancel" hidden>Cancel</button>
+        <span class="prompt-said" id="prompt-said" aria-live="polite"></span>
       </div>
     </section>
 

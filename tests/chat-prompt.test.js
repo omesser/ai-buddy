@@ -77,23 +77,34 @@ test("the tab warns that saving starts a new conversation before it offers to", 
   assert.ok(save > 0, "and the button that spends it is on the tab");
 });
 
-test("Prompt tab actions sit above the authored layers, outside the scroll", () => {
+test("Prompt tab actions sit after the authored layers, outside the scroll", () => {
   const section = promptSection(html);
   const prompt = ruleBlock(css, ".prompt");
   const actions = ruleBlock(css, ".prompt-actions");
   const body = ruleBlock(css, ".prompt-body");
+  const composer = ruleBlock(css, ".composer");
 
   assert.match(
     section,
-    /^\s*<div class="prompt-actions">[\s\S]*?<div class="prompt-body">/,
-    "Save is the first thing on the tab, before Personality",
+    /^\s*<div class="prompt-body">[\s\S]*?<div class="prompt-actions">/,
+    "Save sits after the layers, a footer under the scrolling body",
   );
-  assert.match(prompt, /display:\s*flex/, "the tab is a column so the bar need not scroll");
+  assert.match(prompt, /display:\s*flex/, "the tab is a column so the footer need not scroll");
   assert.match(prompt, /flex-direction:\s*column/);
   assert.match(prompt, /overflow:\s*hidden/, "the pane does not scroll; .prompt-body does");
   assert.match(prompt, /min-height:\s*0/, "the flex child can shrink below its content");
-  assert.match(actions, /flex:\s*0 0 auto/, "the bar keeps its height");
-  assert.match(body, /overflow-y:\s*auto/, "Personality and the field scroll under the bar");
+  assert.match(actions, /flex:\s*0 0 auto/, "the footer keeps its height");
+  assert.match(actions, /border-top:/, "the footer is a composer twin, not a toolbar");
+  assert.doesNotMatch(actions, /border-bottom:/);
+  assert.match(
+    actions,
+    /padding:\s*12px 16px 16px/,
+    "padding matches Chat's composer, not a top toolbar",
+  );
+  assert.match(composer, /padding:\s*12px 16px 16px/, "the composer padding the footer twins");
+  assert.match(body, /flex:\s*1 1 auto/, "the layers take the leftover height");
+  assert.match(body, /min-height:\s*0/, "so the flex child can shrink and scroll");
+  assert.match(body, /overflow-y:\s*auto/, "Personality and the field scroll above the footer");
   assert.match(body, /display:\s*grid/, "the authored layers still lay out as a grid");
   assert.match(
     body,
