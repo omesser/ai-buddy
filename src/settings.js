@@ -119,14 +119,18 @@ function notes(row) {
   return [help(row.help), status(row.status), disclosure(row.disclosure)];
 }
 
+// The control sits inside its label, the way a checkbox row already does.
+// WebKit publishes a label holding nothing but text as an AXStaticText carrying
+// that text with its own text run beneath, so the row's name reached the
+// accessibility tree twice and verify-settings-macos.sh read the copy as the
+// row's control. A label holding a control is an AXGroup instead. #706.
 function labelled(row, control, extra = []) {
   const id = `set-f-${row.id}`;
   control.id = id;
   return el(
     "div",
     { class: `set-row${row.frozen ? " set-is-frozen" : ""}`, "data-row": row.id },
-    row.label ? el("label", { for: id, text: row.label }) : null,
-    control,
+    row.label ? el("label", { for: id }, el("span", { text: row.label }), control) : control,
     ...extra,
   );
 }

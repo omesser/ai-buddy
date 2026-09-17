@@ -104,13 +104,15 @@ dump_window() {
 }
 
 # Whether the control for a row is live. Rows are addressed by the text you can
-# read on them. A label's control is the next line in render order; a button
-# carries its own text in the title column, so its answer comes off the line
-# that matched. Only a role that can be live answers for its own title, or a
-# toolbar tab sharing a word would shadow the row. AppKit demotes a non-editable
-# NSTextField to AXStaticText, so the next line is taken whatever its role and
-# read by the column that means "live" for it: settability for a field, enabled
-# for a popup or button, nothing for static text. Pinned by
+# read on them. A label's control is the first line after it that says anything
+# else; a button carries its own text in the title column, so its answer comes
+# off the line that matched. Only a role that can be live answers for its own
+# title, or a toolbar tab sharing a word would shadow the row. AppKit demotes a
+# non-editable NSTextField to AXStaticText, so that line is taken whatever its
+# role and read by the column that means "live" for it: settability for a field,
+# enabled for a popup or button, nothing for static text. A name the tree
+# repeats is the window's own rendering and never the row's control - WebKit
+# sent one per <label> until #706. Pinned by
 # scripts/test_verify_settings_row_live.sh.
 row_live() {
   awk -F'|' -v want="$2" '
@@ -119,6 +121,7 @@ row_live() {
       if ($1 ~ /AXPopUpButton|AXButton/) { return $5 }
       return "false"
     }
+    found && $1 ~ /AXStaticText/ && $3 == want { next }
     found { print live(); exit }
     $1 ~ /AXPopUpButton|AXButton/ && $2 == want { print live(); exit }
     $3 == want { found = 1 }

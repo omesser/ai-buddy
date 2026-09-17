@@ -33,6 +33,28 @@ AXButton|Clear key|||true|false
 AXButton|Apply|||false|false
 EOF
 
+# The same rows out of the webview window, recorded under
+# AI_BUDDY_SETTINGS_WEBVIEW=1. WebKit sent every name twice until #706 wrapped
+# the control in its label - the label element and its own text run, both
+# AXStaticText - and the second block is what it sends now.
+cat > "$TEMP_DIR/webview-doubled.txt" << 'EOF'
+AXStaticText||Base URL||true|false
+AXStaticText||Base URL||true|false
+AXTextField|Base URL||https://api.openai.com|true|true
+AXStaticText||Model||true|false
+AXStaticText||Model||true|false
+AXTextField|Model||gpt-4o-mini|true|true
+AXButton|Clear key|||true|false
+EOF
+
+cat > "$TEMP_DIR/webview.txt" << 'EOF'
+AXStaticText||Base URL||true|false
+AXTextField|Base URL||https://api.openai.com|true|true
+AXStaticText||Model||true|false
+AXTextField|Model||gpt-4o-mini|true|true
+AXButton|Clear key|||true|false
+EOF
+
 # The same tab with a Harness attached. The text fields are gone: AppKit
 # demoted each one to AXStaticText when the renderer called setEditable(false),
 # which is why the frozen rows here look like their own labels.
@@ -73,6 +95,13 @@ expect "$TEMP_DIR/live.txt" "Apply" false "a self-naming control that is disable
 # row is the answer; a title match that fired on any role would hand back the
 # tab instead, because render order puts the toolbar first.
 expect "$TEMP_DIR/live.txt" "Model" true "a toolbar tab does not shadow the row it shares a name with"
+
+# A name that reaches the tree twice is the window's business, not the row's:
+# the control is the first line after the label that says something else.
+expect "$TEMP_DIR/webview-doubled.txt" "Base URL" true "a repeated label does not answer for its own row"
+expect "$TEMP_DIR/webview-doubled.txt" "Model" true "a repeated label does not shadow the field under it"
+expect "$TEMP_DIR/webview.txt" "Base URL" true "a webview row is live when its field is settable"
+expect "$TEMP_DIR/webview.txt" "Clear key" true "a webview button answers off its own line"
 
 # A label that is not in the dump has to read as neither live nor frozen.
 # Both expect_live and expect_frozen compare against a word, so an empty answer
