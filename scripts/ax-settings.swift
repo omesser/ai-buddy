@@ -123,10 +123,10 @@ func click(_ element: AXUIElement) -> Bool {
 }
 
 /// How many windows this process has on the menu layer. WebKit presents a
-/// `<select>` popup itself rather than through an NSPopUpButton, and that menu
-/// is published to no accessibility tree at all: not under the popup, not under
-/// the application, and not by hit test from either. A window on the menu layer
-/// is the only evidence the script has that it opened. #797.
+/// `<select>` popup itself rather than through an NSPopUpButton, and publishes
+/// that menu to no accessibility tree: not under the popup, not under the
+/// application, and not by hit test from either. A window on the menu layer is
+/// the only evidence the script has that the menu opened. #797.
 func menuWindowCount() -> Int {
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
     return ((info as? [[String: AnyObject]]) ?? []).filter {
@@ -136,10 +136,10 @@ func menuWindowCount() -> Int {
 }
 
 /// Picks an item out of an already-open menu by typing its title, then Return.
-/// macOS menus select by typed prefix, so this stays the press-by-name the rest
-/// of this file is built on where the tree offers no element to press. Only
-/// safe with a menu up, which is why the caller checks that first: a tracking
-/// menu takes the keyboard, so the characters cannot land anywhere else.
+/// macOS menus select by typed prefix, so the script can still pick by name
+/// from a menu the tree offers no element for. The caller checks that a menu is
+/// up first. A tracking menu takes the keyboard, so the characters land nowhere
+/// else.
 func typeSelect(_ title: String) {
     for character in title {
         var utf16 = Array(String(character).utf16)
@@ -243,9 +243,9 @@ case "pick":
     // two launches. The popup is addressed by the label above it, because the
     // tree is in render order and a label is stabler than an index.
     guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
-    // Resolved fresh on every call, not captured once: the webview rebuilds its
-    // whole tree on a source change, which leaves an element found before the
-    // pick reporting nothing afterwards.
+    // Resolved fresh on every call rather than captured once. The webview
+    // rebuilds its whole tree on a source change, so an element found before
+    // the pick reports nothing afterwards.
     func popup(labelled label: String) -> AXUIElement? {
         guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
         var lastLabel = ""
@@ -271,9 +271,9 @@ case "pick":
     guard press(target) else { die("could not open the \(args[2]) popup") }
     // Two kinds of menu answer that press. AppKit publishes its NSMenu under the
     // popup, so the option is an element to find and press. WebKit's `<select>`
-    // menu draws but publishes nothing, so a new window on the menu layer is all
-    // there is to go on and the option is typed instead. Racing the two apart
-    // beats waiting out the AX search first: on the webview it never resolves.
+    // menu draws but publishes nothing, so the only signal is a new window on
+    // the menu layer, and the script types the option instead. One loop polls
+    // both, because on the webview the AX search alone never resolves.
     var option: AXUIElement?
     var drew = false
     let deadline = Date().addingTimeInterval(5)
