@@ -915,12 +915,9 @@ fn show_settings(app: tauri::AppHandle) {
                     }
                 },
             };
-            #[cfg(target_os = "macos")]
             if let Err(why) = platform::raise_settings_window(&window) {
                 eprintln!("settings webview raise: {why}");
             }
-            #[cfg(not(target_os = "macos"))]
-            let _ = &window;
         }) {
             eprintln!("settings webview: {why}");
         }

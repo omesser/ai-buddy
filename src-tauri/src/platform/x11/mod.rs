@@ -12,6 +12,7 @@ mod input_events;
 mod overlay;
 mod pointer;
 mod sensing;
+mod settings_raise;
 mod settings_window;
 mod window_source;
 
@@ -22,4 +23,5 @@ pub use sensing::X11ActivitySource;
 pub use settings_window::{refresh_if_showing as refresh_settings, show as show_settings};
 
 pub(super) use connection::connection;
+pub(super) use settings_raise::raise_settings_ewmh_above;
 pub(super) use window_source::X11WindowSource;

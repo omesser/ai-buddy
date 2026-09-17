@@ -396,6 +396,25 @@ pub fn show_settings(session: crate::settings::SettingsSession) {
     x11::show_settings(session)
 }
 
+/// Raise the Settings webview above the overlay. Main thread only.
+///
+/// Native GTK Settings uses keep_above so it shares `_NET_WM_STATE_ABOVE` with the overlay (#799).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use gtk::prelude::*;
+
+    let gtk_window = window
+        .gtk_window()
+        .map_err(|e| format!("settings window has no gtk handle: {e}"))?;
+    gtk_window.set_keep_above(true);
+    gtk_window.present();
+    // Mapped windows need a ClientMessage. GTK keep_above is the native path; this covers a WM that ignored it.
+    if let Err(why) = x11::raise_settings_ewmh_above(window) {
+        eprintln!("settings webview ewmh raise: {why}");
+    }
+    Ok(())
+}
+
 /// Redraw the GTK settings window from the live roster. Main thread only.
 ///
 /// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
@@ -418,6 +437,14 @@ pub fn refresh_settings(app: &tauri::AppHandle) {
 #[cfg(not(unix))]
 pub fn show_settings(session: crate::settings::SettingsSession) {
     windows::show_settings(session)
+}
+
+/// Raise the Settings webview above the overlay. Main thread only.
+///
+/// The overlay is HWND_TOPMOST. A normal window cannot stack above that band.
+#[cfg(not(unix))]
+pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    windows::raise_settings_window(window)
 }
 
 /// Redraw the settings window from the live roster. Main thread only.

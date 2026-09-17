@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# Prove Settings webview stacks above the X11 overlay (#799 / #715 check 4).
+# Xvfb has no window manager; _NET_WM_STATE_ABOVE needs one.
+# Run with: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh
+#
+# Usage:
+#   ./scripts/verify-settings-zorder-x11.sh
+#   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-zorder-x11.sh
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+log_info() {
+  echo -e "${GREEN}[INFO]${NC} $*"
+}
+
+log_error() {
+  echo -e "${RED}[ERROR]${NC} $*"
+}
+
+fail() {
+  log_error "$@"
+  if [ -n "${TRACE_LOG:-}" ] && [ -f "$TRACE_LOG" ]; then
+    log_error "Last 40 lines of app log:"
+    tail -40 "$TRACE_LOG" >&2 || true
+  fi
+  if [ -n "${SETTINGS_ID:-}" ]; then
+    log_error "Settings xprop:"
+    xprop -id "$SETTINGS_ID" WM_NAME _NET_WM_STATE WM_CLASS 2>&1 | head -20 >&2 || true
+  fi
+  if [ -n "${OVERLAY_ID:-}" ]; then
+    log_error "Overlay xprop:"
+    xprop -id "$OVERLAY_ID" WM_NAME _NET_WM_STATE WM_CLASS 2>&1 | head -20 >&2 || true
+  fi
+  xprop -root _NET_CLIENT_LIST_STACKING 2>&1 >&2 || true
+  exit 1
+}
+
+await() {
+  local file="$1" pattern="$2" attempts="$3"
+  for _ in $(seq 1 "$attempts"); do
+    grep -qE "$pattern" "$file" 2> /dev/null && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+has_supporting_wm() {
+  xprop -root _NET_SUPPORTING_WM_CHECK 2> /dev/null | grep -q 'window id'
+}
+
+[ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
+
+for tool in xdotool xprop xwininfo; do
+  command -v "$tool" > /dev/null || fail "$tool not found. Install: sudo apt-get install x11-utils xdotool"
+done
+
+cd "$WORKSPACE_ROOT"
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+OUT=".verify/settings-zorder-x11-$STAMP"
+mkdir -p "$OUT"
+TRACE_LOG="$OUT/app.log"
+
+WM_STARTED=0
+if ! has_supporting_wm; then
+  command -v openbox > /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
+  log_info "Starting openbox (Xvfb has no window manager)..."
+  openbox --replace > /dev/null 2> "$OUT/openbox.err" &
+  WM_PID=$!
+  WM_STARTED=1
+  for _ in $(seq 1 40); do
+    has_supporting_wm && break
+    sleep 0.25
+  done
+  has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
+fi
+
+cleanup() {
+  log_info "Cleaning up..."
+  if [ -n "${APP_PID:-}" ]; then
+    kill "$APP_PID" 2> /dev/null || true
+  fi
+  if [ "$WM_STARTED" -eq 1 ] && [ -n "${WM_PID:-}" ]; then
+    kill "$WM_PID" 2> /dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+BIN="${AI_BUDDY_VERIFY_BIN:-}"
+if [ -z "$BIN" ]; then
+  if [ -x "$WORKSPACE_ROOT/target/release/ai-buddy" ]; then
+    BIN="$WORKSPACE_ROOT/target/release/ai-buddy"
+  else
+    log_info "Building ai-buddy (release)..."
+    cargo build -p ai-buddy --release
+    BIN="$WORKSPACE_ROOT/target/release/ai-buddy"
+  fi
+fi
+[ -x "$BIN" ] || fail "no binary at $BIN"
+
+log_info "Starting ai-buddy with Settings webview..."
+HOME_DIR="$OUT/home"
+mkdir -p "$HOME_DIR"
+export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
+env -u AI_BUDDY_DIRECTOR_API_KEY \
+  HOME="$HOME_DIR" \
+  AI_BUDDY_SETTINGS_WEBVIEW=1 \
+  AI_BUDDY_OPEN_SETTINGS=1 \
+  AI_BUDDY_TRACE_FRAMES=1 \
+  AI_BUDDY_CHARACTER=timber-wolf \
+  AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$WORKSPACE_ROOT/characters}" \
+  "$BIN" > "$TRACE_LOG" 2>&1 &
+APP_PID=$!
+
+await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
+kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
+
+find_overlay_window() {
+  local id w h name
+  for id in $(xdotool search --class 'Ai-buddy' 2> /dev/null || true); do
+    name=$(xprop -id "$id" WM_NAME 2> /dev/null || true)
+    echo "$name" | grep -q 'Settings' && continue
+    w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
+    h=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Height:/ {print $2; exit}')
+    if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge 200 ] && [ "$h" -ge 200 ]; then
+      echo "$id"
+      return 0
+    fi
+  done
+  return 1
+}
+
+find_settings_window() {
+  local id name
+  for id in $(xdotool search --name 'Settings' 2> /dev/null || true); do
+    name=$(xprop -id "$id" WM_NAME 2> /dev/null || true)
+    echo "$name" | grep -q 'Settings' && echo "$id" && return 0
+  done
+  return 1
+}
+
+log_info "Waiting for overlay window..."
+OVERLAY_ID=""
+for _ in $(seq 1 60); do
+  OVERLAY_ID=$(find_overlay_window || true)
+  [ -n "$OVERLAY_ID" ] && break
+  sleep 0.25
+done
+[ -n "$OVERLAY_ID" ] || fail "Could not find ai-buddy overlay window"
+log_info "Found overlay window ID: $OVERLAY_ID"
+
+log_info "Waiting for overlay EWMH ABOVE..."
+await "$TRACE_LOG" 'EWMH configured' 40 || fail "configure_overlay never succeeded"
+OVERLAY_PROPS=""
+for _ in $(seq 1 40); do
+  OVERLAY_PROPS=$(xprop -id "$OVERLAY_ID" _NET_WM_STATE 2> /dev/null || true)
+  echo "$OVERLAY_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && break
+  sleep 0.25
+done
+echo "$OVERLAY_PROPS" | grep -q "_NET_WM_STATE_ABOVE" ||
+  fail "overlay missing _NET_WM_STATE_ABOVE (${OVERLAY_PROPS:-empty})"
+
+log_info "Waiting for Settings window..."
+SETTINGS_ID=""
+for _ in $(seq 1 60); do
+  SETTINGS_ID=$(find_settings_window || true)
+  [ -n "$SETTINGS_ID" ] && break
+  sleep 0.25
+done
+[ -n "$SETTINGS_ID" ] || fail "Could not find Settings window"
+log_info "Found Settings window ID: $SETTINGS_ID"
+
+log_info "Waiting for Settings _NET_WM_STATE_ABOVE..."
+SETTINGS_PROPS=""
+for _ in $(seq 1 40); do
+  SETTINGS_PROPS=$(xprop -id "$SETTINGS_ID" _NET_WM_STATE 2> /dev/null || true)
+  echo "$SETTINGS_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && break
+  sleep 0.25
+done
+echo "$SETTINGS_PROPS" | grep -q "_NET_WM_STATE_ABOVE" ||
+  fail "Settings missing _NET_WM_STATE_ABOVE (${SETTINGS_PROPS:-empty})"
+log_info "Settings is in the ABOVE band: $SETTINGS_PROPS"
+
+stacking_ids() {
+  xprop -root _NET_CLIENT_LIST_STACKING 2> /dev/null |
+    sed 's/.*#//' |
+    tr ',' '\n' |
+    sed 's/^ *//;s/ *$//' |
+    sed '/^$/d' |
+    while read -r hex; do
+      printf '%d\n' "$hex" 2> /dev/null || true
+    done
+}
+
+log_info "Checking stacking order..."
+STACK_OK=0
+for _ in $(seq 1 40); do
+  STACK=$(stacking_ids)
+  OVERLAY_POS=$(echo "$STACK" | grep -n "^${OVERLAY_ID}$" | head -1 | cut -d: -f1 || true)
+  SETTINGS_POS=$(echo "$STACK" | grep -n "^${SETTINGS_ID}$" | head -1 | cut -d: -f1 || true)
+  if [ -n "$OVERLAY_POS" ] && [ -n "$SETTINGS_POS" ] && [ "$SETTINGS_POS" -gt "$OVERLAY_POS" ]; then
+    STACK_OK=1
+    break
+  fi
+  sleep 0.25
+done
+
+if [ "$STACK_OK" -ne 1 ]; then
+  log_error "stacking overlay=$OVERLAY_ID pos=${OVERLAY_POS:-missing} settings=$SETTINGS_ID pos=${SETTINGS_POS:-missing}"
+  log_error "stack:"
+  stacking_ids >&2 || true
+  xprop -root _NET_CLIENT_LIST_STACKING >&2 || true
+  fail "Settings is not above the overlay in _NET_CLIENT_LIST_STACKING"
+fi
+
+log_info "Settings stacks above overlay (positions $OVERLAY_POS < $SETTINGS_POS)"
+log_info "PASS: Settings webview is above the ABOVE overlay"
+log_info "Log: $TRACE_LOG"
