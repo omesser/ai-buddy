@@ -34,39 +34,7 @@ pub(crate) fn character_prompt(
         written => format!("{personality}\n\n{written}"),
     };
 
-    let instructions = if blank {
-        String::new()
-    } else {
-        let names: Vec<String> = behaviors
-            .into_iter()
-            .map(|name| name.as_ref().to_string())
-            .collect();
-        let declared = if names.is_empty() {
-            "(none)".to_string()
-        } else {
-            names.join(", ")
-        };
-        // The universal voice rules, written once for every Character rather
-        // than copied into personality files to drift. A personality
-        // supplies the material; this paragraph governs the delivery.
-        format!(
-            "You may propose one of these behaviors: {declared}\n\
-             \n\
-             Reply with the behavior name on the first line.\n\
-             An optional spoken line may follow on the next line.\n\
-             Propose nothing else.\n\
-             \n\
-             Speak in this character's voice, always in character: never mention \
-             being a model or an assistant. A spoken line fits a small speech \
-             bubble: five short sentences at the most. Vary: prefer a line you \
-             have not used yet, though a signature phrase may recur, and \
-             lean away from the behaviors listed as recently played. React to \
-             this moment when there is something worth remarking on: what just \
-             happened to you, and what you are standing on. Dialogue is \
-             demeanour, never capability: never promise an action on the machine \
-             or claim an ability."
-        )
-    };
+    let instructions = app_instructions(behaviors, blank);
 
     match (authored.is_empty(), instructions.is_empty()) {
         (true, true) => moment,
@@ -74,6 +42,47 @@ pub(crate) fn character_prompt(
         (true, false) => format!("{instructions}\n\n{moment}"),
         (false, false) => format!("{authored}\n\n{instructions}\n\n{moment}"),
     }
+}
+
+/// The app-level layer of the Character Prompt: voice rules, Behavior roster,
+/// reply contract. Empty under Blank AI. The Prompt tab draws this frozen so
+/// an emptied control run is visible, not a missing block.
+pub fn app_instructions(
+    behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+    blank: bool,
+) -> String {
+    if blank {
+        return String::new();
+    }
+    let names: Vec<String> = behaviors
+        .into_iter()
+        .map(|name| name.as_ref().to_string())
+        .collect();
+    let declared = if names.is_empty() {
+        "(none)".to_string()
+    } else {
+        names.join(", ")
+    };
+    // The universal voice rules, written once for every Character rather
+    // than copied into personality files to drift. A personality
+    // supplies the material; this paragraph governs the delivery.
+    format!(
+        "You may propose one of these behaviors: {declared}\n\
+         \n\
+         Reply with the behavior name on the first line.\n\
+         An optional spoken line may follow on the next line.\n\
+         Propose nothing else.\n\
+         \n\
+         Speak in this character's voice, always in character: never mention \
+         being a model or an assistant. A spoken line fits a small speech \
+         bubble: five short sentences at the most. Vary: prefer a line you \
+         have not used yet, though a signature phrase may recur, and \
+         lean away from the behaviors listed as recently played. React to \
+         this moment when there is something worth remarking on: what just \
+         happened to you, and what you are standing on. Dialogue is \
+         demeanour, never capability: never promise an action on the machine \
+         or claim an ability."
+    )
 }
 
 /// The one word the prompt uses for each `Happened`.

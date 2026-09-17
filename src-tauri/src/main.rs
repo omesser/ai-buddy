@@ -53,7 +53,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::{Character, Primitive};
-use ai_buddy_core::director::{Happened, ModelDirector, Pace, Seeded, StaticDirector};
+use ai_buddy_core::director::{
+    app_instructions, Happened, ModelDirector, Pace, Seeded, StaticDirector,
+};
 use ai_buddy_core::engine::{Cue, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::memory;
@@ -287,6 +289,10 @@ struct SettingsState {
     /// once at launch, because a package changes only between runs, and shared
     /// so the Prompt tab asking for it costs no copy of every prompt installed.
     personalities: Arc<BTreeMap<String, String>>,
+    /// Declared Behavior names, same key as `personalities`. The Prompt tab
+    /// draws the app-level instructions from these, so the roster it shows is
+    /// the one the opening turn names.
+    behavior_names: Arc<BTreeMap<String, Vec<String>>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
@@ -1218,6 +1224,10 @@ struct ChatOpening {
     /// Which Harness is attached, when one is. Used to name it in the fourth
     /// empty state (needs authentication).
     harness_name: Option<String>,
+    /// App-level instructions as sent: voice rules, Behavior roster, reply
+    /// contract. Empty under Blank AI. The Prompt tab draws this frozen so an
+    /// emptied control run is a visible Empty, not a missing block.
+    instructions: String,
     /// The Character's frozen Personality Prompt, for the Prompt tab
     /// (ADR-0012). Empty when the package shipped none, and empty under
     /// Blank AI: the flag empties the layer rather than hiding the tab (#680).
@@ -1254,11 +1264,22 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
     })
 }
 
+#[cfg(test)]
 fn chat_opening_from(
     instance: &roster::Instance,
     inspect: &model::DirectorInspect,
     personality: &str,
 ) -> ChatOpening {
+    chat_opening_layers(instance, inspect, personality, std::iter::empty::<&str>())
+}
+
+fn chat_opening_layers(
+    instance: &roster::Instance,
+    inspect: &model::DirectorInspect,
+    personality: &str,
+    behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+) -> ChatOpening {
+    let blank = model::blank();
     ChatOpening {
         name: instance.name.clone(),
         character: instance.character_name().to_string(),
@@ -1275,7 +1296,8 @@ fn chat_opening_from(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
-        personality: if model::blank() {
+        instructions: app_instructions(behaviors, blank),
+        personality: if blank {
             String::new()
         } else {
             personality.to_string()
@@ -1295,6 +1317,16 @@ fn personality_of(
     characters
         .get(instance.character_name())
         .map(|character| character.personality.clone())
+        .unwrap_or_default()
+}
+
+fn behavior_names_of(
+    characters: &BTreeMap<String, Arc<Character>>,
+    instance: &roster::Instance,
+) -> Vec<String> {
+    characters
+        .get(instance.character_name())
+        .map(|character| character.behaviors.keys().cloned().collect())
         .unwrap_or_default()
 }
 
@@ -1319,8 +1351,17 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         inspect.harness = harness::attached().map(|session| session.inspect());
     }
     let inspect = state.inspect.lock().ok();
+    let blank = model::blank();
     ChatOpening {
-        personality: if model::blank() {
+        instructions: app_instructions(
+            state
+                .behavior_names
+                .get(&character)
+                .cloned()
+                .unwrap_or_default(),
+            blank,
+        ),
+        personality: if blank {
             String::new()
         } else {
             state
@@ -1423,7 +1464,12 @@ fn push_chat_opening(
     let Some(instance) = roster.get(id) else {
         return;
     };
-    let opening = chat_opening_from(instance, inspect, &personality_of(characters, instance));
+    let opening = chat_opening_layers(
+        instance,
+        inspect,
+        &personality_of(characters, instance),
+        behavior_names_of(characters, instance),
+    );
     let label = chat_label(id);
     let title = opening.name.clone();
     let handle = app.clone();
@@ -2756,6 +2802,14 @@ fn main() {
                         .map(|(name, character)| (name.clone(), character.personality.clone()))
                         .collect(),
                 ),
+                behavior_names: Arc::new(
+                    character_cache
+                        .iter()
+                        .map(|(name, character)| {
+                            (name.clone(), character.behaviors.keys().cloned().collect())
+                        })
+                        .collect(),
+                ),
                 instances: Arc::clone(&instance_rows),
                 inspect: Arc::clone(&inspect),
                 ops: ops_tx,
@@ -3079,14 +3133,22 @@ mod tests {
         let character = stub_character("nim");
         let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
 
-        let fresh = chat_opening_from(
+        let fresh = chat_opening_layers(
             roster.get(&id).expect("spawned"),
             &stub_inspect(),
             "Nim is patient.",
+            ["wave"],
         );
         assert_eq!(fresh.personality, "Nim is patient.");
         assert_eq!(fresh.instance_prompt, "", "empty by default");
         assert_eq!(fresh.prompt_limit, roster::INSTANCE_PROMPT_LIMIT);
+        assert!(
+            fresh
+                .instructions
+                .contains("You may propose one of these behaviors: wave"),
+            "app-level instructions are the same string the opening turn sends: {}",
+            fresh.instructions
+        );
 
         assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
         let written = chat_opening_from(
@@ -3112,24 +3174,35 @@ mod tests {
             let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
             assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
 
-            let off = chat_opening_from(
+            let off = chat_opening_layers(
                 roster.get(&id).expect("spawned"),
                 &stub_inspect(),
                 "Nim is patient.",
+                ["wave"],
             );
             assert_eq!(off.personality, "Nim is patient.");
             assert_eq!(off.instance_prompt, "Answer in haiku.");
+            assert!(
+                off.instructions.contains("always in character"),
+                "shaped openings still carry the app-level layer: {}",
+                off.instructions
+            );
 
             crate::dev_flags::seed(&settings::Settings {
                 director_blank: true,
                 ..settings::Settings::default()
             });
-            let on = chat_opening_from(
+            let on = chat_opening_layers(
                 roster.get(&id).expect("spawned"),
                 &stub_inspect(),
                 "Nim is patient.",
+                ["wave"],
             );
             assert_eq!(on.personality, "", "the built-in layer was emptied");
+            assert_eq!(
+                on.instructions, "",
+                "app-level instructions were emptied with it"
+            );
             assert_eq!(
                 on.instance_prompt, "Answer in haiku.",
                 "the Instance Prompt is still the one the user wrote"

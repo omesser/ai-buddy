@@ -35,8 +35,10 @@ The opening turn of the Director session: Personality Prompt, Instance Prompt,
 the Behaviors it may propose, and this moment. Later wakes send a short
 follow-up (what just happened, recent Behaviors, time of day, State, frontmost
 window) in the same conversation. Assembled rather than written: two of its
-layers are authored, the whole is never hand-authored, and it is inspectable in
-settings. ADR-0012.
+layers are authored, the whole is never hand-authored. The Prompt tab shows
+the three concatenated layers — app-level instructions, Personality Prompt,
+Instance Prompt — and empty ones say Empty. Inspectable in settings as well.
+ADR-0012.
 _Avoid_: Persona, preamble, prompt template
 
 **Instance Prompt**:
@@ -49,7 +51,7 @@ _Avoid_: System prompt, custom instructions, jailbreak
 The Director mode that empties the built-in prompt layers — the package
 Personality Prompt and the app-level instructions (voice rules, Behavior roster,
 reply contract) — and still sends an Instance Prompt the user wrote. Off by
-default. The Prompt tab shows those emptied fields as empty: what you see is
+default. The Prompt tab shows those emptied fields as Empty: what you see is
 what is sent. With no contract the reply is prose, so the buddy talks and plays
 no Behavior unless the Instance Prompt asks for one. That is the control run
 for telling a model's misbehaviour apart from the shipped prompt, and for
