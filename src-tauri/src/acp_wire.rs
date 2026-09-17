@@ -1,15 +1,6 @@
-//! The ACP wire: the official SDK and its executor, on one thread.
-//!
-//! `harness.rs` decides when to spawn, what to send, and what a failure means.
-//! This file only speaks the protocol: it drives `agent-client-protocol`'s
-//! connection future on a current-thread tokio runtime that exists on this
-//! thread and nowhere else, and hands the rest of the shell plain values —
-//! no SDK type crosses out of here. Reversing the crate choice (ADR-0017)
-//! means rewriting this file and nothing beside it.
-//!
-//! Commands come in on a channel and each carries its reply channel, so the
-//! caller blocks on `recv_timeout` while the protocol runs here. The frame
-//! loop never sees any of it (ADR-0004): every caller is a `Slots` worker.
+//! The ACP wire. The official SDK and its executor, on one thread.
+//! No SDK type leaves the file. Reversing the crate choice (ADR-0017)
+//! rewrites this file only. The frame loop never sees it (ADR-0004).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -35,29 +26,23 @@ use tokio::sync::mpsc;
 /// reply before it is given back regardless.
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
-/// The MCP server `session/new` is told about, in whichever transport the
-/// Harness said it takes.
-///
-/// The app's own loopback server is the shipped path (ADR-0023) and the stdio
-/// binary is the fallback for a Harness that advertises no
-/// `mcpCapabilities.http`. `harness.rs` chooses; this file only spells it.
+/// The MCP server `session/new` is told about.
+/// The loopback server is the shipped path (ADR-0023). Stdio is the fallback
+/// when the Harness advertises no `mcpCapabilities.http`.
 #[derive(Clone)]
 pub enum McpChoice {
     /// The loopback server the app serves, and the `Authorization` value that
     /// reaches it. The only one whose tools reach the buddy on screen.
     Http { url: String, authorization: String },
-    /// A stdio server the Harness spawns: the sidecar, or the app binary
-    /// re-executed as `--mcp-stdio` (#497). A shim that relays to the loopback
-    /// server above, so its tools reach the same Instances (ADR-0026).
+    /// A stdio shim the Harness spawns. It relays to the loopback server so
+    /// the tools reach the same Instances.
     Stdio(McpLaunch),
 }
 
 impl McpChoice {
-    /// What a log line, the Action Log or a probe may say about this choice.
-    ///
-    /// Never the token: it is the one credential this process owns for a
-    /// listener of its own, and ADR-0010's seventh rule reads the same way for
-    /// one we mint as for one we would have borrowed.
+    /// What a log line, the Action Log, or a probe may say about this choice.
+    /// Never the token. ADR-0010's seventh rule treats a minted credential
+    /// the same as one we would have borrowed.
     pub fn label(&self) -> String {
         match self {
             Self::Http { url, .. } => url.clone(),
@@ -71,12 +56,12 @@ impl McpChoice {
 pub struct Handshake {
     pub agent: Option<String>,
     pub load_session: bool,
-    /// Whether the Harness takes HTTP MCP servers. #166 branches on it.
+    /// Whether the Harness takes HTTP MCP servers.
     pub mcp_http: bool,
     pub auth_methods: Vec<AuthHint>,
 }
 
-/// One `authMethods` entry: enough to name the fix in a sentence.
+/// One `authMethods` entry. Enough to name the fix in a sentence.
 #[derive(Clone, Debug)]
 pub struct AuthHint {
     pub name: String,
@@ -84,23 +69,21 @@ pub struct AuthHint {
 }
 
 /// A forwarded `session/request_permission`, as the Chat surface draws it.
-///
-/// Everything but `request` and `options` is untrusted: a Harness fills it in
-/// from a tool call an MCP server can steer. `chat-ask.js` decides which of it
-/// the consent row shows, and writes all of it as text (#678).
+/// Everything but `request` and `options` is untrusted. A Harness fills it
+/// in from a tool call an MCP server can steer.
 #[derive(Clone, Debug, Serialize)]
 pub struct PermissionAsk {
     /// The request id, as text, handed back with the answer.
     pub request: String,
-    /// The tool call's title, absent when it had none. Not a placeholder: the
-    /// surface has to tell an ask that described itself badly from one this
-    /// file emptied out, and `(untitled)` read as the second (#678).
+    /// The tool call's title, absent when it had none. Not a placeholder.
+    /// The surface has to tell an ask that described itself badly from one
+    /// this file emptied out (#678).
     pub title: Option<String>,
     pub kind: Option<String>,
     /// The tool call's `content`, as the text of it. Where a question from an
     /// MCP server arrives, and so the first thing the row has to show.
     pub content: Vec<String>,
-    /// The arguments the call was made with: ACP's `rawInput`, arbitrary JSON.
+    /// The arguments the call was made with. ACP's `rawInput`, arbitrary JSON.
     /// What the row falls back to when a call carried no content.
     pub input: Option<serde_json::Value>,
     /// Every path the call says it would touch, `content` diffs included.
@@ -115,9 +98,9 @@ pub struct PermissionOption {
     pub kind: Option<String>,
 }
 
-/// One step of the agent's plan, as the Chat surface draws it. `priority` and
-/// `status` are the crate's own serde spellings through `name_of`, like
-/// `Event::ToolCall`'s. `_meta` is out: ACP says not to assume anything of it.
+/// One step of the agent's plan, as the Chat surface draws it.
+/// `priority` and `status` are the crate's serde spellings through `name_of`.
+/// `_meta` is out. ACP says not to assume anything of it.
 #[derive(Clone, Debug, Serialize)]
 pub struct PlanStep {
     pub content: String,
@@ -125,8 +108,8 @@ pub struct PlanStep {
     pub status: String,
 }
 
-/// What the session stream said, minus the text — that comes back with the
-/// turn. Fed to the Action Log and the Chat surface by `harness.rs`.
+/// What the session stream said, minus the text. The text comes back with
+/// the turn.
 #[derive(Clone, Debug)]
 pub enum Event {
     ToolCall {
@@ -144,20 +127,17 @@ pub enum Event {
         size: u64,
     },
     Permission(PermissionAsk),
-    /// The line of the Harness's thinking being written right now, for the
-    /// Chat surface to show while the turn runs. Transient by decision
-    /// (ADR-0025): each one replaces the last, nothing keeps them, and no line
-    /// of the log or of the Action Log is made from one.
+    /// The line of thinking being written now, for the Chat surface.
+    /// Transient (ADR-0025). Each one replaces the last. Nothing keeps them,
+    /// and no log line is made from one.
     Thought(String),
-    /// A forwarded ask that can no longer be answered: the user answered it,
-    /// the turn ended, or it was cancelled. Every open Chat surface was given
-    /// the ask, so every one of them has to hear this.
+    /// A forwarded ask that can no longer be answered. Every open Chat
+    /// surface was given the ask, so every one of them has to hear this.
     PermissionSettled {
         request: String,
-        /// The option that won, and `None` when nothing was picked. Carried so
-        /// the surfaces that did not take the click draw the decision that was
-        /// actually made: two of them can draw one request, and every answer
-        /// after the first is dropped here.
+        /// The option that won, or `None` when nothing was picked.
+        /// Two surfaces can draw one request. Every answer after the first
+        /// is dropped here, so the others still draw the decision that won.
         option: Option<String>,
     },
 }
@@ -167,7 +147,7 @@ pub enum Event {
 pub struct McpLaunch {
     pub path: PathBuf,
     pub args: Vec<String>,
-    /// What the shim reads to find the app and authorise itself (ADR-0026).
+    /// What the shim reads to find the app and authorise itself.
     /// Deliberately absent from `line`.
     pub env: Vec<(String, String)>,
 }
@@ -186,7 +166,7 @@ pub type OnEvent = Box<dyn Fn(Event) + Send + Sync>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum OpenError {
-    /// `-32000`: the Harness wants a login it does not have.
+    /// `-32000`. The Harness wants a login it does not have.
     AuthRequired,
     /// The child is gone.
     Lost,
@@ -207,11 +187,8 @@ pub enum TurnError {
 }
 
 /// Why no wire came back from a spawn.
-///
-/// `Missing` is the one no respawn can mend: `PATH` has no such file, so there
-/// is no child to wait for and the backoff ladder would only re-time the same
-/// failure every five minutes (#659). Told apart by `ErrorKind`, never by the
-/// text - `(os error 2)` is the platform's wording and the user's locale's.
+/// `Missing` is `ErrorKind::NotFound`. Never the locale text of os error 2.
+/// No respawn mends a PATH that has no such file.
 #[derive(Debug)]
 pub enum SpawnError {
     Missing,
@@ -252,9 +229,8 @@ pub struct Wire {
     tx: mpsc::UnboundedSender<Msg>,
     handshake: Handshake,
     /// Nothing is ever sent on this. The thread owns the sender, so the
-    /// receiver disconnects at the moment the thread ends — which is how
-    /// `wait_for_exit` knows the child has been reaped. Behind a `Mutex`
-    /// because a `Receiver` is `Send` and not `Sync`, and a `Wire` is shared.
+    /// receiver disconnects when the thread ends, which is how `wait_for_exit`
+    /// knows. Behind a `Mutex` because a `Receiver` is `Send` and not `Sync`.
     done: Mutex<sync_mpsc::Receiver<()>>,
 }
 
@@ -291,14 +267,9 @@ impl Wire {
         })
     }
 
-    /// Wait, bounded, for the thread to end — and so for the child to have
-    /// been killed and reaped, which is the last thing it does. False is the
-    /// timeout passing with the thread still there.
-    ///
-    /// `shutdown` only posts the message, so a caller that must not outlive
-    /// its child needs this after it. `Session::shutdown` always does: the
-    /// child is in its own process group, so ending the process does not take
-    /// it with us. The probe waits too.
+    /// Wait, bounded, for the thread to end and the child to be reaped.
+    /// `shutdown` only posts the message. The child is in its own process
+    /// group, so ending this process does not take it with us.
     pub fn wait_for_exit(&self, timeout: Duration) -> bool {
         self.done.lock().is_ok_and(|done| {
             matches!(
@@ -312,7 +283,7 @@ impl Wire {
         &self.handshake
     }
 
-    /// Whether the thread — and so the child — is still there.
+    /// Whether the thread, and so the child, is still there.
     pub fn alive(&self) -> bool {
         !self.tx.is_closed()
     }
@@ -337,7 +308,7 @@ impl Wire {
         rx.recv_timeout(timeout).unwrap_or(Err(OpenError::Lost))
     }
 
-    /// One `session/prompt`: the concatenated `agent_message_chunk`s once the
+    /// One `session/prompt`. The concatenated `agent_message_chunk`s once the
     /// turn ends in `end_turn`. Past `timeout`, `session/cancel` goes out and
     /// the reply is waited on for `CANCEL_GRACE` so the wire is quiet again.
     pub fn prompt(
@@ -365,11 +336,9 @@ impl Wire {
         }
     }
 
-    /// Cancel the turn in flight, for a caller that is about to send a newer
-    /// prompt. No-op on an idle wire: `serve` drops the message.
-    ///
-    /// Unlike `prompt`'s own timeout cancel, this one waits for nothing — the
-    /// turn's own caller is the one holding its reply channel.
+    /// Cancel the turn in flight, for a caller about to send a newer prompt.
+    /// No-op on an idle wire. Unlike `prompt`'s timeout cancel, this waits
+    /// for nothing. The turn's own caller holds its reply channel.
     pub fn cancel(&self) {
         let _ = self.tx.send(Msg::Cancel);
     }
@@ -400,7 +369,7 @@ fn run(
     command: Command,
     rx: mpsc::UnboundedReceiver<Msg>,
     ready: sync_mpsc::Sender<Result<Handshake, SpawnError>>,
-    // Held, never sent on, and dropped when this function returns: that drop
+    // Held, never sent on, and dropped when this function returns. That drop
     // is what `wait_for_exit` waits for.
     _done: sync_mpsc::Sender<()>,
     on_event: OnEvent,
@@ -428,7 +397,7 @@ fn run(
             async_command.spawn()
         };
         // Both platforms hand back the spawn's own `io::Error`, so the missing
-        // file is read off its kind in one place rather than two (#659).
+        // file is read off its kind in one place rather than two.
         let mut child = match spawned {
             Ok(child) => child,
             Err(why) => {
@@ -440,11 +409,9 @@ fn run(
             let _ = ready.send(Err(SpawnError::Failed("no pipes to the child".to_string())));
             return;
         };
-        // What the Harness sends us, routed off the SDK's dispatch loop and
-        // into `serve`, which is the one place that knows whether a turn is
-        // open to receive it. Anything else the Harness asks — `fs/*`,
-        // `terminal/*`, capabilities we never advertised — the SDK answers
-        // with method-not-found on its own.
+        // What the Harness sends us, routed into `serve`, which is the one
+        // place that knows whether a turn is open to receive it. Anything
+        // else (fs, terminal) the SDK answers with method-not-found.
         let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
         let updates = incoming_tx.clone();
         let mut ready = Some(ready);
@@ -508,35 +475,23 @@ fn run(
     });
 }
 
-/// Whether `pgid` is a group we may SIGKILL: a real group, and not our own.
-///
-/// A child leaves our group only once `own_interrupt` has taken Ctrl+C
-/// (`harness::apply_isolation`). Both entry points do that before spawning —
-/// the app in `quit_harness_on_interrupt`, the probe in `harness::run_probe`
-/// — so in practice the answer is yes and the grandchildren die with the
-/// child. This exists for when that fails: a `ctrlc` handler that would not
-/// install leaves the child in our group, and SIGKILLing it there kills us.
-/// That is how `--probe-harness` died at -9 after printing `end_turn`, taking
-/// the shell that ran `scripts/probe-harness.sh` with it (#457).
+/// Whether `pgid` is a group we may SIGKILL. A real group, and not our own.
+/// Isolation is supposed to move the child out first. If that fails, the
+/// child is still in our group, and SIGKILLing it there kills us (#457).
 #[cfg(unix)]
 pub(crate) fn killable_group(pgid: libc::pid_t) -> bool {
     pgid > 0 && pgid != unsafe { libc::getpgrp() }
 }
 
-/// SIGKILL the Harness's process group. `npx` grandchildren share that
-/// group; a direct `Child::kill` leaves them running.
-///
-/// Never our own group, per `killable_group`. In the case that guard is for,
-/// the caller's direct `Child::kill` still reaps the child and a grandchild
-/// sharing our group outlives it.
-///
-/// On Windows, terminates the Job Object so grandchildren die too.
+/// SIGKILL the Harness's process group. `npx` grandchildren share it, and a
+/// direct `Child::kill` leaves them running. Never our own group.
+/// On Windows this terminates the Job Object so grandchildren die too.
 pub(crate) fn kill_harness_tree(pid: u32) {
     #[cfg(unix)]
     {
         let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
         if killable_group(pgid) {
-            // SIGKILL, not SIGTERM: Claude's ACP adapter dumps
+            // SIGKILL, not SIGTERM. Claude's ACP adapter dumps
             // `Query closed before response received` on a polite
             // signal, which is the dump this isolation exists to avoid.
             let _ = unsafe { libc::killpg(pgid, libc::SIGKILL) };
@@ -552,7 +507,6 @@ pub(crate) fn kill_harness_tree(pid: u32) {
     }
 }
 
-/// What the Harness sent, on its way to `serve`.
 enum Incoming {
     Update(SessionUpdate),
     Ask(
@@ -575,7 +529,7 @@ async fn serve(
                 None => break,
             },
             // History replayed by `session/load`, and anything said between
-            // turns: not ours to keep.
+            // turns. Not ours to keep.
             _ = incoming.recv() => continue,
             () = cx.incoming_closed() => break,
         };
@@ -611,10 +565,8 @@ async fn serve(
 }
 
 /// One `McpChoice` in the protocol's own words.
-///
-/// The token rides in a header rather than in the URL or an argv, which is the
-/// one place it is neither written to a config file the Harness keeps nor
-/// visible in a process list.
+/// The token rides in a header, not the URL or an argv, so it is neither
+/// written to a config file the Harness keeps nor visible in a process list.
 fn mcp_server(choice: &McpChoice) -> McpServer {
     match choice {
         McpChoice::Http { url, authorization } => {
@@ -637,7 +589,7 @@ fn mcp_server(choice: &McpChoice) -> McpServer {
 }
 
 /// `session/load` when asked and answered, else `session/new`. Raw requests
-/// rather than the SDK's session builders: those tear the connection down
+/// rather than the SDK's session builders. Those tear the connection down
 /// when the Harness refuses, and `auth_required` is a refusal we recover from.
 async fn open(
     cx: &ConnectionTo<Agent>,
@@ -670,11 +622,9 @@ async fn open(
         })
 }
 
-/// One prompt turn: chunks accumulate, other updates become `Event`s, a
-/// permission request is forwarded and held open until `Answer` or `Cancel`.
-///
-/// Where "the turn finished" is read. ACP v2 moves it to an idle
-/// `state_update`; keep it here and nowhere else.
+/// One prompt turn. Chunks accumulate, other updates become `Event`s, and a
+/// permission request is held open until `Answer` or `Cancel`.
+/// "The turn finished" is read here, not on an idle `state_update` from ACP v2.
 async fn turn(
     cx: &ConnectionTo<Agent>,
     session: &SessionId,
@@ -689,13 +639,13 @@ async fn turn(
     ));
     let mut finished = std::pin::pin!(sent.block_task());
     let mut said = String::new();
-    // Beside `said` and never inside it: the thought is kept only so a chunk
+    // Beside `said` and never inside it. The thought is kept only so a chunk
     // that arrives mid-sentence can be shown as the sentence it belongs to.
-    // It dies with the turn, which is the whole of its lifetime.
+    // It dies with the turn.
     let mut thought = String::new();
     let mut asks: Vec<(String, Responder<RequestPermissionResponse>)> = Vec::new();
     loop {
-        // `biased`, updates first: the SDK dispatches a turn's chunks before
+        // `biased`, updates first. The SDK dispatches a turn's chunks before
         // its response, so the response is read only once the channel ahead
         // of it is empty, and no chunk is left behind on the way out.
         tokio::select! {
@@ -727,15 +677,9 @@ async fn turn(
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
                     end_turn(&mut asks, &mut thought, on_event);
                 }
-                // Not a Cancel, though it starts the same way. Shutdown is a
-                // caller tearing the wire down, so the turn leaves with it
+                // Shutdown is not Cancel (#634). The turn leaves with the wire
                 // rather than looping for a `cancelled` stop the Harness may
-                // never send: `Lost` is what `serve` breaks on, and that break
-                // is the only road to `kill_harness_tree` in `run`. Swallowed
-                // here, the kill waited for the *second* Shutdown `Drop for
-                // Wire` posts, and `Session::shutdown` paid `REAP` for it
-                // (#634). The reply is lost by design — every sender of this
-                // is killing the child a line later.
+                // never send. The reply is lost. The sender kills the child next.
                 Some(Msg::Shutdown) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
                     end_turn(&mut asks, &mut thought, on_event);
@@ -774,13 +718,9 @@ async fn turn(
     }
 }
 
-/// Every field of the tool call a consent row could read out, forwarded as
-/// plain values. Which of them the row leads with is `chat-ask.js`'s call; the
-/// only judgement here is that a diff is a path and an image is nothing.
-///
-/// The `name` `ToolCallUpdateFields` also carries is not here: the SDK gates
-/// it behind its `unstable_tool_call_name` feature, which this crate does not
-/// enable, so the field does not exist on the type we compile against.
+/// Every field of the tool call a consent row could read, as plain values.
+/// A diff is a path and an image is nothing. `name` is not here. The SDK
+/// gates it behind `unstable_tool_call_name`, which this crate does not enable.
 fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionAsk {
     let fields = &request.tool_call.fields;
     let mut locations: Vec<String> = fields
@@ -798,15 +738,15 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
                 }
             }
             // A diff is a file the call would rewrite, and the path is the
-            // part of that a consent row can use — its text is a whole new
-            // file. The same path can arrive both ways and is still one path.
+            // part a consent row can use. Its text is a whole new file.
+            // The same path can arrive both ways and is still one path.
             ToolCallContent::Diff(diff) => {
                 let path = diff.path.display().to_string();
                 if !locations.contains(&path) {
                     locations.push(path);
                 }
             }
-            // An image, an embedded resource, a terminal to watch: nothing a
+            // An image, an embedded resource, a terminal to watch. Nothing a
             // text surface can read out, and `input` still says what was
             // asked. Drawing a placeholder for them would only crowd it out.
             _ => {}
@@ -832,14 +772,8 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
 }
 
 /// One session update, into the turn's text or an `Event`.
-///
-/// Text-only, in both chunk arms: an image, audio, a resource link or an
-/// embedded resource is dropped, and a turn made of nothing else comes back
-/// empty. Not a decision, and not something to settle into — ADR-0028 says a
-/// block that arrived has to leave a mark even where drawing it is simplified
-/// to a name and a path, and a resource link is the certain case. #697 closes
-/// it. The catch-all is the same gap for the update kinds this match does not
-/// name.
+/// Text-only in both chunk arms, so a resource-only turn comes back empty.
+/// That is a gap (ADR-0028), not a decision to settle into.
 fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, on_event: &OnEvent) {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
@@ -847,12 +781,9 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
                 said.push_str(&text.text);
             }
         }
-        // `fields.content` and `fields.locations` are dropped on both arms, so
-        // a call reaches the Action Log as a title and a status and never says
-        // what it touched. Every field is meant to be read — `Diff`, `Terminal`,
-        // `content`, `locations` — and how each is drawn can improve later;
-        // reading does not wait on that (ADR-0028). `permission_ask` above reads
-        // the same two fields and is the shape this takes. #697 closes it.
+        // `fields.content` and `fields.locations` are dropped on both arms.
+        // A call reaches the Action Log as a title and a status and never
+        // says what it touched. Every field is meant to be read (ADR-0028).
         SessionUpdate::ToolCall(call) => on_event(Event::ToolCall {
             id: call.tool_call_id.0.to_string(),
             title: Some(call.title),
@@ -879,9 +810,9 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
             used: usage.used,
             size: usage.size,
         }),
-        // Never into `said`. That is the Director's reply, whose first line has
-        // to parse as a Behavior name and whose rest the buddy says out loud;
-        // reasoning is neither, so it leaves by its own door (ADR-0025).
+        // Never into `said`. That is the Director's reply, whose first line
+        // has to parse as a Behavior name and whose rest the buddy says out
+        // loud. Reasoning is neither, so it leaves by its own door (ADR-0025).
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
                 thought.push_str(&text.text);
@@ -894,14 +825,9 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
     }
 }
 
-/// The line of a streamed thought being written now: the tail of everything
-/// that has arrived, because a chunk lands mid-sentence and half a sentence on
-/// its own reads as nonsense. `None` while nothing but whitespace has come —
-/// an adapter streams signature-only thinking blocks whose text is empty, and
-/// a strip that opens on one says the Harness is thinking about nothing.
-///
-/// Shared with the Completer lane, whose reasoning deltas arrive in the same
-/// mid-sentence chunks and are drawn on the same strip (#611).
+/// The line of a streamed thought being written now. The tail of everything
+/// that has arrived, because a chunk lands mid-sentence. `None` while nothing
+/// but whitespace has come. An adapter streams empty thinking blocks.
 pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
     thought
         .lines()
@@ -910,13 +836,9 @@ pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
         .find(|line| !line.is_empty())
 }
 
-/// Close out what this side was holding for a turn that is over, cancelled, or
-/// leaving with the app.
-///
-/// Every question nobody will answer now gets the protocol-mandated reply,
-/// which is not an answer. And the thinking goes dark, the plan with it: the
-/// Chat surface keeps no thought and no plan of its own, so both stay on
-/// screen until it is told the turn that produced them has ended (ADR-0025).
+/// Close out what this side was holding for a turn that is over.
+/// Open questions get the protocol-mandated `cancelled` reply. Thought and
+/// plan go dark because the Chat surface keeps neither of its own (ADR-0025).
 fn end_turn(
     asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
     thought: &mut String,
@@ -935,9 +857,9 @@ fn end_turn(
         thought.clear();
         on_event(Event::Thought(String::new()));
     }
-    // Unconditional: nothing here remembers whether the turn planned, and
-    // threading a flag through every exit path in the turn loop would buy one
-    // idempotent event.
+    // Unconditional. Nothing here remembers whether the turn planned, and
+    // threading a flag through every exit path in the turn loop would buy
+    // one idempotent event.
     on_event(Event::Plan(Vec::new()));
 }
 
@@ -958,15 +880,9 @@ fn auth_hint(method: &AuthMethod) -> AuthHint {
     }
 }
 
-/// What a finished turn is worth, from the reason it stopped and the words it
-/// streamed.
-///
-/// A cap-ended turn is shown as far as it got and marked, which is what the
-/// Completer lane does with `finish_reason: "length"` — before this, one event
-/// gave a user half a sentence on an HTTP endpoint and silence on a Harness,
-/// decided by a setting they were not thinking about (#610). With nothing said
-/// there is nothing to show, so it errors like any other stop and the Static
-/// Director takes the turn. Every other stop reason is unchanged.
+/// What a finished turn is worth, from the reason it stopped and the words
+/// it streamed. A cap-ended turn is shown as far as it got and marked. With
+/// nothing said it errors like any other stop and the Static Director takes it.
 fn outcome(stop: StopReason, said: String) -> Result<Reply, TurnError> {
     match stop {
         StopReason::EndTurn => Ok(Reply::whole(said)),
@@ -990,14 +906,12 @@ mod tests {
     use agent_client_protocol::schema::v1::{AuthMethodAgent, ContentChunk, ToolKind};
     use std::sync::Arc;
 
-    /// One streamed thought fragment, as the wire delivers it.
     fn thinking(text: &str) -> SessionUpdate {
         SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
             text,
         ))))
     }
 
-    /// An `OnEvent` and the events it collected.
     fn collector() -> (Arc<Mutex<Vec<Event>>>, OnEvent) {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&seen);
@@ -1007,7 +921,6 @@ mod tests {
         )
     }
 
-    /// What a run of updates left in the answer, and every event it raised.
     fn drive(updates: Vec<SessionUpdate>) -> (String, Vec<Event>) {
         let (seen, on_event) = collector();
         let mut said = String::new();
@@ -1019,7 +932,6 @@ mod tests {
         (said, events)
     }
 
-    /// Every thought the run raised, in order.
     fn thoughts(events: &[Event]) -> Vec<&str> {
         events
             .iter()
@@ -1030,10 +942,9 @@ mod tests {
             .collect()
     }
 
-    /// #610: a cap-ended turn is best effort on both fills. What the agent
-    /// managed to say is shown and marked; with nothing said the turn errors
-    /// and the Static Director takes it, which is what the empty half of the
-    /// Completer lane does. No other stop reason changes.
+    /// A cap-ended turn is best effort on both fills. What the agent said is
+    /// shown and marked. With nothing said the turn errors and the Static
+    /// Director takes it, matching the empty half of the Completer lane.
     #[test]
     fn a_max_tokens_stop_shows_what_it_said_and_errors_when_it_said_nothing() {
         assert_eq!(
@@ -1084,9 +995,9 @@ mod tests {
         assert_eq!(hint.description.as_deref(), Some("run x login"));
     }
 
-    /// The shape `session/new` actually puts on the wire. The token rides in a
-    /// header and nowhere else (ADR-0023): not in the URL, which a Harness may
-    /// keep in a session file, and not in an argv, which is in a process list.
+    /// The shape `session/new` actually puts on the wire. The token rides in
+    /// a header and nowhere else (ADR-0023). Not in the URL, which a Harness
+    /// may keep in a session file, and not in an argv, which is in a process list.
     #[test]
     fn an_http_choice_carries_the_token_in_a_header_and_not_in_the_url() {
         let server = mcp_server(&McpChoice::Http {
@@ -1108,7 +1019,7 @@ mod tests {
         assert!(!wire["url"].as_str().unwrap().contains("deadbeef"));
     }
 
-    /// The fallback keeps the shape it always had: every Agent must take stdio,
+    /// The fallback keeps the shape it always had. Every Agent must take stdio,
     /// and the untagged variant is how the protocol spells it.
     #[test]
     fn a_stdio_choice_is_still_a_bare_command_and_carries_its_args() {
@@ -1122,7 +1033,7 @@ mod tests {
         assert_eq!(wire["name"], serde_json::json!("ai-buddy"));
         assert_eq!(wire["args"], serde_json::json!([]));
 
-        // #497's third route: the app binary re-executed as its own server.
+        // The app binary re-executed as its own server.
         let embedded = mcp_server(&McpChoice::Stdio(McpLaunch {
             path: PathBuf::from("/opt/ai-buddy"),
             args: vec!["--mcp-stdio".to_string()],
@@ -1133,9 +1044,8 @@ mod tests {
         assert_eq!(wire["args"], serde_json::json!(["--mcp-stdio"]));
     }
 
-    /// How the shim is told where to dial (ADR-0026). In `env`, which the
-    /// Harness applies to the child it spawns, and not in an argv, which is in
-    /// a process list.
+    /// How the shim is told where to dial. The Harness applies it in `env`
+    /// to the child it spawns, not in an argv, which is in a process list.
     #[test]
     fn a_stdio_choice_carries_the_endpoint_in_its_environment() {
         let server = mcp_server(&McpChoice::Stdio(McpLaunch {
@@ -1175,7 +1085,7 @@ mod tests {
         assert_eq!(choice.label(), "http://127.0.0.1:1/mcp");
         assert!(!choice.label().contains("secret"));
 
-        // The Action Log takes this line too, and the stdio choice now carries
+        // The Action Log takes this line too, and the stdio choice carries
         // a token of the same kind.
         let stdio = McpChoice::Stdio(McpLaunch {
             path: PathBuf::from("/opt/ai-buddy-mcp"),
@@ -1186,8 +1096,8 @@ mod tests {
     }
 
     /// A thought reaches the Shell and never the answer. `said` is the
-    /// Director's reply, whose first line has to parse as a Behavior name and
-    /// whose rest is spoken out loud; a thought is neither (ADR-0025).
+    /// Director's reply, whose first line has to parse as a Behavior name
+    /// and whose rest is spoken out loud. A thought is neither (ADR-0025).
     #[test]
     fn a_thought_is_an_event_and_never_part_of_the_answer() {
         let (said, events) = drive(vec![
@@ -1201,7 +1111,7 @@ mod tests {
     }
 
     /// Chunks arrive as fragments, so what the surface shows is the tail of
-    /// the thought so far: half a sentence on its own reads as nonsense, and
+    /// the thought so far. Half a sentence on its own reads as nonsense, and
     /// the line before a newline is finished with.
     #[test]
     fn a_thought_shows_the_line_being_written() {
@@ -1213,9 +1123,8 @@ mod tests {
     }
 
     /// The strip lives exactly as long as the turn that fills it. Nothing on
-    /// the Chat surface knows when a Harness stopped thinking, so a turn that
-    /// ends without an answer to draw would otherwise leave its last thought
-    /// on screen for good.
+    /// the Chat surface knows when a Harness stopped thinking. A turn that
+    /// ends without an answer would otherwise leave its last thought on screen.
     #[test]
     fn the_thinking_goes_dark_when_the_turn_ends() {
         let (seen, on_event) = collector();
@@ -1247,9 +1156,8 @@ mod tests {
         assert!(events.is_empty(), "{events:?}");
     }
 
-    /// #697: a plan used to reach the Shell as `entries.len()`, so the steps
-    /// a reader wants never left this file. Driven off the wire bytes rather
-    /// than built types, because the spellings are what the surface draws.
+    /// Driven off the wire bytes rather than built types, because the
+    /// spellings are what the surface draws.
     #[test]
     fn a_plan_update_carries_its_steps_and_not_a_count() {
         let update: SessionUpdate = serde_json::from_value(serde_json::json!({
@@ -1284,9 +1192,7 @@ mod tests {
         permission_ask(&request, "7".to_string())
     }
 
-    /// #678: the question, the arguments and the paths used to be dropped here
-    /// and the surface was left with a kind and a title. Nothing downstream
-    /// can draw what this file does not forward.
+    /// Nothing downstream can draw what this file does not forward.
     #[test]
     fn an_ask_forwards_the_question_the_arguments_and_the_paths() {
         let ask = asked_for(serde_json::json!({
@@ -1312,7 +1218,7 @@ mod tests {
 
     /// A diff is a file the call would rewrite, which is the path it touches.
     /// Its text is a whole new file and has no business on a 420 point
-    /// surface, and the same path arriving both ways is still one path.
+    /// surface. The same path arriving both ways is still one path.
     #[test]
     fn a_diff_forwards_as_the_path_it_would_rewrite() {
         let ask = asked_for(serde_json::json!({
@@ -1346,7 +1252,7 @@ mod tests {
         assert_eq!(ask.input, Some(serde_json::json!({"path": "/tmp/a.png"})));
     }
 
-    /// A missing title is missing, not `(untitled)`: the surface has to tell
+    /// A missing title is missing, not `(untitled)`. The surface has to tell
     /// an ask that said nothing from one this file emptied out (#678).
     #[test]
     fn a_titleless_ask_forwards_no_title_rather_than_a_placeholder() {
@@ -1376,29 +1282,20 @@ mod windows_job {
     };
 
     /// A Job Object handle, parked in `JOBS` until the process exits.
-    ///
-    /// The name overpromises: nothing here closes the handle, and that is
-    /// deliberate — the job carries `KILL_ON_JOB_CLOSE`, so closing it kills
-    /// the Harness child it holds. `Drop` would be a bug, not the missing half.
+    /// The job carries `KILL_ON_JOB_CLOSE`, so closing the handle kills
+    /// the child. `Drop` would be a bug. The leak is intentional.
     struct SafeHandle(HANDLE);
 
-    // SAFETY: a Job Object handle is a process-wide kernel handle. It is not
-    // bound to the thread that created it and every API that takes one is
-    // thread-agnostic, so moving it between threads reaches the same object.
-    // `HANDLE` is only `!Send` because it is a raw pointer, which is the
-    // language's default for a type it knows nothing else about.
-    //
-    // The claim is about the type forever: anything later stored in a
-    // `SafeHandle` has to be a handle of that kind too.
+    // SAFETY: a Job Object handle is process-wide and thread-agnostic, so
+    // moving it between threads reaches the same object. `HANDLE` is `!Send`
+    // only as a raw pointer. Anything in `SafeHandle` has to be that kind too.
     unsafe impl Send for SafeHandle {}
 
     static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
 
-    /// Spawn a command with create-time Job Object association via CREATE_SUSPENDED.
-    ///
-    /// Creates Job Object, spawns the process suspended, assigns to job,
-    /// resumes. The process cannot fork children until after job assignment,
-    /// closing the post-spawn race.
+    /// Spawn with create-time Job Object association via `CREATE_SUSPENDED`.
+    /// The process cannot fork children until after job assignment, which
+    /// closes the post-spawn race.
     pub(super) fn spawn_in_job(
         mut command: std::process::Command,
     ) -> Result<async_process::Child, std::io::Error> {
@@ -1439,8 +1336,8 @@ mod windows_job {
 
         let mut child = match async_command.spawn() {
             Ok(child) => child,
-            // Handed on as it came: `SpawnError::start` reads the kind, and a
-            // `format!` around it would turn a missing file into prose (#659).
+            // Handed on as it came. `SpawnError::start` reads the kind, and a
+            // `format!` around it would turn a missing file into prose.
             Err(why) => {
                 unsafe { CloseHandle(job) };
                 return Err(why);
@@ -1452,7 +1349,7 @@ mod windows_job {
         unsafe {
             let process = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
             if process.is_null() || process == INVALID_HANDLE_VALUE {
-                // Intentional leak: job has KILL_ON_JOB_CLOSE; closing it could kill the child.
+                // Intentional leak. The job has `KILL_ON_JOB_CLOSE`. Closing it could kill the child.
                 eprintln!("harness: OpenProcess failed for pid {pid}; resuming without job");
                 if resume_primary_thread(pid).is_err() {
                     let _ = child.kill();
@@ -1467,7 +1364,7 @@ mod windows_job {
             CloseHandle(process);
 
             if assigned == 0 {
-                // Intentional leak: job has KILL_ON_JOB_CLOSE; closing it could kill the child.
+                // Intentional leak. The job has `KILL_ON_JOB_CLOSE`. Closing it could kill the child.
                 eprintln!(
                     "harness: AssignProcessToJobObject failed for pid {pid}; resuming without job"
                 );
@@ -1526,11 +1423,9 @@ mod windows_job {
             CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
         };
 
-        // Assumes the first thread enumerated for the PID is the primary thread.
-        // For a CREATE_SUSPENDED spawn this is typically correct, but if the
-        // process has already started additional threads (unlikely immediately
-        // post-spawn), this may resume the wrong thread. Sufficient for harness
-        // use: the primary thread is suspended, so it will be the first found.
+        // Assumes the first thread enumerated for the PID is the primary
+        // thread. For a `CREATE_SUSPENDED` spawn the primary is still
+        // suspended, so it is the first found.
 
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -1607,10 +1502,8 @@ mod windows_job {
             terminate_job(0xFFFF_FFFE);
         }
 
-        // Note: Job assignment failure paths (OpenProcess/AssignProcessToJobObject)
-        // must resume the suspended child before returning Ok. This is verified by
-        // the soft-fail behavior: on Windows CI, if the child were left suspended,
-        // subsequent tests would hang waiting for stdio. The test suite passing
-        // proves the child runs.
+        // Job assignment failure paths must resume the suspended child
+        // before returning Ok. A child left suspended hangs later tests
+        // waiting for stdio.
     }
 }
