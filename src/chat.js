@@ -2,7 +2,7 @@
 // ai-buddy rather than by whatever answers (ADR-0018). Like the overlay it
 // holds no authoritative state; the Shell owns the session behind it.
 
-import { askSays } from "./chat-ask.js";
+import { askSays, elicitSays } from "./chat-ask.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
@@ -237,6 +237,54 @@ function asked(ask) {
   body.append(buttons);
   row.append(label, body);
   asks.set(ask.request, buttons);
+  return add(row);
+}
+
+// One `elicitation/create` form. Options are the schema's first enum; Decline
+// is always offered, because the protocol treats it as a valid answer.
+function elicited(form) {
+  if (asks.has(form.request)) {
+    return null;
+  }
+  const row = el("row ask");
+  const label = el("who-label");
+  label.textContent = `${them} · asks`;
+  const body = el("said");
+  body.textContent = elicitSays(form);
+  const buttons = el("options");
+  for (const option of form.options ?? []) {
+    const button = el("", "button");
+    button.type = "button";
+    button.textContent = option.name || option.value;
+    button.dataset.option = option.value;
+    button.addEventListener("click", () => {
+      for (const other of buttons.querySelectorAll("button")) {
+        other.disabled = true;
+      }
+      invoke("elicitation_answer", { request: form.request, value: option.value }).catch((why) => {
+        console.error("chat: the answer did not reach the Harness:", why);
+        note("That answer did not get through.");
+      });
+    });
+    buttons.append(button);
+  }
+  const decline = el("", "button");
+  decline.type = "button";
+  decline.textContent = "Decline";
+  decline.dataset.option = "decline";
+  decline.addEventListener("click", () => {
+    for (const other of buttons.querySelectorAll("button")) {
+      other.disabled = true;
+    }
+    invoke("elicitation_answer", { request: form.request, value: null }).catch((why) => {
+      console.error("chat: the answer did not reach the Harness:", why);
+      note("That answer did not get through.");
+    });
+  });
+  buttons.append(decline);
+  body.append(buttons);
+  row.append(label, body);
+  asks.set(form.request, buttons);
   return add(row);
 }
 
@@ -591,6 +639,14 @@ async function start() {
     "chat-permission",
     ({ payload }) => {
       asked(payload);
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-elicitation",
+    ({ payload }) => {
+      elicited(payload);
     },
     { target: chat.label },
   );

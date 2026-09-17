@@ -19,7 +19,7 @@ use crate::acp_wire::{
 };
 use crate::action_log;
 
-pub use crate::acp_wire::{PermissionAsk, PlanStep};
+pub use crate::acp_wire::{ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep};
 
 /// `pub(crate)` so the settings window can name the variable that owns a row.
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
@@ -290,6 +290,7 @@ impl SessionKey {
 #[derive(Debug)]
 pub enum Forwarded {
     Ask(PermissionAsk),
+    Form(ElicitationForm),
     /// A request that is no longer answerable, and the option that won it.
     /// `None` when nothing was picked and the turn simply ended.
     Settled {
@@ -733,6 +734,19 @@ impl Session {
         wire.answer(request, option);
     }
 
+    /// The user's answer to a forwarded elicitation form. Decline is valid.
+    pub fn answer_elicitation(&self, request: &str, answer: ElicitationAnswer) {
+        let Some(wire) = self.current_wire() else {
+            return;
+        };
+        let logged = match &answer {
+            ElicitationAnswer::Accept(value) => json!({"request": request, "value": value}),
+            ElicitationAnswer::Decline => json!({"request": request, "action": "decline"}),
+        };
+        action_log::append(&self.dir, "elicitation_answer", logged);
+        wire.answer_elicitation(request, answer);
+    }
+
     /// Cancel in-flight work, kill the child, and wait until it is reaped.
     /// The child is in its own process group, so ending this process does not
     /// take it with us. `npx` does not reliably die on stdin EOF.
@@ -1068,14 +1082,14 @@ pub fn run_probe() -> i32 {
         // Named, never answered. Only a click on the Chat surface may answer a
         // permission request (ADR-0017), and the probe has no surface. The ask
         // times out with the turn, which is itself the report.
-        Arc::new(Box::new(|forwarded| {
-            if let Forwarded::Ask(ask) = forwarded {
-                println!(
-                    "  permission   {} [{}]",
-                    ask.title.as_deref().unwrap_or("—"),
-                    ask.request
-                );
-            }
+        Arc::new(Box::new(|forwarded| match forwarded {
+            Forwarded::Ask(ask) => println!(
+                "  permission   {} [{}]",
+                ask.title.as_deref().unwrap_or("—"),
+                ask.request
+            ),
+            Forwarded::Form(form) => println!("  elicitation  {} [{}]", form.message, form.request),
+            _ => {}
         }) as Forward),
     ));
     // Ctrl+C is ours before spawn so the child leaves this process group and
@@ -1237,6 +1251,14 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
             forward(Forwarded::Ask(ask));
+        }
+        Event::Elicitation(form) => {
+            action_log::append(
+                dir,
+                "elicitation_create",
+                json!({"request": form.request, "field": form.field}),
+            );
+            forward(Forwarded::Form(form));
         }
         Event::PermissionSettled { request, option } => {
             forward(Forwarded::Settled { request, option })
@@ -1735,12 +1757,21 @@ mod tests {
                 // A child that starts and then fails. The spawn is not
                 // `Missing`.
                 Some("initialize") if script == "die-initializing" => std::process::exit(3),
-                Some("initialize") => say(json!({"jsonrpc": "2.0", "id": id, "result": {
-                    "protocolVersion": 1,
-                    "agentInfo": {"name": "fake-agent", "version": "0"},
-                    "agentCapabilities": {"loadSession": script.starts_with("load"), "mcpCapabilities": {"http": true}},
-                    "authMethods": [{"id": "fake", "name": "Fake login", "description": "fake --login"}],
-                }})),
+                Some("initialize") => {
+                    if let Some(path) = count {
+                        let _ = std::fs::write(
+                            path.with_file_name("initialize.json"),
+                            serde_json::to_vec(message.get("params").unwrap_or(&Value::Null))
+                                .unwrap_or_default(),
+                        );
+                    }
+                    say(json!({"jsonrpc": "2.0", "id": id, "result": {
+                        "protocolVersion": 1,
+                        "agentInfo": {"name": "fake-agent", "version": "0"},
+                        "agentCapabilities": {"loadSession": script.starts_with("load"), "mcpCapabilities": {"http": true}},
+                        "authMethods": [{"id": "fake", "name": "Fake login", "description": "fake --login"}],
+                    }}));
+                }
                 Some("session/new") => {
                     record(count, "new");
                     if script == "die-opening" {
@@ -1809,6 +1840,26 @@ mod tests {
                                 }}),
                             );
                         }
+                        "elicitation" => {
+                            pending_prompt = Some(id);
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 100, "method": "elicitation/create", "params": {
+                                    "sessionId": &session,
+                                    "mode": "form",
+                                    "message": "How should I approach this refactoring?",
+                                    "requestedSchema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "strategy": {
+                                                "type": "string",
+                                                "enum": ["conservative", "balanced", "aggressive"]
+                                            }
+                                        },
+                                        "required": ["strategy"]
+                                    }
+                                }}),
+                            );
+                        }
                         "slow" | "load-slow" if prompts == 1 => pending_prompt = Some(id),
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
@@ -1843,6 +1894,29 @@ mod tests {
                             .and_then(Value::as_str)
                             .unwrap_or("");
                         chunk(&session, &format!("ok:{option}"));
+                        if let Some(id) = pending_prompt.take() {
+                            stop(&id, "end_turn");
+                        }
+                    }
+                }
+                None if id == json!(100) => {
+                    let action = message
+                        .pointer("/result/action")
+                        .and_then(Value::as_str)
+                        .unwrap_or("?")
+                        .to_string();
+                    record(count, &format!("elicit:{action}"));
+                    if action == "accept" {
+                        let value = message
+                            .pointer("/result/content/strategy")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        record(count, &format!("elicit-value:{value}"));
+                        chunk(&session, &format!("ok:{value}"));
+                    } else if action == "decline" {
+                        chunk(&session, "ok:declined");
+                    }
+                    if action == "accept" || action == "decline" {
                         if let Some(id) = pending_prompt.take() {
                             stop(&id, "end_turn");
                         }
@@ -1908,6 +1982,25 @@ mod tests {
                 Ok(Forwarded::Ask(ask)) => ask,
                 other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
             }
+        }
+
+        fn form(&self) -> ElicitationForm {
+            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Forwarded::Form(form)) => form,
+                other => panic!("expected a form, got {:?}", other.map(|_| "other")),
+            }
+        }
+
+        fn initialize_params(&self) -> Value {
+            let path = self.dir.join("initialize.json");
+            let until = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < until {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    return serde_json::from_str(&text).expect("initialize.json is JSON");
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            panic!("initialize.json was never written");
         }
 
         /// The next forwarded settlement, the request and what won it.
@@ -2841,6 +2934,54 @@ mod tests {
     fn garbage_between_messages_is_skipped() {
         let (_fx, session) = Fixture::new("garbage");
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        session.shutdown();
+    }
+
+    #[test]
+    fn initialize_payload_advertises_form_elicitation() {
+        let (fx, session) = Fixture::new("hello");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        let params = fx.initialize_params();
+        assert_eq!(
+            params["clientCapabilities"]["elicitation"],
+            json!({"form": {}})
+        );
+        session.shutdown();
+    }
+
+    #[test]
+    fn elicitation_round_trip_records_the_chosen_option() {
+        let (fx, session) = Fixture::new("elicitation");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let form = fx.form();
+        assert_eq!(form.message, "How should I approach this refactoring?");
+        assert_eq!(form.field, "strategy");
+        assert_eq!(form.options.len(), 3);
+        session.answer_elicitation(&form.request, ElicitationAnswer::Accept("balanced".into()));
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:balanced")));
+        assert!(fx.wait_for("elicit:accept", 1));
+        assert!(fx.wait_for("elicit-value:balanced", 1));
+        assert_eq!(fx.settled(), (form.request, Some("balanced".to_string())));
+        session.shutdown();
+    }
+
+    #[test]
+    fn elicitation_round_trip_records_a_decline() {
+        let (fx, session) = Fixture::new("elicitation");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let form = fx.form();
+        session.answer_elicitation(&form.request, ElicitationAnswer::Decline);
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:declined")));
+        assert!(fx.wait_for("elicit:decline", 1));
+        assert_eq!(fx.settled(), (form.request, Some("decline".to_string())));
         session.shutdown();
     }
 

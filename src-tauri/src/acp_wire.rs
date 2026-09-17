@@ -2,6 +2,7 @@
 //! No SDK type leaves the file. Reversing the crate choice (ADR-0017)
 //! rewrites this file only. The frame loop never sees it (ADR-0004).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self as sync_mpsc, RecvTimeoutError};
@@ -10,11 +11,14 @@ use std::thread;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    AuthMethod, CancelNotification, ContentBlock, EnvVariable, ErrorCode, HttpHeader,
-    Implementation, InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp,
-    McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
-    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
+    AuthMethod, CancelNotification, ClientCapabilities, ContentBlock, CreateElicitationRequest,
+    CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
+    ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
+    ElicitationPropertySchema, EnvVariable, ErrorCode, HttpHeader, Implementation,
+    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
+    SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -98,6 +102,33 @@ pub struct PermissionOption {
     pub kind: Option<String>,
 }
 
+/// One `elicitation/create` form, as Chat draws it.
+/// One question at a time: the first string-enum field of the schema.
+/// `message` is untrusted Harness text. Decline is a valid answer, not an error.
+#[derive(Clone, Debug, Serialize)]
+pub struct ElicitationForm {
+    /// The request id, as text, handed back with the answer.
+    pub request: String,
+    pub message: String,
+    /// The schema property the chosen option fills. Empty when the form had
+    /// no multiple-choice field, so Decline is the only answer Chat can send.
+    pub field: String,
+    pub options: Vec<ElicitationChoice>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ElicitationChoice {
+    pub value: String,
+    pub name: String,
+}
+
+/// The user's answer to a form. Decline is a first-class choice.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ElicitationAnswer {
+    Accept(String),
+    Decline,
+}
+
 /// One step of the agent's plan, as the Chat surface draws it.
 /// `priority` and `status` are the crate's serde spellings through `name_of`.
 /// `_meta` is out. ACP says not to assume anything of it.
@@ -127,6 +158,9 @@ pub enum Event {
         size: u64,
     },
     Permission(PermissionAsk),
+    /// One `elicitation/create` form. Separate from `Permission` because the
+    /// answer is accept-content or decline, not a permission `optionId`.
+    Elicitation(ElicitationForm),
     /// The line of thinking being written now, for the Chat surface.
     /// Transient (ADR-0025). Each one replaces the last. Nothing keeps them,
     /// and no log line is made from one.
@@ -221,7 +255,23 @@ enum Msg {
         request: String,
         option: String,
     },
+    AnswerElicitation {
+        request: String,
+        answer: ElicitationAnswer,
+    },
     Shutdown,
+}
+
+/// What we send on `initialize`. Named so a test can assert the payload
+/// without spawning a child.
+fn initialize_request() -> InitializeRequest {
+    InitializeRequest::new(ProtocolVersion::V1)
+        .client_info(Implementation::new("ai-buddy", env!("CARGO_PKG_VERSION")))
+        .client_capabilities(
+            ClientCapabilities::new().elicitation(
+                ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
+            ),
+        )
 }
 
 /// One spawned Harness and the thread that speaks to it.
@@ -351,6 +401,14 @@ impl Wire {
         });
     }
 
+    /// The user's pick on a forwarded elicitation form. Decline is valid.
+    pub fn answer_elicitation(&self, request: &str, answer: ElicitationAnswer) {
+        let _ = self.tx.send(Msg::AnswerElicitation {
+            request: request.to_string(),
+            answer,
+        });
+    }
+
     /// Cancel whatever is in flight, answer open asks `cancelled`, close
     /// stdin, and kill the child.
     pub fn shutdown(&self) {
@@ -414,6 +472,7 @@ fn run(
         // else (fs, terminal) the SDK answers with method-not-found.
         let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
         let updates = incoming_tx.clone();
+        let asks = incoming_tx.clone();
         let mut ready = Some(ready);
         let outcome = Client
             .builder()
@@ -427,7 +486,14 @@ fn run(
             )
             .on_receive_request(
                 async move |request: RequestPermissionRequest, responder, _cx| {
-                    let _ = incoming_tx.send(Incoming::Ask(request, responder));
+                    let _ = asks.send(Incoming::Ask(request, responder));
+                    Ok(())
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: CreateElicitationRequest, responder, _cx| {
+                    let _ = incoming_tx.send(Incoming::Elicit(request, responder));
                     Ok(())
                 },
                 agent_client_protocol::on_receive_request!(),
@@ -436,9 +502,7 @@ fn run(
                 ByteStreams::new(stdin, stdout),
                 async |cx: ConnectionTo<Agent>| {
                     let handshake = cx
-                        .send_request(InitializeRequest::new(ProtocolVersion::V1).client_info(
-                            Implementation::new("ai-buddy", env!("CARGO_PKG_VERSION")),
-                        ))
+                        .send_request(initialize_request())
                         .block_task()
                         .await
                         .map(|response| Handshake {
@@ -513,6 +577,15 @@ enum Incoming {
         RequestPermissionRequest,
         Responder<RequestPermissionResponse>,
     ),
+    Elicit(
+        CreateElicitationRequest,
+        Responder<CreateElicitationResponse>,
+    ),
+}
+
+struct PendingElicit {
+    form: ElicitationForm,
+    responder: Responder<CreateElicitationResponse>,
 }
 
 /// Commands until `Shutdown`, EOF, or the caller hanging up.
@@ -558,7 +631,7 @@ async fn serve(
             }
             // No turn is running, so there is no ask to answer and nothing to
             // cancel.
-            Msg::Cancel | Msg::Answer { .. } => {}
+            Msg::Cancel | Msg::Answer { .. } | Msg::AnswerElicitation { .. } => {}
             Msg::Shutdown => break,
         }
     }
@@ -644,6 +717,7 @@ async fn turn(
     // It dies with the turn.
     let mut thought = String::new();
     let mut asks: Vec<(String, Responder<RequestPermissionResponse>)> = Vec::new();
+    let mut forms: Vec<PendingElicit> = Vec::new();
     loop {
         // `biased`, updates first. The SDK dispatches a turn's chunks before
         // its response, so the response is read only once the channel ahead
@@ -659,13 +733,21 @@ async fn turn(
                     asks.push((ask.request.clone(), responder));
                     on_event(Event::Permission(ask));
                 }
+                Some(Incoming::Elicit(request, responder)) => {
+                    let form = elicitation_form(&request, responder.id().to_string());
+                    forms.push(PendingElicit {
+                        form: form.clone(),
+                        responder,
+                    });
+                    on_event(Event::Elicitation(form));
+                }
                 None => {
-                    end_turn(&mut asks, &mut thought, on_event);
+                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             response = &mut finished => {
-                end_turn(&mut asks, &mut thought, on_event);
+                end_turn(&mut asks, &mut forms, &mut thought, on_event);
                 return match response {
                     Ok(response) => outcome(response.stop_reason, said),
                     Err(_) if cx.is_incoming_closed() => Err(TurnError::Lost),
@@ -675,14 +757,14 @@ async fn turn(
             command = rx.recv() => match command {
                 Some(Msg::Cancel) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
-                    end_turn(&mut asks, &mut thought, on_event);
+                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
                 }
                 // Shutdown is not Cancel (#634). The turn leaves with the wire
                 // rather than looping for a `cancelled` stop the Harness may
                 // never send. The reply is lost. The sender kills the child next.
                 Some(Msg::Shutdown) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
-                    end_turn(&mut asks, &mut thought, on_event);
+                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
                 Some(Msg::Answer { request, option }) => {
@@ -699,6 +781,18 @@ async fn turn(
                         });
                     }
                 }
+                Some(Msg::AnswerElicitation { request, answer }) => {
+                    if let Some(at) = forms.iter().position(|pending| pending.form.request == request)
+                    {
+                        let pending = forms.remove(at);
+                        let option = match &answer {
+                            ElicitationAnswer::Accept(value) => Some(value.clone()),
+                            ElicitationAnswer::Decline => Some("decline".to_string()),
+                        };
+                        let _ = pending.responder.respond(elicitation_response(&pending.form, answer));
+                        on_event(Event::PermissionSettled { request, option });
+                    }
+                }
                 Some(Msg::Prompt { reply, .. }) => {
                     let _ = reply.send(Err(TurnError::Busy));
                 }
@@ -706,12 +800,12 @@ async fn turn(
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
                 }
                 None => {
-                    end_turn(&mut asks, &mut thought, on_event);
+                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             () = cx.incoming_closed() => {
-                end_turn(&mut asks, &mut thought, on_event);
+                end_turn(&mut asks, &mut forms, &mut thought, on_event);
                 return Err(TurnError::Lost);
             }
         }
@@ -768,6 +862,73 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
                 kind: Some(name_of(&option.kind)),
             })
             .collect(),
+    }
+}
+
+/// One form, as Chat can draw it. URL and unknown modes keep the message and
+/// no options, so Decline is the only answer; we advertised form, not url.
+fn elicitation_form(request: &CreateElicitationRequest, id: String) -> ElicitationForm {
+    let (field, options) = match &request.mode {
+        ElicitationMode::Form(form) => first_choice_field(&form.requested_schema.properties),
+        _ => (String::new(), Vec::new()),
+    };
+    ElicitationForm {
+        request: id,
+        message: request.message.clone(),
+        field,
+        options,
+    }
+}
+
+fn first_choice_field(
+    properties: &BTreeMap<String, ElicitationPropertySchema>,
+) -> (String, Vec<ElicitationChoice>) {
+    for (field, property) in properties {
+        let ElicitationPropertySchema::String(schema) = property else {
+            continue;
+        };
+        let options = if let Some(one_of) = &schema.one_of {
+            one_of
+                .iter()
+                .map(|option| ElicitationChoice {
+                    value: option.value.clone(),
+                    name: option.title.clone(),
+                })
+                .collect()
+        } else if let Some(values) = &schema.enum_values {
+            values
+                .iter()
+                .map(|value| ElicitationChoice {
+                    value: value.clone(),
+                    name: value.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if !options.is_empty() {
+            return (field.clone(), options);
+        }
+    }
+    (String::new(), Vec::new())
+}
+
+fn elicitation_response(
+    form: &ElicitationForm,
+    answer: ElicitationAnswer,
+) -> CreateElicitationResponse {
+    let allowed = |value: &str| form.options.iter().any(|option| option.value == value);
+    match answer {
+        ElicitationAnswer::Accept(value) if !form.field.is_empty() && allowed(&value) => {
+            let mut content = BTreeMap::new();
+            content.insert(form.field.clone(), ElicitationContentValue::from(value));
+            CreateElicitationResponse::new(ElicitationAction::Accept(
+                ElicitationAcceptAction::new().content(content),
+            ))
+        }
+        ElicitationAnswer::Accept(_) | ElicitationAnswer::Decline => {
+            CreateElicitationResponse::new(ElicitationAction::Decline)
+        }
     }
 }
 
@@ -841,6 +1002,7 @@ pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
 /// plan go dark because the Chat surface keeps neither of its own (ADR-0025).
 fn end_turn(
     asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
+    forms: &mut Vec<PendingElicit>,
     thought: &mut String,
     on_event: &OnEvent,
 ) {
@@ -848,6 +1010,16 @@ fn end_turn(
         let _ = responder.respond(RequestPermissionResponse::new(
             RequestPermissionOutcome::Cancelled,
         ));
+        on_event(Event::PermissionSettled {
+            request,
+            option: None,
+        });
+    }
+    for pending in forms.drain(..) {
+        let request = pending.form.request;
+        let _ = pending
+            .responder
+            .respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
         on_event(Event::PermissionSettled {
             request,
             option: None,
@@ -1129,7 +1301,7 @@ mod tests {
     fn the_thinking_goes_dark_when_the_turn_ends() {
         let (seen, on_event) = collector();
         let mut thought = "Reading the roster".to_string();
-        end_turn(&mut Vec::new(), &mut thought, &on_event);
+        end_turn(&mut Vec::new(), &mut Vec::new(), &mut thought, &on_event);
         assert!(matches!(
             seen.lock().unwrap().as_slice(),
             [Event::Thought(line), Event::Plan(steps)]
@@ -1140,7 +1312,12 @@ mod tests {
         // that was never shown should not be told to hide. The plan clear is
         // unconditional, so it is all that is left.
         let (seen, on_event) = collector();
-        end_turn(&mut Vec::new(), &mut String::new(), &on_event);
+        end_turn(
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut String::new(),
+            &on_event,
+        );
         assert!(matches!(
             seen.lock().unwrap().as_slice(),
             [Event::Plan(steps)] if steps.is_empty()
@@ -1263,6 +1440,105 @@ mod tests {
         assert!(ask.content.is_empty());
         assert_eq!(ask.input, None);
         assert!(ask.locations.is_empty());
+    }
+
+    /// The outbound `initialize` payload, as JSON, not as a builder call.
+    /// Empty `form: {}` is how ACP spells form support; `form: true` is MCP.
+    #[test]
+    fn initialize_advertises_form_elicitation() {
+        let value = serde_json::to_value(initialize_request()).expect("serializes");
+        assert_eq!(
+            value["clientCapabilities"]["elicitation"],
+            serde_json::json!({"form": {}})
+        );
+    }
+
+    fn elicited(schema: serde_json::Value) -> ElicitationForm {
+        let request: CreateElicitationRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "mode": "form",
+            "message": "How should I approach this refactoring?",
+            "requestedSchema": schema,
+        }))
+        .expect("an elicitation form");
+        elicitation_form(&request, "43".to_string())
+    }
+
+    #[test]
+    fn a_form_forwards_the_first_enum_as_one_question() {
+        let form = elicited(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "strategy": {
+                    "type": "string",
+                    "enum": ["conservative", "balanced", "aggressive"]
+                }
+            },
+            "required": ["strategy"]
+        }));
+
+        assert_eq!(form.request, "43");
+        assert_eq!(form.message, "How should I approach this refactoring?");
+        assert_eq!(form.field, "strategy");
+        assert_eq!(form.options.len(), 3);
+        assert_eq!(form.options[1].value, "balanced");
+        assert_eq!(form.options[1].name, "balanced");
+    }
+
+    #[test]
+    fn a_titled_enum_keeps_the_title_the_row_draws() {
+        let form = elicited(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "strategy": {
+                    "type": "string",
+                    "oneOf": [
+                        {"const": "conservative", "title": "Small steps"},
+                        {"const": "aggressive", "title": "Rewrite it"}
+                    ]
+                }
+            }
+        }));
+
+        assert_eq!(form.options[0].value, "conservative");
+        assert_eq!(form.options[0].name, "Small steps");
+    }
+
+    #[test]
+    fn accepting_an_option_sends_that_field_as_content() {
+        let form = elicited(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "strategy": {"type": "string", "enum": ["conservative", "aggressive"]}
+            }
+        }));
+        let value = serde_json::to_value(elicitation_response(
+            &form,
+            ElicitationAnswer::Accept("aggressive".to_string()),
+        ))
+        .expect("serializes");
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "action": "accept",
+                "content": {"strategy": "aggressive"}
+            })
+        );
+    }
+
+    #[test]
+    fn declining_a_form_sends_decline_not_an_error() {
+        let form = elicited(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "strategy": {"type": "string", "enum": ["conservative"]}
+            }
+        }));
+        let value = serde_json::to_value(elicitation_response(&form, ElicitationAnswer::Decline))
+            .expect("serializes");
+
+        assert_eq!(value, serde_json::json!({"action": "decline"}));
     }
 }
 
