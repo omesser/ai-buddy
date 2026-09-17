@@ -14,16 +14,17 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 function Find-SettingsWindow {
-    param([int]$Pid = 0)
+    # ProcessId, not Pid: $PID is Constant+AllScope and cannot be a parameter.
+    param([int]$ProcessId = 0)
 
     $nativeCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
         "AiBuddySettings"
     )
-    if ($Pid -gt 0) {
+    if ($ProcessId -gt 0) {
         $pidCond = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
-            $Pid
+            $ProcessId
         )
         $nativeCond = New-Object System.Windows.Automation.AndCondition($nativeCond, $pidCond)
     }
@@ -45,10 +46,11 @@ function Find-SettingsWindow {
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Window
     )
-    if ($Pid -gt 0) {
+    # Class + name + window: Name=Settings alone matches the Windows Settings app (#805).
+    if ($ProcessId -gt 0) {
         $pidCond = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
-            $Pid
+            $ProcessId
         )
         $webviewCond = New-Object System.Windows.Automation.AndCondition($classCond, $nameCond, $typeCond, $pidCond)
     } else {
@@ -61,10 +63,10 @@ function Find-SettingsWindow {
 }
 
 function Wait-ForSettings {
-    param([int]$TimeoutSec, [int]$Pid = 0)
+    param([int]$TimeoutSec, [int]$ProcessId = 0)
     $waited = 0
     while ($waited -lt $TimeoutSec) {
-        if ($null -ne (Find-SettingsWindow -Pid $Pid)) { return 0 }
+        if ($null -ne (Find-SettingsWindow -ProcessId $ProcessId)) { return 0 }
         Start-Sleep -Seconds 1
         $waited++
     }
@@ -98,16 +100,16 @@ function Dump-Tree {
 }
 
 function Invoke-Dump {
-    param([int]$Pid = 0)
-    $window = Find-SettingsWindow -Pid $Pid
+    param([int]$ProcessId = 0)
+    $window = Find-SettingsWindow -ProcessId $ProcessId
     if ($null -eq $window) { Write-Host "ERROR: Settings window not found"; exit 1 }
     Dump-Tree -element $window
     exit 0
 }
 
 function Invoke-PickSource {
-    param([string]$SourceTitle, [int]$Pid = 0)
-    $window = Find-SettingsWindow -Pid $Pid
+    param([string]$SourceTitle, [int]$ProcessId = 0)
+    $window = Find-SettingsWindow -ProcessId $ProcessId
     if ($null -eq $window) { Write-Host "ERROR: Settings window not found"; exit 1 }
 
     $comboCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -165,8 +167,8 @@ function Invoke-PickSource {
 }
 
 function Invoke-ExpandDisclosure {
-    param([string]$Label, [int]$Pid = 0)
-    $window = Find-SettingsWindow -Pid $Pid
+    param([string]$Label, [int]$ProcessId = 0)
+    $window = Find-SettingsWindow -ProcessId $ProcessId
     if ($null -eq $window) { Write-Host "ERROR: Settings window not found"; exit 1 }
     $nameCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty, $Label)
@@ -184,17 +186,17 @@ function Invoke-ExpandDisclosure {
 
 switch ($Command) {
     'wait' {
-        $code = Wait-ForSettings -TimeoutSec $Timeout -Pid $ProcessId
+        $code = Wait-ForSettings -TimeoutSec $Timeout -ProcessId $ProcessId
         if ($code -ne 0) { Write-Host "ERROR: Timed out waiting for Settings"; exit 1 }
         Write-Output "ready"; exit 0
     }
-    'dump' { Invoke-Dump -Pid $ProcessId }
+    'dump' { Invoke-Dump -ProcessId $ProcessId }
     'pick-source' {
         if (-not $Title) { Write-Host "ERROR: -Title required"; exit 1 }
-        Invoke-PickSource -SourceTitle $Title -Pid $ProcessId
+        Invoke-PickSource -SourceTitle $Title -ProcessId $ProcessId
     }
     'expand-disclosure' {
         if (-not $DisclosureLabel) { Write-Host "ERROR: -DisclosureLabel required"; exit 1 }
-        Invoke-ExpandDisclosure -Label $DisclosureLabel -Pid $ProcessId
+        Invoke-ExpandDisclosure -Label $DisclosureLabel -ProcessId $ProcessId
     }
 }
