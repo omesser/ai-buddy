@@ -1,73 +1,45 @@
-//! When the Character gets out of the way.
+//! When the Character gets out of the way. DESIGN.md decision 8 gives ai-buddy
+//! one window level and no restacking, so staying out of the user's way means
+//! disappearing. A rule (fullscreen frontmost) fades; the hotkey answers at once.
 //!
-//! DESIGN.md decision 8 gives ai-buddy one window level and no restacking, so
-//! everything the app does to stay out of the user's way it does by
-//! disappearing. Which conditions take the sprite off screen is the whole of
-//! that investment, and none of it needs a window server: the Shell reads the
-//! conditions, and this decides what they mean.
-//!
-//! One rule is the desktop's — a fullscreen application is frontmost — and one
-//! is the user's, a hotkey. They differ in more than their source. A rule
-//! fades, because the desktop changed and the Character will be back; the
-//! hotkey is answered at once, because somebody asked.
-//!
-//! Two conditions people expect to find here are deliberately not rules. Being
-//! quiet is not being gone, so Do Not Disturb leaves the Character on screen
-//! and stops it starting things, which is #84's and the Director's. And an
-//! active screen share is not one either: macOS publishes no way for an app to
-//! learn that its screen is being shared, but it does let a window say it must
-//! never be captured — so the Shell tells the window server that, and the
-//! people on the call never see the Character while its owner keeps it. See
-//! `platform::macos::overlay_panel`.
+//! Two conditions deliberately not rules: Do Not Disturb leaves the Character on
+//! screen and only stops it starting things, which is the Director's. Screen
+//! share is the window server's: the overlay is marked never-captured instead
+//! (`platform::macos::overlay_panel`), since macOS cannot say when a share is on.
 
 use crate::window_source::Rect;
 
-/// How long a rule takes to take the Character away, and to give it back.
-///
-/// Long enough to read as leaving rather than as a dropped frame, short enough
-/// that a fullscreen application is not presented with a ghost in the corner.
-/// Watched on a real desktop at 200ms, which read as closer to a blink than to
-/// a departure; half a second is the answer that eye gave.
+/// How long a rule takes to take the Character away, and to give it back. Long
+/// enough to read as leaving rather than a dropped frame, short enough not to
+/// leave a ghost in a fullscreen app; 200ms read as a blink on a real desktop.
 pub const FADE_MS: u32 = 500;
 
-/// How far a window's edge may sit from a display's and still count as
-/// covering it, in points.
-///
-/// The window server measures windows and the window manager measures displays,
-/// and under a fractional scale factor the two need not divide back onto the
-/// same number. A point of slack costs nothing to tell fullscreen from zoomed,
-/// which differ by the depth of a menu bar.
+/// How far a window's edge may sit from a display's and still count as covering
+/// it, in points. Under a fractional scale factor the two need not divide back
+/// onto the same number; a point of slack still tells fullscreen from zoomed.
 const EDGE_TOLERANCE: f64 = 1.0;
 
 /// Thickness at or below which a window can be the Dock or the menu bar,
 /// as a fraction of the display. A zoomed window is most of the display.
-/// Same third as `plausible_dock`. #188.
+/// Same third as `plausible_dock`.
 const STRIP_FRACTION: f64 = 0.3;
 
-/// A Dock or menu bar spans most of the edge it sits on.
-///
-/// A short window on that edge is still the frontmost app. Skipping it would
-/// treat the fullscreen window behind it as frontmost and hide the Character.
-/// #188.
+/// A Dock or menu bar spans most of the edge it sits on. A short window on that
+/// edge is still the frontmost app; skipping it would treat the fullscreen
+/// window behind it as frontmost and hide the Character.
 const STRIP_SPAN: f64 = 0.5;
 
-/// What the desktop says about whether the Character belongs on screen.
-///
-/// One condition, named rather than passed as a bare bool, because the caller
-/// reads `Desktop { fullscreen_frontmost: true }` and not `update(true)`. A
-/// platform that cannot see it reports `false`, which is the same answer as a
-/// desktop where it is not happening: the Character stays, and the hotkey is
-/// still there.
+/// What the desktop says about whether the Character belongs on screen. Named
+/// rather than a bare bool. A platform that cannot see it reports `false`, the
+/// same answer as a desktop where it is not happening: the Character stays.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Desktop {
     pub fullscreen_frontmost: bool,
 }
 
-/// Whether the Character is on screen, and what put it there.
-///
-/// The two absences are not the same absence. A rule will hand the Character
-/// back on its own, so it leaves gently; the hotkey was asked for, so it is
-/// obeyed at once and outlasts every rule that comes and goes meanwhile.
+/// Whether the Character is on screen, and what put it there. The two absences
+/// differ: a rule hands the Character back on its own, so it leaves gently; the
+/// hotkey was asked for, so it is obeyed at once and outlasts every rule.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Presence {
     #[default]
@@ -93,9 +65,8 @@ pub struct Change {
 /// The hide rules, and the user's standing wish over them.
 pub struct HideRules {
     /// The user asked for the Character to go away, by hotkey or by menu. Kept
-    /// apart from what is on screen because it survives every rule: a
-    /// fullscreen application that comes and goes must not hand back a
-    /// Character its owner sent away.
+    /// apart from what is on screen because it survives every rule: a fullscreen
+    /// app that comes and goes must not hand back a Character its owner sent away.
     away: bool,
     /// Whether a fullscreen frontmost application takes the Character off
     /// screen. On by default; settings can turn the rule off without sending
@@ -148,11 +119,8 @@ impl HideRules {
     }
 
     /// What the overlay must do now, or `None` when nothing the user could see
-    /// has changed.
-    ///
-    /// Silence is most of the answer: this is asked every tick, and an overlay
-    /// told to hide sixty times a second is the flicker DESIGN.md decision 8
-    /// gave up restacking to avoid.
+    /// has changed. Silence is most of the answer: an overlay told to hide sixty
+    /// times a second is the flicker decision 8 gave up restacking to avoid.
     pub fn update(&mut self, desktop: Desktop) -> Option<Change> {
         let was = self.presence;
         self.presence = if self.away {
@@ -170,11 +138,9 @@ impl HideRules {
         Some(self.presence())
     }
 
-    /// What the overlay must be right now, whether or not this tick changed
-    /// it. The hit-test asks — a Character nobody can see must not swallow the
-    /// click that lands where it would be — and so does every frame sent to
-    /// the renderer, because a change announced once is announced before
-    /// anybody is listening.
+    /// What the overlay must be right now, whether or not this tick changed it.
+    /// The hit-test asks, since an unseen Character must not swallow a click, and
+    /// so does every frame: a change announced once may be announced to nobody.
     pub fn presence(&self) -> Change {
         Change {
             visible: self.presence.visible(),
@@ -183,11 +149,9 @@ impl HideRules {
     }
 }
 
-/// How long the move from one presence to another takes.
-///
-/// The hotkey at either end makes it instant. Everything else is a rule, and a
-/// rule fades — including the fade back in, so a Character returning from a
-/// fullscreen application arrives the way it left.
+/// How long the move from one presence to another takes. The hotkey at either
+/// end makes it instant. Everything else is a rule, and a rule fades both ways,
+/// so a Character returning from a fullscreen application arrives the way it left.
 fn fade_ms(from: Presence, to: Presence) -> u32 {
     if from == Presence::Away || to == Presence::Away {
         0
@@ -196,28 +160,15 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
     }
 }
 
-/// Whether the frontmost application window covers a whole display.
-///
-/// Skip the Dock and the menu bar. They sit on a display edge and never cover
-/// it. The snapshot lists the Dock first because it draws above every app
-/// window, so treating it as frontmost would miss a fullscreen app behind it.
-/// #188.
-///
-/// Covering a *whole* display is what separates fullscreen from zoomed. A
-/// zoomed window stops at the menu bar and the Dock, and the Character is
-/// welcome to sit on top of it; a fullscreen one has taken the screen, and the
-/// Character is in the way.
-///
-/// The frames are whole display frames, not the usable ones physics runs in:
-/// the reserved strips are precisely the difference being measured.
-///
-/// Any display counts, including one the Character is not on: what is being
-/// asked is whether the window the user is working in has taken a whole screen,
-/// and a presentation on the second monitor is exactly when a companion should
-/// not be anywhere.
+/// Whether the frontmost application window covers a whole display. Whole,
+/// which separates fullscreen from zoomed: a zoomed window stops at the menu
+/// bar and the Dock. The frames are whole display frames, not the usable ones.
 pub fn fullscreen_frontmost(windows: &[Rect], frames: &[Rect]) -> bool {
     windows
         .iter()
+        // Skip the Dock and menu bar, which never cover a display: the snapshot
+        // lists the Dock first, so taking it as frontmost would miss a fullscreen
+        // app behind it. Any display counts, including one the Character is not on.
         .find(|window| {
             frames
                 .iter()
@@ -226,14 +177,9 @@ pub fn fullscreen_frontmost(windows: &[Rect], frames: &[Rect]) -> bool {
         .is_some_and(|window| frames.iter().any(|frame| covers(window, frame)))
 }
 
-/// Whether any of `window` is on `frame` at all.
-///
-/// The frontmost window is not always one the user can see. While an
-/// application is fullscreen, macOS keeps the hidden menu bar in the list in
-/// front of everything, as a full-width strip parked just above its display —
-/// so asking the first window alone asks whether the menu bar is fullscreen,
-/// and it never is. Skipping what is off every display asks the window the
-/// user is actually working in, which is what decides.
+/// Whether any of `window` is on `frame` at all. While an application is
+/// fullscreen, macOS keeps the hidden menu bar frontmost as a strip parked just
+/// above its display, so what is off every display is not the window being worked in.
 fn overlaps(window: &Rect, frame: &Rect) -> bool {
     window.x < frame.x + frame.width
         && window.x + window.width > frame.x
@@ -293,13 +239,9 @@ mod tests {
         })
     }
 
-    /// While an application is fullscreen macOS keeps the hidden menu bar in
-    /// the window list, in front of everything, as a full-width strip sitting
-    /// just above the display it belongs to. Asking only the frontmost window
-    /// therefore asks whether the menu bar is fullscreen, and the answer is
-    /// always no: the Character faded out for the half second the transition
-    /// took, then came back and sat on top of the fullscreen application for
-    /// as long as it was open.
+    /// While an application is fullscreen macOS keeps the hidden menu bar in the
+    /// window list, frontmost, as a strip just above its display. Asking only the
+    /// frontmost window asked whether the menu bar is fullscreen, which it never is.
     #[test]
     fn the_hidden_menu_bar_does_not_answer_for_the_window_behind_it() {
         let displays = [
@@ -324,7 +266,7 @@ mod tests {
             "the frontmost window that is anywhere on a display is the one being worked in"
         );
         // On the display, not above it. OnScreenOnly still reports this
-        // strip, so skipping only off-display windows is not enough. #188.
+        // strip, so skipping only off-display windows is not enough.
         let on_display = window(0.0, 0.0, 1920.0, 32.0);
         assert!(
             fullscreen_frontmost(&[on_display.bounds, fullscreen.bounds], &displays),
@@ -351,11 +293,11 @@ mod tests {
     }
 
     /// The snapshot lists the Dock first. It never covers a display, so it
-    /// must not hide a fullscreen window behind it. #188.
+    /// must not hide a fullscreen window behind it.
     #[test]
     fn the_dock_does_not_answer_for_the_window_behind_it() {
-        // Centered on the bottom edge, not stretched to the sides — the
-        // rectangle CoreDock reports. Numbers from #145.
+        // Centered on the bottom edge, not stretched to the sides: the
+        // rectangle CoreDock reports.
         let dock = window(234.0, 988.0, 1452.0, 92.0);
         let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
 
@@ -375,9 +317,8 @@ mod tests {
         );
     }
 
-    /// A short window on the bottom edge is still the frontmost app.
-    /// If it were skipped as the Dock, the fullscreen window behind it would
-    /// hide the Character. #188.
+    /// A short window on the bottom edge is still the frontmost app. If it were
+    /// skipped as the Dock, the fullscreen window behind it would hide the Character.
     #[test]
     fn a_short_window_on_the_bottom_edge_is_still_the_one_being_worked_in() {
         let palette = window(200.0, 880.0, 400.0, 200.0);
@@ -514,10 +455,9 @@ mod tests {
         assert_eq!(rules.update(Desktop::default()), faded_in());
     }
 
-    /// The hotkey's answer is instant whatever else changed alongside it. A
+    /// The hotkey's answer is instant whatever else changed alongside it: a
     /// fullscreen application quitting and the user asking for the Character
-    /// back land in the same tick easily enough, and what the user did is press
-    /// the hotkey.
+    /// back land in the same tick easily enough, and what the user did is press it.
     #[test]
     fn the_hotkey_answers_at_once_even_when_a_rule_lifts_with_it() {
         let mut rules = HideRules::default();
@@ -550,11 +490,9 @@ mod tests {
         assert!(rules.presence().visible);
     }
 
-    /// What the renderer is told on every tick, rather than on the tick the
-    /// answer changed. A change is announced once, and the first tick lands
-    /// before the webview has finished loading its art and started listening:
-    /// a Character hidden then would sit on top of the fullscreen application
-    /// that hid it for the rest of the session.
+    /// What the renderer is told on every tick, not only when the answer changed:
+    /// the first tick lands before the webview has loaded its art and started
+    /// listening, and a Character hidden then would sit on the app that hid it.
     #[test]
     fn the_rules_still_say_the_character_is_gone_long_after_the_rule_fired() {
         let mut rules = HideRules::default();
@@ -692,11 +630,9 @@ mod tests {
         ));
     }
 
-    /// All four edges are measured, and reaching three of them is a window.
-    /// The two on a display of its own are the ones that cost: a window is
-    /// measured against where that display starts, not merely against how big
-    /// it is, and dropping the origin calls a quarter-width window fullscreen
-    /// and takes the Character off both screens.
+    /// All four edges are measured against where the display starts, not merely
+    /// how big it is: dropping the origin calls a quarter-width window on the
+    /// second display fullscreen and takes the Character off both screens.
     #[test]
     fn a_window_short_of_any_one_edge_is_not_a_fullscreen_application() {
         let displays = [display(), second_display()];

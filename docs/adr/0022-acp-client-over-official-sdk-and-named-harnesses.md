@@ -27,8 +27,9 @@ Action Log and Chat surface.
 
 The wire is isolated so the frame loop never sees futures (ADR-0004).
 
-The launch table names five harnesses (`claude`, `codex`, `grok`, `hermes`,
-`opencode`) and provides an escape hatch for any custom command. Harnesses earn
+The launch table names a focused list of verified harnesses and provides an
+escape hatch for any custom command. `HARNESS_PRESETS` is that list. The count
+is not what was decided, so it is not recorded here (#777). Harnesses earn
 verified standing once a turn has been smoked against them, fresh and resumed.
 A name in the table is a command line as much as a label, because a vendor's
 bare binary is usually its interactive TUI and its ACP mode a subcommand.
@@ -54,9 +55,11 @@ can use the app's own server reaches the live Instances, and one that cannot is
 answered by a stub.
 
 Protocol-compatible harnesses not yet named (GitHub Copilot CLI) are reachable
-through the custom command and earn a named row once verified. Google is not
-among them: Antigravity (`agy`) speaks its own protocol rather than ACP, so it
-needs an adapter before any row (#604).
+through the custom command and earn a named row once a turn has been smoked
+against them. Protocol compatibility alone does not earn the row: Copilot CLI
+has it and is still not named. Google is not among them: Antigravity (`agy`)
+speaks its own protocol rather than ACP, so it needs an adapter before any row
+(#604).
 Their always-approve or auto-approve flags are never passed by default — the
 Chat surface owns permissions.
 

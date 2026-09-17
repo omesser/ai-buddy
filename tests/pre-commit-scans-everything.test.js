@@ -66,5 +66,5 @@ test("the vendored exclude is defined once and shared by alias", () => {
   const aliases = lines.filter((l) => /^\s*exclude:\s*\*vendored\s*$/.test(l));
 
   assert.equal(anchors.length, 1, "expected exactly one `exclude: &vendored` definition");
-  assert.equal(aliases.length, 5, `expected 5 \`exclude: *vendored\` aliases, found ${aliases.length}`);
+  assert.equal(aliases.length, 6, `expected 6 \`exclude: *vendored\` aliases, found ${aliases.length}`);
 });

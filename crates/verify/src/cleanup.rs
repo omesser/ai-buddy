@@ -1,14 +1,15 @@
 //! Kill only recorded PIDs; remove scratch; keep evidence.
 
 use std::fs;
-use std::thread;
-use std::time::Duration;
 
-use crate::paths::RunPaths;
+use crate::contract::{Outcome, RunReport};
 use crate::proof;
 
-/// Cleanup. Returns 0 if evidence still exists afterwards.
-pub fn run(paths: &RunPaths) -> i32 {
+/// Cleanup. Evidence surviving is the whole promise, so losing it is an
+/// `ERROR` (this tool broke), not a `FAIL` (something under test broke).
+pub fn run(report: &mut RunReport) {
+    let paths = report.paths().clone();
+
     let pidlist = paths.scratch.join("pids").join("owned.pids");
     if pidlist.is_file() {
         if let Ok(text) = fs::read_to_string(&pidlist) {
@@ -17,7 +18,7 @@ pub fn run(paths: &RunPaths) -> i32 {
                 if pid.is_empty() {
                     continue;
                 }
-                kill_pid(pid);
+                kill_pid(report, pid);
             }
         }
     }
@@ -27,8 +28,8 @@ pub fn run(paths: &RunPaths) -> i32 {
         if let Ok(pid) = fs::read_to_string(&app_pid_file) {
             let pid = pid.trim();
             if !pid.is_empty() {
-                println!("cleanup: kill app.pid {pid}");
-                kill_pid(pid);
+                report.say(&format!("cleanup: kill app.pid {pid}"));
+                kill_pid(report, pid);
             }
         }
     }
@@ -41,46 +42,45 @@ pub fn run(paths: &RunPaths) -> i32 {
 
     let _ = fs::create_dir_all(&paths.evidence);
 
-    println!(
+    report.say(&format!(
         "cleanup: scratch removed; evidence preserved at {}",
         paths.evidence.display()
-    );
-    let _ = proof::append_proof(
-        paths,
-        &format!(
-            "cleanup done; evidence still at {}",
-            paths.evidence.display()
-        ),
-    );
+    ));
 
     if let Ok(rd) = fs::read_dir(&paths.evidence) {
         for ent in rd.filter_map(|e| e.ok()) {
-            println!("  {}", ent.path().display());
+            report.say(&format!("  {}", ent.path().display()));
         }
     }
 
     if proof::evidence_still_exists(&paths.evidence) {
-        0
-    } else {
-        eprintln!(
-            "cleanup: FATAL evidence dir missing at {}",
-            paths.evidence.display()
+        report.check(
+            Outcome::Pass,
+            "evidence preserved",
+            &paths.evidence.display().to_string(),
         );
-        1
+    } else {
+        report.check(
+            Outcome::Error,
+            "evidence preserved",
+            &format!("evidence dir missing at {}", paths.evidence.display()),
+        );
     }
 }
 
-fn kill_pid(pid: &str) {
+fn kill_pid(report: &RunReport, pid: &str) {
     #[cfg(unix)]
     {
         use std::process::Command;
+        use std::thread;
+        use std::time::Duration;
         if Command::new("kill")
             .args(["-0", pid])
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
         {
-            println!("cleanup: kill {pid}");
+            report.say(&format!("cleanup: kill {pid}"));
             let _ = Command::new("kill").arg(pid).status();
             thread::sleep(Duration::from_millis(500));
             let _ = Command::new("kill").args(["-9", pid]).status();
@@ -88,9 +88,8 @@ fn kill_pid(pid: &str) {
     }
     #[cfg(not(unix))]
     {
-        let _ = (pid, thread::sleep(Duration::from_millis(0)));
         // Windows: taskkill if we ever record PIDs there in a later stone.
-        println!("cleanup: skip kill on non-unix pid={pid}");
+        report.say(&format!("cleanup: skip kill on non-unix pid={pid}"));
     }
 }
 

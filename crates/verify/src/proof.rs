@@ -5,16 +5,41 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::paths::{self, RunPaths};
+use crate::contract::RunReport;
+use crate::paths;
 
-/// Append a dated section to `evidence/PROOF.md`.
-pub fn append_proof(paths: &RunPaths, line: &str) -> std::io::Result<()> {
+/// Append one run's section to `evidence/PROOF.md`.
+pub fn append_proof(report: &RunReport) -> std::io::Result<()> {
+    let paths = report.paths();
     fs::create_dir_all(&paths.evidence)?;
     let proof = paths.evidence.join("PROOF.md");
     let mut f = OpenOptions::new().create(true).append(true).open(proof)?;
-    let stamp = utc_stamp();
-    writeln!(f, "## {stamp} UTC")?;
-    writeln!(f, "{line}")?;
+    let outcome = report.outcome();
+    writeln!(
+        f,
+        "## {} {} {} (exit {})",
+        utc_stamp(),
+        report.command(),
+        outcome.label(),
+        outcome.exit_code()
+    )?;
+    writeln!(f)?;
+    writeln!(f, "run-id: {}", paths.run_id)?;
+    writeln!(f, "evidence: {}", paths.evidence.display())?;
+    writeln!(f)?;
+    for check in report.checks() {
+        if check.detail.is_empty() {
+            writeln!(f, "- {} {}", check.outcome.label(), check.name)?;
+        } else {
+            writeln!(
+                f,
+                "- {} {}: {}",
+                check.outcome.label(),
+                check.name,
+                check.detail
+            )?;
+        }
+    }
     writeln!(f)?;
     Ok(())
 }

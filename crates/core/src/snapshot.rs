@@ -1,13 +1,6 @@
-//! Assembling the `WorldSnapshot` the Engine ticks on.
-//!
-//! The Engine is pure and cannot drive itself, and `WindowSource` deliberately
-//! produces only the geometry half of a snapshot. Something has to read the
-//! platform, carry its readings into the Engine's terms and hand them over once
-//! per tick. That is this module.
-//!
-//! It is separate from the loop in `main.rs` because everything here is
-//! testable against a fake desktop: the loop owns the wall clock, the renderer
-//! and the window server, and this owns the two cadences and the conversion.
+//! Assembling the `WorldSnapshot` the Engine ticks on: reading the platform and
+//! carrying its readings into the Engine's terms once per tick. Separate from the
+//! loop in `main.rs` so the two cadences and the conversion test against a fake desktop.
 
 use std::time::Duration;
 
@@ -16,24 +9,14 @@ use crate::window_source::{
     WindowSource, WorldGeometry, DOCK_PERCH_ID, POLL_INTERVAL, RIDE_POLL_INTERVAL,
 };
 
-/// The longest step of the world the Engine is ever told about, whatever the
-/// wall clock says.
-///
-/// A slept machine, a suspended process or a stalled read hands the loop
-/// minutes of elapsed time at once, and the Engine integrates whatever it is
-/// given: gravity over five minutes is a velocity no window can catch and the
-/// sprite is flung off the desktop. One poll interval is the cap because that
-/// is how old the geometry may already be — the world in a snapshot is only
-/// accurate to a poll, so integrating a longer step against it is fiction. The
-/// sprite resumes from where it was rather than from where the missing minutes
-/// would have thrown it.
+/// The longest step of the world the Engine is ever told about. A slept machine
+/// hands the loop minutes at once, and five minutes of gravity flings the sprite
+/// off the desktop. One poll interval, because that is how old the geometry may be.
 const MAX_ELAPSED_MS: u32 = POLL_INTERVAL.as_millis() as u32;
 
 /// Reads the platform at its own cadence and assembles a snapshot per tick.
-///
-/// The two cadences are the point of this type. Geometry is read at the idle
-/// poll, or at the ride poll when the sprite is holding a moving Perch, and
-/// reused on any tick that arrives sooner. #98.
+/// Geometry is read at the idle poll, or at the ride poll when the sprite is
+/// holding a moving Perch, and reused on any tick that arrives sooner.
 pub struct SnapshotAssembler<S> {
     source: S,
     /// The last geometry read, reused until the next read replaces it.
@@ -41,10 +24,10 @@ pub struct SnapshotAssembler<S> {
     since_poll: Duration,
     /// How many times the window list has actually been read. Carried on the
     /// snapshot so the Engine can tell a reused rectangle from a new sample
-    /// and coast a ride between polls. #98.
+    /// and coast a ride between polls.
     poll_generation: u64,
     /// A ride needs the frame rate; sitting and sleeping do not. The Shell
-    /// flips this from the last Frame. #98.
+    /// flips this from the last Frame.
     fast: bool,
 }
 
@@ -62,18 +45,16 @@ impl<S: WindowSource> SnapshotAssembler<S> {
         }
     }
 
-    /// The window source itself, for a reader that is not a tick.
-    ///
-    /// The sensing tools answer a Harness on demand, and the two cadences this
-    /// type exists to manage are about the frame loop's needs, not theirs — a
-    /// `list_windows` wants the desktop now, not the one the last poll saw.
+    /// The window source itself, for a reader that is not a tick: the sensing
+    /// tools answer a Harness on demand, and `list_windows` wants the desktop
+    /// now, not the one the last poll saw.
     pub fn source(&self) -> &S {
         &self.source
     }
 
     /// Read at the ride cadence for as long as the sprite is holding on.
     /// Idle is the default so a sleeping buddy does not enumerate the
-    /// desktop sixty times a second. #98.
+    /// desktop sixty times a second.
     pub fn poll_fast(&mut self, ride: bool) {
         if ride && !self.fast {
             // One immediate read, not a burst of whatever the idle clock
@@ -98,9 +79,8 @@ impl<S: WindowSource> SnapshotAssembler<S> {
         let interval = self.interval();
 
         // The due check comes before the tick's own time is added, and a read
-        // takes one interval off the clock rather than zeroing it. Zeroing
-        // throws away the overshoot, which on a faster tick than the poll
-        // would make every read late by that remainder.
+        // takes one interval off the clock rather than zeroing it: zeroing throws
+        // away the overshoot and makes every read late by that remainder.
         if self.since_poll >= interval {
             self.since_poll = self.since_poll.saturating_sub(interval);
             self.geometry = self.source.snapshot();
@@ -124,10 +104,9 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     }
 }
 
-/// Name the surface under `feet`. A Perch is a window (owner, not title);
-/// the usable floor is the Dock's top — or, when the Dock's true bounds are
-/// known, the Dock is its own surface and the floor runs beside it; a
-/// display's left or right is an edge.
+/// Name the surface under `feet`. A Perch is a window (owner, not title); the
+/// usable floor is the Dock's top, or, when the Dock's true bounds are known, the
+/// Dock is its own surface and the floor runs beside it; a display's side is an edge.
 pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
     if let Some(dock) = &geometry.dock {
         if feet.y == dock.y && feet.x >= dock.x && feet.x <= dock.x + dock.width {
@@ -171,17 +150,9 @@ pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
     "nothing".to_string()
 }
 
-/// The Engine's view of one moment, from what the platform reported.
-///
-/// Both sides already speak points with y growing downward across every
-/// display, so this changes type without changing space. Window rectangles keep
-/// the order they arrived in: descending z-order is carried by the order alone.
-///
-/// Only Perch-eligible windows are carried over. Window level is a platform
-/// concept — a macOS `kCGWindowLayer`, meaningless to a pure Engine — so which
-/// levels count as somewhere to stand is decided here, where the platform is
-/// still in view, and the Engine is handed a world in which every rectangle is
-/// a Perch.
+/// The Engine's view of one moment. Both sides already speak points with y
+/// growing downward, so this changes type without changing space; windows keep
+/// their arrival order, which carries z-order. Only Perch-eligible windows go over.
 fn world_snapshot(
     geometry: &WorldGeometry,
     cursor: Point,
@@ -222,34 +193,20 @@ fn world_snapshot(
     }
 }
 
-/// Whether a window at this level is somewhere the sprite may stand.
+/// Whether a window at this level is somewhere the sprite may stand: only the
+/// ordinary application level. Decided here rather than in the Engine because a
+/// window level is a platform concept, and the Engine is handed a world of Perches.
 ///
-/// Only the ordinary application level is. Everything above it is the desktop's
-/// furniture — the menu bar at 24, the status items at 25, the Dock at 20, and
-/// on macOS the Dock reports a rectangle covering the whole display — and a
-/// sprite that treats furniture as a Perch lands on the menu bar the moment it
-/// is let go and never falls again. Everything below it is the desktop picture
-/// and its notifications, which are behind the sprite rather than under it.
-/// The one piece of furniture worth standing on — the Dock — arrives with its
-/// true bounds as `WorldGeometry::dock` when the platform can see them, and
-/// becomes a Perch above, not through this filter.
-///
-/// Our own overlay is above the ordinary level too — a floating panel, 3 on
-/// macOS and `_NET_WM_STATE_ABOVE` on X11 — so this is the whole of what keeps
-/// it out of the world. The platforms hand over every window they own, because
-/// the rest of ours are Chat surfaces (#362) and Settings, and a sprite may
-/// stand on those.
+/// Above 0 is furniture (menu bar 24, status items 25, Dock 20 reporting the whole
+/// display) a sprite would land on and never leave, and our own overlay at 3, which
+/// this alone keeps out of the world. Below 0 is the desktop picture and notifications.
 fn perch_eligible(layer: i32) -> bool {
     layer == 0
 }
 
-/// Where the sprite comes into the world: the middle of the first display the
-/// platform reported.
-///
-/// A tuning knob, and the middle rather than the top edge because the art hangs
-/// above the sprite's feet: dropped from the very top it would fall for its own
-/// height before any of it was on screen. Half a display is far enough that the
-/// fall reads as a fall and near enough that all of it is watched.
+/// Where the sprite comes into the world: the middle of the first display. The
+/// middle rather than the top edge because the art hangs above the feet, so a
+/// drop from the very top falls its own height before any of it is on screen.
 pub fn starting_position(geometry: &WorldGeometry) -> Point {
     geometry
         .usable_frames
@@ -286,10 +243,9 @@ mod tests {
         }
     }
 
-    /// A window above the ordinary application level. The layers here are the
-    /// ones a real macOS desktop reports: 3 for a floating panel, which is what
-    /// our own overlay is, 20 for the Dock, 24 for the menu bar, 25 for the
-    /// status items, and a large negative one for Notification Centre.
+    /// A window above the ordinary application level, at the layers a real macOS
+    /// desktop reports: 3 a floating panel (our overlay), 20 the Dock, 24 the menu
+    /// bar, 25 the status items, and a large negative one Notification Centre.
     fn elevated(
         id: WindowId,
         owner: &str,
@@ -312,9 +268,8 @@ mod tests {
     }
 
     /// A desktop that changes between reads: each read hands back the next
-    /// geometry in the list, and the last one repeats for ever. A test can then
-    /// tell one read from the next by what came back, without watching the
-    /// fake.
+    /// geometry in the list, and the last one repeats for ever, so a test tells
+    /// one read from the next by what came back.
     struct ChangingDesktop(RefCell<Vec<WorldGeometry>>);
 
     impl ChangingDesktop {
@@ -466,8 +421,8 @@ mod tests {
         );
     }
 
-    /// #98: a ride is the only time the window list is worth reading at
-    /// the frame rate. Sitting and sleeping stay on the idle poll.
+    /// A ride is the only time the window list is worth reading at the frame
+    /// rate. Sitting and sleeping stay on the idle poll.
     #[test]
     fn a_ride_reads_the_desktop_at_the_frame_rate() {
         let mut assembler = SnapshotAssembler::new(ChangingDesktop::of_display_widths(&[
@@ -527,8 +482,8 @@ mod tests {
         );
     }
 
-    /// A window of ours is a window. #362 gave every Instance a Chat surface,
-    /// and nothing from here up knows or cares whose window it is.
+    /// A window of ours is a window. Every Instance has a Chat surface, and
+    /// nothing from here up knows or cares whose window it is.
     #[test]
     fn a_window_of_ours_that_is_not_the_overlay_is_a_perch_like_any_other() {
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
@@ -617,17 +572,12 @@ mod tests {
         );
     }
 
-    /// #39: the sprite used to come to rest at the bottom of the display, which
-    /// is behind the Dock — the Dock draws above the overlay, so three quarters
-    /// of the art disappeared under it. Nothing in the window list can say where
-    /// the Dock's top edge is, because macOS reports the Dock as a window
-    /// covering the whole display. The fix is upstream of the Engine: the
-    /// rectangles it is handed are the usable part of each display, so the floor
-    /// it already derives is the Dock's top edge.
+    /// The sprite used to rest at the display's bottom, behind the Dock, which
+    /// draws above the overlay. The window list cannot say where the Dock's top
+    /// is, so the fix is upstream: the Engine is handed the usable part of each display.
     #[test]
     fn a_sprite_comes_to_rest_on_the_usable_floor_rather_than_behind_the_dock() {
-        // A 1920x1080 display reserving 30 points for the menu bar and 98 for
-        // the Dock, read off a running app while #39 was being written.
+        // A 1920x1080 display reserving 30 points for the menu bar and 98 for the Dock.
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
@@ -650,11 +600,9 @@ mod tests {
         );
     }
 
-    /// The world the Shell hands over once the Dock's true bounds are known
-    /// (Accessibility already granted): the floor runs to the display's own
-    /// bottom edge and the Dock is a Perch. Values read off the desktop the
-    /// bug was reported on — a 1920x1080 display, the Dock's island 234
-    /// points in from either side.
+    /// The world the Shell hands over once the Dock's true bounds are known: the
+    /// floor runs to the display's own bottom edge and the Dock is a Perch. A
+    /// 1920x1080 display, the Dock's island 234 points in from either side.
     fn dock_aware_desktop() -> WorldGeometry {
         WorldGeometry {
             usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
@@ -663,8 +611,8 @@ mod tests {
         }
     }
 
-    /// Over the Dock, the Dock is still what the sprite rests on — #39's
-    /// guarantee, now carried by a Perch instead of a full-width floor.
+    /// Over the Dock, the Dock is still what the sprite rests on, now carried by
+    /// a Perch instead of a full-width floor.
     #[test]
     fn a_sprite_over_the_dock_rests_on_the_dock() {
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
@@ -685,10 +633,9 @@ mod tests {
         );
     }
 
-    /// The bug this world model fixes: the Dock does not stretch to the sides
-    /// of the display, and a sprite beyond its real end used to stand on the
-    /// full-width strip — walking on air. Beside the Dock the floor is the
-    /// display's own bottom edge.
+    /// The Dock does not stretch to the sides of the display, and a sprite
+    /// beyond its real end used to stand on the full-width strip, walking on air.
+    /// Beside the Dock the floor is the display's own bottom edge.
     #[test]
     fn a_sprite_beside_the_dock_falls_to_the_display_bottom() {
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
@@ -744,12 +691,9 @@ mod tests {
         );
     }
 
-    /// #39 asked for this to be asserted rather than assumed: a Dock that hides
-    /// gives its strip back, and the sprite resting on it is standing on
-    /// nothing. Nothing new was needed to make it work — resting is only ever
-    /// resting on something, and the Engine re-derives that every tick — but a
-    /// sprite left hanging in the air is the failure nobody would notice until
-    /// they saw it.
+    /// A Dock that hides gives its strip back, and the sprite resting on it is
+    /// standing on nothing. Resting is only ever resting on something, re-derived
+    /// every tick; a sprite left hanging in the air is the failure nobody notices.
     #[test]
     fn a_reservation_that_disappears_drops_the_sprite_that_was_resting_on_it() {
         let dock = || WorldGeometry {

@@ -115,6 +115,16 @@ pub struct PermissionOption {
     pub kind: Option<String>,
 }
 
+/// One step of the agent's plan, as the Chat surface draws it. `priority` and
+/// `status` are the crate's own serde spellings through `name_of`, like
+/// `Event::ToolCall`'s. `_meta` is out: ACP says not to assume anything of it.
+#[derive(Clone, Debug, Serialize)]
+pub struct PlanStep {
+    pub content: String,
+    pub priority: String,
+    pub status: String,
+}
+
 /// What the session stream said, minus the text — that comes back with the
 /// turn. Fed to the Action Log and the Chat surface by `harness.rs`.
 #[derive(Clone, Debug)]
@@ -125,9 +135,10 @@ pub enum Event {
         kind: Option<String>,
         status: Option<String>,
     },
-    Plan {
-        entries: usize,
-    },
+    /// The agent's steps and which one is current. ACP has the agent send a
+    /// complete list and the client replace the plan entirely, so this is never
+    /// a delta; an empty list is the turn's plan going away.
+    Plan(Vec<PlanStep>),
     Usage {
         used: u64,
         size: u64,
@@ -854,13 +865,16 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
             kind: update.fields.kind.as_ref().map(name_of),
             status: update.fields.status.as_ref().map(name_of),
         }),
-        // The count, and not the steps the agent actually listed — which throws
-        // away the one part of a plan worth showing. The steps and which one is
-        // current are what a reader needs; the Action Log line holding only a
-        // count is the gap, not the design (ADR-0028). #697 closes it.
-        SessionUpdate::Plan(plan) => on_event(Event::Plan {
-            entries: plan.entries.len(),
-        }),
+        SessionUpdate::Plan(plan) => on_event(Event::Plan(
+            plan.entries
+                .into_iter()
+                .map(|entry| PlanStep {
+                    content: entry.content,
+                    priority: name_of(&entry.priority),
+                    status: name_of(&entry.status),
+                })
+                .collect(),
+        )),
         SessionUpdate::UsageUpdate(usage) => on_event(Event::Usage {
             used: usage.used,
             size: usage.size,
@@ -900,9 +914,9 @@ pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
 /// leaving with the app.
 ///
 /// Every question nobody will answer now gets the protocol-mandated reply,
-/// which is not an answer. And the thinking goes dark: the Chat surface keeps
-/// no thought of its own, so the last line stays on screen until it is told
-/// the turn that produced it has ended (ADR-0025).
+/// which is not an answer. And the thinking goes dark, the plan with it: the
+/// Chat surface keeps no thought and no plan of its own, so both stay on
+/// screen until it is told the turn that produced them has ended (ADR-0025).
 fn end_turn(
     asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
     thought: &mut String,
@@ -921,6 +935,10 @@ fn end_turn(
         thought.clear();
         on_event(Event::Thought(String::new()));
     }
+    // Unconditional: nothing here remembers whether the turn planned, and
+    // threading a flag through every exit path in the turn loop would buy one
+    // idempotent event.
+    on_event(Event::Plan(Vec::new()));
 }
 
 fn auth_hint(method: &AuthMethod) -> AuthHint {
@@ -1203,13 +1221,21 @@ mod tests {
         let (seen, on_event) = collector();
         let mut thought = "Reading the roster".to_string();
         end_turn(&mut Vec::new(), &mut thought, &on_event);
-        assert_eq!(thoughts(&seen.lock().unwrap()), [""]);
+        assert!(matches!(
+            seen.lock().unwrap().as_slice(),
+            [Event::Thought(line), Event::Plan(steps)]
+                if line.is_empty() && steps.is_empty()
+        ));
 
         // A turn that thought nothing has nothing to take away, and a strip
-        // that was never shown should not be told to hide.
+        // that was never shown should not be told to hide. The plan clear is
+        // unconditional, so it is all that is left.
         let (seen, on_event) = collector();
         end_turn(&mut Vec::new(), &mut String::new(), &on_event);
-        assert!(seen.lock().unwrap().is_empty());
+        assert!(matches!(
+            seen.lock().unwrap().as_slice(),
+            [Event::Plan(steps)] if steps.is_empty()
+        ));
     }
 
     /// Nothing to show is not a thought. Adapters stream signature-only
@@ -1219,6 +1245,31 @@ mod tests {
     fn a_thought_with_no_words_raises_nothing() {
         let (_, events) = drive(vec![thinking("   \n")]);
         assert!(events.is_empty(), "{events:?}");
+    }
+
+    /// #697: a plan used to reach the Shell as `entries.len()`, so the steps
+    /// a reader wants never left this file. Driven off the wire bytes rather
+    /// than built types, because the spellings are what the surface draws.
+    #[test]
+    fn a_plan_update_carries_its_steps_and_not_a_count() {
+        let update: SessionUpdate = serde_json::from_value(serde_json::json!({
+            "sessionUpdate": "plan",
+            "entries": [
+                {"content": "read the roster", "priority": "high", "status": "completed"},
+                {"content": "write the patch", "priority": "medium", "status": "in_progress"}
+            ]
+        }))
+        .unwrap();
+
+        let (_, events) = drive(vec![update]);
+
+        let [Event::Plan(steps)] = events.as_slice() else {
+            panic!("a plan update raised {events:?}");
+        };
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[1].content, "write the patch");
+        assert_eq!(steps[1].status, "in_progress");
+        assert_eq!(steps[1].priority, "medium");
     }
 
     /// One `session/request_permission`, deserialized rather than built, so

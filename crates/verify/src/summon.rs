@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
+use crate::contract::RunReport;
 use crate::gesture::{self, Verb};
-use crate::paths::RunPaths;
 
-pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
-    gesture::run(Verb::Summon, repo_root, paths)
+pub fn run(repo_root: &Path, report: &mut RunReport) {
+    gesture::run(Verb::Summon, repo_root, report)
 }

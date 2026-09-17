@@ -30,7 +30,7 @@ use crate::acp_wire::{
 };
 use crate::action_log;
 
-pub use crate::acp_wire::PermissionAsk;
+pub use crate::acp_wire::{PermissionAsk, PlanStep};
 
 /// `pub(crate)` like `model::API_KEY`: the settings window names the variable
 /// that owns a row.
@@ -353,6 +353,8 @@ pub enum Forwarded {
     },
     /// The line of the Harness's thinking being written now. ADR-0025.
     Thought(String),
+    /// The agent's plan, replacing whatever the surface holds. Empty ends it.
+    Plan(Vec<PlanStep>),
 }
 
 type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
@@ -1376,11 +1378,10 @@ fn probe(session: &Session) -> i32 {
 /// request, on to the Chat surface. Runs on the wire thread.
 fn note_event(dir: &Path, forward: &Forward, event: Event) {
     match event {
-        // A tool call, a plan and a usage tick are logged and never forwarded,
-        // so a turn shows the surface no phases: a slow one looks the same
-        // whether it is on its third tool call or stalled. The events to draw
-        // one from already arrive here, and the surface needs to show more of a
-        // turn than it does today; ADR-0028 bounds what it draws. #697 closes it.
+        // A tool call and a usage tick are logged and never forwarded, so a
+        // turn shows the surface no phases: a slow one looks the same whether
+        // it is on its third tool call or stalled. The events to draw one from
+        // already arrive here; ADR-0028 bounds what it draws. #697 closes it.
         Event::ToolCall {
             id,
             title,
@@ -1391,7 +1392,14 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
             "tool_call",
             json!({"id": id, "title": title, "kind": kind, "status": status}),
         ),
-        Event::Plan { entries } => action_log::append(dir, "plan", json!({"entries": entries})),
+        Event::Plan(steps) => {
+            // Guarded because `end_turn` clears the plan on every turn, and an
+            // unguarded line would log a zero-step plan for turns that had none.
+            if !steps.is_empty() {
+                action_log::append(dir, "plan", json!({"entries": steps.len()}));
+            }
+            forward(Forwarded::Plan(steps));
+        }
         Event::Usage { used, size } => {
             action_log::append(dir, "usage_update", json!({"used": used, "size": size}))
         }
@@ -2286,6 +2294,61 @@ mod tests {
         assert!(matches!(
             forwarded.try_recv(),
             Ok(Forwarded::Thought(line)) if line == "Reading the roster"
+        ));
+        assert!(!dir.join(action_log::FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The split #697 landed on: the steps go to the reader on the Chat
+    /// surface, and the Action Log keeps the count. The log points at the
+    /// Harness's own session dump rather than copying it (CONTEXT.md), and the
+    /// step text is that copy.
+    #[test]
+    fn a_plan_reaches_the_surface_and_the_action_log_keeps_the_count() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-plan-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+
+        note_event(
+            &dir,
+            &forward,
+            Event::Plan(vec![PlanStep {
+                content: "read the roster".to_string(),
+                priority: "high".to_string(),
+                status: "in_progress".to_string(),
+            }]),
+        );
+
+        assert!(matches!(
+            forwarded.try_recv(),
+            Ok(Forwarded::Plan(steps)) if steps[0].content == "read the roster"
+        ));
+        let logged = std::fs::read_to_string(dir.join(action_log::FILE)).unwrap();
+        assert!(logged.contains(r#""entries":1"#), "{logged}");
+        assert!(!logged.contains("read the roster"), "{logged}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The clear `end_turn` fires on every turn. It has to reach the surface,
+    /// and it has to leave the Action Log alone: a line per turn saying zero
+    /// steps is noise about a turn that never planned.
+    #[test]
+    fn an_empty_plan_clears_the_surface_and_writes_no_log_line() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-plan-end-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+
+        note_event(&dir, &forward, Event::Plan(Vec::new()));
+
+        assert!(matches!(
+            forwarded.try_recv(),
+            Ok(Forwarded::Plan(steps)) if steps.is_empty()
         ));
         assert!(!dir.join(action_log::FILE).exists());
         let _ = std::fs::remove_dir_all(&dir);

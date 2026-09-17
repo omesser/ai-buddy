@@ -15,8 +15,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use crate::paths::RunPaths;
-use crate::proof;
+use crate::contract::{Outcome, RunReport};
 
 #[derive(Clone, Copy)]
 pub enum Verb {
@@ -40,42 +39,55 @@ impl Verb {
     }
 }
 
-/// Drive one gesture end to end. Returns 0 pass, 1 fail, 2 skip.
-pub fn run(verb: Verb, repo_root: &Path, paths: &RunPaths) -> i32 {
+/// Drive one gesture end to end.
+pub fn run(verb: Verb, repo_root: &Path, report: &mut RunReport) {
     if std::env::consts::OS != "macos" {
-        return skip(
-            verb,
-            paths,
+        report.check(
+            Outcome::Skip,
+            "gesture lane",
             &format!(
                 "no gesture leaf wired for {} yet (macOS is stone 2's proven platform)",
                 std::env::consts::OS
             ),
         );
+        return;
     }
 
-    let dest = paths.evidence.join(verb.name().to_lowercase());
+    let dest = report.paths().evidence.join(verb.name().to_lowercase());
     if let Err(e) = fs::create_dir_all(&dest) {
-        return fail(
-            verb,
-            paths,
+        report.check(
+            Outcome::Fail,
+            "evidence dir",
             &format!("cannot create {}: {e}", dest.display()),
         );
+        return;
     }
 
     let click_script = repo_root.join("scripts/click-cursor.swift");
     if !click_script.is_file() {
-        return fail(verb, paths, &format!("missing {}", click_script.display()));
+        report.check(
+            Outcome::Fail,
+            "click leaf",
+            &format!("missing {}", click_script.display()),
+        );
+        return;
     }
 
-    println!("{}: building...", verb.name());
-    match Command::new("cargo")
+    report.say(&format!("{}: building...", verb.name()));
+    let mut build = Command::new("cargo");
+    build
         .args(["build", "-p", "ai-buddy"])
-        .current_dir(repo_root)
-        .status()
-    {
-        Ok(s) if s.success() => {}
-        Ok(s) => return fail(verb, paths, &format!("cargo build exited {s}")),
-        Err(e) => return fail(verb, paths, &format!("cargo build: {e}")),
+        .current_dir(repo_root);
+    match report.exec(&mut build, None) {
+        Some(0) => {}
+        Some(c) => {
+            report.check(Outcome::Fail, "cargo build", &format!("exited {c}"));
+            return;
+        }
+        None => {
+            report.check(Outcome::Fail, "cargo build", "could not run cargo");
+            return;
+        }
     }
 
     // A stray instance of this exact checkout's binary would confuse which
@@ -85,31 +97,40 @@ pub fn run(verb: Verb, repo_root: &Path, paths: &RunPaths) -> i32 {
     // this tool only ever owns the child it spawns below.
     let bin_path = repo_root.join("target/debug/ai-buddy");
     if let Some(pid) = stray_pid(&bin_path) {
-        return fail(
-            verb,
-            paths,
+        report.check(
+            Outcome::Fail,
+            "stray process",
             &format!(
                 "{} is already running (pid {pid}); stop it before running {}",
                 bin_path.display(),
                 verb.name().to_lowercase()
             ),
         );
+        return;
     }
 
     let log_path = dest.join("app.log");
     let log_out = match fs::File::create(&log_path) {
         Ok(f) => f,
         Err(e) => {
-            return fail(
-                verb,
-                paths,
+            report.check(
+                Outcome::Fail,
+                "app log",
                 &format!("cannot create {}: {e}", log_path.display()),
-            )
+            );
+            return;
         }
     };
     let log_err = match log_out.try_clone() {
         Ok(f) => f,
-        Err(e) => return fail(verb, paths, &format!("cannot dup log handle: {e}")),
+        Err(e) => {
+            report.check(
+                Outcome::Fail,
+                "app log",
+                &format!("cannot dup log handle: {e}"),
+            );
+            return;
+        }
     };
 
     let mut child = match Command::new(&bin_path)
@@ -121,68 +142,72 @@ pub fn run(verb: Verb, repo_root: &Path, paths: &RunPaths) -> i32 {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return fail(verb, paths, &format!("spawn ai-buddy: {e}")),
+        Err(e) => {
+            report.check(Outcome::Fail, "ai-buddy launch", &format!("spawn: {e}"));
+            return;
+        }
     };
 
-    let code = drive(verb, repo_root, &click_script, &log_path);
+    drive(verb, repo_root, &click_script, &log_path, report);
 
     let _ = child.kill();
     let _ = child.wait();
-
-    if code == 0 {
-        let msg = format!("{} PASS — evidence under {}", verb.name(), dest.display());
-        println!("{msg}");
-        let _ = proof::append_proof(paths, &msg);
-    } else {
-        let msg = format!("{} FAIL — see {}", verb.name(), dest.display());
-        println!("{msg}");
-        let _ = proof::append_proof(paths, &msg);
-    }
-    code
 }
 
-fn drive(verb: Verb, repo_root: &Path, click_script: &Path, log_path: &Path) -> i32 {
+fn drive(
+    verb: Verb,
+    repo_root: &Path,
+    click_script: &Path,
+    log_path: &Path,
+    report: &mut RunReport,
+) {
     if !await_line(log_path, 60, |l| l.starts_with("overlay:")) {
-        eprintln!("{}: app never published an overlay line", verb.name());
-        return 1;
+        report.check(
+            Outcome::Fail,
+            "overlay line",
+            "app never published an overlay line",
+        );
+        return;
     }
     if !await_line(log_path, 60, |l| {
         l.starts_with("frame: ") && (l.contains(" Grounded ") || l.contains(" Perched "))
     }) {
-        eprintln!(
-            "{}: sprite never settled (no Grounded/Perched frame)",
-            verb.name()
-        );
-        return 1;
+        report.check(Outcome::Fail, "sprite settled", "no Grounded/Perched frame");
+        return;
     }
 
     let Some((x, y)) = sprite_click_point(log_path) else {
-        eprintln!(
-            "{}: could not read the sprite's position/size from the log",
-            verb.name()
+        report.check(
+            Outcome::Fail,
+            "sprite position",
+            "could not read the sprite's position/size from the log",
         );
-        return 1;
+        return;
     };
 
-    println!(
+    report.say(&format!(
         "{}: clicking sprite at ({x},{y}) x{}",
         verb.name(),
         verb.clicks()
-    );
-    match Command::new("swift")
+    ));
+    let mut click = Command::new("swift");
+    click
         .arg(click_script)
         .args([x.to_string(), y.to_string(), verb.clicks().to_string()])
-        .current_dir(repo_root)
-        .status()
-    {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            eprintln!("{}: click-cursor.swift exited {s}", verb.name());
-            return 1;
+        .current_dir(repo_root);
+    match report.exec(&mut click, None) {
+        Some(0) => {}
+        Some(c) => {
+            report.check(
+                Outcome::Fail,
+                "click",
+                &format!("click-cursor.swift exited {c}"),
+            );
+            return;
         }
-        Err(e) => {
-            eprintln!("{}: could not run click-cursor.swift: {e}", verb.name());
-            return 1;
+        None => {
+            report.check(Outcome::Fail, "click", "could not run click-cursor.swift");
+            return;
         }
     }
 
@@ -190,18 +215,18 @@ fn drive(verb: Verb, repo_root: &Path, click_script: &Path, log_path: &Path) -> 
     if !await_line(log_path, 40, |l| {
         l.starts_with("verbs:") && l.contains(verb_name)
     }) {
-        eprintln!(
-            "{}: no `verbs:.*{verb_name}` line — click did not produce the verb",
-            verb.name()
+        report.check(
+            Outcome::Fail,
+            "verbs line",
+            &format!("no `verbs:.*{verb_name}` line; the click did not produce the verb"),
         );
-        return 1;
+        return;
     }
-    println!(
-        "{}: verbs:.*{verb_name} found in {}",
-        verb.name(),
-        log_path.display()
+    report.check(
+        Outcome::Pass,
+        &verb_name.to_lowercase(),
+        &format!("verbs:.*{verb_name} in {}", log_path.display()),
     );
-    0
 }
 
 /// Pid of an already-running process at `bin_path`, if any. Exact-path match:
@@ -218,20 +243,6 @@ fn stray_pid(bin_path: &Path) -> Option<String> {
         .trim()
         .to_string();
     (!pid.is_empty()).then_some(pid)
-}
-
-fn skip(verb: Verb, paths: &RunPaths, reason: &str) -> i32 {
-    let msg = format!("{} SKIP — {reason}", verb.name());
-    println!("{msg}");
-    let _ = proof::append_proof(paths, &msg);
-    2
-}
-
-fn fail(verb: Verb, paths: &RunPaths, reason: &str) -> i32 {
-    let msg = format!("{} FAIL — {reason}", verb.name());
-    eprintln!("{msg}");
-    let _ = proof::append_proof(paths, &msg);
-    1
 }
 
 /// Poll the log every 250ms up to `attempts` times for a line matching `pred`.

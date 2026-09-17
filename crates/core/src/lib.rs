@@ -1,8 +1,6 @@
 //! The pure core: everything ai-buddy knows how to do without a window server.
-//!
-//! Nothing here depends on Tauri or on a platform binding, which is a property
-//! of the crate rather than a convention — see docs/SPEC.md. Adapters that reach
-//! the outside world are declared here as traits and implemented in the shell.
+//! Nothing here depends on Tauri or a platform binding (docs/SPEC.md); adapters
+//! to the outside world are declared here as traits and implemented in the shell.
 
 pub mod character;
 pub mod director;

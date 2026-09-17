@@ -1,39 +1,35 @@
 //! Unit suites mirroring helpers/prove-units.sh.
 
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
-use crate::paths::RunPaths;
-use crate::proof;
+use crate::contract::{Outcome, RunReport};
 
-/// Run unit proofs. Returns process exit code.
-pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
-    let dest = paths.evidence.join("units");
+/// Run unit proofs.
+pub fn run(repo_root: &Path, report: &mut RunReport) {
+    let dest = report.paths().evidence.join("units");
     if let Err(e) = fs::create_dir_all(&dest) {
-        eprintln!("units: cannot create {}: {e}", dest.display());
-        return 1;
+        report.check(
+            Outcome::Error,
+            "units evidence",
+            &format!("cannot create {}: {e}", dest.display()),
+        );
+        return;
     }
 
-    let mut status = 0i32;
     let summary = dest.join("summary.txt");
     let _ = fs::remove_file(&summary);
 
-    println!("prove-units: cargo test -p ai-buddy-core");
-    if tee_command(
-        Command::new("cargo")
-            .args(["test", "-p", "ai-buddy-core"])
-            .current_dir(repo_root),
-        &dest.join("cargo-core.txt"),
-    ) {
-        append_summary(&summary, "PASS cargo-core");
-    } else {
-        append_summary(&summary, "FAIL cargo-core");
-        status = 1;
-    }
+    report.say("prove-units: cargo test -p ai-buddy-core");
+    let mut cargo = Command::new("cargo");
+    cargo
+        .args(["test", "-p", "ai-buddy-core"])
+        .current_dir(repo_root);
+    suite(report, "cargo-core", &mut cargo, &dest, &summary);
 
-    println!("prove-units: node --test");
+    report.say("prove-units: node --test");
     let mut node = Command::new("node");
     node.arg("--test");
     // Expand tests/*.test.js like the shell does.
@@ -61,83 +57,44 @@ pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
         node.arg("tests/*.test.js");
     }
     node.current_dir(repo_root);
-    if tee_command(&mut node, &dest.join("node-tests.txt")) {
-        append_summary(&summary, "PASS node-tests");
-    } else {
-        append_summary(&summary, "FAIL node-tests");
-        status = 1;
-    }
+    suite(report, "node-tests", &mut node, &dest, &summary);
 
-    println!("prove-units: test_verify_overlay_diagnostics.sh");
-    if tee_command(
-        Command::new("bash")
-            .arg("scripts/test_verify_overlay_diagnostics.sh")
-            .current_dir(repo_root),
-        &dest.join("overlay-diagnostics.txt"),
-    ) {
-        append_summary(&summary, "PASS overlay-diagnostics");
-    } else {
-        append_summary(&summary, "FAIL overlay-diagnostics");
-        status = 1;
-    }
+    report.say("prove-units: test_verify_overlay_diagnostics.sh");
+    let mut diagnostics = Command::new("bash");
+    diagnostics
+        .arg("scripts/test_verify_overlay_diagnostics.sh")
+        .current_dir(repo_root);
+    suite(
+        report,
+        "overlay-diagnostics",
+        &mut diagnostics,
+        &dest,
+        &summary,
+    );
 
-    println!("prove-units: test_verify_settings_row_live.sh");
-    if tee_command(
-        Command::new("bash")
-            .arg("scripts/test_verify_settings_row_live.sh")
-            .current_dir(repo_root),
-        &dest.join("settings-row-live.txt"),
-    ) {
-        append_summary(&summary, "PASS settings-row-live");
-    } else {
-        append_summary(&summary, "FAIL settings-row-live");
-        status = 1;
-    }
+    report.say("prove-units: test_verify_settings_row_live.sh");
+    let mut settings = Command::new("bash");
+    settings
+        .arg("scripts/test_verify_settings_row_live.sh")
+        .current_dir(repo_root);
+    suite(report, "settings-row-live", &mut settings, &dest, &summary);
 
     write_gui_gap(&dest);
-
-    if status == 0 {
-        let _ = proof::append_proof(
-            paths,
-            &format!(
-                "prove-units PASS — see {} (GUI gap noted in GUI-GAP.md if any)",
-                dest.display()
-            ),
-        );
-    } else {
-        let _ = proof::append_proof(paths, &format!("prove-units FAIL — see {}", dest.display()));
-    }
-    status
 }
 
-fn tee_command(cmd: &mut Command, log_path: &Path) -> bool {
-    let output = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output();
-    match output {
-        Ok(out) => {
-            let mut combined = Vec::new();
-            combined.extend_from_slice(&out.stdout);
-            if !out.stderr.is_empty() {
-                if !combined.is_empty() && !combined.ends_with(b"\n") {
-                    combined.push(b'\n');
-                }
-                combined.extend_from_slice(&out.stderr);
-            }
-            let _ = fs::write(log_path, &combined);
-            let _ = io::stdout().write_all(&out.stdout);
-            let _ = io::stderr().write_all(&out.stderr);
-            out.status.success()
-        }
-        Err(e) => {
-            let msg = format!("failed to spawn: {e}\n");
-            let _ = fs::write(log_path, &msg);
-            eprint!("{msg}");
-            false
-        }
-    }
+/// Run one suite, log it, and record it in both `summary.txt` and the report.
+fn suite(report: &mut RunReport, name: &str, cmd: &mut Command, dest: &Path, summary: &Path) {
+    let code = report.exec(cmd, Some(&dest.join(format!("{name}.txt"))));
+    let (outcome, detail) = match code {
+        Some(0) => (Outcome::Pass, String::new()),
+        Some(c) => (Outcome::Fail, format!("exit {c}")),
+        None => (Outcome::Fail, "failed to spawn".to_string()),
+    };
+    append_summary(summary, &format!("{} {name}", outcome.label()));
+    report.check(outcome, name, &detail);
 }
 
 fn append_summary(summary: &Path, line: &str) {
-    println!("{line}");
     if let Ok(mut f) = File::options().create(true).append(true).open(summary) {
         let _ = writeln!(f, "{line}");
     }

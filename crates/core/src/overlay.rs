@@ -1,41 +1,12 @@
-//! Hit-testing the Character's sprite against the cursor.
-//!
-//! Click-through on macOS is per-window, not per-pixel: a small sprite in a
-//! screen-sized transparent window swallows every click unless something decides,
-//! per cursor position, whether the pixel under it is actually drawn. That
-//! decision is this module. It is pure arithmetic so it can be tested without a
-//! windowing system.
-//!
-//! Placing the overlays is here for the same reason. There is one overlay per
-//! display, so which one the cursor is on and where the art lands inside each of
-//! them are sums the Shell would otherwise do by hand beside the window server,
-//! where nothing can check them.
-//!
-//! Everything here is in points, the space every display shares and the Engine
-//! works in. Physical pixels stop at `window_source::in_points`.
+//! Hit-testing the sprite against the cursor and placing the per-display
+//! overlays, in points (physical pixels stop at `window_source::in_points`).
+//! Click-through on macOS is per-window, so this decides per pixel whether it is drawn.
 
 use crate::window_source::Rect;
 
 /// The index of the display a point is on, or of the nearest one when it is on
-/// none.
-///
-/// Every display has an overlay, so this names the overlay a point belongs to —
-/// the one whose window a click there would reach.
-///
-/// Containment answers it almost always, and the fallback is for the moments it
-/// cannot: displays need not be flush, so a cursor can sit in the gap between
-/// two of them, and a thrown sprite passes outside the outermost edge before
-/// physics catches it. The nearest display is the answer there because the point
-/// is on its way into or out of that one.
-///
-/// Containment is half-open, because a window is: a display 1920 wide at x=0
-/// covers columns 0 to 1919, and column 1920 is the next display's first. The
-/// shared edge has to go to the display whose window is actually there, since
-/// this is what decides which overlay stops being click-through — naming the
-/// neighbour leaves the overlay under the cursor passing clicks through, and a
-/// click on the sprite falls to whatever is beneath it.
-///
-/// `None` only when no display was reported, which is a machine with no screen.
+/// none (a gap between displays, or a Throw past the outermost edge). `None`
+/// only when no display was reported.
 pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> {
     displays
         .iter()
@@ -49,34 +20,16 @@ pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> 
         })
 }
 
-/// The one overlay that draws an Instance's speech bubble and thinking
-/// indicator (#178), or `None` when no overlay should.
-///
-/// Every overlay is handed every sprite and draws the part that falls inside
-/// it, which is right for the art: the wrong display's copy simply clips
-/// away. A bubble is not clipped geometry — the renderer keeps it readable by
-/// pulling it back inside the display, so the copy on the wrong display comes
-/// back into view at an edge. So a bubble is owned by exactly one overlay, the
-/// one under the feet. The feet rather than the art's rectangle: a sprite
-/// straddling a seam is still standing on one display, and the owner then
-/// changes once, at the seam, instead of flickering as the art crosses.
-///
-/// Unlike `display_index_for`, feet on no display own nothing. That function
-/// answers "which overlay is the cursor nearest", where an answer is always
-/// needed; here the nearest display would clamp a bubble into view beside a
-/// sprite that is off-screen — thrown past an edge, or on a display that was
-/// just unplugged — which is the very symptom this exists to remove.
-///
-/// Two passes, because an edge is either a seam or a floor. Half-open first,
-/// so a seam resolves one way only: feet on the shared edge of a vertical
-/// stack belong to the display below. A floor is the edge #178 missed — a
-/// display reserving nothing along one, as a second screen does, puts the
-/// Engine's floor on it, and resting feet land exactly there. The second pass
-/// picks those up, `FLOOR_SLACK` wide.
+/// The one overlay that draws an Instance's speech bubble, or `None` when none
+/// should: the renderer pulls a bubble back inside its display, so a copy on the
+/// wrong display reappears at an edge. The overlay under the feet owns it.
 pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
     displays
         .iter()
         .position(|display| covers(feet, display))
+        // A seam resolves one way, to the display below. An edge with nothing
+        // beyond it is a floor feet rest exactly on, hence the second pass. Off
+        // every display, nothing: nearest would put a bubble beside an unseen sprite.
         .or_else(|| {
             displays
                 .iter()
@@ -85,24 +38,20 @@ pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
 }
 
 /// How far outside its display feet may be and still be standing on it, in
-/// points.
-///
-/// Slack rather than equality: the floor is the display rectangle scaled and
-/// clamped, which `usable_frame` argues need not land back on the edge it came
-/// from. A point is far short of off-screen, so a thrown sprite still owns no
-/// bubble. Squared at the call site, as `outside_by` is.
+/// points. Slack rather than equality because the floor is the display scaled
+/// and clamped, which need not land back on the edge. Squared at the call site.
 const FLOOR_SLACK: f64 = 1.0;
 
 /// Whether a display's window has this point, right and bottom edges excluded.
+/// Half-open because a window is: a display 1920 wide at x=0 covers columns 0 to
+/// 1919, and the seam column belongs to the display whose window starts there.
 fn covers(point: (f64, f64), rect: &Rect) -> bool {
     (rect.x..rect.x + rect.width).contains(&point.0)
         && (rect.y..rect.y + rect.height).contains(&point.1)
 }
 
 /// How far outside a rectangle a point lies, squared. Zero anywhere inside it.
-///
-/// Squared because only the ordering is read, and the square root that would
-/// turn this into a distance reorders nothing.
+/// Squared because only the ordering is read.
 fn outside_by(point: (f64, f64), rect: &Rect) -> f64 {
     let dx = (rect.x - point.0)
         .max(point.0 - (rect.x + rect.width))
@@ -114,15 +63,9 @@ fn outside_by(point: (f64, f64), rect: &Rect) -> f64 {
     dx * dx + dy * dy
 }
 
-/// Where to draw the art, given where the Character's feet are.
-///
-/// A `Frame` reports the contact point: the Character's feet, in the point space
-/// every display shares. The art hangs above the feet and is centred on them, so
-/// the drawn rectangle sits half a width to the left and a whole height above.
-///
-/// The answer is in that same shared space, which is the space the hit-test asks
-/// its question in. `SpriteRect::in_overlay` is what turns it into one overlay's
-/// own coordinates for drawing.
+/// Where to draw the art, given where the Character's feet are: the art hangs
+/// above the feet and is centred on them, in the point space every display
+/// shares. `SpriteRect::in_overlay` turns it into one overlay's own coordinates.
 pub fn place_sprite(contact: (f64, f64), art_size: (i32, i32), scale: i32) -> SpriteRect {
     let (width, height) = art_size;
 
@@ -133,12 +76,9 @@ pub fn place_sprite(contact: (f64, f64), art_size: (i32, i32), scale: i32) -> Sp
     }
 }
 
-/// Where the sprite sits, and how far its art is blown up.
-///
-/// `x` and `y` are the sprite's top-left corner, in whichever space it was
-/// placed in: `place_sprite` works in the shared point space, `in_overlay` moves
-/// a copy into one overlay's own. `scale` is the integer nearest-neighbour
-/// factor the art is rendered at.
+/// Where the sprite sits, and how far its art is blown up. `x` and `y` are the
+/// top-left corner in whichever space it was placed in (`place_sprite` shared,
+/// `in_overlay` one overlay's own); `scale` is the integer nearest-neighbour factor.
 #[derive(Clone, Copy)]
 pub struct SpriteRect {
     pub x: i32,
@@ -147,20 +87,12 @@ pub struct SpriteRect {
 }
 
 impl SpriteRect {
-    /// The same rectangle in one overlay's coordinates: points from the
-    /// top-left corner of the display that overlay covers.
-    ///
-    /// Every overlay is handed the sprite, including the ones it is nowhere
-    /// near, and each draws the part that falls inside it. That is what makes a
-    /// Character on a seam whole: both overlays are given the same rectangle in
-    /// their own coordinates, so the halves they clip meet at the seam instead
-    /// of overlapping or leaving a gap.
-    ///
-    /// No scale factor appears. Two displays with different backing factors
-    /// share one point space, and the overlay's origin is its display's because
-    /// the window is placed to cover that display exactly — which is what
-    /// `scripts/verify-overlay.sh` asserts on a real desktop.
+    /// The same rectangle in one overlay's coordinates: points from the top-left
+    /// of the display it covers. Every overlay draws its part of the same
+    /// rectangle, so the halves of a Character on a seam meet with no gap or overlap.
     pub fn in_overlay(&self, overlay: Rect) -> SpriteRect {
+        // No scale factor: displays with different backing factors share one point
+        // space, and the overlay window covers its display exactly.
         SpriteRect {
             x: self.x - overlay.x.round() as i32,
             y: self.y - overlay.y.round() as i32,
@@ -170,9 +102,7 @@ impl SpriteRect {
 }
 
 /// Which pixels of an Animation frame are drawn, at the art's own resolution.
-///
-/// Comparable and clonable because a validated `character::Character` carries
-/// one per distinct frame, and derives both.
+/// `PartialEq` and `Clone` because `character::Character` derives both.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlphaMask {
     width: i32,
@@ -182,9 +112,8 @@ pub struct AlphaMask {
 
 impl AlphaMask {
     /// Build a mask from an ASCII picture: `#` is drawn, anything else is not.
-    ///
-    /// Tests only. It trusts every row to be the width of the first, which is
-    /// fine for a literal in a test and wrong for anything else.
+    /// Tests only; it trusts every row to be the width of the first, fine for a
+    /// literal and wrong for anything else.
     #[cfg(test)]
     pub fn from_rows(rows: &[&str]) -> Self {
         let height = rows.len() as i32;
@@ -206,20 +135,15 @@ impl AlphaMask {
         (self.width, self.height)
     }
 
-    /// Raw mask data for platform-specific input region APIs.
-    ///
-    /// Returns (width, height, row-major opaque bools). X11's XShapeCombineMask
-    /// needs this to carve the click-through region from the sprite's alpha.
+    /// Raw mask data, (width, height, row-major opaque bools), for platform
+    /// input-region APIs such as X11's XShapeCombineMask.
     pub fn raw(&self) -> (i32, i32, &[bool]) {
         (self.width, self.height, &self.opaque)
     }
 
     /// Build a mask from an 8-bit RGBA PNG, treating alpha at or above
-    /// `threshold` as drawn.
-    ///
-    /// A threshold rather than "alpha > 0" so anti-aliased edges on
-    /// hand-drawn art do not grow an invisible one-pixel border that
-    /// swallows clicks.
+    /// `threshold` as drawn. A threshold rather than "alpha > 0" so anti-aliased
+    /// edges do not grow an invisible one-pixel border that swallows clicks.
     pub fn from_png(bytes: &[u8], threshold: u8) -> Result<Self, String> {
         let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
             .read_info()
@@ -256,16 +180,9 @@ impl AlphaMask {
         })
     }
 
-    /// Whether the cursor is over a drawn pixel of the sprite.
-    ///
-    /// A cursor outside the sprite's rectangle is never a hit. The bounds are
-    /// checked before the divide because integer division truncates toward zero,
-    /// so a cursor just left of the sprite would otherwise land on column 0.
-    ///
-    /// `mirrored` samples column `width - 1 - px`: the renderer flips the art
-    /// about the box's center when the sprite faces left, and at an integer
-    /// scale that is exactly the reversed art column, so the pixels this feels
-    /// are the pixels the user sees.
+    /// Whether the cursor is over a drawn pixel of the sprite. Bounds are checked
+    /// before the divide because integer division truncates toward zero, so a
+    /// cursor just left of the sprite would otherwise land on column 0.
     pub fn hit(&self, sprite: &SpriteRect, cursor_x: i32, cursor_y: i32, mirrored: bool) -> bool {
         let local_x = cursor_x - sprite.x;
         let local_y = cursor_y - sprite.y;
@@ -279,6 +196,8 @@ impl AlphaMask {
             return false;
         }
 
+        // The renderer flips the art about the box's center when facing left; at
+        // an integer scale that is exactly the reversed column.
         let px = if mirrored { self.width - 1 - px } else { px };
         self.opaque[(py * self.width + px) as usize]
     }
@@ -430,17 +349,9 @@ mod tests {
         }
     }
 
-    /// Two displays side by side, the second starting where the first ends.
-    ///
-    /// Literal points, so this runs the same on any machine, including one with
-    /// a single display. Nothing here sees a scale factor: converting a display
-    /// into points is `window_source`'s job and is tested there. These are the
-    /// sizes that conversion produces for a 1080p display beside a Retina one,
-    /// which is the arrangement the bug was reported on — 1x beside 2x, sharing
-    /// one point space.
-    ///
-    /// The seam at 1920 is the point of the fixture. Every case below is about
-    /// which side of it a point falls on.
+    /// Two displays side by side: the sizes `window_source` produces for a 1080p
+    /// display beside a Retina one, sharing one point space. The seam at 1920 is
+    /// the point of the fixture; every case below is about which side a point falls.
     fn two_displays() -> [Rect; 2] {
         [
             rect(0.0, 0.0, 1920.0, 1080.0),
@@ -506,10 +417,9 @@ mod tests {
         );
     }
 
-    /// #178: a bubble is drawn by exactly one overlay, the one under the
-    /// feet — and by none when the feet are on no display, where the
-    /// cursor's nearest-display fallback would clamp a bubble into view
-    /// beside a sprite that is not there.
+    /// A bubble is drawn by exactly one overlay, the one under the feet, and by
+    /// none when the feet are on no display, where the cursor's nearest-display
+    /// fallback would clamp a bubble into view beside a sprite that is not there.
     #[test]
     fn a_bubble_belongs_to_the_display_under_the_feet_or_to_none() {
         let displays = two_displays();
@@ -539,8 +449,8 @@ mod tests {
         );
     }
 
-    /// #178 read every edge as a seam. An edge with nothing beyond it is a
-    /// floor a Character comes to rest on instead — see `bubble_owner`.
+    /// An edge with nothing beyond it is not a seam but a floor a Character
+    /// comes to rest on. See `bubble_owner`.
     #[test]
     fn an_edge_is_a_seam_when_a_display_lies_beyond_it_and_a_floor_when_none_does() {
         let displays = two_displays();
@@ -574,13 +484,9 @@ mod tests {
         );
     }
 
-    /// Why the edge above is a floor a Character rests on and not a coordinate
-    /// physics never produces — on the display with the Dock as much as on the
-    /// one without. Once the Dock's true bounds are readable it becomes a
-    /// Perch, and `floor_under_dock` hands the floor beside it back at the
-    /// display's own bottom edge. So the excluded edge is where feet come to
-    /// rest on both screens, and the bubble is unplaceable on both without the
-    /// second pass (#288).
+    /// The excluded bottom edge is where feet rest on the Dock's display too:
+    /// once the Dock's bounds are readable it becomes a Perch, and
+    /// `floor_under_dock` hands the floor beside it back at the display's bottom.
     #[test]
     fn the_dock_rests_feet_on_the_very_edge_its_own_display_excludes() {
         use crate::window_source::{floor_under_dock, plausible_dock};
@@ -630,9 +536,8 @@ mod tests {
     }
 
     /// Several Instances are several bubbles. Ownership is a function of one
-    /// Instance's feet, so two characters standing on two displays each own a
-    /// bubble at the same time, the case a fix aimed at "only one bubble"
-    /// wrongly suppresses. #178.
+    /// Instance's feet, so two characters on two displays each own a bubble at
+    /// once, the case a fix aimed at "only one bubble" wrongly suppresses.
     #[test]
     fn each_instance_owns_a_bubble_on_the_display_it_stands_on() {
         let displays = two_displays();

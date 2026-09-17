@@ -1,49 +1,27 @@
-//! Turning a pointer into interaction verbs.
-//!
-//! The Shell knows three things each tick: where the cursor is, whether the
-//! primary button is down, and whether the secondary button is down. This turns
-//! those into the verbs the Engine understands, and it is pure so that every
-//! gesture can be tested by writing one down rather than by performing it.
-//!
-//! A press over the sprite is ambiguous until it ends. Held still and released,
-//! it was a Poke. Moved, or held long enough, it was the beginning of a Grab.
-//! Deciding immediately would make every click yank the sprite to the cursor
-//! and drop it, which is the difference between a companion you can prod and
-//! one you cannot touch without moving.
-//!
-//! All five verbs are decided here: Poke, Grab, Throw, Summon (double-click),
-//! and Menu (right-click). A right-click over the sprite is a Menu, released
-//! immediately to avoid conflicting with drag. Right-click elsewhere passes
-//! through to the desktop.
+//! Turning a pointer into interaction verbs: Poke, Grab, Throw, Summon
+//! (double-click) and Menu (right-click). Pure, so every gesture is tested by
+//! writing it down rather than performing it.
 
 use crate::engine::{Point, Verb};
 
-/// How far the cursor travels before a press becomes a Grab, in points.
-///
-/// A tuning knob. Large enough that a click with an unsteady hand stays a
-/// click, small enough that picking the sprite up feels immediate.
+/// How far the cursor travels before a press becomes a Grab, in points. Large
+/// enough that a click with an unsteady hand stays a click, small enough that
+/// picking the sprite up feels immediate.
 const DRAG_THRESHOLD: f64 = 4.0;
 
-/// How long a press is held before it becomes a Grab without moving at all.
-///
-/// A tuning knob, and the other half of the same decision: pressing and
-/// holding is how you pick something up when you do not want to move it yet.
+/// How long a press is held before it becomes a Grab without moving at all:
+/// pressing and holding is how you pick something up when you do not want to
+/// move it yet.
 const DRAG_DELAY_MS: u32 = 180;
 
 /// How fast the hand must still be moving for a release to be a Throw, in
-/// points per second.
-///
-/// A tuning knob, and the difference between putting the sprite down and
-/// flinging it. Nobody holds a mouse perfectly still, so testing for no
-/// movement at all would make every release a throw at whatever speed the
-/// last twitch happened to be.
+/// points per second. Nobody holds a mouse perfectly still, so testing for no
+/// movement at all would make every release a throw at the last twitch's speed.
 const THROW_MIN_SPEED: f64 = 80.0;
 
-/// How long a throw's velocity is measured over, in milliseconds.
-///
-/// A tuning knob. Measuring the last tick alone makes the throw hostage to one
-/// jittery sample, and measuring the whole gesture turns a flick at the end
-/// into an average that ignores it.
+/// How long a throw's velocity is measured over, in milliseconds. The last tick
+/// alone is hostage to one jittery sample; the whole gesture averages away the
+/// flick at the end.
 const VELOCITY_WINDOW_MS: u32 = 60;
 
 /// What the pointer is currently doing to the sprite.
@@ -76,9 +54,8 @@ pub struct Pointer {
     /// the velocity window would be thrown at a speed nobody moved at.
     cursor: Option<Point>,
     /// Cursor travel and the time it took, in two buckets. The older one is
-    /// kept so that the window never empties: a release lands on whatever tick
-    /// it lands on, and one that arrived just after a reset would otherwise
-    /// measure a flick as stillness.
+    /// kept so the window never empties: a release just after a reset would
+    /// otherwise measure a flick as stillness.
     travel: Point,
     travel_ms: u32,
     prior: Point,
@@ -103,10 +80,8 @@ impl Default for Pointer {
 }
 
 impl Pointer {
-    /// Create a pointer with an explicit double-click interval.
-    ///
-    /// The platform layer injects the OS setting here, keeping core
-    /// platform-neutral and tests deterministic.
+    /// A pointer with an explicit double-click interval, injected by the
+    /// platform layer from the OS setting so core stays platform-neutral.
     pub fn with_double_click_ms(double_click_ms: u32) -> Self {
         Self {
             phase: Phase::Idle,
@@ -127,15 +102,9 @@ impl Pointer {
 }
 
 impl Pointer {
-    /// The verbs this tick, given where the cursor is and whether each button
-    /// is down.
-    ///
-    /// `over_sprite` is the Shell's alpha hit-test. It decides whether a press
-    /// belongs to the sprite at all; once a Grab is under way the cursor is
-    /// free to leave the art, which is what dragging is.
-    ///
-    /// `secondary_held` is the right button. A right-click over the sprite is
-    /// a Menu, emitted on the press edge (button down transition).
+    /// The verbs this tick. `over_sprite` is the Shell's alpha hit-test and
+    /// decides whether a press belongs to the sprite at all; once a Grab is
+    /// under way the cursor is free to leave the art, which is what dragging is.
     pub fn update(
         &mut self,
         over_sprite: bool,
@@ -189,26 +158,18 @@ impl Pointer {
                     Vec::new()
                 }
             }
-            // Let go without ever becoming a drag: a click, and so a Poke.
-            //
-            // Where the sprite is now does not come into it. It moves on its
-            // own — it can fall out from under a held press — and a click that
-            // landed on it is a click on it. Requiring the release to be over
-            // the art as well would make a falling sprite impossible to prod.
-            //
-            // Twice in quick succession the second click is a Summon instead,
-            // not as well. The Engine answers a Summon with the same reaction
-            // a Poke gets, so nothing is lost on screen, and a cue keyed on
-            // the verb stream (#277) hears one gesture rather than two. The
-            // first click has already gone out as a Poke by then: holding it
-            // back to see whether a partner arrives would make every single
-            // click feel broken.
+            // Let go without ever becoming a drag: a click, and so a Poke. Where
+            // the sprite is now does not come into it: it can fall out from under
+            // a held press, and a click that landed on it is a click on it.
             (Phase::Pressed, false) => {
                 self.phase = Phase::Idle;
                 let paired = self.since_click_ms <= self.double_click_ms;
                 self.since_click_ms = 0;
                 // A gap ends the run, and the next pair may summon again.
                 self.summoned &= paired;
+                // The second click is a Summon instead of a Poke, not as well,
+                // so a cue keyed on the verb stream hears one gesture. The first
+                // already went out as a Poke: holding it back would break every click.
                 if paired && !self.summoned {
                     self.summoned = true;
                     vec![Verb::Summon]
@@ -235,21 +196,14 @@ impl Pointer {
         verbs
     }
 
-    /// Whether the sprite is being held.
-    ///
-    /// The Shell suspends its hit-test while this is true.
+    /// Whether the sprite is being held. The Shell suspends its hit-test while true.
     pub fn grabbing(&self) -> bool {
         self.phase == Phase::Grabbing
     }
 
-    /// Whether this pointer is in the middle of a gesture at all, held or not
-    /// yet decided.
-    ///
-    /// What `press_target` arbitrates on, and wider than `grabbing` on purpose:
-    /// a press that has not yet become a Grab still belongs to the Instance it
-    /// landed on. Asking only about a held Grab would let the cursor slide off
-    /// a pressed sprite onto its neighbour and start a second gesture there,
-    /// leaving one press picking up two Instances.
+    /// Whether this pointer is in a gesture at all, held or not yet decided.
+    /// Wider than `grabbing` on purpose: a press not yet a Grab still belongs to
+    /// the Instance it landed on, or one press could pick up two Instances.
     pub fn gesturing(&self) -> bool {
         self.phase != Phase::Idle
     }
@@ -261,11 +215,9 @@ impl Pointer {
         travelled || self.pressed_ms >= DRAG_DELAY_MS
     }
 
-    /// Accumulate recent travel, rolling the older half out as it ages.
-    ///
-    /// Two buckets rather than a ring of samples: the window is allowed to be
-    /// anywhere between half and all of `VELOCITY_WINDOW_MS`, which is close
-    /// enough for a throw and is a great deal less bookkeeping.
+    /// Accumulate recent travel, rolling the older half out as it ages. Two
+    /// buckets rather than a ring: the window lands anywhere between half and
+    /// all of `VELOCITY_WINDOW_MS`, close enough for a throw and less bookkeeping.
     fn sample(&mut self, moved: Point, elapsed_ms: u32) {
         if self.travel_ms >= VELOCITY_WINDOW_MS / 2 {
             self.prior = self.travel;
@@ -292,26 +244,13 @@ impl Pointer {
     }
 }
 
-/// Which Instance the pointer is acting on, given what the cursor is over and
-/// which Instance is already being held.
-///
-/// One cursor and several sprites need an arbiter, and every Instance holding
-/// its own `Pointer` is not one: fed the same hit-test, two overlapping sprites
-/// would both be picked up by one press. This decides first and each `Pointer`
-/// is then told whether the press was its own, so at most one Instance is ever
-/// in a gesture.
-///
-/// `hits` is the alpha hit-test per Instance, in the order they are drawn, and
-/// `holding` is the index of the Instance in the middle of a Grab.
+/// Which Instance the pointer is acting on: `hits` is the alpha hit-test per
+/// Instance in draw order, `holding` the Instance mid-Grab. One cursor and
+/// several sprites need one arbiter, or one press would pick up two sprites.
 pub fn press_target(hits: &[bool], holding: Option<usize>) -> Option<usize> {
-    // A held Instance keeps the press wherever the cursor goes. This is #6's
-    // rule — a drag that outruns the art must not be dropped — and with
-    // several sprites it says something more: the drag must not pass to a
-    // sprite the cursor happened to cross on its way.
-    //
-    // An index past the end is an Instance dismissed mid-drag. The press falls
-    // back to the cursor rather than to whichever Instance shuffled into that
-    // position.
+    // A held Instance keeps the press wherever the cursor goes, so a drag that
+    // outruns the art is neither dropped nor handed to a sprite it crosses. An
+    // index past the end is an Instance dismissed mid-drag: fall back to the cursor.
     if holding.is_some_and(|index| index < hits.len()) {
         return holding;
     }
@@ -346,12 +285,9 @@ mod tests {
         }
     }
 
-    /// #6: two clicks in quick succession are a Summon, the deliberate act that
-    /// opens the chat surface.
-    ///
-    /// The first click is still a Poke — nothing knows a second is coming — and
-    /// the second is the Summon alone. #277: one verb per gesture, so a cue
-    /// keyed on the verb stream is not told twice about one double-click.
+    /// Two clicks in quick succession are a Summon, the deliberate act that
+    /// opens the chat surface. The first is still a Poke, nothing knows a second
+    /// is coming, and the second is the Summon alone: one verb per gesture.
     #[test]
     fn two_quick_clicks_poke_then_summon() {
         let mut pointer = Pointer::default();
@@ -549,11 +485,9 @@ mod tests {
         pointer.update(false, true, false, at(152.0, 100.0), TICK);
         let thrown = pointer.update(false, false, false, at(152.0, 100.0), TICK);
 
-        // The hand covered 52 points across five 16ms ticks, which is 650
-        // points a second. The measurement is taken over the recent window
-        // rather than the whole gesture, so it lands near that figure rather
-        // than on it — but a throw that misses the speed of the hand by more
-        // than a quarter is not the throw the user made.
+        // 52 points across five 16ms ticks is 650 points a second. The window
+        // covers the recent ticks rather than the whole gesture, so the figure is
+        // near rather than on it, and a quarter off is not the throw the user made.
         let hand = 52.0 / (5.0 * f64::from(TICK) / 1000.0);
         match thrown.as_slice() {
             [Verb::Throw { velocity }] => {
@@ -666,8 +600,7 @@ mod tests {
         assert!(!pointer.grabbing(), "and does not grab");
     }
 
-    /// Holding the right button does not retrigger Menu; Menu is the press
-    /// edge only.
+    /// Menu is the press edge only; holding the right button does not retrigger it.
     #[test]
     fn holding_right_button_does_not_retrigger_menu() {
         let mut pointer = Pointer::default();
@@ -745,10 +678,9 @@ mod tests {
         assert_eq!(press_target(&[true, true, true], None), Some(2));
     }
 
-    /// The whole point of the holder: a drag that outruns the art leaves the
-    /// cursor over no sprite at all, and the Instance being dragged must not
-    /// change or be dropped because of it. #6 fixed this for one sprite; with
-    /// several, it also must not pass to whichever sprite the cursor crossed.
+    /// A drag that outruns the art leaves the cursor over no sprite at all, and
+    /// the Instance being dragged must not change or be dropped for it, nor pass
+    /// to whichever sprite the cursor crossed on the way.
     #[test]
     fn the_instance_being_held_keeps_the_press_wherever_the_cursor_goes() {
         assert_eq!(press_target(&[false, false], Some(0)), Some(0));

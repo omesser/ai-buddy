@@ -126,6 +126,16 @@ repos:
         # Case-insensitive: Windows does not distinguish `.PS1`.
         files: (?i)\.ps1$
 
+      # Comment block ceiling: newly added blocks over 3 lines in changed files.
+      # Fires only on additions, never the existing tree, so it guards the gains
+      # without blocking work that legitimately touches long existing blocks.
+      - id: check-comment-blocks
+        name: Comment blocks ≤3 lines (new blocks only)
+        entry: scripts/hooks/check-comment-blocks.py
+        language: system
+        types: [text]
+        exclude: *vendored
+
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
     hooks:
