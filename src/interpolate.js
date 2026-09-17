@@ -49,3 +49,35 @@ export function arrived(previous, latest, now) {
   if (previous.x === latest.x && previous.y === latest.y) return true;
   return now >= latest.at + (latest.at - previous.at);
 }
+
+function reaches(at, bounds, margin) {
+  return (
+    at.x - margin < bounds.width &&
+    at.x + at.width + margin > 0 &&
+    at.y - margin < bounds.height &&
+    at.y + at.height + margin > 0
+  );
+}
+
+/**
+ * Whether the sprite is on this overlay's own display across the span the
+ * renderer is drawing, within `margin` of the display's edges.
+ *
+ * Both placements are tested because the sprite is drawn between them. On
+ * `latest` alone the last frame of an exit goes undrawn, stranding a
+ * half-drawn sprite at the edge the Character just left.
+ *
+ * @param {{x: number, y: number, width: number, height: number} | null} previous
+ * @param {{x: number, y: number, width: number, height: number}} latest
+ * @param {{width: number, height: number}} bounds - the display in this
+ *   overlay's coordinates, whose origin is (0, 0), so only its size is read
+ * @param {number} margin - absorbs the pixel two displays at different scale
+ *   factors can round apart at a seam
+ * @returns {boolean}
+ */
+export function onDisplay(previous, latest, bounds, margin) {
+  return (
+    reaches(latest, bounds, margin) ||
+    (Boolean(previous) && reaches(previous, bounds, margin))
+  );
+}

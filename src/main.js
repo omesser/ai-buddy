@@ -2,7 +2,7 @@
 // Rust side sends every Instance's placement; this keeps the two most recent
 // per Instance to interpolate between, and drops an id that stops arriving.
 
-import { arrived, interpolate } from "./interpolate.js";
+import { arrived, interpolate, onDisplay } from "./interpolate.js";
 import {
   createBubbleMachine,
   forOverlay,
@@ -298,7 +298,20 @@ function drawView(view, now) {
 // a page wants frames, and #741 measured those threads at half an idle buddy's
 // wakeups. Every arrival arms this again, so a placement is still drawn the
 // frame after it lands.
+//
+// Arming is per display too. Every overlay hears about every Instance in its
+// own coordinates, so a Character on a seam stays whole, which also means a
+// placement landing here says nothing about whether this display has work (#764).
 let armed = false;
+
+// A pixel would cover what two displays at different scale factors round apart
+// at a seam. Eight costs nothing: a sprite that close to the edge straddles it
+// and arms both overlays anyway.
+const SEAM_MARGIN = 8;
+
+function needsFrame(view) {
+  return onDisplay(view.previous, view.latest, currentDisplayBounds(), SEAM_MARGIN);
+}
 
 function arm() {
   if (armed) return;
@@ -311,7 +324,7 @@ function draw(now) {
   for (const view of views.values()) {
     if (!view.latest) continue;
     drawView(view, now);
-    if (!arrived(view.previous, view.latest, now)) {
+    if (!arrived(view.previous, view.latest, now) && needsFrame(view)) {
       arm();
     }
   }
@@ -380,6 +393,8 @@ async function start() {
         // `latest` rather than `owned` for the two answers that belong to the
         // desktop: whether the Character is on screen, and whether it may be heard.
         view.cues.event(view.latest);
+
+        if (needsFrame(view)) arm();
       });
 
       // An id that stopped arriving was dismissed, so its elements go. The Rust
@@ -390,8 +405,6 @@ async function start() {
           removeView(id);
         }
       }
-
-      arm();
     },
     { target: overlay.label },
   );
