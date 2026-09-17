@@ -22,12 +22,8 @@ use serde::Serialize;
 use url::{Host, Url};
 
 /// Model API turn. After this, fall back to `StaticDirector`.
-///
-/// One number for remote and local HTTP: 8s lost a thinking Grok wake to
-/// Static, and a second local-only budget was mistaken for a Harness turn
-/// (#690). A cold local server that needs longer sets
-/// `AI_BUDDY_DIRECTOR_TIMEOUT_SECS`. A Harness turn is
-/// `harness::TURN_TIMEOUT`, not this.
+/// One budget for remote and local HTTP, not `harness::TURN_TIMEOUT`.
+/// A cold local server sets `AI_BUDDY_DIRECTOR_TIMEOUT_SECS`.
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Prompt, raw reply, and parse. Off unless asked: a Character Prompt is
@@ -38,7 +34,7 @@ pub fn tracing() -> bool {
 }
 
 /// Blank-AI mode in force: every turn carries what just happened and nothing
-/// else (#657). Read where a `ModelDirector` is built, for the reason
+/// else. Read where a `ModelDirector` is built, for the reason
 /// `ModelDirector::blank` gives.
 pub fn blank() -> bool {
     crate::dev_flags::DIRECTOR_BLANK.is_on()
@@ -53,63 +49,41 @@ fn trace_block(which: &str, text: &str) {
     eprintln!("director: --- end {which} ---");
 }
 
-/// `pub(crate)` so the settings window can name the variable that owns a row
-/// (#272).
+/// `pub(crate)` so the settings window can name the variable that owns a row.
 pub(crate) const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
 pub(crate) const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
 pub(crate) const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
 pub(crate) const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// First ambient session wait, in seconds. Not a heartbeat.
-///
-/// `pub(crate)` like the four above: the row it owns has to name it.
+/// `pub(crate)` so the settings window can name the row it owns.
 pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
-/// Model API timeout, in seconds, and the reply cap, in tokens. The cap
-/// still has a local default that differs from the hosted one; the timeout
-/// does not (#690). These override either.
-///
-/// `pub(crate)` for the same reason as the three above: the settings window
-/// names the variable that owns a frozen row.
+/// Model API timeout, in seconds, and the reply cap, in tokens.
+/// The cap still has a local default that differs from the hosted one.
+/// `pub(crate)` so the settings window can name the frozen row.
 pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
 pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
 
-/// How hard the model is asked to think. Owns the Development row the same
-/// way the two above own theirs, and takes any string: what a value means is
-/// the host's business, and on llama.cpp and oMLX the model's chat template's
-/// (#638).
+/// How hard the model is asked to think. Takes any string: what a value
+/// means is the host's, and on llama.cpp and oMLX the chat template's.
 pub(crate) const REASONING_EFFORT: &str = "AI_BUDDY_DIRECTOR_REASONING_EFFORT";
 
-/// Blank-AI mode: send what just happened and nothing else (#657). A switch,
-/// so it reads the same words every other switch does, and it owns its
-/// Development row the same way.
+/// Blank-AI mode: send what just happened and nothing else. A switch, so it
+/// reads the same words every other switch does, and owns its Development row.
 pub(crate) const BLANK: &str = "AI_BUDDY_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
-/// Hosted replies are two lines. A local reasoning model (Qwen3, gpt-oss)
-/// thinks in the same budget on chat-completions, so 80 tokens can be spent
-/// before it writes anything, and the empty reply parses as garbage. Raising
-/// the cap was the portable half of that fix; the other half is
-/// `reasoning_effort`, which #612 now sends and `Field::Effort` guards for
-/// the strict server this comment used to warn about.
-///
-/// 512 was not enough for every one of them at the model's default effort.
-/// Measured against a Character Prompt carrying the shipped cat personality,
-/// `gpt-oss-20b-MXFP4-Q8` spent the whole budget thinking on about 40% of
-/// wakes and returned empty content — see
-/// `measure_the_reply_contract_failure_rate`, which found the same 40% end
-/// to end. With `reasoning_effort: "low"` the same model thinks about a
-/// tenth as much, so the cap is no longer the number under pressure and is
-/// left where it is.
+/// Hosted replies are two lines (80 tokens). A local reasoning model can
+/// spend that budget thinking, so this cap is 512. `reasoning_effort`
+/// is the other half; this number is no longer the one under pressure.
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
 
-/// What an unset reasoning-effort row sends. Not "send nothing": #617
-/// measured `low` down from 7 empty `length` finishes in 40 wakes to 0, and
-/// from 10.9 to 3.8 seconds a wake, against `gpt-oss-20b-MXFP4-Q8` at the
-/// 512-token cap above. Omitting the field is still reachable without a
-/// control — a server that refuses it gets it dropped for the session.
+/// What an unset reasoning-effort row sends. Not "send nothing":
+/// omitting the field is still reachable when a server refuses it
+/// and the session drops it.
 const DEFAULT_EFFORT: &str = "low";
 
 /// Last user turn and the config that produced it. #18 displays this.
@@ -124,9 +98,7 @@ pub struct DirectorInspect {
     /// is the third Chat state ADR-0010 names: attached, not authenticated.
     pub harness: Option<crate::harness::HarnessInspect>,
     /// The HTTP Completer in force: the model, and the host without its
-    /// scheme, path or userinfo. What the Chat header names when no Harness
-    /// does (#474). Never the key — ADR-0010's seventh rule covers drawing a
-    /// credential as firmly as logging one, and userinfo is one.
+    /// scheme, path or userinfo. Never the key (ADR-0010 rule 7).
     pub model: String,
     pub host: String,
 }
@@ -152,11 +124,9 @@ pub struct DirectorConfig {
 }
 
 impl DirectorConfig {
-    /// Fold the saved switch in: the switch in force, and a key or a local
-    /// host to make a Completer exist.
-    ///
-    /// The only place that composes the two into what the Director does. A
-    /// caller that sets `enabled` from `configured` alone loses the variable.
+    /// Fold the saved switch in. The only place that composes switch and
+    /// configured into what the Director does. Setting `enabled` from
+    /// `configured` alone loses the variable.
     pub fn apply_switch(&mut self, saved_on: bool) {
         self.enabled = self.env_says.unwrap_or(saved_on) && self.configured;
     }
@@ -187,9 +157,7 @@ enum KeyRead {
 }
 
 /// Resolved base URL, model, and key before they become a Completer.
-///
-/// `api_key` empty means unset or invalid. `key_invalid` means the winning
-/// source was set but unusable.
+/// Empty `api_key` is unset or invalid. `key_invalid` is set-but-unusable.
 #[derive(Clone)]
 pub struct DirectorSettings {
     pub base_url: String,
@@ -210,10 +178,7 @@ impl std::fmt::Debug for DirectorSettings {
 }
 
 /// Env first, then persisted settings, then defaults. Does not write env.
-///
-/// Empty env values fall through (a blank override is treated as unset).
-/// For the key, env Invalid still wins over a stored key: the process asked
-/// to override.
+/// Empty env values fall through. An invalid env key still wins over a stored key.
 pub fn resolve(
     persisted_base: &str,
     persisted_model: &str,
@@ -247,18 +212,13 @@ fn resolve_string(var: &str, persisted: &str, default: &str) -> String {
 }
 
 /// What `var` will impose on the file, if the process exported one.
-///
-/// The one place that decides env precedence, so the settings window can ask
-/// the same question `resolve` answers instead of guessing at it. Empty is
-/// unset: a `$VAR` that expanded to nothing is a mistake, not an override.
+/// Empty is unset: a `$VAR` that expanded to nothing is a mistake, not an override.
 pub(crate) fn env_override(var: &str) -> Option<String> {
     std::env::var(var).ok().filter(|value| !value.is_empty())
 }
 
 /// The value in force for `var`: the exported one, else the file's.
-///
-/// `resolve_string` without a default, for the rows whose blank means "the
-/// default, whichever the endpoint turns out to be".
+/// For rows whose blank means the endpoint's own default.
 pub(crate) fn env_or_file(var: &str, file: &str) -> String {
     env_override(var).unwrap_or_else(|| file.to_string())
 }
@@ -281,10 +241,8 @@ pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
 }
 
 /// Whichever Completer this process has: the attached Harness for every
-/// Instance (ADR-0008: one session), else an HTTP `Endpoint` per Instance.
-///
-/// An enum rather than `Box<dyn Completer>` so `Endpoint`'s inherent methods
-/// (`url`, `origin`, the probe) keep their type.
+/// Instance (ADR-0008), else an HTTP `Endpoint` per Instance.
+/// An enum so `Endpoint`'s inherent methods keep their type.
 pub enum AnyCompleter {
     // Boxed: an `Endpoint` carries the whole session and the agent, and the
     // Harness arm is one `Arc`, so the enum would otherwise be moved around at
@@ -349,20 +307,15 @@ pub fn key_fingerprint(key: &str) -> String {
 }
 
 /// Read Director config from the env. No API key means `StaticDirector`
-/// only — unless the server is on this machine or this LAN, which needs no
-/// key to talk to.
-///
-/// Env-only wrapper. The overlay resolves from settings and the store;
-/// the probe and tests still read the env alone.
+/// only, unless the server is on this machine or this LAN.
+/// Env-only wrapper. The overlay resolves from settings and the store.
 #[expect(dead_code)] // env-only wrapper; overlay call sites now use config_from
 pub fn config() -> DirectorConfig {
     config_from(&resolve("", "", None))
 }
 
 /// One line for the mode, and a warning when a key was offered but unusable.
-///
-/// Unset and empty used to be silent Static. The empty case is almost always
-/// a `$VAR` that expanded to nothing, which is a mistake, not a choice.
+/// Empty is almost always a `$VAR` that expanded to nothing, not a choice.
 pub fn startup_lines(config: &DirectorConfig) -> Vec<String> {
     let mut lines = crate::harness::startup_lines(config.enabled);
     if config.key_invalid {
@@ -412,25 +365,15 @@ fn key_from_env() -> KeyRead {
 }
 
 /// Has the process already settled the key on its own?
-///
-/// `resolve` reaches for a stored key only when the env holds none, so a true
-/// answer here means reading the secret store cannot change the outcome. On
-/// macOS that read is a Keychain prompt at every launch, and one bought for an
-/// answer already known is the kind a user learns to click through. Set but
-/// unusable still counts: the process asked to override.
+/// True means reading the secret store cannot change the outcome.
+/// Set-but-unusable still counts: the process asked to override.
 pub(crate) fn env_owns_key() -> bool {
     !matches!(key_from_env(), KeyRead::Unset)
 }
 
 /// The vocabulary every switch answers to, and the only place it is stated.
-///
-/// One vocabulary because two meant `=true` turning one switch on and another
-/// off: the Director read its own three words and ignored the rest, while a
-/// Development flag took any value at all and called everything but `1` off.
-///
-/// A word outside it is a typo rather than a choice, so it owns nothing and
-/// whoever held the switch keeps it. `env_switch_warnings` names it at launch,
-/// because a value quietly ignored looks exactly like one obeyed.
+/// One vocabulary so `=true` cannot turn one switch on and another off.
+/// A word outside it is a typo; `env_switch_warnings` names it at launch.
 fn switch_from(value: &str) -> Option<bool> {
     match value.to_ascii_lowercase().as_str() {
         "1" | "on" | "true" | "yes" => Some(true),
@@ -459,42 +402,26 @@ pub fn env_switch_warnings(vars: &[&str]) -> Vec<String> {
 }
 
 /// The Director switch in force: the exported value, else the saved one.
-///
-/// What the window draws and the tray checks. Deliberately not folded with
-/// `configured` — the box has always shown the switch rather than whether a
-/// Completer answers, and a key lives in the secret store that this layer
-/// does not read (#291).
+/// Not folded with `configured`. The box shows the switch, and a key lives
+/// in the secret store that this layer does not read.
 pub(crate) fn director_in_force(saved_on: bool) -> bool {
     env_switch(ENABLED).unwrap_or(saved_on)
 }
 
 /// The first ambient wait in force.
-///
-/// As with the timeout, the variable-or-file decision is `dev_flags::seed`'s,
-/// so this is a read rather than a second place precedence is settled. Zero
-/// and unparsable are unset there: a buddy waking every no seconds is not a
-/// value to keep (#262).
+/// Precedence is `dev_flags::seed`'s. Zero and unparsable are unset there.
 fn ambient_first() -> Duration {
     crate::dev_flags::director_wake_secs().map_or(Pace::FIRST, Duration::from_secs)
 }
 
-/// The host and port a base URL points at, with the scheme, the path and any
-/// userinfo dropped. Empty when the value is not a URL with a host.
-///
-/// `Url` rather than splitting on `://`, `/` and `@` by hand: the two callers
-/// are a security check and a label, and in `10.0.0.1@172.16.evil.com` the
-/// digits belong to the credentials while the request goes to evil.com. A
-/// parser that already knows that is the one to ask. A password written into a
-/// URL is also a credential this must not hand back to a caller that draws it
-/// (#474), and `host_str` never carries one.
-///
-/// Parse a base URL and validate it has a host. Returns `None` if parsing fails
-/// or the URL has no host (including scheme-less inputs).
+/// Parse a base URL that has a host.
+/// `Url` so `10.0.0.1@172.16.evil.com` is credentials plus evil.com, not LAN.
+/// `host_str` never hands a password to a caller that draws it.
 fn url_of(base: &str) -> Option<Url> {
     Url::parse(base).ok().filter(Url::has_host)
 }
 
-/// Extract host and port from a base URL, or empty string if none.
+/// Host and port for the Chat header. Empty when `base` is not a URL with a host.
 pub fn host_of(base: &str) -> String {
     let Some(url) = url_of(base) else {
         return String::new();
@@ -507,9 +434,7 @@ pub fn host_of(base: &str) -> String {
 }
 
 /// Is this base URL served from this machine or this LAN?
-///
-/// A local host (loopback, RFC1918, unique-local IPv6, or `.local`) makes
-/// `AI_BUDDY_DIRECTOR_API_KEY` optional. A remote host requires a real key.
+/// A local host makes `AI_BUDDY_DIRECTOR_API_KEY` optional.
 fn is_local(base: &str) -> bool {
     let Some(url) = url_of(base) else {
         return false;
@@ -577,20 +502,14 @@ pub(crate) fn wake_secs_placeholder() -> String {
 }
 
 /// An OpenAI-compatible chat Completer, or `None` when a remote host has no
-/// key set.
-///
-/// Env-only wrapper. The overlay resolves from settings and the store;
-/// the probe and tests still read the env alone.
+/// key set. Env-only wrapper. The overlay resolves from settings and the store.
 pub fn endpoint() -> Option<Endpoint> {
     endpoint_from(&resolve("", "", None))
 }
 
 /// Join a provider base onto the inference path without doubling `/v1`.
-///
 /// OpenAI, Anthropic's compatibility layer, and Ollama speak
-/// `/v1/chat/completions`. xAI's current path is `/v1/responses`
-/// ([docs](https://docs.x.ai/developers/model-capabilities/text/comparison));
-/// chat-completions there is legacy. An explicit full path wins.
+/// `/v1/chat/completions`. xAI's current path is `/v1/responses`.
 fn completions_url(base: &str) -> String {
     let base = base.trim_end_matches('/');
     if base.ends_with("/chat/completions") || base.ends_with("/responses") {
@@ -616,9 +535,7 @@ fn host_is_xai(url: &str) -> bool {
 }
 
 /// Whether this URL already points at the Responses path.
-///
-/// The parsed path, not a substring of the whole URL: a query that merely
-/// mentions `/responses` is not the path being called.
+/// Uses the parsed path, not a substring of the whole URL.
 fn uses_responses(url: &str) -> bool {
     url_of(url).is_some_and(|url| url.path().contains("/responses"))
 }
@@ -630,10 +547,8 @@ struct Message {
 }
 
 /// The conversation, and which turn is open in it.
-///
-/// A counter rather than the position of the last message: two calls can be
-/// inside `post` at once now that a world event may supersede a wake (#312),
-/// nothing orders them, and so "the question at the end" does not say whose.
+/// A counter rather than last-message position: two calls can be inside
+/// `post` at once, and "the question at the end" does not say whose.
 #[derive(Default)]
 struct Session {
     messages: Vec<Message>,
@@ -646,39 +561,26 @@ pub struct Endpoint {
     model: String,
     timeout: Duration,
     max_tokens: u32,
-    /// How hard to ask this host to think, verbatim. Baked in here rather
-    /// than read per call, like the timeout and the cap, so a settings change
-    /// reaches a running Director through `completer_retargets` (#638).
-    ///
+    /// How hard to ask this host to think, verbatim. Baked in here so a
+    /// settings change reaches a running Director through `completer_retargets`.
     /// Never empty: `effort_for` has already turned unset into `low`.
     effort: String,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
     session: Mutex<Session>,
     /// Does this host stream? Starts optimistic and only ever falls, once a
-    /// whole reply has succeeded where a stream did not (#302).
-    ///
-    /// Per host, though `post` takes a `url`: a host that streamed on one of
-    /// the two paths and not the other would lose streaming on both. No such
-    /// host is known, and the cost if one exists is latency, not a failure.
+    /// whole reply has succeeded where a stream did not. Per host, not per
+    /// `url`, or a path that streamed would latch the other path off too.
     streams: AtomicBool,
-    /// Does this host take `reasoning_effort`? Same shape as `streams`, and
-    /// same reason: it starts optimistic, and only a server that names the
-    /// field in a rejection ever turns it off (#612).
-    ///
-    /// About the field, never about the value, so a new `effort` does not
-    /// invalidate it, and it needs no reset path: every Director settings
-    /// change that matters runs `completer_retargets`, which builds a fresh
-    /// `Endpoint` optimistic again.
+    /// Does this host take `reasoning_effort`? Same shape as `streams`.
+    /// About the field, never the value, so a new `effort` does not invalidate
+    /// it. `completer_retargets` builds a fresh `Endpoint` optimistic again.
     takes_effort: AtomicBool,
-    /// Does this host take `max_tokens`? Same shape again, and the only one
-    /// here whose fallback renames rather than drops: a host that refuses it
-    /// is asked again with `max_completion_tokens`, which the spec prefers
-    /// and o-series models require. Optimistic because Ollama has no such
-    /// field and would silently answer with no cap at all (#619).
+    /// Does this host take `max_tokens`? The fallback renames rather than
+    /// drops: a refusal retries with `max_completion_tokens`. Optimistic
+    /// because Ollama has no such field and would silently answer with no cap.
     takes_max_tokens: AtomicBool,
-    /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
-    /// use-once [Agent]", so each wake would throw away the pooled connection
-    /// and pay another TCP and TLS handshake to the model host.
+    /// Held rather than built per call: `ureq::get`/`ureq::post` are use-once
+    /// Agents, so each wake would throw away the pooled connection.
     agent: ureq::Agent,
 }
 
@@ -705,15 +607,13 @@ impl Endpoint {
     }
 
     /// The other xAI inference path, if this URL has one.
-    ///
     /// Keys are granted per-endpoint. `/v1/responses` is current; many console
-    /// keys only have the legacy chat-completions ACL, which is a 403 rather
-    /// than a 400. The probe hits both; `complete` retries the other on 403/404.
+    /// keys only have the legacy chat-completions ACL, which is a 403.
     pub fn alternate_url(&self) -> Option<String> {
         alternate_url(&self.url)
     }
 
-    /// GET `url`. Non-2xx is still `Ok` — the status and body are the answer.
+    /// GET `url`. Non-2xx is still `Ok`. The status and body are the answer.
     pub fn get(&self, url: &str) -> Result<(u16, String), String> {
         let request = self
             .headers(self.agent.get(url), "application/json")
@@ -728,18 +628,8 @@ impl Endpoint {
     }
 
     /// Send `prompt` as the next session turn and read the reply.
-    ///
-    /// Takes `url` rather than using `self.url` so the probe can show a 403
-    /// on `/v1/responses` next to a 200 on chat-completions, and so
-    /// `complete` can retry the other xAI path.
-    ///
-    /// Asks for a stream, for low reasoning effort, and for the cap under
-    /// its legacy name, and gives up any one of them for a server that names
-    /// it in a rejection. A fallback retries the same session snapshot, so
-    /// every attempt asks the same question and only one answer is ever
-    /// recorded — and once a request without the field has succeeded where
-    /// the request with it did not, this endpoint stops asking, rather than
-    /// paying two POSTs on every wake for the rest of the session.
+    /// Takes `url` so the probe can show both xAI paths and `complete` can retry.
+    /// A fallback retries the same session snapshot; a succeeded drop latches.
     pub fn post(&self, url: &str, prompt: &str) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
         let mut wire = if self.streams.load(Ordering::SeqCst) {
@@ -750,12 +640,9 @@ impl Endpoint {
         let mut effort = self.takes_effort.load(Ordering::SeqCst);
         let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
         let mut reply = self.send(url, &snapshot, wire, effort, cap);
-        // A loop rather than one retry: there are three guarded fields now,
-        // and a validator strict enough to refuse two would otherwise lose
-        // the wake. Each pass drops exactly the field the rejection named.
-        // Bounded by the count of those fields rather than by trusting the
-        // body to stop naming one, because the cost of being wrong is a
-        // worker thread posting for ever.
+        // A loop rather than one retry: three guarded fields, and a validator
+        // strict enough to refuse two would otherwise lose the wake. Bounded
+        // by the field count so a body that keeps naming one cannot post forever.
         for _ in 0..Field::ALL.len() {
             let Err(unsent) = &reply else { break };
             let Some((field, settles)) = unsent.retry_settles() else {
@@ -774,9 +661,8 @@ impl Endpoint {
             }
             if tracing() {
                 // The value, not just the name: a host that takes `low` and
-                // refuses `high` latches the field off for the session, and
-                // this line is the only place that says which value cost it
-                // (#638).
+                // refuses `high` latches the field off, and this line is
+                // the only place that says which value cost it.
                 eprintln!(
                     "director: {}; retrying without {}",
                     unsent.why(),
@@ -796,8 +682,7 @@ impl Endpoint {
             }
             reply = self.send(url, &snapshot, wire, effort, cap);
             // Evidence, not a guess: the server rejected the field and the
-            // request without it worked, so this host does not take it. A
-            // refusal misread from some unrelated 400 fails twice and settles
+            // request without it worked. A misread 400 fails twice and settles
             // nothing, and neither does a stream that merely broke.
             if reply.is_ok() && settles {
                 match field {
@@ -810,14 +695,9 @@ impl Endpoint {
         self.close_turn(turn, reply.map_err(Unsent::into_error))
     }
 
-    /// Paired with `close_turn`: the session only ever grows here and is only
-    /// ever trimmed there. Hands back the turn it opened, and a snapshot rather
-    /// than the lock, so the fallback retry asks the identical question.
-    ///
-    /// A trailing question is one a superseded call left open (#312): its
-    /// worker is still on the wire and no longer owns a turn here, so
-    /// withdrawing it is what keeps the Completer from being asked two things
-    /// at once.
+    /// Paired with `close_turn`: the session only grows here and is only
+    /// trimmed there. Snapshot rather than the lock, so a fallback asks
+    /// the identical question. A trailing question is a superseded call.
     fn open_turn(&self, prompt: &str) -> (u64, Vec<Message>) {
         let mut session = self.session.lock().expect("session lock");
         if session
@@ -835,17 +715,9 @@ impl Endpoint {
         (session.opened, session.messages.clone())
     }
 
-    /// Record the reply, or take the question back out.
-    ///
-    /// A turn that produced nothing pops the user message, because the session
-    /// is what the *next* prompt is built from: leaving the question behind
-    /// would ask the Completer to answer two things at once.
-    ///
-    /// A turn some later `open_turn` has replaced touches nothing at all. Its
-    /// question is already gone and the one at the end belongs to the wake that
-    /// superseded it, so popping would take the winner's question out and
-    /// pushing would answer it with the loser's reply — a reply `Slots::take`
-    /// will never hand out anyway.
+    /// A failed turn pops its user message so the next prompt is not two
+    /// questions. A superseded turn touches nothing. Its question is already
+    /// gone, and mutating the winner's turn would attach the loser's reply.
     fn close_turn(&self, turn: u64, reply: Result<Reply, String>) -> Result<Reply, String> {
         let mut session = self.session.lock().expect("session lock");
         if session.opened != turn {
@@ -853,16 +725,9 @@ impl Endpoint {
         }
         match reply {
             Ok(reply) => {
-                // What arrived, truncated or not: the user heard these words,
-                // so the next turn is built on the same ones they heard — and
-                // when the cap ended it, the session says so, so the model
-                // reading its own last turn back sees where it was stopped
-                // rather than a sentence it appears to have abandoned (#610).
-                //
-                // Appended here and nowhere earlier: `parse_proposal` reads
-                // the first line that is a whole Behavior name and says the
-                // rest, so a mark in the text the parser sees would be spoken
-                // as the buddy's own line.
+                // Truncated or not: the user heard these words, so the next
+                // turn is built on them. The mark is session/Chat only.
+                // `parse_proposal` would speak a mark in the parser's text.
                 session.messages.push(Message {
                     role: "assistant",
                     content: director::marked(&reply.text, reply.truncated),
@@ -968,15 +833,12 @@ impl Endpoint {
             Streamed::Complete(_) => Err(Unsent::Failed(format!(
                 "{url}: streamed reply had no text content"
             ))),
-            // Best effort, because we are the ones who cut it off: whatever
-            // the model wrote before the cap is parsed and shown, marked as
-            // truncated where it is drawn. The turn is still a failure on the
-            // wire — never retried, and the Action Log names the cap (#610).
+            // We cut it off, so whatever arrived is shown as truncated.
+            // It is still a wire failure, never retried, and the Action Log
+            // names the cap.
             Streamed::Truncated(content) if !content.trim().is_empty() => {
                 Ok(Reply::truncated(content))
             }
-            // Best effort with nothing in hand is silence. `StaticDirector`
-            // takes the turn, as it does for any wake with no words.
             Streamed::Truncated(_) => Err(Unsent::Truncated(self.out_of_budget(url, true))),
             Streamed::Cut => Err(Unsent::Cut(format!("{url}: the stream ended mid-reply"))),
             Streamed::NotEventStream => Err(Unsent::Refused(
@@ -987,14 +849,9 @@ impl Endpoint {
         }
     }
 
-    /// Why the turn produced nothing, in the words that name the knob. The
-    /// Action Log writes this line, so it has to answer "why did the buddy go
-    /// quiet" on its own: the model, the cap it hit, and the setting that
-    /// moves it (#610).
-    ///
-    /// Both halves of a truncation are refused, and both are worth telling
-    /// apart when reading the log: a model that thought its budget away and
-    /// one that ran out mid-sentence call for different settings.
+    /// Action Log copy for a capped turn. Names the model, the cap, and the
+    /// setting that moves it. Thinking the budget away and a mid-sentence cut
+    /// call for different settings.
     fn out_of_budget(&self, url: &str, silent: bool) -> String {
         let cap = self.max_tokens;
         let what = if silent {
@@ -1031,16 +888,14 @@ impl Endpoint {
     }
 }
 
-/// One Action Log pair for an HTTP Completer wake: `prompt` then `turn`.
-///
-/// One pair per `complete`, including after a fallback POST — that is still
-/// one wake. `chars` rather than the Character Prompt body (#435).
+/// One Action Log pair for an HTTP Completer wake, `prompt` then `turn`.
+/// One pair per `complete`, including after a fallback POST. Logs `chars`
+/// rather than the Character Prompt body.
 pub(crate) fn note_http_call(
     dir: &std::path::Path,
     request: &WakeRequest,
     result: Result<&Reply, &str>,
-    // `truncated`: why a turn that hit the cap stopped, in the same words the
-    // refusal uses. Read only when the reply is marked.
+    // Same words as the refusal. Read only when the reply is marked.
     truncated: &str,
 ) {
     crate::action_log::append(
@@ -1053,9 +908,8 @@ pub(crate) fn note_http_call(
         }),
     );
     match result {
-        // A truncated turn is a failure of the wire that still produced words:
-        // the line carries both, so the log says what was shown and why there
-        // was no more of it (#610).
+        // A truncated turn still produced words. The line carries both so the
+        // log says what was shown and why there was no more.
         Ok(reply) if reply.truncated => crate::action_log::append(
             dir,
             "turn",
@@ -1124,8 +978,8 @@ impl Completer for Endpoint {
     }
 }
 
-/// Scheme, host and port, with the path dropped — what `/v1/models` is hung
-/// off for the pre-flight probe, and what a trace line names the endpoint by.
+/// Scheme, host, and port. The pre-flight probe hangs `/v1/models` off this,
+/// and a trace line names the endpoint by it.
 fn origin(url: &str) -> String {
     url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
 }
@@ -1143,19 +997,9 @@ fn alternate_url(url: &str) -> Option<String> {
     }
 }
 
-/// Which optional field, if any, did the server reject the request *for*?
-///
-/// 400 and 422 are the codes that mean "your body is wrong", and a strict
-/// OpenAI-compatible server names the field it did not recognise. Nothing
-/// else counts: a 401 or 403 would fail the same way without the field, and
-/// on the xAI paths 403 already means something `fallback_url` handles. The
-/// cost of reading this too narrowly is one turn of `StaticDirector`.
-///
-/// `Cap` first, then `Effort` before `Stream`, because a validator that
-/// lists every unknown key names several while the caller gives up one per
-/// attempt. The cap concedes nothing — the retry still carries one, under
-/// the name the spec prefers — and the field #612 added costs less than the
-/// stream.
+/// Which optional field the server rejected the request for. Only 400 and 422
+/// mean the body is wrong. A 401 or 403 fails the same without the field, and
+/// on xAI a 403 is what `fallback_url` handles.
 fn refused_field(code: u16, body: &str) -> Option<Field> {
     if !matches!(code, 400 | 422) {
         return None;
@@ -1217,21 +1061,15 @@ fn clip_body(body: &str) -> String {
     }
 }
 
-/// Does a served model id name the model that was asked for?
-///
-/// Ollama reports `llama3.2:latest` for the `llama3.2` a user types, so an
-/// exact comparison would report a served model as missing.
+/// Whether a served id names the asked-for model. Ollama reports
+/// `llama3.2:latest` for `llama3.2`, so exact comparison would miss it.
 fn model_matches(served: &str, wanted: &str) -> bool {
     served == wanted || served.trim_end_matches(":latest") == wanted.trim_end_matches(":latest")
 }
 
-/// Read a `/v1/models` answer. Pure, so the decision is testable without a
-/// server: the caller does the HTTP and the naming.
-///
-/// A body this cannot read gets the benefit of the doubt: MLX and some
-/// llama.cpp builds answer without a `data` list, and calling their model
-/// absent would be worse than saying nothing. An empty `data` is different —
-/// that is a server saying plainly it serves nothing, which is worth hearing.
+/// Read a `/v1/models` answer. An unreadable body gets the benefit of the
+/// doubt, because MLX and some llama.cpp builds omit `data`. An empty `data`
+/// list means the server serves nothing, which is worth hearing.
 fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Result<(), String> {
     let (code, body) = models.map_err(|error| format!("unreachable: {error}"))?;
     if !(200..300).contains(&code) {
@@ -1257,13 +1095,9 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
     ))
 }
 
-/// Say once, in the background, whether the configured server is actually
-/// there. Diagnostic only: a wake that fails already falls to
-/// `StaticDirector` per turn, so this changes no behaviour — it exists
-/// because "the buddy went quiet" is otherwise unexplained.
-///
-/// Spawned rather than awaited. ADR-0004 keeps the model off the frame loop,
-/// and a stopped server would otherwise hold up startup for the timeout.
+/// Say once, in the background, whether the configured server is there.
+/// Diagnostic only, because a failed wake already falls to `StaticDirector`.
+/// Spawned rather than awaited so a stopped server cannot hold up startup. ADR-0004.
 pub fn spawn_preflight(settings: &DirectorSettings) {
     if let Some(session) = crate::harness::attached() {
         session.spawn_preflight();
@@ -1298,12 +1132,10 @@ pub fn spawn_preflight(settings: &DirectorSettings) {
 const PING: &str = "Reply with the single word pong and nothing else.";
 
 /// Same Completer the overlay uses, without starting the overlay.
-///
-/// `scripts/probe-model.sh` is the face of this. Later a Harness attach
-/// (#16) can share the command: same env, same exit codes, a second hop.
+/// `scripts/probe-model.sh` is the face of this.
 pub fn run_probe() -> i32 {
-    // No settings file on this path, and `dev_flags::seed` is where the
-    // exported timeout and reply cap are read (#273).
+    // No settings file on this path. `dev_flags::seed` is where the exported
+    // timeout and reply cap are read.
     crate::dev_flags::seed(&crate::settings::Settings::default());
     let Some(endpoint) = endpoint() else {
         eprintln!(
@@ -1383,17 +1215,9 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     }
 }
 
-/// How this request asks for its reply. The argument for `Stream` is #302,
-/// and it has two halves.
-///
-/// A reply's first line is the Behavior name and runs one to three tokens,
-/// so almost the whole wait is dialogue the buddy does not need in order to
-/// start moving. And streaming is the only shape a dropped call can be
-/// *stopped* in: closing a streaming connection ends the generation, where a
-/// whole-reply request runs to completion on the server — and is billed —
-/// whatever the client does, because there is no read to be between.
-///
-/// `Whole` is for the servers that will not.
+/// How this request asks for its reply. Stream so the Behavior name can start
+/// motion before the dialogue arrives, and so closing the connection ends
+/// generation instead of billing a whole-body run the client already dropped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Wire {
     Stream,
@@ -1437,12 +1261,8 @@ fn request_body(
             "input": input,
             "max_output_tokens": max_tokens,
             "store": false,
-            // grok-4.6 defaults to high: 16s and hundreds of think tokens
-            // for a two-line Behavior pick. The same setting drives both
-            // paths verbatim; only the spelling differs (#638). Unguarded by
-            // `Field::Effort`, whose reader looks for the chat-completions
-            // name — a value xAI refuses fails the wake to `StaticDirector`,
-            // as any other bad request on this path does.
+            // grok-4.6 defaults to high. Unguarded by `Field::Effort`, which
+            // looks for the chat-completions name. xAI accepts this spelling.
             "reasoning": { "effort": level },
         })
     } else {
@@ -1450,18 +1270,13 @@ fn request_body(
             "model": model,
             "messages": input,
         });
-        // The spec deprecated `max_tokens` in favour of
-        // `max_completion_tokens` and o-series models answer 400 to it, but
-        // it is still the name every local server in `docs/DEVELOPMENT.md`
-        // reads — and Ollama has no `max_completion_tokens` field at all, so
-        // leading with the new name would silently leave a local reply
-        // uncapped. The old name goes out first and `Field::Cap` swaps it
-        // for the host that refuses (#619).
+        // Local servers still read `max_tokens`, and Ollama has no
+        // `max_completion_tokens`. Leading with the new name would leave a
+        // local reply uncapped. `Field::Cap` swaps it on refusal.
         chat[if cap { "max_tokens" } else { NEW_CAP }] = max_tokens.into();
-        // The Responses branch above asks for low effort for the same reason:
-        // a two-line Behavior pick is not worth a long think, and without it a
-        // reasoning model spends the token cap before writing any content. Not
-        // a field every server accepts, which is what `Field::Effort` guards.
+        // Without it a reasoning model spends the token cap thinking before
+        // writing any content. `Field::Effort` guards this, because not every
+        // server accepts the field.
         if effort {
             chat["reasoning_effort"] = serde_json::Value::String(level.to_string());
         }
@@ -1473,18 +1288,9 @@ fn request_body(
     body
 }
 
-/// What a retry says it gave up, for `trace_director`.
-///
-/// The effort field names the value it carried. A host that takes `low` and
-/// refuses `high` latches `takes_effort` off for the session, `low` included,
-/// and this line is the only place that records which value cost it.
-/// Remembering which values a host takes would be a cache of a server's
-/// validation rules, and being wrong about that costs a wake (#638).
-///
-/// The cap is the one field the retry renames rather than drops, so it says
-/// so: the caller's line reads "retrying without max_tokens, under
-/// max_completion_tokens", and a reader who saw only the field name would go
-/// looking for an uncapped reply that never happened.
+/// What a retry says it gave up, for `trace_director`. Effort names the value
+/// it carried. Remembering which values a host takes is a cache of its
+/// validation rules. Cap says it was renamed, or a reader looks for an uncapped reply.
 fn dropped_field(field: Field, effort: &str) -> String {
     match field {
         Field::Stream => field.name().to_string(),
@@ -1493,33 +1299,26 @@ fn dropped_field(field: Field, effort: &str) -> String {
     }
 }
 
-/// What the cap is spelled once a host has refused `max_tokens` (#619).
+/// The cap's name once a host has refused `max_tokens`.
 const NEW_CAP: &str = "max_completion_tokens";
 
-/// Ceiling on a streamed reply, in bytes.
-///
-/// `into_reader` is unlimited by default, where the whole-body read stops at
-/// ureq's 10MB. A reply is two lines under a `max_tokens` cap of at most a
-/// few hundred, so a megabyte is already far past anything a working server
-/// sends; it is here to bound a broken one.
+/// Ceiling on a streamed reply, in bytes. `into_reader` is unlimited by
+/// default. A megabyte is far past a working two-line reply. It bounds a
+/// broken server that never stops sending.
 const STREAM_LIMIT: u64 = 1024 * 1024;
 
 /// A request field a server may refuse the whole request over.
-///
-/// Each is the same bet: worth sending where it works, never worth losing a
-/// wake to. One `Endpoint` flag apiece remembers the answer, so a host that
-/// refuses one pays the extra POST once per session and not once per wake.
+/// Send it where it works. Never lose a wake to it. One `Endpoint` flag
+/// apiece, so a host that refuses pays one extra POST per session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Field {
-    /// `stream` (#302).
     Stream,
-    /// `reasoning_effort` on chat-completions (#612). The Responses branch
-    /// spells the same ask as `reasoning.effort` and is not guarded here:
-    /// xAI is the only host that takes that path, and it accepts it.
+    /// The Responses branch spells this as `reasoning.effort` and is not
+    /// guarded here. xAI is the only host that takes that path, and it
+    /// accepts it.
     Effort,
-    /// `max_tokens` on chat-completions (#619). The one field here that is
-    /// renamed rather than dropped: the retry still carries a cap, spelled
-    /// `max_completion_tokens`.
+    /// The one field that is renamed rather than dropped. The retry still
+    /// carries a cap, spelled `max_completion_tokens`.
     Cap,
 }
 
@@ -1541,19 +1340,17 @@ impl Field {
 
 /// Why one attempt produced no reply.
 enum Unsent {
-    /// The server rejected the request for naming this field, so the same
-    /// question is worth one more send without it — and because the answer
-    /// is about the server rather than this call, it is worth remembering.
+    /// The server rejected the request for naming this field. Worth one more
+    /// send without it, and worth remembering, because that is about the
+    /// server rather than this call.
     Refused(Field, String),
     /// The stream broke before the server marked its end. Worth the same one
     /// retry, but a broken connection says nothing about whether the next
     /// stream will work, so it settles nothing.
     Cut(String),
-    /// The model reached the token cap, so the turn ran out of budget rather
-    /// than failing. Never a reply and never worth a retry: the same question
-    /// at the same cap gets the same nothing. The text names the cap and the
-    /// model, because the cap is the only knob that changes the answer, and
-    /// says whether the budget went on thinking or on half a sentence (#610).
+    /// The model reached the token cap. Never worth a retry, because the same
+    /// question at the same cap gets the same nothing. The text names the cap,
+    /// the model, and whether the budget went on thinking or writing.
     Truncated(String),
     /// Superseded while the tokens were arriving. Nobody is waiting for this
     /// answer, so there is no error worth composing.
@@ -1580,11 +1377,7 @@ impl Unsent {
     fn retry_settles(&self) -> Option<(Field, bool)> {
         match self {
             Unsent::Refused(field, _) => Some((*field, true)),
-            // A broken connection says nothing about whether the next stream
-            // will work, so the retry is owed and the verdict is not.
             Unsent::Cut(_) => Some((Field::Stream, false)),
-            // The same question at the same cap gets the same nothing, so a
-            // truncation is not worth a second POST with any field dropped.
             Unsent::Abandoned | Unsent::Truncated(_) | Unsent::Failed(_) => None,
         }
     }
@@ -1600,12 +1393,9 @@ enum Streamed {
     /// The server marked the end. Empty when the model spent its whole
     /// budget without writing anything.
     Complete(String),
-    /// The server marked the end *and* said the token cap is why:
-    /// `finish_reason: "length"` on chat-completions, `response.incomplete`
-    /// on Responses. Whatever text arrived is kept, because it is still what
-    /// the model said and is still shown: empty means the budget went on
-    /// thinking and there is nothing to show, and half a sentence means it
-    /// ran out writing and that sentence is the reply (#610).
+    /// The server marked the end and named the token cap as the reason,
+    /// `finish_reason: "length"` or `response.incomplete`. Text is kept.
+    /// Empty means the budget went on thinking. A half sentence is the reply.
     Truncated(String),
     /// The body ended with the server never saying it was finished, so
     /// whatever arrived is half a sentence.
@@ -1620,22 +1410,17 @@ enum Streamed {
     /// The upgrade, if a real server ever turns up like this, is to keep what
     /// arrived rather than re-ask for it (#302).
     Cut,
-    /// The body held no `data:` frame at all, so it was never an event
-    /// stream: a server that took `stream` and ignored it. The refusal has
-    /// no status of its own, which makes this the only place it shows.
+    /// The body held no `data:` frame, so it was never an event stream.
+    /// A server took `stream` and ignored it. The refusal has no status of
+    /// its own, which makes this the only place it shows.
     NotEventStream,
-    /// Superseded, so the reader is dropped mid-generation (#302).
+    /// Superseded, so the reader is dropped mid-generation.
     Abandoned,
 }
 
-/// Assemble an SSE reply, giving up as soon as `abandoned` says the call is
-/// no longer wanted, and handing every marked thought to `thought` on the way.
-///
-/// Takes a `Read` rather than a response so the shapes below are checked
-/// against canned bytes: this repo has no HTTP double, and a parser only a
-/// live server can reach is a parser nobody checks. `thought` is a parameter
-/// for the same reason: the Shell's door is a process global, and a routing
-/// only the app can reach is a routing nobody checks.
+/// Assemble an SSE reply. Takes a `Read` rather than a response so the
+/// shapes below are checked against canned bytes. `thought` is a parameter
+/// because the Shell's door is a process global that a test cannot reach.
 fn read_stream(
     reader: impl std::io::Read,
     abandoned: impl Fn() -> bool,
@@ -1643,19 +1428,18 @@ fn read_stream(
 ) -> Result<Streamed, String> {
     let mut thinking = String::new();
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
-    // The Chat surface keeps no thought of its own, so the last line stays on
-    // screen until it is told the turn that wrote it has ended (ADR-0025).
-    // Asked the same way the draw was, so a stream whose thinking was all
-    // whitespace takes away nothing, having drawn nothing.
+    // The Chat surface keeps no thought of its own, so the last line stays
+    // until the turn that wrote it has ended (ADR-0025). Same path as the
+    // draw, so all-whitespace thinking takes away nothing.
     if crate::acp_wire::thinking_line(&thinking).is_some() {
         thought("");
     }
     ended
 }
 
-/// The frame loop itself, split out so that every way it can end — a marker,
-/// a cut body, an abandon, an I/O error — leaves through the one line above
-/// that takes the strip away.
+/// The frame loop itself, split out so every ending (a marker, a cut body,
+/// an abandon, an I/O error) leaves through the one line above that takes
+/// the strip away.
 fn read_frames(
     reader: impl std::io::Read,
     abandoned: impl Fn() -> bool,
@@ -1678,10 +1462,8 @@ fn read_frames(
         }
     };
     loop {
-        // Between frames, not between bytes: `read_line` parks until the
-        // server says something, so a cancel lands one frame late — tens of
-        // milliseconds once tokens are flowing, and time-to-first-token
-        // before they are.
+        // Cancel is checked between frames, not between bytes. `read_line`
+        // parks until the server writes, so a cancel lands one frame late.
         if abandoned() {
             return Ok(Streamed::Abandoned);
         }
@@ -1721,9 +1503,8 @@ fn read_frames(
         }
         if let Some(delta) = event.delta {
             if content.is_empty() && !delta.is_empty() && tracing() {
-                // The whole point of streaming, and the one moment worth a
-                // line: a Behavior name is one to three tokens, so this is
-                // roughly when the sprite could start moving (#302).
+                // A Behavior name is one to three tokens, so the first token
+                // is roughly when the sprite could start moving.
                 eprintln!("director: first token");
             }
             content.push_str(&delta);
@@ -1735,8 +1516,8 @@ fn read_frames(
 /// animation `Frame` this codebase means everywhere else.
 #[derive(Default)]
 struct Event {
-    /// Text it adds, if it adds any. Events that carry none — a role
-    /// announcement, usage, an end marker — are not errors.
+    /// Text it adds, if it adds any. Events that carry none (a role
+    /// announcement, usage, an end marker) are not errors.
     delta: Option<String>,
     /// Thinking it adds, if the server marked any as thinking. Never `delta`:
     /// that is the reply, whose first line has to parse as a Behavior name and
@@ -1750,19 +1531,9 @@ struct Event {
     truncated: bool,
 }
 
-/// Read one event in whichever of the two shapes `completions_url` chose.
-///
-/// chat-completions nests text under `choices` and marks the end with
-/// `finish_reason`; Responses sends typed events whose `delta` *is* the text
-/// and marks the end with `response.completed`. Both markers matter as much
-/// as the text: `/v1/responses` ends the body without `[DONE]`, measured
-/// against xAI, so the marker is the only thing that tells a finished reply
-/// from a truncated one.
-///
-/// The *value* of the marker matters too. `length` and `response.incomplete`
-/// both mean the token cap ended the turn rather than the model, which is a
-/// different thing from a reply, and only these two fields say which happened
-/// (#610).
+/// Read one event in either chat-completions or Responses shape.
+/// Markers distinguish a finished reply from a cut, because `/v1/responses`
+/// sends no `[DONE]`. `length` and `response.incomplete` mean the token cap.
 fn read_event(payload: &str) -> Event {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
         return Event::default();
@@ -1785,28 +1556,20 @@ fn read_event(payload: &str) -> Event {
             .as_str()
             .or_else(|| typed("response.output_text.delta"))
             .map(str::to_string),
-        // Two names for one field, both in use and neither in OpenAI's
-        // schema: `reasoning_content` on llama.cpp, oMLX, SGLang and LM
-        // Studio for R1, `reasoning` on vLLM since its rename, Ollama and LM
-        // Studio for gpt-oss. Reading one name misses the other
-        // (`docs/research/reasoning-versus-the-final-answer.md` §2.4).
-        //
-        // Responses types its reasoning apart from its answer, and the summary
-        // is the half a client is meant to read: the raw
-        // `response.reasoning_text.delta` is a second stream, and reading both
-        // into one line would interleave two texts (§2.2).
+        // Two names for one field. `reasoning_content` (llama.cpp, oMLX,
+        // SGLang, LM Studio for R1) and `reasoning` (vLLM, Ollama, gpt-oss).
+        // Responses types reasoning apart. Read the summary, not both streams.
         thought: chunk["reasoning_content"]
             .as_str()
             .or_else(|| chunk["reasoning"].as_str())
             .or_else(|| typed("response.reasoning_summary_text.delta"))
             .map(str::to_string),
         // Responses ends a capped reply with `response.incomplete` and no
-        // `[DONE]` after it, so without that name the body simply stopped and
-        // the turn was re-asked whole.
+        // `[DONE]`. Without that name the body looks cut.
         finished: finish.is_some()
             || matches!(kind, Some("response.completed" | "response.incomplete")),
-        // `length` is the only reason the spec gives for a cap; every other
-        // value — `stop`, `tool_calls`, `content_filter` — is a reply the
+        // `length` is the only reason the spec gives for a cap. Every other
+        // value (`stop`, `tool_calls`, `content_filter`) is a reply the
         // server chose to end, and is left alone.
         truncated: finish == Some("length") || kind == Some("response.incomplete"),
     }
@@ -1837,11 +1600,9 @@ fn content_from_body(body: &str) -> Result<String, String> {
     Err("model reply had no text content".to_string())
 }
 
-/// Did this whole body end at the token cap? The same two markers the stream
-/// carries, in the shape a non-streamed reply puts them: `finish_reason` on
-/// chat-completions, `incomplete_details.reason` on Responses. Asked of every
-/// whole body, because the answer decides both halves: with text it marks the
-/// reply, and with none it names the cap instead of "no text content" (#610).
+/// Whether a whole body ended at the token cap.
+/// `finish_reason` on chat-completions, `incomplete_details.reason` on
+/// Responses. An empty cap is named as the cap, not as missing text.
 fn truncated_body(body: &str) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
         return false;
@@ -1851,14 +1612,9 @@ fn truncated_body(body: &str) -> bool {
 }
 
 thread_local! {
-    /// The abandon flag for the model call running on this thread.
-    ///
-    /// A thread-local rather than a field on `Endpoint`, because the socket
-    /// lives in the worker's stack frame: "should this call stop" is a
-    /// property of the thread, not of a Completer every wake shares. It also
-    /// keeps the abort out of `Completer`, which `crates/core` could neither
-    /// cause nor observe — cancellation is a property of a resource only the
-    /// Shell holds.
+    /// The abandon flag for the model call on this thread.
+    /// Thread-local, not an `Endpoint` field, because the socket lives in
+    /// the worker stack. Cancellation is a Shell resource, not `Completer`.
     static ABANDONED: std::cell::RefCell<Option<Arc<AtomicBool>>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -1900,10 +1656,8 @@ fn think(line: &str) {
     }
 }
 
-/// Has the call running on this thread been dropped by the frame loop?
-///
-/// False on a thread that never carried one — the probe and the tests — so
-/// `Endpoint` needs no second code path for them.
+/// Whether the call on this thread has been dropped by the frame loop.
+/// False when unset, so the probe and the tests need no second path.
 fn abandoned() -> bool {
     ABANDONED.with_borrow(|flag| {
         flag.as_ref()
@@ -1911,27 +1665,22 @@ fn abandoned() -> bool {
     })
 }
 
-/// Every session call the app has on the wire: one slot per Character Instance.
-///
-/// One registry rather than one per Instance. Sessions stay per-Instance inside
-/// each `Endpoint` — ADR-0008 is untouched — and only the slot is centralised,
-/// which is what makes a global concurrency cap expressible at all and gives
-/// #18's spend panel somewhere to read. There is no cap: N Instances make N
-/// calls, as they always have.
+/// Every session call the app has on the wire. One slot per Character Instance.
+/// One registry, not one per Instance. Sessions stay per-Instance inside each
+/// `Endpoint` (ADR-0008). There is no cap. N Instances make N calls.
 #[derive(Default)]
 pub struct Slots {
     slots: HashMap<InstanceId, Slot>,
 }
 
-/// One Character Instance's place on the wire.
 struct Slot {
     /// Which call is this Instance's current one. A reply stamped with any
     /// other number was computed for a moment the Instance has left.
     epoch: u64,
     tx: Sender<Delivered>,
     rx: Receiver<Delivered>,
-    /// Raised when the call is superseded, and read by the worker between SSE
-    /// frames, so an abandoned call closes its connection (#302).
+    /// Raised when the call is superseded. The worker reads it between SSE
+    /// frames so an abandoned call closes its connection.
     abandoned: Arc<AtomicBool>,
     waiting: bool,
     /// Whether the call answers something the user did, which is the whole of
@@ -1946,11 +1695,8 @@ struct Delivered {
 }
 
 /// What one wake came back with.
-///
-/// The three travel together because each is meaningless without the others: a
-/// proposal only means anything against the moment that asked for it, and the
-/// near miss is the only thing that tells a proposal-shaped reply naming an
-/// undeclared Behavior apart from a model that chose to talk (#243).
+/// The proposal is meaningless without the moment that asked for it. The near
+/// miss is what tells an undeclared Behavior name from a model that talked.
 pub struct Answered {
     pub wake: Wake,
     pub context: Context,
@@ -1958,7 +1704,7 @@ pub struct Answered {
     /// of. `None` on every other reply.
     pub near_miss: Option<String>,
     /// The cap ended this turn, so what was said is as far as the model got.
-    /// The line the Chat surface remembers is marked with it (#610).
+    /// The line the Chat surface remembers is marked with it.
     pub truncated: bool,
 }
 
@@ -1977,12 +1723,9 @@ impl Default for Slot {
 }
 
 impl Slot {
-    /// Whatever this slot had on the wire stops being this Instance's answer.
-    ///
-    /// The epoch moves past it so `take` drops its reply, and its abandon flag
-    /// rises so the worker closes the connection rather than generating on. The
-    /// next call gets a fresh flag; the old one stays alive in the worker's
-    /// hands.
+    /// Stop treating this slot's in-flight call as this Instance's answer.
+    /// The next call gets a fresh abandon flag. The old flag stays with the
+    /// worker so it can still close the connection.
     fn supersede(&mut self) {
         self.abandoned.store(true, Ordering::SeqCst);
         self.abandoned = Arc::new(AtomicBool::new(false));
@@ -1993,11 +1736,8 @@ impl Slot {
 }
 
 /// The trace line for a proposed Behavior name nobody declared.
-///
-/// Carries the declared set because that is what makes the miss readable:
-/// `prowll` beside `prowl` is a typo, beside `wave` it is a model ignoring
-/// the contract (#243). Worker threads interleave, so the Instance id leads
-/// the line as it does every other Director trace.
+/// Carries the declared set so `prowll` beside `prowl` reads as a typo, beside
+/// `wave` as a model ignoring the contract. Workers interleave, so the Instance id leads.
 fn near_miss_line(id: &str, name: &str, behaviors: &[String]) -> String {
     format!(
         "director: {id} {name} is no declared Behavior; declared: {}",
@@ -2011,11 +1751,8 @@ impl Slots {
     }
 
     /// Send this Character Prompt for `id`, abandoning whatever `id` had out.
-    ///
-    /// Infallible, because starting a call *is* the cancellation of the
-    /// previous one: there is no busy to report and so no check for a caller
-    /// to forget. Per-Instance newest-wins — "should this buddy's old Poke be
-    /// abandoned for its new Throw" is always yes.
+    /// Infallible. Starting a call is the cancellation of the previous one,
+    /// so there is no busy to report. Per-Instance newest-wins.
     pub fn wake<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,
@@ -2064,10 +1801,8 @@ impl Slots {
     }
 
     /// The reply for `id`, with the moment it was computed for.
-    ///
-    /// A reply from a superseded moment is dropped here rather than handed out
-    /// for a caller to compare — which is what stops a buddy saying "put me
-    /// down" from the floor it landed on.
+    /// A superseded moment is dropped here rather than handed out for a
+    /// caller to compare.
     pub fn take(&mut self, id: &InstanceId) -> Option<Answered> {
         let slot = self.slots.get_mut(id)?;
         while let Ok(delivered) = slot.rx.try_recv() {
@@ -2082,18 +1817,15 @@ impl Slots {
     }
 
     /// Drop whatever `id` has on the wire, and forget the Instance.
-    ///
-    /// For the three moments where the answer would be the wrong buddy's: a
-    /// Character switch, a Completer retarget, and a dismissal. Forgetting
-    /// rather than emptying, so a registry that outlives its Instances does not
-    /// accumulate them; the next `wake` opens a fresh slot.
+    /// Character switch, Completer retarget, and dismissal would apply the
+    /// wrong buddy's answer. Remove the slot so the registry cannot accumulate.
     pub fn abandon(&mut self, id: &InstanceId) {
         if let Some(slot) = self.slots.remove(id) {
             slot.abandoned.store(true, Ordering::SeqCst);
         }
     }
 
-    /// Whether `id` is waiting on the Director. Not a gate on `wake` — an
+    /// Whether `id` is waiting on the Director. Not a gate on `wake`. An
     /// observation, for the Static Director standing down while a session
     /// proposal is about to land.
     pub fn waiting(&self, id: &InstanceId) -> bool {
@@ -2110,10 +1842,8 @@ impl Slots {
 }
 
 /// Drop an in-flight wake and install a Completer for the new settings.
-///
-/// A Wake still on the wire would propose against the old host and session;
-/// drop it and open a new turn. `Slots::abandon` closes the connection, so the
-/// old host stops generating rather than merely going unheard.
+/// A wake still on the wire would propose against the old host and session.
+/// `Slots::abandon` closes the connection so the old host stops generating.
 pub fn retarget_model(
     slots: &mut Slots,
     id: &InstanceId,
@@ -2141,11 +1871,8 @@ pub(crate) mod tests {
     use ai_buddy_core::director::Happened;
 
     /// Run `body` with the three Director vars set as given and the switch
-    /// cleared, then all four restored.
-    ///
-    /// One lock for the whole test binary: `settings` and `settings::form`
-    /// test env-owned rows against the same vars, and a second mutex would
-    /// not serialise against this one.
+    /// cleared, then all four restored. One lock for the whole test binary.
+    /// `settings` tests the same vars, so a second mutex would not serialise.
     pub(crate) fn with_env(
         key: Option<&str>,
         base: Option<&str>,
@@ -2161,9 +1888,9 @@ pub(crate) mod tests {
         with_vars(None, None, None, Some(value), None, body)
     }
 
-    /// The same for `AI_BUDDY_HARNESS`, which owns the Completer source rows
-    /// (#436). Under this lock rather than one of its own: the settings tests
-    /// read that row through the same `env_override` as the endpoint rows.
+    /// Run `body` with `AI_BUDDY_HARNESS` set as given, under the same lock.
+    /// Settings tests read that Completer-source row through the same
+    /// `env_override` as the endpoint rows.
     pub(crate) fn with_harness(value: Option<&str>, body: impl FnOnce()) {
         with_vars(None, None, None, None, value, body)
     }
@@ -2185,10 +1912,9 @@ pub(crate) mod tests {
 
         impl Drop for Guard {
             fn drop(&mut self) {
-                // The Development variables are still cleared here, so this
-                // leaves the live `dev_flags` values on the file defaults.
-                // Seeding after the restore below would load the shell's
-                // exports into them instead.
+                // Seed while the Development variables are still cleared, so
+                // live `dev_flags` land on file defaults. Seeding after the
+                // restore would load the shell's exports into them instead.
                 crate::dev_flags::seed(&crate::settings::Settings::default());
                 for (var, previous) in self.0.drain(..) {
                     apply(var, previous.as_deref());
@@ -2203,14 +1929,9 @@ pub(crate) mod tests {
             }
         }
 
-        // The five the caller sets, and every Development variable: a shell
-        // that exported one of those would otherwise freeze a row or seed a
-        // switch in a test that never mentions it (#273).
-        //
-        // The live `dev_flags` values those variables govern are
-        // process-global too, so the lock owns them as well: seeded to the
-        // defaults on the way in and again on the way out, no test has to
-        // hand-restore them.
+        // The five the caller sets, and every Development variable. A shell
+        // export would otherwise freeze a row or seed a switch in a test that
+        // never mentions it. Seed `dev_flags` in and out under this lock.
         let mut wanted = vec![
             (API_KEY, key),
             (BASE_URL, base),
@@ -2369,7 +2090,6 @@ pub(crate) mod tests {
         });
     }
 
-    /// A word no switch knows leaves the decision where it was.
     #[test]
     fn an_unreadable_switch_value_leaves_the_file_deciding() {
         with_vars(None, None, None, Some("banana"), None, || {
@@ -2382,9 +2102,8 @@ pub(crate) mod tests {
         });
     }
 
-    /// The README's promise that `off` "keeps Static even when a key is set".
-    /// A local host is configured without a key, so nothing but the variable
-    /// can hold the Director back.
+    /// `off` keeps Static even when a key is set. A local host is configured
+    /// without a key, so nothing but the variable can hold the Director back.
     #[test]
     fn the_env_switch_vetoes_a_director_the_file_would_allow() {
         with_env_switch("off", || {
@@ -2472,9 +2191,8 @@ pub(crate) mod tests {
         assert!(content_from_body("not json").is_err());
     }
 
-    /// The server that will not stream sends the same failure whole: no
-    /// `content` key, and the cap named in `finish_reason` or in
-    /// `incomplete_details`. Measured on oMLX with `gpt-oss-20b` (#597).
+    /// A non-streaming server sends the same failure whole. No `content`
+    /// key, and the cap named in `finish_reason` or in `incomplete_details`.
     #[test]
     fn a_whole_body_that_hit_the_cap_says_so() {
         let spent = r#"{"choices":[{"message":{"role":"assistant","reasoning_content":"hmm"},
@@ -2512,14 +2230,8 @@ pub(crate) mod tests {
     }
 
     /// A loopback server that refuses any request naming `field`, and hands
-    /// back every body it was sent.
-    ///
-    /// A stub rather than a product, because none of the local servers in
-    /// scope rejects an unknown field: oMLX answers 200 and ignores it
-    /// (`docs/research/reasoning-versus-the-final-answer.md` §6.1). The
-    /// strict server the guard exists for is real — the wording here is
-    /// OpenAI's — but it is not one that can be run on this machine, so the
-    /// path is exercised against its contract instead.
+    /// back every body it was sent. Local servers in scope ignore unknown
+    /// fields, so the OpenAI wording is exercised against a stub instead.
     fn server_refusing(field: Field) -> (String, Receiver<String>) {
         use std::io::{BufRead, BufReader, Read, Write};
 
@@ -2577,15 +2289,13 @@ pub(crate) mod tests {
         (format!("http://127.0.0.1:{port}/v1/chat/completions"), seen)
     }
 
-    /// #612's whole contract, end to end: the field goes out, a server that
-    /// names it in a rejection gets one more request without it, and the
-    /// next wake does not ask again.
+    /// The field goes out. A server that names it in a rejection gets one
+    /// more request without it, and the next wake does not ask again.
     #[test]
     fn a_server_that_refuses_the_effort_field_is_asked_once_and_never_again() {
         let (url, seen) = server_refusing(Field::Effort);
         let endpoint = endpoint_at(&url);
-        // Whole-body, so the stub can answer in one JSON object. The stream
-        // field has its own retry and #302's tests.
+        // Whole-body, so the stub can answer in one JSON object.
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
@@ -2613,11 +2323,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// The row's value reaches the wire, not only `request_body`: the level
-    /// is baked into the `Endpoint` and `send` is what carries it (#638).
-    ///
-    /// `max` rather than a picker level, because the field is the setting and
-    /// nothing validates what is typed there.
+    /// The row's value reaches the wire, not only `request_body`. The level
+    /// is baked into the `Endpoint` and `send` is what carries it.
+    /// `max` rather than a picker level. Nothing validates what is typed there.
     #[test]
     fn the_configured_effort_reaches_the_request_the_endpoint_sends() {
         // Refusing `stream` and answering everything else: this endpoint is
@@ -2638,11 +2346,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// #619's whole contract, end to end. The cap is the one guarded field
-    /// that is never given up: a host that refuses `max_tokens` is asked
-    /// again under the name the spec prefers, and every later wake opens
-    /// there. Losing it instead would uncap the reply on the host least able
-    /// to afford it.
+    /// The cap is the one guarded field that is never given up. A host that
+    /// refuses `max_tokens` is asked again under the spec's name. Losing it
+    /// would uncap the reply on the host least able to afford it.
     #[test]
     fn a_server_that_refuses_max_tokens_is_asked_again_under_the_new_name() {
         let (url, seen) = server_refusing(Field::Cap);
@@ -2675,9 +2381,8 @@ pub(crate) mod tests {
         );
     }
 
-    /// A streamed turn can end with no reply in more ways than a whole one
-    /// could — abandoned, or cut off — and each has to leave the session as
-    /// an error does (#302).
+    /// A streamed turn can end with no reply by abandon or cut, and each
+    /// has to leave the session as an error does.
     #[test]
     fn a_turn_with_no_reply_leaves_no_half_answer_in_the_session() {
         let endpoint = local_endpoint();
@@ -2704,14 +2409,8 @@ pub(crate) mod tests {
     }
 
     /// The session is what the model reads its own last turn back from, so a
-    /// turn the cap ended says so there: otherwise the next reply is written
-    /// against a sentence the model appears to have simply abandoned (#610).
-    ///
-    /// The mark reaches the session and not the reply the Director parses.
-    /// `parse_proposal` reads the first whole-Behavior-name line and speaks
-    /// the rest, so a mark in the parsed text is a mark the buddy says out
-    /// loud — which is the failure `bubble.js` wrote down for the bubble and
-    /// which this ordering is what prevents.
+    /// capped turn says so there. The mark stays out of the parsed reply.
+    /// `parse_proposal` would otherwise speak the mark out loud.
     #[test]
     fn the_session_keeps_the_mark_and_the_parser_never_sees_it() {
         let endpoint = local_endpoint();
@@ -2742,7 +2441,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// #312: a superseded call is still inside `post` when the wake that
+    /// A superseded call may still be inside `post` when the wake that
     /// replaced it opens a turn on the same `Endpoint`. The loser must neither
     /// leave its question in the session nor take the winner's out.
     #[test]
@@ -2782,10 +2481,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Nothing orders the two workers, so the superseded one may reach the
-    /// session first and open its turn after the wake that replaced it. Whoever
-    /// lands last, an answer must never be recorded against another turn's
-    /// question — that is what the next Character Prompt is built from.
+    /// Nothing orders the two workers, so the superseded one may open its
+    /// turn after the wake that replaced it. An answer must never be recorded
+    /// against another turn's question, which is what the next prompt is built from.
     #[test]
     fn an_answer_is_never_recorded_against_another_turns_question() {
         let endpoint = local_endpoint();
@@ -2817,7 +2515,7 @@ pub(crate) mod tests {
         streamed_with_thoughts(sse).0
     }
 
-    /// The same, and every line the thought strip was told to draw.
+    /// How a whole stream ended, and every line the thought strip was told to draw.
     fn streamed_with_thoughts(sse: &str) -> (Streamed, Vec<String>) {
         let drawn = std::cell::RefCell::new(Vec::new());
         let ended = read_stream(
@@ -2891,10 +2589,8 @@ pub(crate) mod tests {
     }
 
     /// A server that takes `stream: true` and answers with an ordinary body
-    /// never says so in a status, so the absence of frames is the only signal
-    /// there is — and it is the one worth another send. A stream that really
-    /// did arrive empty is not: sending the same question again would spend a
-    /// second call to be told the same nothing.
+    /// never says so in a status. Absence of frames is the retry signal.
+    /// An empty real stream is not retried, because that would spend a second call on nothing.
     #[test]
     fn a_body_with_no_frames_in_it_was_never_a_stream() {
         let whole = r#"{"choices":[{"message":{"content":"stroll\nhey"}}]}"#;
@@ -2918,8 +2614,7 @@ pub(crate) mod tests {
     }
 
     /// Which half of the wire a delta is, one shape at a time. Every field
-    /// name here is one `docs/research/reasoning-versus-the-final-answer.md`
-    /// found a server in scope sending (§2.2, §2.4).
+    /// name here is one a server in scope sends.
     #[test]
     fn a_marked_reasoning_delta_is_a_thought_and_content_is_still_speech() {
         let read = |payload| {
@@ -2932,7 +2627,7 @@ pub(crate) mod tests {
             read(r#"{"choices":[{"delta":{"reasoning_content":"hmm"}}]}"#),
             (Some("hmm".to_string()), None)
         );
-        // vLLM as of its rename, Ollama, LM Studio for gpt-oss.
+        // vLLM, Ollama, LM Studio for gpt-oss.
         assert_eq!(
             read(r#"{"choices":[{"delta":{"reasoning":"hmm"}}]}"#),
             (Some("hmm".to_string()), None)
@@ -2958,10 +2653,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// The whole point: a reasoning model's thinking reaches the strip and
-    /// never the reply, so nothing the buddy says out loud was thought at it
-    /// (ADR-0025). The strip draws the line being written now, not the chunk
-    /// it arrived in, and the end of the turn takes it away.
+    /// Thinking reaches the strip and never the reply, so nothing the buddy
+    /// says out loud was thought at it (ADR-0025). The strip draws the line
+    /// being written now, and the end of the turn takes it away.
     #[test]
     fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
         let sse = concat!(
@@ -2983,10 +2677,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// xAI's `/v1/responses` ends the body with no `[DONE]` after it, so the
-    /// end marker has to be enough on its own — and a body that stops with
-    /// no marker at all is half a sentence, which must not reach the Speech
-    /// bubble or the session (#302).
+    /// xAI's `/v1/responses` ends the body with no `[DONE]`, so the end
+    /// marker has to be enough on its own. A body that stops with no marker
+    /// is half a sentence and must not reach the Speech bubble or the session.
     #[test]
     fn a_marked_end_is_enough_and_an_unmarked_one_is_a_cut() {
         let responses = concat!(
@@ -3012,10 +2705,8 @@ pub(crate) mod tests {
     }
 
     /// A model that spends its whole budget thinking ends with
-    /// `finish_reason: "length"` and no content — measured on `gpt-oss-20b`
-    /// at 512 tokens on about 40% of wakes (#597). That is not a reply, and
-    /// the value of the field is the only thing that says so: `stop` and
-    /// `length` are both strings.
+    /// `finish_reason: "length"` and no content. That is not a reply. `stop`
+    /// and `length` are both strings, so the value is what distinguishes them.
     #[test]
     fn an_empty_length_finish_is_a_truncation_and_a_stop_finish_is_a_reply() {
         let spent = concat!(
@@ -3041,10 +2732,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// A cap reached after the model started writing is a truncation too, and
-    /// is refused for the reason #302 refuses a cut stream: what arrived is
-    /// half a sentence. The text is kept only so the log can say the budget
-    /// ran out writing rather than thinking.
+    /// A cap reached after the model started writing is a truncation too.
+    /// What arrived is half a sentence. The text is kept so the log can say
+    /// the budget ran out writing rather than thinking.
     #[test]
     fn a_length_finish_that_wrote_text_is_a_truncation_too() {
         let clipped = concat!(
@@ -3103,9 +2793,8 @@ pub(crate) mod tests {
     }
 
     /// Responses ends a truncated reply with `response.incomplete` rather
-    /// than `response.completed`, and sends no `[DONE]` after it. With no arm
-    /// for that event the body ended unmarked, so a truncation read as a cut
-    /// connection and was re-asked whole.
+    /// than `response.completed`, and sends no `[DONE]` after it. Treat that
+    /// event as a truncation, not as a cut connection.
     #[test]
     fn a_responses_incomplete_is_a_truncation_not_a_cut() {
         let sse = concat!(
@@ -3116,9 +2805,9 @@ pub(crate) mod tests {
         assert_eq!(streamed(sse), Streamed::Truncated(String::new()));
     }
 
-    /// The load win. An endless stream is the only honest test of it: a
-    /// reader that stopped on its own would prove nothing, and one that
-    /// drains would hang this test rather than fail it.
+    /// An endless stream is the only honest test of abandon. A reader that
+    /// stopped on its own would prove nothing, and one that drains would
+    /// hang this test rather than fail it.
     #[test]
     fn an_abandoned_stream_stops_reading_rather_than_draining() {
         struct Endless;
@@ -3187,8 +2876,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// #612: the field is the one lever measured to change the empty-reply
-    /// rate, and the retry is only honest if the second body drops it.
+    /// The retry is only honest if the second body drops the effort field.
     #[test]
     fn a_chat_request_asks_for_the_effort_it_is_given_and_the_fallback_does_not() {
         let session = [Message {
@@ -3239,12 +2927,9 @@ pub(crate) mod tests {
         assert_eq!(responses["reasoning"]["effort"], "low");
     }
 
-    /// One setting named "reasoning effort" that moved one of the two paths
-    /// would be the surprise, so the typed value goes out verbatim on both —
-    /// spelled `reasoning_effort` on chat-completions and `reasoning.effort`
-    /// on Responses. Nothing checks it against a list: llama.cpp and oMLX
-    /// hand the string to the model's chat template, so what is valid belongs
-    /// to the model file (#638).
+    /// The typed value goes out verbatim on both paths. llama.cpp and oMLX
+    /// hand the string to the model's chat template, so validity belongs to
+    /// the model file.
     #[test]
     fn a_typed_effort_reaches_both_request_shapes_verbatim() {
         let session = [Message {
@@ -3278,7 +2963,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Trap 2 of #638: the drop is left as it is, and made legible instead.
+    /// The drop is left as it is and made legible, not silent.
     #[test]
     fn the_retry_line_names_the_effort_value_it_gave_up() {
         assert_eq!(
@@ -3293,9 +2978,8 @@ pub(crate) mod tests {
         );
     }
 
-    /// #619: the cap is renamed, not dropped, and the retry line has to say
-    /// so — "retrying without max_tokens" alone would send a reader looking
-    /// for an uncapped reply that never went out.
+    /// The cap is renamed, not dropped. The retry line has to say so, or a
+    /// reader looks for an uncapped reply that never went out.
     #[test]
     fn the_retry_line_says_the_cap_is_renamed_rather_than_given_up() {
         assert_eq!(
@@ -3305,8 +2989,8 @@ pub(crate) mod tests {
         );
     }
 
-    /// Unset is `low`, not "send nothing": omitting the field would give back
-    /// the 17.5% lost-wake rate #617 measured away.
+    /// Unset still sends `low`. Omitting the field leaves a reasoning
+    /// model on its default effort.
     #[test]
     fn an_unset_effort_row_still_sends_low() {
         tests::with_env(None, None, None, || {
@@ -3328,9 +3012,9 @@ pub(crate) mod tests {
         });
     }
 
-    /// #619: the spec deprecated `max_tokens` and o-series models refuse it,
-    /// but it is the only name Ollama reads. So the rename is what a refusal
-    /// buys, not the shape every request opens with.
+    /// o-series models refuse `max_tokens`, but it is the only name Ollama
+    /// reads. The rename is what a refusal buys, not the shape every request
+    /// opens with.
     #[test]
     fn a_chat_request_names_the_cap_the_old_way_until_a_host_refuses_it() {
         let session = [Message {
@@ -3482,8 +3166,8 @@ pub(crate) mod tests {
         assert_eq!(trim_key("   ").as_deref(), None);
     }
 
-    /// Unset is a choice. `$XAI_API_KEY` expanding to nothing is a mistake
-    /// that used to look the same. The log has to tell them apart.
+    /// Unset is a choice. `$XAI_API_KEY` expanding to nothing is a mistake.
+    /// The log has to tell them apart.
     #[test]
     fn a_blank_provided_key_is_invalid_and_unset_is_not() {
         assert_eq!(key_from_raw(None), KeyRead::Unset);
@@ -3599,9 +3283,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// The same read as the stream field, on `reasoning_effort`. A body that
-    /// names the field is the only thing that drops it: reading a plain 400 as
-    /// a refusal costs a second POST that fails the same way. #612.
+    /// A body that names `reasoning_effort` is the only thing that drops it.
+    /// Reading a plain 400 as a refusal costs a second POST that fails the
+    /// same way.
     #[test]
     fn a_server_that_rejects_the_effort_field_earns_one_retry_without_it() {
         assert_eq!(
@@ -3646,10 +3330,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// #619: the o-series refusal names the field it will not take *and* the
-    /// field it wants instead, so the reader has to tell two names apart that
-    /// differ by an infix. Reading the new name as the old one would rename a
-    /// body that is already renamed, and the wake would be spent on it.
+    /// The o-series refusal names the field it will not take and the field it
+    /// wants instead, two names that differ by an infix. Reading the new name
+    /// as the old one would rename a body that is already renamed.
     #[test]
     fn a_server_that_rejects_max_tokens_earns_one_retry_under_the_new_name() {
         assert_eq!(
@@ -3738,13 +3421,9 @@ pub(crate) mod tests {
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 400").is_none());
     }
 
-    /// The suffix test is the half that matters for a lookalike name, and the
-    /// normalised host is the half the old string cut got wrong: it compared
-    /// the port and the spelling along with the name, so an endpoint written
-    /// with `:443` or in capitals was not xAI and took the legacy path.
-    ///
-    /// The lookalike cases pass either way and are pinned as regression
-    /// guards, not as repairs.
+    /// The suffix test is the half that matters for a lookalike name. The
+    /// normalised host ignores port and spelling, so `:443` or capitals still
+    /// count as xAI.
     #[test]
     fn only_xais_own_hosts_answer_to_its_inference_path() {
         assert!(host_is_xai("https://api.x.ai/v1/responses"));
@@ -3772,9 +3451,8 @@ pub(crate) mod tests {
         assert!(!host_is_xai("api.x.ai"), "no scheme, no host");
     }
 
-    /// The probe hangs `/v1/models` off this and prints it. Production change
-    /// that would fail this: cutting at the first `/` after the scheme, which
-    /// keeps userinfo — and puts a password in a trace line.
+    /// Production change that would fail this: cutting at the first `/` after
+    /// the scheme, which keeps userinfo and puts a password in a trace line.
     #[test]
     fn an_origin_keeps_the_port_and_drops_the_credentials() {
         assert_eq!(
@@ -3812,9 +3490,8 @@ pub(crate) mod tests {
         ));
     }
 
-    /// What the Chat header is handed. The userinfo case is the same one
-    /// `is_local` turns on, and it is drawn as well as decided on, so a
-    /// password written into the row must not reach the window (#474).
+    /// What the Chat header is handed. A password written into the row must
+    /// not reach the window.
     #[test]
     fn a_host_is_named_without_its_credentials_or_its_path() {
         assert_eq!(host_of("https://api.openai.com/v1"), "api.openai.com");
@@ -3832,9 +3509,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// A base with no scheme is not a URL anything can be posted to —
-    /// `completions_url` concatenates onto it — so it names no host and is not
-    /// local. Remote is the safe half of that: it keeps the key required.
+    /// A base with no scheme is not a URL `completions_url` can concatenate
+    /// onto, so it names no host and is not local. Remote keeps the key
+    /// required.
     #[test]
     fn a_base_with_no_scheme_names_no_host_and_is_not_local() {
         assert_eq!(host_of("localhost:8000"), "");
@@ -3893,9 +3570,8 @@ pub(crate) mod tests {
         assert!(is_local("http://localhost.:11434"), "fully qualified");
     }
 
-    /// The env keeps the last word over the file for these two, the same
-    /// precedence `resolve` gives the endpoint (#272). Read here, decided in
-    /// `dev_flags::seed`, so each export needs a re-seed to reach a read site.
+    /// The env outranks the file for these two, the same precedence `resolve`
+    /// gives the endpoint. Each export needs a re-seed to reach a read site.
     #[test]
     fn an_exported_limit_outranks_the_persisted_one() {
         with_env(None, None, None, || {
@@ -3918,8 +3594,7 @@ pub(crate) mod tests {
         });
     }
 
-    /// The read site, where `dev_flags` only holds the decision: a wait no
-    /// source names is `Pace::FIRST`, not zero seconds.
+    /// A wait no source names is `Pace::FIRST`, not zero seconds.
     #[test]
     fn an_exported_wake_interval_outranks_the_persisted_one() {
         with_env(None, None, None, || {
@@ -3940,8 +3615,8 @@ pub(crate) mod tests {
         });
     }
 
-    /// #690: blank Model API is one number, remote or local. A Harness turn
-    /// is `harness::TURN_TIMEOUT`, not this.
+    /// Blank Model API is one number, remote or local. A Harness turn is
+    /// `harness::TURN_TIMEOUT`, not this.
     #[test]
     fn a_model_api_turn_is_one_timeout_when_unset() {
         with_env(None, None, None, || {
@@ -4150,8 +3825,8 @@ pub(crate) mod tests {
         });
     }
 
-    /// The declared set is the half of the line #243 asks for: without it a
-    /// reader cannot tell a typo from a model ignoring the contract.
+    /// The declared set is the half of the line a reader needs. Without it a
+    /// typo looks like a model ignoring the contract.
     #[test]
     fn a_near_miss_line_names_the_instance_and_what_was_declared() {
         let line = near_miss_line(
@@ -4313,9 +3988,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// A name nobody declared arrives as speech, so the name is the only thing
-    /// that tells the two apart, and the Action Log is written at `take` rather
-    /// than in the worker, so it has to survive the trip. #243.
+    /// A name nobody declared arrives as speech, so the name is the only
+    /// thing that tells the two apart. The Action Log is written at `take`,
+    /// so the near-miss has to survive the trip.
     #[test]
     fn take_carries_the_near_miss_the_worker_saw() {
         let mut slots = Slots::new();
@@ -4352,8 +4027,8 @@ pub(crate) mod tests {
         assert_eq!(carried.standing, "Finder");
     }
 
-    /// One registry, but the newest-wins latch is each Instance's own: two
-    /// buddies poked at once are two conversations, per ADR-0008.
+    /// One registry, but the newest-wins latch is each Instance's own. Two
+    /// buddies poked at once are two conversations.
     #[test]
     fn one_instances_wake_leaves_anothers_slot_alone() {
         let mut slots = Slots::new();
@@ -4371,9 +4046,8 @@ pub(crate) mod tests {
     }
 
     /// Superseding has to reach the worker, not just the epoch it answers on.
-    /// Closing the connection is what stops a generation and gives the host its
-    /// capacity back (#302), and the worker is the only thing holding the
-    /// socket — so a flag it never reads buys nothing.
+    /// Closing the connection is what stops a generation. The worker holds
+    /// the socket, so a flag it never reads buys nothing.
     #[test]
     fn superseding_raises_the_flag_the_worker_reads() {
         let saw = Arc::new(AtomicBool::new(false));
@@ -4401,14 +4075,11 @@ pub(crate) mod tests {
         );
     }
 
-    /// How the prompt phrasings differ.
-    ///
-    /// The personality file itself is never touched: the sample lines are why
-    /// the voices read as well as they do (#156), so only the frame around
-    /// them moves.
+    /// How the prompt phrasings differ. The personality file itself is never
+    /// touched. Only the frame around the sample lines moves.
     #[derive(Clone, Copy, Debug)]
     enum Framing {
-        /// The prompt as shipped — personality first, format instruction after.
+        /// The prompt as shipped. Personality first, format instruction after.
         Today,
         /// The quoted lines named as voice rather than as a reply to imitate.
         Framed,
@@ -4422,11 +4093,9 @@ pub(crate) mod tests {
     const VOICE_NOTE: &str = "Those quoted lines are how this character sounds, \
         not a format to copy: your own reply still begins with a behavior name.";
 
-    /// `prompt` said under `framing`.
-    ///
-    /// A rewrite of the built prompt rather than a second prompt builder, so
-    /// the harness cannot drift from the one production sends. A later turn
-    /// carries no Personality Prompt and comes back untouched.
+    /// `prompt` said under `framing`. A rewrite of the built prompt rather
+    /// than a second builder, so the harness cannot drift from production.
+    /// A later turn carries no Personality Prompt and comes back untouched.
     fn reframed(prompt: &str, personality: &str, framing: Framing) -> String {
         // An empty Personality Prompt renders as "(no personality)", which
         // `strip_prefix("")` would happily match and then frame as a voice.
@@ -4488,7 +4157,6 @@ pub(crate) mod tests {
             .map(str::to_string)
     }
 
-    /// `text` as its lowercase alphanumeric words, single-spaced.
     fn squashed(text: &str) -> String {
         text.split(|c: char| !c.is_alphanumeric())
             .filter(|word| !word.is_empty())
@@ -4497,11 +4165,9 @@ pub(crate) mod tests {
             .join(" ")
     }
 
-    /// Sends every wake under one phrasing.
-    ///
-    /// A Completer decorator, so `ModelDirector` still builds the prompt and
-    /// still classifies the reply — the comparison changes the wording and
-    /// nothing else.
+    /// Sends every wake under one phrasing. A Completer decorator, so
+    /// `ModelDirector` still builds the prompt and still classifies the reply.
+    /// The comparison changes the wording and nothing else.
     struct Reframing<C> {
         inner: C,
         personality: String,
@@ -4526,13 +4192,13 @@ pub(crate) mod tests {
         }
     }
 
-    /// A personality in #156's shape, small enough to reason about.
+    /// A personality in the shipped sample-line shape, small enough to reason about.
     const TWO_SAMPLES: &str = "Cat claimed the desktop.\n\nIt has been heard to say: \
         \"What is that one? Show me.\" - \"You may continue.\"";
 
-    /// #244: the quote counter has to recognise a sample line said back with
-    /// the model's own punctuation, and refuse a fragment short enough to
-    /// turn up in any sentence.
+    /// The quote counter has to recognise a sample line said back with the
+    /// model's own punctuation, and refuse a fragment short enough to turn
+    /// up in any sentence.
     #[test]
     fn a_sample_line_said_back_is_recognised_however_it_is_punctuated() {
         let personality = TWO_SAMPLES;
@@ -4672,11 +4338,9 @@ pub(crate) mod tests {
         use std::path::Path;
         use std::time::{Instant, SystemTime};
 
-        // Forty tells 5% from 50%, which is what the question needs. It does
-        // not tell 5% from 8%: nothing pins `temperature` or a seed, because
-        // the app sends neither and this measures the app, so runs of the
-        // same model wander by a few points. Raise it when a tighter number
-        // is worth the minutes.
+        // Forty tells 5% from 50%. It does not tell 5% from 8%. Nothing
+        // pins `temperature` or a seed, because the app sends neither.
+        // Raise it when a tighter number is worth the minutes.
         let wakes: usize = std::env::var("AI_BUDDY_BENCH_WAKES")
             .ok()
             .and_then(|raw| raw.parse().ok())
@@ -4727,13 +4391,12 @@ pub(crate) mod tests {
 
         let (mut accepted, mut speech, mut failed) = (0usize, 0usize, 0usize);
         // A reply whose first line names a declared Behavior in the wrong
-        // case is the contract kept and our matcher refusing it: `knows`
-        // compares exactly. Counting it apart separates what the model got
-        // wrong from what we do.
+        // case is the contract kept and our matcher refusing it. `knows`
+        // compares exactly, so this bucket is ours, not the model's.
         let mut case_only = 0usize;
-        // #244: prose that is a sample line handed back. A subset of `speech`,
-        // because a reply that names a Behavior kept the contract whatever its
-        // dialogue borrowed.
+        // Prose that is a sample line handed back. A subset of `speech`,
+        // because a reply that names a Behavior kept the contract whatever
+        // its dialogue borrowed.
         let mut quoted = 0usize;
         let mut examples: Vec<String> = Vec::new();
         let started = Instant::now();
@@ -4839,7 +4502,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// A directory of our own under the system temp dir, removed when the test ends.
     struct TempDir(std::path::PathBuf);
 
     impl TempDir {
@@ -4898,10 +4560,9 @@ pub(crate) mod tests {
         assert_eq!(turn["text"], "the desktop floor");
     }
 
-    /// A turn the cap ended is both: words that were shown, and a reason
-    /// there were no more of them. The line carries the pair, so the reader
-    /// asking why the buddy stopped mid-sentence is told the cap and the
-    /// model rather than reading a reply that just ends (#610).
+    /// A turn the cap ended is both the words that were shown and a reason
+    /// there were no more of them. The line names the cap and the model, not
+    /// a reply that just ends.
     #[test]
     fn a_truncated_http_call_writes_the_words_and_the_cap() {
         let dir = TempDir::new("http-session-cut");
