@@ -30,36 +30,19 @@ use super::{
 };
 
 /// How long an overlay may go without being told anything.
-///
-/// Bounds the one thing sending only changed frames gives up: a webview that
-/// begins listening mid-silence hears nothing until the sprite next moves. A
-/// quarter second is under the fade this repository gives a hide rule, so a
-/// Character that should not be on screen at launch still goes before the
-/// fullscreen application it would sit on top of notices.
+/// A webview that begins listening mid-silence hears nothing until the sprite
+/// next moves. 250ms is under a hide-rule fade, so a launch-hidden Character still goes.
 const FRAME_RESEND: Duration = Duration::from_millis(250);
 
-/// One overlay's last applied shape: the mask, then x, y, facing, scale, and
-/// hotspot rectangles the renderer reported for controls outside the art.
-///
-/// Named because the tuple is three types deep and clippy's `type_complexity`
-/// rejects it inline. Only the X11 lane keeps one, since XShape is what has to
-/// be spared a rebuild every tick.
+/// One overlay's last applied shape: mask, x, y, facing, scale, and hotspot
+/// rectangles. Named because clippy's `type_complexity` rejects the tuple
+/// inline. Only X11 keeps one: XShape must not rebuild every tick.
 #[cfg(not(target_os = "macos"))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
-///
-/// Applying a `Frame` is two things at once, which is why they share a loop.
-/// The webview is told where to draw and the hit-test is told where the sprite
-/// is, both out of one `Frame`, so the outline the hit-test measures belongs to
-/// the Animation frame the user sees.
-///
-/// Position is where the two part. The webview draws one sample behind and
-/// interpolates towards this one, so the hit-test rectangle leads what is on
-/// screen by up to one tick. src/interpolate.js carries the measurements that
-/// make that lag the cheaper half of the trade against a stuttering sprite.
-// One over the clippy cap. Director config belongs here. Folding it into
-// the other seven would mix a timer with window geometry.
+/// Webview and hit-test share a loop; the hit-test leads by up to one tick (src/interpolate.js).
+// One over clippy's cap: Director config belongs here, not mixed with window geometry.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_frame_loop(
     app: tauri::AppHandle,
@@ -136,21 +119,16 @@ pub(crate) fn run_frame_loop(
         // measurement that earns this.
         let mut last_frame: Vec<Option<(String, Instant)>> = vec![None; covered.len()];
 
-        // Track whether each overlay's EWMH configuration (floating, skip taskbar)
-        // succeeded. Retried on each frame until successful. GTK may not have a
-        // window handle immediately after show(). Shared with main thread so
-        // configure_overlay can report success.
+        // EWMH configure retried until it succeeds: GTK may have no window
+        // handle immediately after show(). Shared so the main thread can report.
         let configured = Arc::new(Mutex::new(vec![false; covered.len()]));
 
-        // Track whether each overlay's XShape input mask has successfully applied.
-        // On Linux/GTK, update_input_region needs the main thread AND a realized
-        // window. Do not set ignore_cursor_events(false) until the mask succeeds,
-        // or the entire overlay becomes a click-eater. Shared with main thread so
-        // update_input_region can report success.
+        // XShape mask retried until it succeeds. Do not set
+        // ignore_cursor_events(false) until then, or the overlay becomes a
+        // click-eater. Shared so the main thread can report.
         let mask_applied = Arc::new(Mutex::new(vec![false; covered.len()]));
 
-        // Track whether configure_overlay / update_input_region work is in flight
-        // to avoid queuing redundant main-thread posts every 16ms.
+        // Avoid queuing redundant main-thread posts every 16ms.
         #[cfg(not(target_os = "macos"))]
         let configure_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
         #[cfg(not(target_os = "macos"))]
@@ -188,19 +166,11 @@ pub(crate) fn run_frame_loop(
         let mut was_visible = true;
 
         loop {
-            // Active mode sleeps 16ms; idle blocks on input events until the
-            // next real deadline (Director ambient wake, activity sensing),
-            // with no artificial cap. #183.
-            //
-            // While hidden, XI2 motion and button events are ignored by
-            // sleeping rather than receiving. While visible, Asleep and Do Not
-            // Disturb included, XI2 stays on so hit-testing keeps Poke, Grab
-            // and Throw working.
+            // Active sleeps 16ms. Idle blocks until a real deadline with no
+            // cap (#183). Hidden: sleep, ignore XI2. Visible (Asleep/DND
+            // included): XI2 stays on so hit-testing keeps Poke/Grab/Throw.
             match (schedule_mode, was_visible, &input_events) {
                 (scheduler::ScheduleMode::Idle, true, Some(events)) => {
-                    // Visible idle: block on XI2 events for cursor-over-art.
-                    // Compute next real work deadline: min of Director ambient
-                    // wakes and activity sensing interval.
                     let next_director = lives
                         .iter()
                         .filter_map(|live| {
@@ -217,14 +187,11 @@ pub(crate) fn run_frame_loop(
                     let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
                     let deadline = next_director.min(next_sense);
 
-                    // Block on input events until deadline. Motion/button events
-                    // wake immediately; timeout means real work is due.
                     let _ = events.recv_timeout(deadline);
                 }
                 (scheduler::ScheduleMode::Idle, false, Some(_events)) => {
-                    // Hidden idle: deep sleep without XI2 wakes. Only non-XI2
-                    // callbacks (sense deadline, visibility change, hotkey show,
-                    // menu/ops, Director ambient, chat/MCP, tray) unblock.
+                    // Hidden idle: deep sleep without XI2. Only non-input
+                    // callbacks unblock.
                     let next_director = lives
                         .iter()
                         .filter_map(|live| {
@@ -244,19 +211,16 @@ pub(crate) fn run_frame_loop(
                     thread::sleep(deadline);
                 }
                 _ => {
-                    // macOS and Windows: no XI2 events, so poll with back-off when
-                    // idle. #183 Stage 2b. CGEventTap with mouse-only listen requires
-                    // Input Monitoring (decision 9 forbids it), so event-driven input
-                    // is unavailable. Idle back-off reduces wakeups when the sprite is
-                    // still/hidden/asleep.
+                    // No XI2: poll with back-off. CGEventTap needs Input
+                    // Monitoring (decision 9 forbids it), so event-driven
+                    // input is unavailable (#183).
                     match (schedule_mode, was_visible) {
                         (scheduler::ScheduleMode::Active, _) => {
                             thread::sleep(ENGINE_TICK);
                         }
                         (scheduler::ScheduleMode::Idle, false) => {
-                            // Hidden idle: uncapped deep sleep like X11. Only non-input
-                            // callbacks (sense deadline, visibility change, hotkey show,
-                            // menu/ops, Director ambient, chat/MCP, tray) unblock.
+                            // Hidden idle: uncapped deep sleep. Only non-input
+                            // callbacks unblock.
                             let next_director = lives
                                 .iter()
                                 .filter_map(|live| {
@@ -277,9 +241,6 @@ pub(crate) fn run_frame_loop(
                             thread::sleep(deadline);
                         }
                         (scheduler::ScheduleMode::Idle, true) => {
-                            // Visible idle: compute next real work deadline (Director
-                            // ambient wakes, activity sensing) and sleep until then,
-                            // capped at 1s to keep gesture/menu response timely.
                             let next_director = lives
                                 .iter()
                                 .filter_map(|live| {
@@ -306,14 +267,9 @@ pub(crate) fn run_frame_loop(
                 }
             }
 
-            // Read per tick, not once at setup: the Development tab can flip
-            // these while the loop runs, and an atomic load is nothing beside
-            // a frame. See `dev_flags`.
-            //
-            // Click-through is invisible: nothing on screen says whether the
-            // overlay is currently swallowing clicks or passing them on. This
-            // trace is the only way to watch the decision without a human
-            // clicking. Off unless asked for; see scripts/verify-overlay.sh.
+            // Read per tick: the Development tab can flip these while the
+            // loop runs. Click-through is invisible; this trace is the only
+            // way to watch it. Off unless asked; see scripts/verify-overlay.sh.
             let tracing = dev_flags::TRACE_HITTEST.is_on();
 
             // Likewise for the Frame: where the sprite is and what it is doing
@@ -324,10 +280,9 @@ pub(crate) fn run_frame_loop(
             // which Animation is on screen but not what chose it: a `talk` is a
             // proposed Behavior, a cursor reaction and a Dwell alike.
             let tracing_engine = dev_flags::TRACE_ENGINE.is_on();
-            // A click is two edges. The periodic hit-test line only prints on a
-            // click-through flip or every two seconds, so a press that did not
-            // flip — already over the sprite, or never over it — left no record
-            // of whether the button was seen or the hit-test agreed.
+            // A click is two edges. The periodic hit-test line only prints on
+            // a click-through flip or every two seconds, so a press that did
+            // not flip left no record of whether the button was seen.
             let tracing_director = model::tracing();
             let tracing_clicks = tracing || tracing_frames || tracing_director;
 
@@ -335,15 +290,12 @@ pub(crate) fn run_frame_loop(
                 continue;
             };
 
-            // The windowing layer reports the global cursor against the primary
-            // display's scale factor, whichever display it is actually over, so
-            // that factor is what undoes it. It arrives from the cache rather
-            // than from a monitor here: asking a monitor its scale means asking
-            // `NSScreen`, and only the main thread may do that.
+            // The windowing layer reports the global cursor against the
+            // primary's scale, so that factor undoes it. From the cache:
+            // asking a monitor means `NSScreen`, main-thread only.
             let displays = displays.read();
             let cursor_scale = displays.cursor_scale;
 
-            // One flag per overlay, and the desktop can gain or lose one.
             ignoring.resize(displays.frames.len(), None);
             last_frame.resize(displays.frames.len(), None);
             configured
@@ -370,44 +322,33 @@ pub(crate) fn run_frame_loop(
                 .unwrap()
                 .resize(displays.frames.len(), (None, 0, 0, 1, 1, Vec::new()));
 
-            // Wall time since the last tick that reached the Engine, not since
-            // the last turn of this loop: a tick that could not read the
-            // platform skips without advancing anything, and the time it spent
-            // still passed for the sprite. `SnapshotAssembler` caps what it
-            // hands the Engine, so a long gap — a skipped read, a suspended
-            // process, a slept machine — is absorbed rather than slingshot.
+            // Wall time since the last tick that reached the Engine, not
+            // since the last loop turn. `SnapshotAssembler` caps a long gap
+            // so a skipped read or slept machine does not slingshot.
             let elapsed_ms = u32::try_from(last_tick.elapsed().as_millis()).unwrap_or(u32::MAX);
             last_tick = Instant::now();
 
-            // The Engine works in points across every display, which is the
-            // space the cursor reading becomes once its own scale is undone.
+            // The Engine works in points; undoing the cursor's scale puts it in that space.
             let cursor_points = ai_buddy_core::engine::Point {
                 x: cursor.x / cursor_scale,
                 y: cursor.y / cursor_scale,
             };
 
-            // The hit-test asks its question in that shared space rather than
-            // in an overlay's. Every overlay is handed the same sprite in its
-            // own coordinates, so the answer is the same whichever overlay it
-            // is asked of, and asking once is one answer instead of one per
-            // window that could disagree.
+            // Hit-test in shared space, not an overlay's: every overlay is
+            // handed the same sprite in its own coordinates, so one answer
+            // instead of one per window that could disagree.
             let cursor_at = (
                 cursor_points.x.round() as i32,
                 cursor_points.y.round() as i32,
             );
 
-            // A dismissed Instance is gone from the Roster, and its Shell state
-            // goes with it. Dropped before anything is hit-tested rather than
-            // skipped inside the loop: a pointer left behind still counts as a
-            // gesture, and one mid-drag when its Instance was dismissed would
-            // hold every other buddy's presses for as long as the button stayed
-            // down.
+            // Drop a dismissed Instance before hit-testing: a pointer left
+            // behind still counts as a gesture, and a mid-drag dismiss would
+            // hold every other buddy's presses for as long as the button stayed down.
             lives.retain(|live| roster.get(&live.id).is_some());
 
-            // Last tick's answer, which is the right one: the art being
-            // hit-tested is the art that was last drawn. A Character nobody can
-            // see is not there to be pressed, so a click where it would have
-            // been reaches the window underneath and pokes nothing.
+            // Last tick's art is the one being hit-tested. A Character nobody
+            // can see is not there to press, so the click reaches the window underneath.
             let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
             let pressed: Vec<bool> = lives
@@ -430,20 +371,15 @@ pub(crate) fn run_frame_loop(
                 })
                 .collect();
 
-            // One cursor, several sprites, and at most one gesture. Decided
-            // across every Instance before any of them is told, because two
-            // overlapping sprites handed the same hit-test would both be picked
-            // up by one press.
+            // One cursor, several sprites, at most one gesture. Decided
+            // across every Instance first: two overlapping sprites would
+            // both be picked up by one press.
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
 
-            // Last tick's click-through is the one that decided whether the
-            // overlay could hear this press. Passing through means it cannot
-            // still be holding a button, so a lost pointerup is dropped here
-            // rather than gluing the sprite to a hand that has gone. The
-            // session poll is not consulted: it is the one that misses a
-            // press our own window swallowed, which is when this latch is
-            // the only witness.
+            // Last tick's click-through decided whether the overlay could
+            // hear this press. Passing through drops a lost pointerup. Must
+            // not consult the session poll: that poll misses a swallowed press.
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             if !visible {
@@ -489,11 +425,9 @@ pub(crate) fn run_frame_loop(
                 }
             }
 
-            // What the main thread has said about the open menu since the last
-            // tick. Drained in full rather than one message a tick: a click and
-            // the close that follows it arrive together, and taking one per
-            // frame would leave the Instance held for a tick after the menu was
-            // already gone.
+            // Drain every menu signal this tick: a click and the close that
+            // follows arrive together, and one-per-frame would leave the
+            // Instance held for a tick after the menu was already gone.
             let mut chosen: Vec<String> = Vec::new();
             let mut menu_closed = false;
             loop {
@@ -501,10 +435,8 @@ pub(crate) fn run_frame_loop(
                     Ok(MenuSignal::Chose(id)) => chosen.push(id),
                     Ok(MenuSignal::Closed) => menu_closed = true,
                     Err(mpsc::TryRecvError::Empty) => break,
-                    // Nobody left to pop a menu, so no menu can still be on
-                    // screen. Ending the hold matters more than the reason: an
-                    // Instance handed Verb::Menu every tick forever never moves
-                    // again, and that outlives whatever went wrong.
+                    // Channel gone means nobody can pop a menu. End the hold:
+                    // Verb::Menu every tick forever never moves again.
                     Err(mpsc::TryRecvError::Disconnected) => {
                         menu_closed = true;
                         break;
@@ -575,9 +507,7 @@ pub(crate) fn run_frame_loop(
                 }
             }
             if menu_acted {
-                // Sprite and tray share this persist. A tray switch used to
-                // skip it, so settings.instances kept the old name and the
-                // rename died on restart. #375.
+                // Sprite and tray share this persist so a rename survives restart (#375).
                 remember_instances(&roster, &settings, &settings_path);
             }
 
@@ -657,11 +587,9 @@ pub(crate) fn run_frame_loop(
                         }
                         let interval_moved = config.ambient_first != was_first;
                         for live in &mut lives {
-                            // `Pace` took the interval at spawn, so a rebuilt
-                            // config is the only thing that can hand it a new
-                            // one. Back to `first` with it: a buddy that had
-                            // grown to a two-hour wait is exactly the one whose
-                            // owner just asked for a shorter one.
+                            // `Pace` took the interval at spawn. Back to
+                            // `first` with a rebuilt config: the buddy on a
+                            // two-hour wait is the one whose owner asked for shorter.
                             if interval_moved {
                                 live.pace = paced(&config, &live.character);
                             }
@@ -712,10 +640,8 @@ pub(crate) fn run_frame_loop(
                 });
             }
 
-            // A line typed at a Chat surface lands in the two fields a Poke
-            // already sets: `addressed` makes the next session wake due, and
-            // `happened` carries the line into that wake's `Context`. No call
-            // starts here — the frame loop can never wait on one.
+            // A Chat line sets `addressed` and `happened` the way a Poke does.
+            // No call starts here: the frame loop can never wait on one.
             while let Ok(msg) = chat.try_recv() {
                 let line = match msg {
                     ChatMsg::Said(line) => line,
@@ -739,11 +665,9 @@ pub(crate) fn run_frame_loop(
                         if let Some(live) =
                             lives.iter_mut().find(|live| live.id == written.instance)
                         {
-                            // The Character Prompt is the opening turn, and this
-                            // session opened without these words: no follow-up
-                            // can retrofit them. Not woken here: the edit takes
-                            // effect at the next wake rather than by re-asking
-                            // to prove it landed (ADR-0012).
+                            // The Character Prompt is the opening turn; this
+                            // session opened without these words. Takes
+                            // effect at the next wake, not by re-asking (ADR-0012).
                             replace_session(&mut slots, live, &director, config.configured);
                         }
 
@@ -799,11 +723,9 @@ pub(crate) fn run_frame_loop(
                     continue;
                 };
 
-                // A line nothing can ask is answered here rather than parked:
-                // `happened` is one slot only a wake below clears, so a line
-                // taken while the wake gate is shut would hold it for as long
-                // as the gate stayed shut. Displays asleep is deliberately not
-                // one of these — a line taken first is asked when they wake.
+                // Answer an unaskable line here rather than park it:
+                // `happened` is one slot only a wake clears. Displays
+                // asleep is not this case: a line taken first is asked when they wake.
                 let askable = config.enabled
                     && live.model.is_some()
                     && roster
@@ -826,12 +748,9 @@ pub(crate) fn run_frame_loop(
                     continue;
                 }
 
-                // A second line typed inside the same tick has nowhere to go:
-                // `happened` is one slot only the wake site below clears.
-                // Refused rather than allowed to overwrite, because the surface
-                // answers its rows in order and overwriting would hand the
-                // first row the second's answer. A line typed while a wake is
-                // already on the wire is not this case: ADR-0016 supersedes.
+                // A second line in the same tick has nowhere to go:
+                // `happened` is one slot. Refused rather than overwrite;
+                // a wake already on the wire is ADR-0016, not this case.
                 if matches!(live.happened, Happened::Chat(_)) {
                     let _ = app.emit_to(
                         chat_label(&line.instance),
@@ -853,12 +772,9 @@ pub(crate) fn run_frame_loop(
                 live.happened = Happened::Chat(line.text);
             }
 
-            // A `tools/call` from the attached Harness. Here rather than on the
-            // listener's own thread because this is where the `Roster` is, and
-            // the `Roster` is both the Instance list a target resolves against
-            // and the `ExpressionHandle` a resolved one is enqueued on — which
-            // is the whole of what #470 was missing. A queued proposal reaches
-            // the screen on the next `Instance::tick`, a few lines below.
+            // A `tools/call` from the attached Harness. Here because this is
+            // where the `Roster` and `ExpressionHandle` are — the seam #470
+            // was missing. A queued proposal reaches the screen on the next tick.
             while let Ok(call) = mcp.try_recv() {
                 let excluded = settings
                     .lock()
@@ -893,10 +809,8 @@ pub(crate) fn run_frame_loop(
                     let generation = Arc::clone(&quit_generation);
                     let _ = app.run_on_main_thread(move || {
                         // Bump on this thread, immediately before set_menu: the
-                        // teardown click muda fires while dropping the old
-                        // tray is then the previous generation, and a real
-                        // Quit on the still-showing menu cannot land in the
-                        // hop between the frame loop and the main thread.
+                        // teardown click muda fires is then the previous
+                        // generation, so a real Quit cannot land in the hop.
                         let next_quit = generation.fetch_add(1, Ordering::SeqCst) + 1;
                         if let Some(state) = handle.try_state::<TrayHandle>() {
                             if let Ok(guard) = state.0.lock() {
@@ -946,16 +860,14 @@ pub(crate) fn run_frame_loop(
             }
 
             // Asked for here, posted after this tick's frames are emitted.
-            // The Menu cue is a one-tick pulse, and `popup_menu_at` runs on
-            // the same main thread the webview needs to see that emit — asking
-            // for the menu first lets it starve the pulse. #507.
+            // The Menu cue is a one-tick pulse, and `popup_menu_at` shares the
+            // main thread the webview needs — asking first starves the pulse (#507).
             let mut pending_menus = Vec::new();
 
             for (index, live) in lives.iter_mut().enumerate() {
                 // Only the Instance the press belongs to is told the cursor is
-                // over it. The rest are still updated: a pointer that stopped
-                // being told the time would measure the next gesture's velocity
-                // over the gap.
+                // over it. The rest still get time: a pointer that stopped
+                // being told would measure the next gesture's velocity over the gap.
                 live.verbs = live.pointer.update(
                     target == Some(index),
                     held,
@@ -969,9 +881,8 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // A menu already open holds the Instance still: Verb::Menu is
-                // re-injected every tick, which closes the Engine's not-now
-                // gates the same way a Poke does. Nothing here waits — the
-                // frame loop cannot block, or every other Instance stops too.
+                // re-injected every tick. Nothing here waits — blocking would
+                // stop every other Instance too.
                 if let Some(hold) = live.menu_hold.as_mut() {
                     hold.elapsed += Duration::from_millis(u64::from(elapsed_ms));
                     if hold.elapsed >= MENU_HOLD_TIMEOUT {
@@ -1062,9 +973,8 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // #17: opening the surface is all the Shell adds to a Summon;
-                // the verb stays on `live` for the Engine, which answers it the
-                // way it answers a Poke. Here because `std::mem::take` empties
-                // the vec below.
+                // the verb stays on `live` for the Engine. Here because
+                // `std::mem::take` empties the vec below.
                 if live.verbs.iter().any(|verb| matches!(verb, Verb::Summon)) {
                     let title = roster
                         .get(&live.id)
@@ -1075,18 +985,15 @@ pub(crate) fn run_frame_loop(
             }
 
             // The Director's clock is the same elapsed time the Engine is
-            // given, so a loop that stalled wakes it once on the way back
-            // rather than in a burst. Firing takes one interval off the clock
-            // rather than zeroing it, for the reason `SnapshotAssembler` gives:
-            // zeroing throws the overshoot away and stretches every interval by
-            // most of a tick.
+            // given, so a stalled loop wakes it once, not in a burst. Firing
+            // subtracts one interval rather than zeroing (see `SnapshotAssembler`).
             let elapsed = Duration::from_millis(u64::from(elapsed_ms));
             since_sense += elapsed;
             time_since_launch += elapsed;
 
-            // First-run tour: 25 seconds after launch, show a Speech bubble on the
-            // first Instance teaching the three gestures. Only once, only if
-            // the user has not already Summoned, and only if Do Not Disturb is off.
+            // First-run tour: 25s after launch, a Speech bubble on the first
+            // Instance teaching the three gestures. Once, and only if the user
+            // has not already Summoned and Do Not Disturb is off.
             if !tour_triggered && time_since_launch.as_secs() >= 25 && !lives.is_empty() {
                 let should_show_tour = {
                     let settings_guard = settings.lock();
@@ -1125,9 +1032,8 @@ pub(crate) fn run_frame_loop(
             }
 
             // One reading of the user for every Instance, taken before any of
-            // them is ticked so that they all wake against the same desktop. A
-            // read per buddy would be the same two calls into AppKit bought N
-            // times, and two buddies deciding on idle times a tick apart.
+            // them is ticked so they all wake against the same desktop. A read
+            // per buddy would be the same two AppKit calls bought N times.
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let mut activity = free_tier.read(&activity_source, &SystemClock);
@@ -1153,25 +1059,20 @@ pub(crate) fn run_frame_loop(
                 .as_ref()
                 .is_some_and(|activity| activity.displays_asleep);
 
-            // Assembled once and handed to every Instance. It carries the
-            // desktop, which they share, and the window list is re-read on the
-            // assembler's own schedule — asking it once per Instance would poll
-            // the window server N times for one answer.
+            // Assembled once and handed to every Instance. Asking once per
+            // Instance would poll the window server N times for one answer.
             let mut world = assembler.assemble(elapsed_ms, cursor_points, Vec::new());
 
             // Whole display frames, not the usable ones physics runs in: the
-            // reserved strips are the difference between a fullscreen window
-            // and a zoomed one, which is the whole of what is being measured.
-            // Rectangles only: whether a window has taken a whole screen is a
-            // question about geometry, and `visibility` has no use for which
-            // window it is.
+            // reserved strips are the difference between fullscreen and zoomed.
+            // Rectangles only; `visibility` has no use for which window it is.
             let rects: Vec<_> = world.windows.iter().map(|window| window.rect).collect();
             let desktop = Desktop {
                 fullscreen_frontmost: fullscreen_frontmost(&rects, &displays.frames),
             };
 
-            // Compute visibility before instance processing so scheduler::mode gets
-            // real visibility, not hardcoded true. #183.
+            // Visibility before instance ticks so scheduler::mode gets the
+            // real answer, not hardcoded true (#183).
             let presence = rules
                 .lock()
                 .map(|mut rules| {
@@ -1189,7 +1090,6 @@ pub(crate) fn run_frame_loop(
                     fade_ms: 0,
                 });
 
-            // Where each Instance ends up, in the space every display shares.
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
 
             // The window list is re-read at the frame rate while any Instance is
@@ -1197,20 +1097,18 @@ pub(crate) fn run_frame_loop(
             // others cost nothing extra, the read being shared.
             let mut riding = false;
 
-            // Track whether any instance needs active timing for the next iteration.
-            // Idle means all visible instances are grounded/perched with no behavior
-            // playing, asleep, or hidden. #183.
+            // Idle means all visible instances are grounded/perched with no
+            // behavior playing, asleep, or hidden (#183).
             let mut any_needs_active = false;
 
-            // Whether the cursor is over any Instance's art. Click-through is a
-            // property of the overlay, which every Instance shares, so one
-            // sprite under the cursor is enough to make the overlay take the
-            // click — and the press is then routed to that one Instance.
+            // Whether the cursor is over any Instance's art. Click-through is
+            // per overlay, so one sprite under the cursor is enough; the press
+            // is then routed to that one Instance.
             let mut over_sprite = false;
 
             for live in lives.iter_mut() {
                 let Some(instance) = roster.get_mut(&live.id) else {
-                    continue; // dismissed; the retain above has already dropped it
+                    continue;
                 };
 
                 live.since_wake += elapsed;
@@ -1252,10 +1150,8 @@ pub(crate) fn run_frame_loop(
                 {
                     truncated = cut_off;
                     // Here rather than in the worker: this is where core's
-                    // parse result first reaches something that may do I/O,
-                    // and a reply this Instance has moved past never arrives
-                    // here at all. The Harness logs the wakes that never got
-                    // a reply, so every line here has a prompt to join.
+                    // parse result first reaches I/O. The Harness logs wakes
+                    // that never got a reply, so every line here has a prompt to join.
                     harness::note_parsed(
                         &live.id,
                         &wake,
@@ -1346,41 +1242,28 @@ pub(crate) fn run_frame_loop(
                 riding |= frame.riding;
 
                 // Engine names a Poke and a Dwell. The pointer loop also
-                // marks verbs so the wake can say `happened: poked`; this
-                // is the bit that must not be dropped or a click never
-                // reaches the session.
+                // marks verbs so the wake can say `happened: poked`; drop
+                // this and a click never reaches the session.
                 if frame.addressed {
                     live.addressed = true;
                 }
 
                 // As well as the Speech bubble, not instead of it, and
-                // addressed to one window so two conversations cannot render
-                // each other's turns.
-                //
-                // Every response, not only answers to a typed line: a line said
-                // in the bubble alone is the split ADR-0008 exists to prevent.
-                // One the user did not type carries what the Director was
-                // reacting to, so the surface can say a Summon drew it out
-                // rather than draw it under a question it did not answer. Two
-                // are held back — a proposal with no Speech has no words to
-                // log, and the Static Director picks every free wake.
+                // addressed to one window. Every response, not only typed
+                // lines: a bubble-only line is the split ADR-0008 prevents.
                 if answering_chat {
                     live.chat_turn = false;
                 }
                 let unasked = responded && !answering_chat && frame.dialogue.is_some();
-                // A turn that came back an error is not a Director with
-                // nothing to propose, and the Chat surface said it was (#514).
-                // Read here because `note_parsed` above has already logged the
-                // same words, and only a failed wake has any.
+                // A failed wake is not a Director with nothing to propose,
+                // and the Chat surface said it was (#514). Read here because
+                // `note_parsed` already logged the same words.
                 let error = (applied && !responded).then(harness::last_error).flatten();
                 if answering_chat || unasked {
                     let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
-                    // The mark goes into the remembered line, once, here:
-                    // what the Chat surface draws is the record of the turn,
-                    // and a reader of it sees where the model was stopped.
-                    // The bubble's own copy stays the model's words with the
-                    // mark drawn under them, and the Behavior parser has
-                    // already read the text by now (#610).
+                    // The mark goes into the remembered line once, here:
+                    // the Chat surface draws the record. The bubble keeps
+                    // the model's words; the parser has already read them (#610).
                     let remembered = frame
                         .dialogue
                         .as_deref()
@@ -1420,12 +1303,8 @@ pub(crate) fn run_frame_loop(
                     live.since_state = Duration::ZERO;
                 }
 
-                // Check if this instance needs active timing (16ms) for next iteration.
-                // Stay Active while:
-                // (a) moving/dragging/climbing/behavior playing (scheduler::mode)
-                // (b) idle/sleep animation is multi-frame and needs advances
-                // (c) idle_ms is accruing toward sleep (Grounded/Perched, not Asleep yet)
-                // #183 Architect review.
+                // Stay Active while moving, a multi-frame animation still
+                // advancing, or idle_ms accruing toward sleep (#183).
                 let behavior_playing = frame.playing_behavior.is_some();
                 let needs_active_for_motion =
                     scheduler::mode(&frame, presence.visible, behavior_playing)
@@ -1437,7 +1316,6 @@ pub(crate) fn run_frame_loop(
                             .animations
                             .get(frame.animation)
                             .is_some_and(|anim| {
-                                // Multi-frame: looping OR not at last frame yet
                                 anim.looping || {
                                     let current_frame = anim.frame_at(frame.animation_ms);
                                     current_frame + 1 < anim.frames.len()
@@ -1496,22 +1374,16 @@ pub(crate) fn run_frame_loop(
                             live.happened = Happened::Ambient;
                             live.since_ambient = Duration::ZERO;
                             let payload = model.prompt(&context);
-                            // One panel for however many Instances are running, so
-                            // the newest call is what it shows. #18 owns the panel
-                            // and can give it a buddy to choose; until then, the
-                            // last payload sent is the honest answer to "what was
-                            // sent", whichever Instance sent it.
+                            // One panel for however many Instances are running,
+                            // so the newest call is what it shows. #18 owns the
+                            // panel; until then, last payload sent is the honest answer.
                             if let Ok(mut inspect) = inspect.lock() {
                                 inspect.last_payload = Some(payload);
                                 inspect.wake_secs = live.pace.wait().as_secs();
                             }
                             // Starting a call cancels the one before it
-                            // (ADR-0016) and `Slots::take` drops the superseded
-                            // reply, so a typed line on the wire is told here
-                            // that its caret is cancelled, not that nothing
-                            // came back (#681). Nothing else would, and a row
-                            // left unanswered would take the next turn's
-                            // answer, blinking for the life of the window.
+                            // (ADR-0016). Tell a typed line on the wire its
+                            // caret is cancelled, not that nothing came back (#681).
                             if live.chat_turn {
                                 let _ = app.emit_to(
                                     chat_label(&live.id),
@@ -1564,10 +1436,9 @@ pub(crate) fn run_frame_loop(
                 let thinking =
                     (reactive_wake || slots.thinking(&live.id)) && !instance.do_not_disturb();
 
-                // What the user has seen is what the Engine played, not what the
-                // Director asked for: a proposal the State refuses never reaches
-                // the screen, and suppressing it would silence a Behavior nobody
-                // watched.
+                // What the user has seen is what the Engine played, not what
+                // the Director asked for: a refused proposal never reaches
+                // the screen, and suppressing it would silence a Behavior nobody watched.
                 if let Some(played) = &frame.behavior {
                     director::remember(&mut live.recent, played.clone());
                     if tracing_frames {
@@ -1575,13 +1446,9 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
-                // A Behavior the State gate refused. Under the Director flag
-                // rather than the frame one, beside the near-miss line, because
-                // both report a proposal the sprite never played.
-                //
-                // The line names the State the sprite was in, not the reason it
-                // was refused: the Poke cooldown also refuses, and it refuses
-                // on the sprite's feet. #374.
+                // A Behavior the State gate refused. Under the Director flag,
+                // beside the near-miss line. Names the State, not the reason:
+                // the Poke cooldown also refuses, on the sprite's feet (#374).
                 if let Some(refused) = &frame.refused {
                     if model::tracing() {
                         eprintln!(
@@ -1591,17 +1458,9 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
-                // On change, not per tick: the loop turns at display rate and
-                // an unconditional line would bury every other trace in the
-                // log. Above the `draw` below rather than beside the frame
-                // line, so a Character whose art will not draw — the one case
-                // that skips the rest of this Instance — still says what its
-                // Engine was doing.
-                //
-                // A dash, not a blank, for the Engine's own moments: a Land or
-                // a startle has no Behavior name because no Director proposed
-                // it, and an empty pair of brackets reads as a bug in the
-                // trace rather than as the answer.
+                // On change, not per tick: the loop turns at display rate.
+                // Above `draw`, so a Character whose art will not draw still
+                // says what its Engine was doing. A dash, not a blank, for Engine-own moments.
                 if tracing_engine {
                     let now = Traced {
                         behavior: frame.playing_behavior.clone(),
@@ -1632,13 +1491,9 @@ pub(crate) fn run_frame_loop(
                     live.traced_last = None;
                 }
 
-                // Pushed on change for the trace's reason above: the loop turns
-                // at display rate and a `ChatStatus` changes a handful of times
-                // a minute. Above the `draw` below, so a Character whose art
-                // will not draw still says what its Engine is doing.
-                //
-                // `ambient_coming` is `session_due`'s ambient arm, so the bar
-                // counts down only to a wake that is coming.
+                // Pushed on change for the same reason. `ambient_coming` is
+                // `session_due`'s ambient arm, so the bar counts down only
+                // to a wake that is coming.
                 let ambient_coming = config.enabled
                     && config.ambient_allowed
                     && live.model.is_some()
@@ -1682,23 +1537,17 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // The Engine names an Animation and how long it has been
-                // playing; the Character Manifest says what that means in
-                // frames. Resolving it here rather than in the webview keeps the
-                // frame the hit-test measures and the frame the user sees the
-                // same one.
+                // playing. Resolve here, not in the webview, so hit-test and
+                // the frame the user sees stay the same one.
                 let Some(drawn) = live.character.draw(
                     frame.animation,
                     frame.animation_ms,
                     frame.variant_draw,
                     frame.facing,
                 ) else {
-                    // A Character with no drawable Animation at all, which a
-                    // validated Character Package cannot be. Left out of
-                    // `placed`, and the webview reads absence as dismissal: it
-                    // takes the sprite away, bubble and interpolation with it.
-                    // That is the right answer for art that cannot be drawn,
-                    // and the reason nothing else in this loop may skip an
-                    // Instance silently.
+                    // No drawable Animation, which a validated package cannot
+                    // be. Left out of `placed`; the webview reads absence as
+                    // dismissal. Why nothing else in this loop may skip an Instance silently.
                     continue;
                 };
                 let scale = live.character.scale as i32;
@@ -1713,18 +1562,16 @@ pub(crate) fn run_frame_loop(
                     place_sprite((frame.position.x, frame.position.y), (width, height), scale);
 
                 if tracing_frames {
-                    // Unix milliseconds, so that a prop window opened by the
-                    // verification script and this loop can be read against one
-                    // clock. Only read when tracing: the loop needs elapsed
-                    // time, never the time of day.
+                    // Unix milliseconds so a prop window and this loop share a
+                    // clock. Only when tracing: the loop needs elapsed time,
+                    // never the time of day.
                     let at_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .map_or(0, |since| since.as_millis());
 
-                    // The Instance last, so that everything before it stands
-                    // where it did when one buddy was all there was.
-                    // scripts/verify-overlay.sh matches on this prefix, runs a
-                    // single Instance, and has no use for which one.
+                    // Instance last so everything before it stands where it
+                    // did when one buddy was all there was.
+                    // scripts/verify-overlay.sh matches this prefix.
                     eprintln!(
                         "frame: {} {:?} pos({:.0},{:.0}) sprite({},{}) {}#{} {}",
                         at_ms,
@@ -1739,11 +1586,9 @@ pub(crate) fn run_frame_loop(
                     );
                 }
 
-                // The tick's second hit-test, against the sprite about to be
-                // drawn rather than the one last drawn: whether the next click
-                // should reach us is a question about where the art is going to
-                // be. A cursor that has just arrived over it must not spend a
-                // frame passing clicks to the application underneath.
+                // Second hit-test, against the sprite about to be drawn.
+                // A cursor that has just arrived must not spend a frame
+                // passing clicks to the application underneath.
                 over_sprite |= drawn
                     .mask
                     .hit(&sprite, cursor_at.0, cursor_at.1, drawn.mirrored);
@@ -1782,27 +1627,9 @@ pub(crate) fn run_frame_loop(
 
             assembler.poll_fast(riding);
 
-            // Visibility was already computed before the instance loop (so
-            // scheduler::mode gets real visibility). Use it here.
-
-            // A display can be plugged in, unplugged or rearranged while the
-            // app runs, and every display needs its overlay. Posted rather than
-            // done here: only the main thread may build a window.
-            //
-            // Recorded by the closure, on success, rather than here once the
-            // post is accepted. An accepted post only means the work is queued,
-            // and every failure inside `place_overlays` is a log line rather
-            // than a refusal; recording it here would latch a desktop the
-            // overlays never reached and leave a hot-plugged display with no
-            // overlay until the display list changed again. The price is that a
-            // reconcile that keeps failing is posted again every tick, which is
-            // what retrying it means.
-            //
-            // An empty read is ignored rather than obeyed. It is what a failed
-            // read of the desktop looks like as well as a machine with no
-            // screen, and tearing every overlay down costs two webviews and
-            // their art to rebuild — for a desktop that has nothing to draw on
-            // either way.
+            // Posted: only the main thread may build a window. Record success
+            // in the closure, not when queued. Ignore an empty read: a failed
+            // desktop read looks the same and tearing down costs two webviews.
             if !displays.frames.is_empty() && *covered.lock().unwrap() != displays.frames {
                 let handle = app.clone();
                 let frames = displays.frames.clone();
@@ -1813,24 +1640,14 @@ pub(crate) fn run_frame_loop(
                 });
             }
 
-            // Click-through returns wherever no sprite is drawn, and everywhere
-            // while the Character is hidden — a Character nobody can see must
-            // not swallow a click. The exception is a held Character: a drag
-            // that outruns the art would otherwise put the cursor over
-            // transparent pixels, hand the button to whatever is underneath,
-            // and drop the sprite in the user's hand.
+            // Click-through wherever no sprite is drawn, and everywhere while
+            // hidden. Exception: a held Character — a drag that outruns the
+            // art would drop the sprite in the user's hand.
             let holding = lives.iter().any(|live| live.pointer.grabbing());
 
-            // The second exception: the speech bubble's "Open chat" control
-            // (#547). It is drawn above the head, where the mask says there is
-            // no art, so the click would go to the window underneath. The
-            // renderer reports the rectangle in its overlay's coordinates —
-            // `cursor_at` is in the shared point space, which is that space
-            // plus the display's origin.
-            //
-            // On X11 and Windows the hotspot rectangles are unioned into the
-            // OS input region, so the window stops passing clicks through over
-            // the control as well as over the art.
+            // Second exception: the speech bubble's "Open chat" control (#547),
+            // drawn where the mask says no art. `cursor_at` is shared space;
+            // the renderer reports overlay coordinates (plus the display origin).
             let over_control = on_overlay.is_some_and(|index| {
                 displays.frames.get(index).is_some_and(|display| {
                     platform::over_overlay_hotspot(
@@ -1847,7 +1664,7 @@ pub(crate) fn run_frame_loop(
             for (index, display) in displays.frames.iter().enumerate() {
                 let label = overlay_label(index);
                 let Some(window) = app.get_webview_window(&label) else {
-                    continue; // a display whose overlay has not been built yet
+                    continue;
                 };
 
                 // Retried until it succeeds: GTK has no window handle until the
@@ -1898,16 +1715,9 @@ pub(crate) fn run_frame_loop(
                     });
                 }
 
-                // Every overlay is told about every Instance, including the ones
-                // no sprite is anywhere near: each draws the part that falls
-                // inside it, which is what leaves a Character on a seam whole
-                // instead of clipped to one display.
-                //
-                // Addressed rather than emitted to all, because each overlay
-                // is told a different set of rectangles. src/main.js has to name
-                // its own label to match: an untargeted listener hears every
-                // emit, addressed elsewhere or not, and would draw whichever
-                // display's rectangles arrived last.
+                // Every overlay is told about every Instance, including ones
+                // nowhere near: that's what leaves a Character on a seam whole.
+                // Addressed, not emitted to all: an untargeted listener would draw the last display's rects.
                 let sprites = placed
                     .iter()
                     .map(|instance| {
@@ -1940,24 +1750,9 @@ pub(crate) fn run_frame_loop(
                     sound: sound_allowed,
                 };
 
-                // A tick that repeats the last instruction is not sent. Tauri
-                // delivers an event by evaluating JavaScript in the overlay's
-                // WebContent process: 205 of those a second across two
-                // overlays, each taking a WebKit process assertion and logging
-                // four os_log lines on the way (#741). That is where an idle
-                // buddy's CPU goes, and not its interrupt wakeups - an emit
-                // wakes a thread with a Mach message, and a message is not an
-                // interrupt. Skipping the repeats moved CPU alone and left the
-                // wakeup count inside the unfixed range; the rAF re-arm in
-                // src/main.js is the half that moves wakeups. A still sprite
-                // has nothing to say sixty times a second.
-                //
-                // Resent anyway once the deadline passes, because `Placement`
-                // carries `visible` on every frame for a webview that may only
-                // just have begun listening — see its doc comment. That
-                // promise now costs four sends a second instead of sixty, and
-                // a launch-hidden Character learns so a quarter second late at
-                // worst rather than a frame late.
+                // Skip a repeated instruction (#741): Tauri emit is JS eval
+                // (CPU), not an interrupt; rAF in src/main.js is the wakeup half.
+                // Resent after FRAME_RESEND so a webview that just began listening hears `visible`.
                 let next = serde_json::to_string(&placement).ok();
                 let repeat = next.as_ref().is_some_and(|next| {
                     last_frame[index]
@@ -1969,9 +1764,7 @@ pub(crate) fn run_frame_loop(
                     let _ = window.emit_to(&label, FRAME_EVENT, placement);
                 }
 
-                // Set schedule mode for next iteration based on visibility and what
-                // any_needs_active captured during frame processing. Hidden sprites
-                // always idle. Track visibility for XI2 wake policy. #183.
+                // Hidden sprites always idle. Track visibility for XI2 wake policy (#183).
                 if index == 0 {
                     schedule_mode = if !presence.visible || !any_needs_active {
                         scheduler::ScheduleMode::Idle
@@ -1981,17 +1774,14 @@ pub(crate) fn run_frame_loop(
                     was_visible = presence.visible;
                 }
 
-                // Click-through is per-window, and a click only ever lands on
-                // the overlay the cursor is on. Every other overlay passes
-                // clicks through whatever the sprite is doing, so a click on
-                // one display is never swallowed by a sprite on another.
+                // Click-through is per-window. Every other overlay passes
+                // clicks through, so a click on one display is never swallowed
+                // by a sprite on another.
                 let ignore = ignore || on_overlay != Some(index);
 
-                // On X11, use per-pixel click-through via XShapeCombineMask.
-                // XShape carves the input region, but Tauri must also receive events.
-                // window_handle() requires the GTK main thread, so marshal the X11
-                // calls. Only set ignore-cursor-events false after the mask applies,
-                // or the overlay becomes a fullscreen click-eater.
+                // XShape carves the input region; Tauri must still receive
+                // events. Marshal on the GTK main thread. Only set
+                // ignore-cursor-events false after the mask applies, or the overlay is a click-eater.
                 #[cfg(not(target_os = "macos"))]
                 {
                     if !ignore && presence.visible {
@@ -2016,12 +1806,9 @@ pub(crate) fn run_frame_loop(
                                 hotspots,
                             );
 
-                            // `last_mask` exists so an unchanged sprite does not
-                            // rebuild the pixmap every 16ms. Note: `local.x` and
-                            // `local.y` change every frame while the sprite walks,
-                            // so the comparison fires at sprite-motion rate regardless
-                            // of whether hotspots changed. Including hotspots in the
-                            // tuple does not worsen this rate vs the mask-only path.
+                            // `last_mask` skips an unchanged sprite. `local.x`
+                            // and `local.y` change while walking, so this fires
+                            // at motion rate either way; hotspots do not worsen it.
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params)
                                 && !mask_in_flight
                                     .lock()
@@ -2097,7 +1884,6 @@ pub(crate) fn run_frame_loop(
                                 }
                             }
                         } else {
-                            // No sprite on this overlay, make it fully click-through
                             let mask_params = (None, 0, 0, 1, 1, Vec::new());
 
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
@@ -2135,7 +1921,6 @@ pub(crate) fn run_frame_loop(
                             }
                         }
                     } else {
-                        // Ignoring or invisible: make the whole window click-through
                         let mask_params = (None, 0, 0, 1, 1, Vec::new());
 
                         if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
@@ -2166,13 +1951,11 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
-                // On macOS and other platforms, use Tauri's boolean click-through only
                 #[cfg(not(all(unix, not(target_os = "macos"))))]
                 {
                     // Only record the new state once the platform accepted it.
-                    // Recording it regardless would latch a failed toggle forever,
-                    // leaving click-through stuck in whichever mode it happened to
-                    // be in.
+                    // Recording it regardless would latch a failed toggle
+                    // forever, leaving click-through stuck.
                     if ignoring[index] != Some(ignore) {
                         flipped = true;
                         if window.set_ignore_cursor_events(ignore).is_ok() {
@@ -2193,8 +1976,7 @@ pub(crate) fn run_frame_loop(
                         eprintln!("menu: {why}");
                     }
                     // Sent whether or not the menu drew, and after it has
-                    // closed if the platform's popup is modal. Either way it
-                    // is what ends the hold, because a menu dismissed without
+                    // closed if the popup is modal. A menu dismissed without
                     // a choice reports nothing anywhere else.
                     let _ = signals.send(MenuSignal::Closed);
                 });
@@ -2236,19 +2018,8 @@ pub(crate) fn run_frame_loop(
 }
 
 /// Throw this Instance's conversation away and leave it ready to open a new
-/// one on the same Completer.
-///
-/// Both halves or neither. `retarget_model` is the HTTP half: a Wake still on
-/// the wire is abandoned so the old host stops generating, and the rebuilt
-/// `ModelDirector` carries no held turns. The Harness keys its ACP sessions by
-/// Instance, so it has to be told separately or the next wake continues the old
-/// transcript through `session/load` (ADR-0012); that drop is also where its
-/// turn in flight is cancelled. One function because a caller that remembered
-/// only the first half would look right and leave the agent holding everything
-/// it read (#679).
-///
-/// The Action Log line and what an open Chat surface hears stay with the
-/// caller: only it knows why the session was replaced.
+/// one on the same Completer. Both halves or neither (ADR-0012, #679). Action
+/// Log and Chat stay with the caller: only it knows why the session was replaced.
 fn replace_session(
     slots: &mut model::Slots,
     live: &mut InstanceState,
@@ -2270,13 +2041,8 @@ fn replace_session(
 }
 
 /// Dispatch one `tools/call` against the live Instances and answer it.
-///
-/// The seam #470 was missing. `crates/mcp-server` builds this context out of a
-/// `StubWindowSource`, an empty roster and no `ExpressionHandle`, which is why
-/// a `speak` through it came back `success: true` and changed nothing. Here
-/// every field is the running app's: the Instance list a target resolves
-/// against, the `Roster` a resolved one is enqueued on, the platform's real
-/// window source, and the user's own excluded applications.
+/// The seam #470 was missing: the MCP stub had no roster and no
+/// `ExpressionHandle`, so `speak` came back `success: true` and changed nothing.
 fn answer_tool_call(
     call: mcp_http::Call,
     roster: &mut Roster,
@@ -2376,11 +2142,9 @@ mod tests {
         }
     }
 
-    /// The wiring #470 was missing, and the only thing this test is for: the
-    /// tool semantics themselves are covered in `dispatch`, against the same
-    /// `Roster`. What is new here is that `answer_tool_call` builds the context
-    /// out of the running app's Instances rather than out of stubs, so a
-    /// `speak` from a Harness ends up on the Frame the bubble draws.
+    /// The wiring #470 was missing: `answer_tool_call` builds context from
+    /// the running app's Instances rather than stubs, so a `speak` from a
+    /// Harness ends up on the Frame the bubble draws.
     #[test]
     fn a_tool_call_speaks_through_the_live_roster_onto_the_next_frame() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-mcp-{}", uuid::Uuid::new_v4()));

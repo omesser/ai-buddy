@@ -21,20 +21,9 @@ use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
-/// One button as the overlay webview witnesses it.
-///
-/// `CGEventSource` is a session query and has been seen to stay false for a
-/// click that landed on our own window — the sprite then swallows the click
-/// and never pokes. The webview is the other witness: it only hears the button
-/// while click-through is off, which is exactly when the cursor is over the
-/// art.
-///
-/// Two bits rather than one, because the frame loop polls and a click can
-/// begin and end between two polls. The level alone reads false at both, and
-/// no Poke is ever minted (#182). The edge keeps the down until a read has
-/// consumed it, so a press that came and went is seen exactly once — and no
-/// more than once, which is what stops a real hold from turning into a hold
-/// and then a phantom Poke.
+/// One button as the overlay webview witnesses it. `CGEventSource` misses
+/// clicks on our window. Two bits: a click can begin and end between polls,
+/// and the edge keeps it until a read consumes it (#182).
 struct Witness {
     /// What the webview last reported: true from pointerdown to pointerup.
     down: AtomicBool,
@@ -59,9 +48,8 @@ impl Witness {
     }
 
     /// Whether the button is down now, or was pressed since the last call.
-    ///
-    /// Consuming. The edge is cleared whether or not the level is true — a
-    /// bitwise `|` rather than `||`, so the `swap` runs on every read.
+    /// `|` not `||`, so `swap` always runs and the edge is consumed even when
+    /// the level is already true.
     fn take(&self) -> bool {
         self.down.load(Ordering::SeqCst) | self.pressed.swap(false, Ordering::SeqCst)
     }
@@ -76,12 +64,9 @@ impl Witness {
 static OVERLAY_PRIMARY: Witness = Witness::new();
 static OVERLAY_SECONDARY: Witness = Witness::new();
 
-/// Which mouse buttons one tick found down.
-///
-/// Both answers in one type rather than a predicate each, because on X11 they
-/// come out of a single XQueryPointer reply and asking per button was two
-/// blocking round trips a tick (#268). It also puts the two consuming witness
-/// reads in one place, which is where the "once per tick" contract belongs.
+/// Which mouse buttons one tick found down. One type so X11 pays one
+/// XQueryPointer instead of two (#268), and so both consuming witness reads
+/// live in one place.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ButtonsDown {
     pub primary: bool,
@@ -94,12 +79,8 @@ pub fn set_overlay_primary(down: bool) {
 }
 
 /// Rectangles one overlay wants clicks over, besides the art: `(label, [x, y,
-/// width, height])` in that overlay's own coordinates.
-///
-/// Only ever the speech bubble's "Open chat" control (#547), and only while one
-/// is drawn — so this is empty on almost every tick. A `Vec` of pairs rather
-/// than a map because it is read once a tick and written once a line, and
-/// `Vec::new` is const where `HashMap::new` is not.
+/// width, height])` in that overlay's own coordinates. A `Vec` because
+/// `Vec::new` is const; only the "Open chat" control (#547) ever fills it.
 static OVERLAY_HOTSPOTS: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
 
 /// Replace everything `label` asked for. An empty list is how an overlay says
@@ -122,17 +103,8 @@ pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
 }
 
 /// The hotspot rectangles one overlay reported, in its own coordinates.
-///
-/// Used by the frame loop to union the rects into the OS input region on
-/// Windows and X11, where the alpha mask alone would leave a hole under the
-/// control and hand the click to whatever is behind the overlay.
-///
-/// Allowed rather than `cfg`'d out on macOS, which reads the same rectangles
-/// through `over_overlay_hotspot` and never calls this: what it holds is a
-/// plain map lookup, and its test is the one that keeps a neighbour overlay's
-/// rectangles from leaking into this one. Compiling that test only on the two
-/// lanes that call the function would stop it running on the machine most of
-/// this is written on.
+/// Not `cfg`'d out on macOS: the neighbour-isolation test lives here, and
+/// compiling it only on X11/Windows would skip it on the machine this is written on.
 #[allow(dead_code)]
 pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
     OVERLAY_HOTSPOTS.lock().map_or_else(
@@ -147,23 +119,15 @@ pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
     )
 }
 
-/// The overlay heard the secondary button go down or up.
-///
-/// Same reason as the primary: a right-click on our window is one
-/// `CGEventSource` has been seen to miss, and without this witness the
-/// webview's own menu is the only thing that hears it.
+/// The overlay heard the secondary button go down or up. Same miss as the
+/// primary: `CGEventSource` has been seen to skip a right-click on our window.
 pub fn set_overlay_secondary(down: bool) {
     OVERLAY_SECONDARY.report(down);
 }
 
 /// The overlay is passing clicks through, so it cannot still be holding a
-/// press. A pointerup the webview never delivered would otherwise leave the
-/// level set, and `buttons_down` would stay true after the hand had gone —
-/// gluing the sprite to a button nobody is pressing.
-///
-/// This is the watchdog that must not look at the session poll: that poll is
-/// the one that misses a press our own window swallowed, which is exactly
-/// when this witness is the only one.
+/// press. Must not consult the session poll: that poll misses a press our
+/// own window swallowed, which is when this witness is the only one.
 pub fn overlay_passes_clicks_through() {
     OVERLAY_PRIMARY.forget();
     OVERLAY_SECONDARY.forget();
@@ -178,33 +142,24 @@ fn overlay_secondary_down() -> bool {
 }
 
 /// The displays as the frame loop needs to see them, from one read.
-///
-/// Everything here comes from `NSScreen`, which may only be asked on the main
-/// thread, so the loop is served the last answer read there rather than asking
-/// for its own. Gathered into one type because it is one main-thread hop.
+/// All of it is `NSScreen`, main-thread only, so the loop is served the last
+/// answer rather than asking for its own.
 #[derive(Clone, Debug)]
 pub struct Displays {
-    /// The whole frame of each display, in logical points.
-    ///
-    /// Whole rather than usable, because the overlay has to cover the Dock and
-    /// the menu bar: a held sprite may be dragged over both, and a window that
-    /// stopped at the usable edge would clip it there.
+    /// The whole frame of each display, in logical points. Whole rather than
+    /// usable: the overlay has to cover the Dock and the menu bar so a held
+    /// sprite is not clipped there.
     pub frames: Vec<Rect>,
     /// The part of each display a sprite may occupy, in logical points.
-    ///
-    /// When the Dock's true bounds are known, the floor of its display drops
-    /// to the display's own bottom edge (`floor_under_dock`): the strip the
-    /// work area reserved is the Dock itself, which arrives as `dock`.
+    /// With true Dock bounds, that display's floor drops to the bottom edge
+    /// and the reserved strip arrives as `dock`.
     pub usable_frames: Vec<Rect>,
     /// The Dock's true bounds and which source produced them; see
     /// `macos::dock_bounds` for the chain. `None` keeps the full-width strip.
     pub dock: Option<(Rect, DockSource)>,
-    /// The scale factor the windowing layer measures the global cursor
-    /// against.
-    ///
-    /// It is the primary display's, whichever display the cursor is actually
-    /// over: the layer takes the cursor in points and multiplies by that one
-    /// factor, so that one factor is what undoes it.
+    /// The scale factor the windowing layer measures the global cursor against.
+    /// Always the primary's, whichever display the cursor is over: that is the
+    /// one factor the layer multiplied by, so that is the one that undoes it.
     pub cursor_scale: f64,
 }
 
@@ -247,11 +202,9 @@ impl DisplayCache {
     }
 }
 
-/// How often the reserved strips are re-read.
-///
-/// They move at human speed — someone toggles Dock hiding, drags it to another
-/// edge, or plugs a display in — so this is far more often than it needs to be
-/// and still costs at most one read every other poll.
+/// How often the reserved strips are re-read. They move at human speed, so
+/// 500ms is far more often than needed and still costs at most one read
+/// every other poll.
 #[cfg(unix)]
 const USABLE_FRAME_REFRESH: Duration = Duration::from_millis(500);
 
@@ -265,37 +218,16 @@ mod x11;
 mod windows;
 
 /// Whether an X server answers this process — a real X11 session, or XWayland
-/// proxying for a Wayland one.
-///
-/// The question both Linux lane gates were reaching for. They used to read
-/// `WAYLAND_DISPLAY`, which every Wayland session sets even for its XWayland
-/// clients, so GNOME and KDE took the degraded lane without ever asking whether
-/// the X11 path would have worked — under XWayland it does, because Mutter and
-/// KWin proxy the EWMH states, the XShape input region and `query_pointer` this
-/// app asks for. #266.
-///
-/// `connection()` caches in a `OnceLock`, so the answer costs one round trip per
-/// process however many times it is asked.
+/// proxying for a Wayland one. `WAYLAND_DISPLAY` is set even for XWayland
+/// clients; under XWayland the EWMH/XShape path works (#266).
 #[cfg(all(unix, not(target_os = "macos")))]
 fn x11_answers() -> bool {
     x11::connection().is_some()
 }
 
-/// Point GTK at its X11 backend when an X server answers.
-///
-/// GDK reads `GDK_BACKEND` once, when it opens the display, so this has to run
-/// before GTK initializes — for a Tauri app, before the builder runs. Without
-/// it a Wayland session hands `x11/overlay.rs` a Wayland `RawWindowHandle` and
-/// every X11 call downstream is unreachable, whatever the lane gate decided.
-///
-/// Conditional rather than unconditional, and that is the load-bearing part:
-/// GTK aborts when it cannot open the backend it was told to use, so forcing
-/// `x11` on a Wayland session with no XWayland would trade a degraded buddy for
-/// one that does not start.
-///
-/// A backend the user already named wins. `GDK_BACKEND=wayland` is how someone
-/// asks for the degraded lane on purpose — to test it, or because XWayland
-/// misbehaves on their desktop — and a preference is not ours to overwrite.
+/// Point GTK at its X11 backend when an X server answers. Must run before
+/// GTK initializes. Conditional: forcing `x11` with no XWayland aborts
+/// startup. A user-set `GDK_BACKEND` wins.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn prefer_x11_backend() {
     if std::env::var_os("GDK_BACKEND").is_none() && x11_answers() {
@@ -315,10 +247,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// X11 on Linux: EWMH states for floating, skip-taskbar, skip-pager, plus
 /// per-pixel click-through via XShapeCombineMask from the sprite alpha.
-///
-/// On GDK's Wayland backend tao's handle is a `wl_surface`, which the X11 arm
-/// does not match, so this returns Err. The input region is core Wayland and
-/// unwired here. DESIGN.md decision 3.
+/// GDK Wayland yields a `wl_surface` and this returns Err (DESIGN.md decision 3).
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
@@ -361,10 +290,6 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 }
 
 /// Redraw the settings window from the live roster. Main thread only.
-///
-/// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
-/// `settings-refresh` to the page, which re-invokes the snapshot. Otherwise
-/// calls the native platform refresh.
 #[cfg(target_os = "macos")]
 pub fn refresh_settings(app: &tauri::AppHandle) {
     if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
@@ -416,10 +341,6 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 }
 
 /// Redraw the GTK settings window from the live roster. Main thread only.
-///
-/// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
-/// `settings-refresh` to the page, which re-invokes the snapshot. Otherwise
-/// calls the native platform refresh.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn refresh_settings(app: &tauri::AppHandle) {
     if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
@@ -448,10 +369,6 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 }
 
 /// Redraw the settings window from the live roster. Main thread only.
-///
-/// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
-/// `settings-refresh` to the page, which re-invokes the snapshot. Otherwise
-/// calls the native platform refresh.
 #[cfg(not(unix))]
 pub fn refresh_settings(app: &tauri::AppHandle) {
     if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
@@ -466,43 +383,21 @@ pub fn refresh_settings(app: &tauri::AppHandle) {
 }
 
 /// Hand a file the user owns to whatever the desktop opens it with.
-///
-/// The file is created empty first because Memory has no file until the
-/// Director has something to remember, and an opener given a path that is not
-/// there reports it missing instead of giving the user something to write in.
+/// Created empty first: Memory has no file until the Director remembers, and
+/// an opener given a missing path reports it missing.
 pub fn open_path(path: &Path) -> Result<(), String> {
     ensure_file(path)?;
     hand_over(path.as_os_str())
 }
 
-/// The schemes a link in a reply is allowed to open.
-///
-/// `mailto` earns its place beside the two web schemes: a model writing an
-/// address as a link means it to be mailed, and the handler is the user's own
-/// client. Everything else — `javascript`, `data`, `file`, `vbscript` — is
-/// refused, because the only thing asking is untrusted text.
+/// The schemes a link in a reply is allowed to open. `mailto` belongs: a
+/// model writing an address as a link means it to be mailed. Everything else
+/// is refused; the asker is untrusted text.
 const OPENABLE: [&str; 3] = ["http", "https", "mailto"];
 
 /// Hand a URL from a reply to whatever the desktop opens it with.
-///
-/// Separate from `open_path` rather than a widened version of it: that one
-/// calls `ensure_file` first, so a URL given to it would be created on disk as
-/// a file named after the URL.
-///
-/// The scheme gate lives here, at the last edge before the OS, so no caller can
-/// route around it — a link target is model output and an MCP server's content
-/// can steer it (#371). It is decided by parsing rather than by matching a
-/// prefix: `Url::parse` applies the WHATWG rules, so `&#106;avascript:`,
-/// `java<tab>script:`, `JAVASCRIPT:` and a leading newline all resolve to the
-/// scheme they really are and are refused, where `starts_with("http")` would
-/// have let each one past.
-///
-/// What goes to the opener is the parsed form, never the caller's string. They
-/// differ — parsing normalises — and validating one while opening the other is
-/// how a gate gets bypassed.
-///
-/// A refused scheme is an error rather than a silent no-op, so a link that does
-/// nothing can be told apart from one that was turned away.
+/// Last-edge gate (#371): parse, don't prefix-match (`&#106;avascript:`). Open
+/// the parsed form, never the caller's string; a refused scheme is an error.
 pub fn open_url(url: &str) -> Result<(), String> {
     // A parsed URL always starts with its scheme, so it can never be read as an
     // option by `open` or `xdg-open`. `Command` execs directly with no shell,
@@ -511,9 +406,7 @@ pub fn open_url(url: &str) -> Result<(), String> {
 }
 
 /// The URL to hand over, or why this one is not handed over.
-///
-/// Split from `open_url` so the decision can be tested without launching a
-/// browser: everything above is policy, and the line below it spawns.
+/// Split from `open_url` so policy can be tested without launching a browser.
 fn openable(url: &str) -> Result<String, String> {
     let parsed = url::Url::parse(url).map_err(|why| format!("not a URL: {why}"))?;
     if !OPENABLE.contains(&parsed.scheme()) {
@@ -563,17 +456,8 @@ fn opener(target: &std::ffi::OsStr) -> Command {
 }
 
 /// Open with the default application via ShellExecuteW.
-///
-/// Not `cmd /C start`: that works until the path holds `&` or `%`, because
-/// Rust's `Command` quoting is not `cmd`'s and `%VAR%` expands inside quotes.
-/// ShellExecuteW takes the path as a wide-string parameter, so neither
-/// metacharacter is syntax (#255).
-///
-/// Still hand-written after checking the crates: `open` shells out to
-/// `cmd /c start` on Windows, and `opener`
-/// makes this same ShellExecuteW call while blocking on the unix arms where
-/// this code is fire-and-forget. Neither removes the `unsafe` — only whose it
-/// is — so the trade is a dependency for no change in what can go wrong.
+/// Not `cmd /C start`: `&` and `%` are syntax there (#255). Neither `open` nor
+/// `opener` removes the `unsafe`, so a crate would not change what can go wrong.
 #[cfg(not(unix))]
 fn opener(target: &std::ffi::OsStr) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
@@ -582,13 +466,9 @@ fn opener(target: &std::ffi::OsStr) -> Result<(), String> {
     let file = shell_execute_file_wide(target);
     let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
 
-    // Per MSDN, a return value greater than 32 means the call succeeded.
-    //
-    // SAFETY: both wide strings are built with `.chain(Some(0))`, so each is
-    // NUL-terminated, and both locals outlive the call. The null `hwnd` and the
-    // null parameters and directory are the documented "no owner window, no
-    // arguments, inherit the current directory"; ShellExecuteW reads all four
-    // pointers during the call and keeps none.
+    // SAFETY: both wide strings are `.chain(Some(0))` NUL-terminated and outlive
+    // the call. Null hwnd/params/directory are documented "no owner, no args,
+    // inherit cwd". Return > 32 is MSDN success.
     let result = unsafe {
         ShellExecuteW(
             std::ptr::null_mut(),
@@ -626,11 +506,8 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 /// Update the input region for the overlay window based on the sprite's alpha mask.
-///
-/// On X11, XShapeCombineMask carves the click-through region from the sprite's
-/// alpha. On Windows, SetWindowRgn does the same. Both then union the hotspot
-/// rectangles so a control drawn outside the art still receives clicks.
-/// On macOS, Tauri's `set_ignore_cursor_events` is sufficient.
+/// X11 and Windows then union hotspot rects so a control drawn outside the
+/// art still receives clicks. macOS uses `set_ignore_cursor_events`.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
@@ -675,11 +552,8 @@ pub fn update_input_region(
 }
 
 /// Whether this lane honours the off-art rectangles the renderer reports (#547).
-///
-/// macOS hit-tests them via Tauri's boolean click-through. X11 and Windows
-/// union them into the input region alongside the sprite's alpha mask in
-/// `update_input_region`, so a control drawn above the head takes its own
-/// clicks on every platform.
+/// macOS hit-tests via boolean click-through; X11 and Windows union them into
+/// the input region, so a control above the head takes clicks on every platform.
 #[cfg(target_os = "macos")]
 pub fn hotspots_hit_tested() -> bool {
     true
@@ -695,7 +569,6 @@ pub fn hotspots_hit_tested() -> bool {
     true
 }
 
-/// Cached double-click interval: queried from the OS once, then reused.
 static DOUBLE_CLICK_INTERVAL_MS: OnceLock<u32> = OnceLock::new();
 
 const FALLBACK_DOUBLE_CLICK_MS: u32 = 400;
@@ -713,9 +586,7 @@ fn resolve_double_click_interval(raw: Option<u32>) -> u32 {
 }
 
 /// The OS double-click interval, in milliseconds, clamped and with fallback.
-///
-/// Queried from the OS once, clamped to [100, 2000]ms to prevent pathological
-/// settings, and logged. Cached and reused for all Pointers.
+/// Queried once, clamped to [100, 2000]ms against pathological settings.
 pub fn double_click_interval_ms() -> u32 {
     *DOUBLE_CLICK_INTERVAL_MS.get_or_init(|| {
         let raw = os_double_click_interval_ms();
@@ -742,8 +613,6 @@ pub fn double_click_interval_ms() -> u32 {
 }
 
 /// The OS double-click interval, in milliseconds, from the platform layer.
-///
-/// Returns None when the query fails or the platform has nothing to offer.
 #[cfg(target_os = "macos")]
 fn os_double_click_interval_ms() -> Option<u32> {
     macos::double_click_interval_ms()
@@ -760,14 +629,8 @@ fn os_double_click_interval_ms() -> Option<u32> {
 }
 
 /// Which mouse buttons are down, or were pressed since the last call.
-///
-/// The session poll sees a drag that outruns the art. The overlay witness
-/// sees a click the poll has missed on our own window, including one that
-/// began and ended between two polls. Either is a press.
-///
-/// A consuming read: the overlay's edges are cleared by it. The frame loop asks
-/// once per tick, which is what makes "since the last call" mean "since the
-/// last tick".
+/// Session poll OR overlay witness. Consuming: the frame loop asks once per
+/// tick, which is what makes "since the last call" mean "since the last tick".
 #[cfg(target_os = "macos")]
 pub fn buttons_down() -> ButtonsDown {
     ButtonsDown {
@@ -777,12 +640,8 @@ pub fn buttons_down() -> ButtonsDown {
 }
 
 /// X11 on Linux: one XQueryPointer for both buttons, or the overlay latch.
-/// Wayland has only the overlay latch (no global pointer).
-///
-/// The poll runs before the latches rather than between them, so the two
-/// consuming reads still happen exactly once each. It is asked even when a
-/// latch would have answered, where the `||` used to skip it — one round trip
-/// where the tick was paying two.
+/// Wayland has only the overlay latch (no global pointer). Poll before the
+/// latches so both consuming reads still happen exactly once each.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn buttons_down() -> ButtonsDown {
     let session = x11::buttons_down();
@@ -810,10 +669,8 @@ pub fn activity_source() -> impl ActivitySource {
 }
 
 /// X11 on Linux: _NET_ACTIVE_WINDOW for frontmost, Xss for idle, DPMS for sleep.
-///
-/// With no X server the arm stubs. Idle has two paths, `ext-idle-notify-v1` over
-/// Wayland on KWin, wlroots and COSMIC and `org.gnome.Mutter.IdleMonitor` over
-/// D-Bus on GNOME, with no portable one. Frontmost and display sleep have none.
+/// No X server stubs. Idle has two paths (Wayland idle-notify vs Mutter D-Bus)
+/// and no portable one; frontmost and display sleep have none.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn activity_source() -> LinuxActivitySource {
     if x11_answers() {
@@ -867,23 +724,9 @@ pub fn activity_source() -> impl ActivitySource {
     windows::WindowsActivitySource
 }
 
-/// Where window geometry comes from.
-///
-/// The usable part of each display is read through Tauri rather than from the
-/// platform binding beside it, because the reserved strips are the window
-/// manager's answer and CoreGraphics cannot give it: it reports the Dock as a
-/// window covering the whole display.
-///
-/// macOS, X11, and Windows all read windows. Tauri fills the work area from
-/// platform APIs: NSScreen on macOS, Xinerama on X11, and SPI_GETWORKAREA on
-/// Windows. The taskbar is reported as part of the work area, not as a separate
-/// dock bounds.
-///
-/// Call this on the main thread. The work area comes from `NSScreen`, which may
-/// only be asked there, so the answer is read here and again on a timer, and
-/// the frame loop is served the last one. Asking AppKit from the frame loop
-/// appears to work and is not allowed to: `WryHandle::available_monitors`
-/// reaches through a field named `main_thread` to do it.
+/// Where window geometry comes from. Usable frames via Tauri: CoreGraphics
+/// reports the Dock as covering the whole display. Main thread only: asking
+/// AppKit from the frame loop appears to work and is not allowed to.
 #[cfg(target_os = "macos")]
 pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
@@ -976,12 +819,8 @@ impl WindowSource for LinuxWindowSource {
 }
 
 /// Whether enough time has passed to re-read the displays, marking them read
-/// if so.
-///
-/// Both unix lanes throttle on the same clock and differ only in what they do
-/// once it says yes: macOS posts the read to the main thread, X11 does it
-/// inline. That belongs to the call sites, which each say so. Windows reads
-/// once and never asks again, which is why this is `unix`.
+/// if so. Unix lanes share the clock; Windows reads once, which is why this
+/// is `unix`.
 #[cfg(unix)]
 fn due(refreshed: &Mutex<Instant>) -> bool {
     let Ok(mut refreshed) = refreshed.lock() else {
@@ -994,20 +833,15 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
     true
 }
 
-/// Without window geometry the Spatial Layer degrades to screen-edge physics,
-/// which `docs/SPEC.md` calls a supported mode rather than a failure. The
-/// displays still come from Tauri, which reads them on every platform; only the
-/// windows are missing.
-///
-/// X11 fills window_source() above with real geometry; this is the Wayland fallback.
+/// Screen-edge physics without window geometry: a supported mode, not a
+/// failure (`docs/SPEC.md`). Displays still come from Tauri; only windows
+/// are missing. The Wayland fallback; X11 fills `window_source` above.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub struct DisplayOnlySource(DisplayCache);
 
 /// Screen edges and nothing else, for a session where no X server answers.
-///
-/// `Capabilities::default()` declares no `window_geometry`, so `snapshot()`
-/// clears the windows and the Engine is handed a world with a floor and walls
-/// and no Perches — which is what the degraded mode is.
+/// `Capabilities::default()` has no `window_geometry`, so `snapshot()` clears
+/// the windows and the Engine gets a floor and walls with no Perches.
 #[cfg(all(unix, not(target_os = "macos")))]
 impl WindowSource for DisplayOnlySource {
     fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
@@ -1062,22 +896,8 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
 }
 
 /// The displays as the windowing layer sees them right now.
-///
-/// Read on a timer rather than once on macOS, because the desktop changes while
-/// the app runs: the Dock hides and returns, changes edge, and a display can be
-/// attached or unplugged.
-///
-/// Portable Tauri, so it is not gated on macOS: the degraded mode needs the same
-/// screen edges, and reading them anywhere is what keeps it a degradation rather
-/// than a world with no floor in it.
-///
-/// Tauri reports a monitor in physical pixels and the Engine works in points,
-/// so every number here goes in physical and comes out logical. Two of the four
-/// bugs `docs/SPEC.md` lists were this conversion done wrong, so the scale
-/// passed is always the scale of the monitor being converted, never the
-/// primary's. The arithmetic is `window_source::in_points` and
-/// `window_source::usable_frame`, where it is tested; this only asks the
-/// windowing layer what it can see.
+/// Portable Tauri so degraded mode still has screen edges. Convert each
+/// monitor with that monitor's scale, never the primary's (`docs/SPEC.md`).
 fn read_displays(app: &tauri::AppHandle) -> Displays {
     use ai_buddy_core::window_source::{floor_under_dock, in_points, plausible_dock, usable_frame};
 
@@ -1117,11 +937,9 @@ fn read_displays(app: &tauri::AppHandle) -> Displays {
             .push(usable_frame(frame, work, monitor.scale_factor()));
     }
 
-    // With the Dock's true bounds in hand, the strip its work area reserved
-    // is the Dock itself: the floor of that display drops to the display's
-    // own bottom edge, and the Dock rides along as a Perch. The claim comes
-    // from an unversioned source, so it is believed only when some display's
-    // work area agrees it is shaped and placed like a Dock.
+    // With true Dock bounds, that display's floor drops to the bottom edge and
+    // the Dock rides as a Perch. Believed only when some work area is shaped
+    // and placed like a Dock: the claim is from an unversioned source.
     displays.dock = exact_dock().filter(|(bounds, _)| {
         displays
             .frames
@@ -1154,7 +972,6 @@ fn exact_dock() -> Option<(Rect, DockSource)> {
 mod tests {
     use super::*;
 
-    /// The three schemes a reply's link may open, and nothing else.
     #[test]
     fn a_web_or_mail_link_opens() {
         for url in [
@@ -1181,12 +998,9 @@ mod tests {
         }
     }
 
-    /// Why the scheme is parsed and not matched.
-    ///
-    /// Each of these is `javascript:` wearing something a `starts_with` or a
-    /// lowercase compare would have missed — a case fold, an HTML entity, an
-    /// embedded tab, leading whitespace. `Url::parse` applies the WHATWG rules
-    /// and resolves every one to the scheme it really is.
+    /// Why the scheme is parsed and not matched. Each of these is
+    /// `javascript:` wearing something a `starts_with` would miss. `Url::parse`
+    /// applies the WHATWG rules and resolves every one to the real scheme.
     #[test]
     fn an_obfuscated_scheme_is_still_that_scheme() {
         for url in [
@@ -1231,10 +1045,8 @@ mod tests {
     }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that
-    /// drew it: one display's control must not make a neighbour's overlay stop
-    /// passing clicks through at the same coordinates. And a bubble that goes
-    /// takes its rectangle with it — a stale one would leave a hole in the
-    /// desktop that swallows clicks and does nothing with them.
+    /// drew it. A neighbour must not stop passing clicks at the same
+    /// coordinates, and a gone bubble must take its rectangle with it.
     #[test]
     fn a_hotspot_belongs_to_one_overlay_and_goes_when_it_does() {
         set_overlay_hotspots("overlay-test-a", vec![[10, 20, 30, 40]]);
@@ -1261,8 +1073,6 @@ mod tests {
         );
     }
 
-    /// The frame loop passes an overlay's hotspot rectangles to the platform's
-    /// input-region builder so it can union them into the clickable area.
     /// `overlay_hotspots_for` returns exactly the rectangles the named overlay
     /// reported, and nothing from its neighbours.
     #[test]
@@ -1289,9 +1099,7 @@ mod tests {
     }
 
     /// A click can begin and end between two polls. The level alone reads
-    /// false at both, so no Poke is ever minted; the edge keeps the down until
-    /// it has been read once, so the press is seen exactly once and then gone.
-    /// #182.
+    /// false at both; the edge keeps the down until it has been read once (#182).
     #[test]
     fn a_click_shorter_than_one_tick_is_still_seen_once() {
         let button = Witness::new();
@@ -1304,10 +1112,9 @@ mod tests {
         assert!(!button.take(), "and only once: the read consumes the edge");
     }
 
-    /// The edge is for the missed down, not a second gesture. A real hold reads
-    /// true on every tick from the level, and letting go leaves nothing behind
-    /// that a later tick could mistake for another press — which is what would
-    /// turn every drag into a drag and then a Poke.
+    /// The edge is for the missed down, not a second gesture. A real hold
+    /// reads true from the level every tick; letting go must leave nothing
+    /// a later tick could mistake for another press.
     #[test]
     fn a_held_button_reads_true_every_tick_and_nothing_after_release() {
         let button = Witness::new();
@@ -1320,10 +1127,8 @@ mod tests {
     }
 
     /// A pointerup the webview never delivered would leave the level set.
-    /// Once the overlay is passing clicks through it cannot still be holding
-    /// a press, so both bits must drop — otherwise `buttons_down`
-    /// stays true and the sprite glues to a button nobody is pressing. One
-    /// `Witness` serves both buttons, so one test covers both.
+    /// Click-through means both bits must drop, or the sprite glues to a
+    /// button nobody is pressing.
     #[test]
     fn passing_clicks_through_forgets_a_press_the_overlay_never_released() {
         let button = Witness::new();
@@ -1335,10 +1140,8 @@ mod tests {
         );
     }
 
-    /// Memory has no file until the Director has something to remember, so
-    /// the opener is handed a path that does not exist yet. Spawning the real
-    /// opener is not something a test does; the step that has to happen before
-    /// it is.
+    /// Memory has no file until the Director remembers, so the opener is
+    /// handed a path that does not exist yet. This tests the step before spawn.
     #[test]
     fn the_file_is_there_before_the_opener_is() {
         let dir = std::env::temp_dir().join(format!(
@@ -1380,9 +1183,7 @@ mod tests {
     }
 
     /// `#255`: `&` and `%` are `cmd` metacharacters. ShellExecuteW must see
-    /// the literal path — including a space — as one wide string, not as
-    /// shell text. Encoding is the seam a unit test can observe without
-    /// launching a viewer.
+    /// the literal path — including a space — as one wide string, not shell text.
     #[cfg(not(unix))]
     #[test]
     fn windows_opener_keeps_ampersand_percent_and_space() {
@@ -1432,7 +1233,6 @@ mod tests {
         set_overlay_secondary(false);
     }
 
-    /// A normal OS setting passes through unchanged.
     #[test]
     fn double_click_interval_passes_normal_values() {
         assert_eq!(resolve_double_click_interval(Some(400)), 400);
@@ -1470,7 +1270,6 @@ mod tests {
         );
     }
 
-    /// When the OS cannot provide an interval, the fallback is used.
     #[test]
     fn double_click_interval_falls_back_when_os_query_fails() {
         assert_eq!(
@@ -1479,8 +1278,6 @@ mod tests {
         );
     }
 
-    /// Public OnceLock wrapper caches a clamped/fallback value in [100, 2000]
-    /// that matches resolve(os_raw). A second call must return the same cache.
     #[test]
     fn public_double_click_interval_is_cached_and_resolved() {
         #[cfg(all(unix, not(target_os = "macos")))]
