@@ -90,6 +90,20 @@ parses and rejects a comment block over 25 lines
 (`scripts/ast-grep/rules/comment-blocks.yml`). tree-sitter finds the comments,
 so a language this repository adds is understood on arrival.
 
+Covered languages on ast-grep 0.45.3: Rust, JavaScript, TypeScript, Python,
+Bash, Swift, CSS, YAML, HTML.
+
+**PowerShell (`.ps1`) is intentionally ungated.** No off-the-shelf linter
+provides a comment-block ceiling. PSScriptAnalyzer in this repository gates
+Error/ParseError severity only; a custom Measure rule would be ours to own.
+
+**TOML (`.toml`) is currently ungated** after #813 replaced the Python hook.
+Recovery is available: ast-grep `customLanguages` can wire `@ast-grep/lang-toml`
+(prebuilt npm library) without per-platform compilation. That wire-up is a
+follow-up choice, not this issue.
+
+Agents must not assume `.ps1` or `.toml` files are ceiling-checked.
+
 The 25 is what the tree passes today, not the bar this page argues for. It comes
 down as #744's compaction lands. A Rust `//!` module header is exempt — it
 documents the module rather than a line of code — and `///` item docs are not.
