@@ -17,8 +17,12 @@ days later. The Harness now genuinely brings its own executor, so we do not writ
 
 ## Consequences
 
-The capability is a research preview gated behind a Pro or Max subscription and an
-interactive session, so the Functional Layer is unavailable to users without both.
+The capability is a research preview. It needs macOS, a Pro or Max plan (not
+Team or Enterprise), and claude.ai auth. An interactive session is required, so
+the capability is not available in non-interactive mode with the `-p` flag. The
+Agent SDK that `claude-agent-acp` runs uses stream-json print mode, so the
+interactive gate bears on attach. Under the ACP attach path the Functional
+Layer is unavailable on every plan. #508 is the only route being evaluated.
 
 It is not portable across Harnesses. Other vendors follow the API pattern — actions out,
 client executes — so "BYO Harness" does not imply "any Harness can drive the desktop." A
