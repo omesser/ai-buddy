@@ -25,7 +25,7 @@ use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
 mod prompt;
-pub use prompt::happened_word;
+pub use prompt::{app_instructions, happened_word};
 pub(crate) use prompt::{character_prompt, follow_up};
 
 /// How long the Static Director goes unwoken when nothing notable happens.

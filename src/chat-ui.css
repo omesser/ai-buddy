@@ -197,8 +197,8 @@ body {
   outline-offset: 2px;
 }
 
-/* The Prompt tab: actions stay put; the authored layers scroll in the log's
-   place, because at 420 points a personality and a paragraph do not both fit. */
+/* The Prompt tab: actions stay put; the three layers scroll in the log's
+   place, because at 420 points they do not all fit. */
 .prompt {
   flex: 1 1 auto;
   min-height: 0;
@@ -212,6 +212,7 @@ body {
   min-height: 0;
   overflow-y: auto;
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 8px;
   padding: 12px 18px 18px;

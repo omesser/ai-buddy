@@ -383,12 +383,17 @@ function askingToSave(asking) {
   promptCancel.hidden = !asking;
 }
 
+function fillFrozen(id, text) {
+  const el = document.getElementById(id);
+  const written = (text ?? "").trim();
+  el.classList.toggle("is-empty", !written);
+  // "Empty", not a collapsed box: Blank AI empties a layer rather than hiding it.
+  el.textContent = written || "Empty";
+}
+
 function showPrompt(opening) {
-  const personality = document.getElementById("personality");
-  const written = (opening.personality ?? "").trim();
-  personality.classList.toggle("is-empty", !written);
-  // "Empty", not a collapsed box: Blank AI empties the layer rather than hiding it.
-  personality.textContent = written || "Empty";
+  fillFrozen("instructions", opening.instructions);
+  fillFrozen("personality", opening.personality);
   // Said before it is hit as well as in the refusal after: the Shell owns the
   // number, so the tab reads it rather than restating it.
   document.getElementById("prompt-limit").textContent = opening.prompt_limit;

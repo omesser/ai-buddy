@@ -95,25 +95,52 @@ test("Prompt tab actions sit above the authored layers, outside the scroll", () 
   assert.match(actions, /flex:\s*0 0 auto/, "the bar keeps its height");
   assert.match(body, /overflow-y:\s*auto/, "Personality and the field scroll under the bar");
   assert.match(body, /display:\s*grid/, "the authored layers still lay out as a grid");
-});
-
-test("the tab shows the two authored layers and not the assembled payload", () => {
-  assert.match(html, /id="personality"/, "the Character's own layer, frozen");
-  assert.match(html, /id="prompt-text"/, "and the user's, editable");
-  assert.doesNotMatch(
-    html,
-    /You may propose one of these behaviors/,
-    "the assembled Character Prompt stays inspectable in settings, not here",
+  assert.match(
+    body,
+    /grid-auto-rows:\s*max-content/,
+    "long app-level copy sizes its own row instead of overflowing the next heading",
   );
 });
 
-test("an empty Personality block says Empty at the Instance Prompt's height", () => {
-  assert.match(js, /"Empty"/, "the frozen layer names Empty rather than collapsing");
+test("the tab shows the three concatenated layers, app then Character then instance", () => {
+  const section = promptSection(html);
+  const app = section.indexOf('id="instructions"');
+  const character = section.indexOf('id="personality"');
+  const instance = section.indexOf('id="prompt-text"');
+
+  assert.ok(app > 0, "app-level instructions, frozen");
+  assert.ok(character > app, "then the Character's Personality Prompt");
+  assert.ok(instance > character, "then the user's Instance Prompt");
+  assert.match(
+    section,
+    /concatenat/i,
+    "the copy says the three layers are concatenated",
+  );
+  assert.match(
+    section,
+    /new session/i,
+    "and that editing the instance layer starts a new session",
+  );
+  assert.doesNotMatch(
+    html,
+    /what just happened:/,
+    "this moment is per-wake, not a frozen layer on the tab",
+  );
+});
+
+test("every empty Prompt tab layer says Empty", () => {
+  assert.match(
+    html,
+    /id="prompt-text"[\s\S]*?placeholder="Empty/,
+    "the Instance Prompt field names Empty when nobody wrote one",
+  );
+  assert.match(js, /fillFrozen\(/, "frozen layers share one empty seat");
+  assert.match(js, /"Empty"/, "that seat reads Empty, not a collapsed box");
   const empty = ruleBlock(css, ".frozen.is-empty");
   assert.match(
     empty,
     /color:\s*var\(--chat-ink-4\)/,
-    "Empty matches the textarea placeholder",
+    "Empty on a frozen layer matches the textarea placeholder",
   );
 });
 

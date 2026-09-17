@@ -1398,7 +1398,7 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Blank AI".to_string(),
             comment: Some("Also for development and testing. Off is the buddy as shipped.".to_string()),
-            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under ai-buddy's conditions. The Prompt tab shows the emptied Personality as empty. Without a contract the buddy says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under ai-buddy's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the buddy says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
             status: None,
             rows: vec![flag_row(
                 DIRECTOR_BLANK_ID,

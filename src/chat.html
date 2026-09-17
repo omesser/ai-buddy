@@ -52,7 +52,7 @@
 
     <!-- Own row under the name: a Director-mode or Harness hint still has to
          fit on the title line, and two triggers sharing it would crowd both.
-         The assembled Character Prompt stays in settings (ADR-0012). -->
+         The Prompt tab shows the three concatenated layers. -->
     <nav class="tabs" role="tablist">
       <button type="button" class="tab" id="tab-chat" role="tab" aria-selected="true" aria-controls="log">Chat</button>
       <button type="button" class="tab" id="tab-prompt" role="tab" aria-selected="false" aria-controls="prompt">Prompt</button>
@@ -154,10 +154,9 @@
       </div>
     </div>
 
-    <!-- The two authored layers, the author's above the user's, in the order
-         the Character Prompt assembles them. Under Blank AI the Personality
-         block is empty because that layer was emptied, not hidden. Actions sit
-         outside the scrolling body so Save is never below the fold at 420×560. -->
+    <!-- Three layers of the Character Prompt, app then Character then instance.
+         Empty frozen blocks say Empty, same as the Instance Prompt placeholder.
+         Actions sit outside the scrolling body so Save is never below the fold. -->
     <section class="prompt" id="prompt" hidden>
       <div class="prompt-actions">
         <button type="button" id="prompt-save">Save</button>
@@ -166,18 +165,31 @@
         <span class="prompt-said" id="prompt-said" aria-live="polite"></span>
       </div>
       <div class="prompt-body">
+        <p class="hint">
+          The Character Prompt concatenates these three layers. You can edit the
+          instance-level one on the fly; saving starts a new session.
+        </p>
+
+        <h2>App-level instructions</h2>
+        <p class="hint">
+          Voice rules, the Behavior roster, and the reply contract. The app writes
+          this layer. Empty under Blank AI.
+        </p>
+        <div class="frozen" id="instructions"></div>
+
         <h2>Personality</h2>
         <p class="hint">
-          What <span class="i-character"></span>'s package says it is. It belongs to the Character, so
-          it is shown here and determined in the character manifest.
+          The character-level layer: what <span class="i-character"></span>'s package says it is.
+          It belongs to the Character, so it is shown here and determined in the
+          character manifest.
         </p>
         <div class="frozen" id="personality"></div>
 
         <h2>Your own layer</h2>
         <p class="hint">
-          Written for <span class="i-name"></span> alone, and kept if you switch Characters. It follows
-          the personality above and is bound by the same rule: it shapes how
-          <span class="i-name"></span> comes across on this machine. Up to
+          The instance-level layer, written for <span class="i-name"></span> alone, and kept if
+          you switch Characters. You can edit it; saving starts a new session. It
+          shapes how <span class="i-name"></span> comes across on this machine. Up to
           <span id="prompt-limit"></span> characters.
         </p>
         <!-- Wrapped so the textarea is not a grid item: WebView2 otherwise paints
