@@ -1,13 +1,6 @@
-//! Live values for the development switches, so a toggle lands without a
-//! relaunch.
+//! Live values for the development switches, so a toggle lands without a relaunch.
 //!
-//! A read site that reads its own environment variable cannot be turned on from
-//! a window, which is the whole of #273: the value has to live somewhere both
-//! the settings window and a frame-rate read site can reach. `Flag::env_value`
-//! holds what an exported variable does to a switch.
-//!
-//! One static per switch rather than a map. The set is fixed at compile time,
-//! and a static is what lets a read site load the value without a lock.
+//! A window cannot flip a switch that reads its own env var; one static per switch lets a read site load without a lock.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -50,9 +43,7 @@ impl Flag {
 
     /// What the exported variable says, if it is exported.
     ///
-    /// `model::env_switch` holds the vocabulary, so a Development switch and
-    /// the Director's switch answer to the same words. `form::switch_row`
-    /// reads the ownership half off the same call.
+    /// `model::env_switch` holds the vocabulary so a Development switch and the Director's switch answer to the same words.
     fn env_value(&self) -> Option<bool> {
         model::env_switch(self.var)
     }
@@ -71,41 +62,28 @@ pub static TRACE_ENGINE: Flag = Flag::new("AI_BUDDY_TRACE_ENGINE");
 /// gracefully (no exclusion API).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
-/// Blank-AI mode (#657). Named from `model` rather than spelled again here:
+/// Blank-AI mode. Named from `model` rather than spelled again here:
 /// it is a Director variable, and the row that freezes on it names the same
 /// string the Director's other knobs do.
 pub static DIRECTOR_BLANK: Flag = Flag::new(model::BLANK);
 
-/// Completer timeout, reply cap, and first ambient wait, as the variable or
-/// the file gives them.
+/// Completer timeout, reply cap, and first ambient wait, as the variable or the file gives them.
 ///
-/// Zero is unset, and covers a blank field and a non-numeric one alike: a
-/// zero timeout could not complete, a zero cap leaves no room to answer in,
-/// and a zero wait is no wait at all, so none is a value worth telling apart
-/// from absent.
-///
-/// Numbers rather than `Flag`s. `model` still picks the local vs hosted
-/// reply cap when neither the variable nor the file says anything. Timeout
-/// is one Model API number (#690).
+/// Zero is unset: a blank or non-numeric field, and none of those zeros is a value worth telling apart from absent.
 static TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 static MAX_TOKENS: AtomicU32 = AtomicU32::new(0);
 static WAKE_SECS: AtomicU64 = AtomicU64::new(0);
 static AUTH_RETRY_SECS: AtomicU64 = AtomicU64::new(0);
 static HARNESS_TURN_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 
-/// How hard the Completer is asked to think, as the variable or the file
-/// gives it. A `Mutex<String>` for the reason `MCP_BIN` is one: the value is
-/// any string a host or a chat template takes, not a number (#638).
-///
-/// Blank is unset, and `model::effort_for` turns unset into `low`. Storing
-/// the default here instead would make the row's placeholder a lie.
+/// How hard the Completer is asked to think. A `Mutex<String>` because the
+/// value is any string a host takes, not a number. Blank is unset;
+/// `model::effort_for` turns unset into `low`, so storing the default here would make the placeholder a lie.
 static REASONING_EFFORT: Mutex<String> = Mutex::new(String::new());
 
 /// Where the stdio MCP server is, as the variable or the file gives it.
 ///
-/// A `Mutex` rather than an atomic because a path is not a number. Locked only
-/// on a seed and at attach, so the contention is nothing worth a cleverer
-/// type.
+/// A `Mutex` rather than an atomic because a path is not a number.
 static MCP_BIN: Mutex<String> = Mutex::new(String::new());
 
 /// The Model API timeout in force, in seconds.
@@ -157,7 +135,6 @@ pub fn mcp_bin() -> Option<PathBuf> {
     (!path.is_empty()).then(|| PathBuf::from(path.as_str()))
 }
 
-/// One variable per switch on the Development tab.
 fn flag_vars() -> Vec<&'static str> {
     vec![
         TRACE_FRAMES.var(),
@@ -178,11 +155,7 @@ pub fn switch_vars() -> Vec<&'static str> {
 
 /// Every variable a Development row answers to.
 ///
-/// `model::tests::with_env` clears these under the test binary's env lock: a
-/// shell that exported one would otherwise decide a frozen row or a seeded
-/// value in a test that never mentions it. The Director's own switch is not
-/// here — `with_env` already owns that one, and clearing it twice would undo
-/// the value a caller asked for.
+/// `with_env` clears these under the test env lock. The Director's switch is omitted: clearing it twice would undo a caller-set value.
 #[cfg(test)]
 pub(crate) fn test_vars() -> Vec<&'static str> {
     flag_vars()
@@ -201,9 +174,7 @@ pub(crate) fn test_vars() -> Vec<&'static str> {
 
 /// Load every switch from `settings`, with an exported variable winning.
 ///
-/// Called once at startup and again on each applied patch, so this has to be
-/// idempotent and cheap. Re-reading the environment every time costs nothing
-/// and keeps the precedence in one place.
+/// Called at startup and on each applied patch, so re-read the environment every time and keep precedence in one place.
 pub fn seed(settings: &Settings) {
     TRACE_FRAMES.seed(settings.trace_frames);
     TRACE_HITTEST.seed(settings.trace_hittest);
@@ -336,7 +307,7 @@ mod tests {
         });
     }
 
-    /// #657: the row writes the switch a Director reads when it is built, and
+    /// The row writes the switch a Director reads when it is built, and
     /// an exported variable outranks it like every other switch.
     #[test]
     fn a_patched_blank_switch_moves_what_the_director_reads() {
@@ -445,9 +416,8 @@ mod tests {
         });
     }
 
-    /// The two Harness knobs #447 added answer to the same precedence as the
-    /// Completer limits above, so a CI job exporting either does not have to
-    /// know a settings file exists.
+    /// The Harness knobs answer to the same precedence as the Completer limits,
+    /// so a CI job exporting either does not have to know a settings file exists.
     #[test]
     fn an_exported_auth_retry_outranks_the_file() {
         model::tests::with_env(None, None, None, || {
@@ -471,7 +441,7 @@ mod tests {
         });
     }
 
-    /// Same precedence as auth retry: the export wins over the file (#690).
+    /// Same precedence as auth retry: the export wins over the file.
     #[test]
     fn an_exported_harness_turn_timeout_outranks_the_file() {
         model::tests::with_env(None, None, None, || {

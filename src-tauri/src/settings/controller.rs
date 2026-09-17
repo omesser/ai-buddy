@@ -1,17 +1,10 @@
 //! What a gesture on the settings form means, with no window in it.
 //!
-//! `form.rs` says how the form is drawn; this says what happens when it is
-//! used. Every renderer carried its own copy of that second half, and the copy
-//! is where #534 went wrong, so the decisions live here and the renderer is
-//! left holding only the widgets: it reports a row id and a value, and does
-//! what the `Outcome` says.
+//! `form.rs` draws the form; this returns the `Outcome` for a row id and value.
 
-// The one caller is the macOS renderer, and #706 step 1 leaves Windows and x11
-// on their frozen copies — so on those two legs nothing calls this and
-// `-D warnings` makes `dead_code` an error. The module stays out of `cfg`
-// anyway: it is platform-free, and gating it would stop its tests running on
-// two of the three CI legs, which is the whole reason it exists. Step 4's
-// `settings_event` gives it a caller everywhere, and this goes with it.
+// Windows and x11 still use frozen copies, so nothing calls this on those CI
+// legs and `-D warnings` would error. Stay out of `cfg` so the tests run on
+// every platform; #706 step 4 gives it a caller everywhere.
 #![allow(dead_code)]
 
 use crate::settings::form::{FormDescription, RowOperation};
@@ -19,8 +12,7 @@ use crate::settings::{DirectorDraft, SettingsPatch, SettingsView};
 
 /// What the surface reports a user did, by row id.
 ///
-/// A `Pick` is a `SetText` that came off a list, and it is separate only
-/// because a list re-reports the value already shown (#452).
+/// `Pick` is separate from `SetText` because a list re-reports the value already shown.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
     SetBool {
@@ -204,10 +196,9 @@ mod tests {
         Event::Press { id: id.into() }
     }
 
-    /// #534: Apply on a Director tab nobody touched wiped the saved Base URL
-    /// and Model with empty strings. The window read its own blank fields back
-    /// as an edit. Nothing to apply is the answer this end has to give, or a
-    /// second surface can make the same mistake.
+    /// Apply on an untouched Director tab must write nothing: a window that
+    /// reads its own blank fields back as an edit would wipe the saved Base URL
+    /// and Model.
     #[test]
     fn an_untouched_director_tab_applies_nothing() {
         model::tests::with_env(None, None, None, || {
@@ -220,11 +211,9 @@ mod tests {
         });
     }
 
-    /// The other half of #534, and the reason the fix was not a blank guard
-    /// inside `DirectorDraft::edit`: clearing a field really is an edit the
-    /// user can express, so the controller cannot tell an untouched tab from a
-    /// cleared one. Only a window that draws before it reads itself back can,
-    /// which is where #534 was fixed and where it has to stay fixed.
+    /// Clearing a field is a real edit, so the controller cannot tell an
+    /// untouched tab from a cleared one. Only a window that draws before it
+    /// reads itself back can; do not put a blank guard in `DirectorDraft::edit`.
     #[test]
     fn a_blank_field_is_an_edit_not_an_untouched_row() {
         model::tests::with_env(None, None, None, || {
@@ -262,7 +251,6 @@ mod tests {
         });
     }
 
-    /// Cancel writes nothing at all — the reset is the whole of it.
     #[test]
     fn cancel_writes_nothing() {
         model::tests::with_env(None, None, None, || {

@@ -56,9 +56,7 @@ pub const CAPABILITIES: &[Capability] = &[
 
 /// Linux, and tests that do not care about the live OS.
 ///
-/// On Linux this is the answer, not a stub waiting for a port: sensing there is
-/// consent-free, so nothing has asked the user and nothing may report a grant.
-/// #250.
+/// On Linux this is the answer, not a stub: sensing is consent-free, so nothing may report a grant.
 #[cfg(not(target_os = "macos"))]
 pub struct Null;
 
@@ -158,7 +156,6 @@ mod windows {
             (handle != INVALID_HANDLE_VALUE).then_some(Self(handle))
         }
 
-        /// pid -> (parent pid, executable name) for every process in the snapshot.
         fn table(&self) -> HashMap<u32, (u32, String)> {
             // SAFETY: PROCESSENTRY32W is integers and a `[u16; 260]`, so
             // all-zeroes is a valid value for it. `dwSize` is the one field the
@@ -249,18 +246,14 @@ mod macos {
     }
 
     pub fn request_accessibility() {
-        // SAFETY: reading a `static` declared in an `extern` block. This one is
-        // a CoreFoundation string constant the dynamic linker binds before any
-        // ApplicationServices entry point can run, so it is never the
+        // SAFETY: a CoreFoundation string constant the dynamic linker binds
+        // before any ApplicationServices entry point can run, never the
         // uninitialized memory the rule exists to catch.
         let key: &CFString = unsafe { kAXTrustedCheckOptionPrompt };
         let options = CFDictionary::from_slices(&[key], &[CFBoolean::new(true)]);
-        // The answer is dropped: it reports the grant as it stands now, before
-        // the user has answered the prompt this call raises.
-        //
-        // SAFETY: the binding's one documented requirement is that the
-        // dictionary's generics match what the key calls for, and
-        // kAXTrustedCheckOptionPrompt takes a CFBoolean.
+        // The answer is dropped: it reports the grant before the prompt this call raises.
+        // SAFETY: the dictionary's generics match the key; kAXTrustedCheckOptionPrompt
+        // takes a CFBoolean, the binding's one documented requirement.
         unsafe {
             AXIsProcessTrustedWithOptions(Some(options.as_ref()));
         }
@@ -304,11 +297,9 @@ mod macos {
 
     fn responsible_pid() -> Option<i32> {
         type GetResponsible = unsafe extern "C" fn(i32) -> i32;
-        // SAFETY: `-2` is RTLD_DEFAULT, the pseudo-handle dlsym takes for "any
-        // image already loaded", so nothing has to have been dlopen'd first;
-        // the name is a `c"…"` literal, hence NUL-terminated and alive for the
-        // call, which is all dlsym reads it for. A symbol that is not there
-        // comes back null, and the check below is what stops it being called.
+        // SAFETY: `-2` is RTLD_DEFAULT, so nothing has to have been dlopen'd
+        // first; the name is a `c"…"` literal, NUL-terminated and alive for the
+        // call. A missing symbol comes back null; the check below stops it being called.
         let symbol = unsafe {
             libc::dlsym(
                 -2isize as *mut std::ffi::c_void,
@@ -370,10 +361,7 @@ mod macos {
 
     /// The parent of `pid`, or `None` when the kernel will not say.
     ///
-    /// The flavor, the struct and the field offset all come from `libc`. A
-    /// hand-written `PROC_PIDTBSDINFO` was 5 — `PROC_PIDTHREADINFO`, which
-    /// wants a thread handle in `arg` — so every call wrote nothing and the
-    /// walk above never left the first hop. #703.
+    /// Flavor, struct and field offset come from `libc`. A hand-written `PROC_PIDTBSDINFO` was 5 (`PROC_PIDTHREADINFO`) and every call wrote nothing.
     pub(super) fn parent_pid(pid: i32) -> Option<i32> {
         // SAFETY: proc_bsdinfo is integers and byte arrays, so all-zeroes is a
         // value it can hold; the call overwrites it on success.
@@ -399,9 +387,8 @@ mod macos {
 
     #[cfg(test)]
     mod tests {
-        /// #703 in one assertion. The old flavor made this return `None` for
-        /// every pid, and nothing noticed: the only test over this path asserts
-        /// a non-empty name, which the `unwrap_or_else` fallback satisfies.
+        /// The old flavor made this return `None` for every pid, and nothing
+        /// noticed: the only test over this path asserts a non-empty name.
         /// std's `parent_id` is the independent answer to check against.
         #[test]
         fn the_parent_pid_is_the_one_std_reports() {
@@ -436,9 +423,7 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
 
 /// The sentence settings prints so the user can find the row in System Settings.
 ///
-/// A `cargo run` binary is unsigned, so TCC attributes the grant to whoever
-/// launched it — Cursor, Terminal — not to "ai-buddy". A packaged
-/// `.app` is listed under its own name.
+/// An unsigned `cargo run` is listed as whoever launched it, not "ai-buddy".
 #[cfg(target_os = "macos")]
 pub fn listed_under_hint(name: &str) -> String {
     format!("macOS lists this app as {name}, under Privacy & Security.")
@@ -456,8 +441,7 @@ pub fn pane_intro(listed_as: &str) -> String {
 
 /// Linux-specific intro: no consent system, names what is read without a grant.
 ///
-/// It carries the whole section, which has no rows under it — the prose has to
-/// say why the checkboxes the other platforms show are not there. #250.
+/// It carries the whole section, which has no rows: the prose has to say why the other platforms' checkboxes are not there.
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
     "On Linux there is nothing to turn on: no permission is requested. Window positions are read to keep the buddy visible."
@@ -536,8 +520,7 @@ mod tests {
         }
     }
 
-    /// The window prints this catalog. Dropping a row makes that grant
-    /// unreachable again: nothing else names the trade. #148.
+    /// The window prints this catalog. Dropping a row makes that grant unreachable: nothing else names the trade.
     #[test]
     fn the_catalog_names_each_capability_and_its_trade() {
         let rows = rows(|_| false);
@@ -620,10 +603,9 @@ mod tests {
         assert!(!listed_under_hint("Terminal").contains("Cursor"));
     }
 
-    /// The walk in `bundled_ancestor_name` is 24 hops long and only pays for
-    /// itself past the first: `zsh -> Cursor Helper -> Cursor` needs two.
-    /// A wrong `proc_pidinfo` flavor writes nothing, the short-write guard
-    /// reads that as "no parent", and the walk stops at the immediate parent. #703.
+    /// The walk in `bundled_ancestor_name` is 24 hops and only pays past the
+    /// first: `zsh -> Cursor Helper -> Cursor` needs two. A wrong `proc_pidinfo`
+    /// flavor writes nothing; the short-write guard reads that as "no parent".
     #[test]
     #[cfg(target_os = "macos")]
     fn the_parent_walk_climbs_past_the_first_hop() {
@@ -663,7 +645,6 @@ mod tests {
         assert!(!probe.granted(CapabilityId::ScreenRecording));
     }
 
-    /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.
     #[test]
     #[cfg(target_os = "linux")]
     fn linux_pane_intro_is_tcc_free_and_explains_consent() {
@@ -692,7 +673,6 @@ mod tests {
         );
     }
 
-    /// Windows hint must name the process Privacy will list, without macOS/TCC vocabulary.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_hint_names_process_without_macos_vocabulary() {
@@ -719,7 +699,6 @@ mod tests {
         );
     }
 
-    /// Windows pane intro must not contain macOS-specific vocabulary.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_pane_intro_is_not_macos_specific() {
@@ -743,13 +722,11 @@ mod tests {
         );
     }
 
-    /// Windows toolchain processes are skipped when walking parents.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_toolchain_classification() {
         use crate::consent::windows::is_toolchain;
 
-        // Toolchain: cargo, rustc, rustup, rust-analyzer, rls
         assert!(is_toolchain("cargo"));
         assert!(is_toolchain("rustc"));
         assert!(is_toolchain("rustup"));
@@ -757,7 +734,6 @@ mod tests {
         assert!(is_toolchain("rls"));
         assert!(is_toolchain("Cargo")); // case insensitive
 
-        // Not toolchain: IDEs, terminals, shells
         assert!(!is_toolchain("Cursor"));
         assert!(!is_toolchain("Code"));
         assert!(!is_toolchain("WindowsTerminal"));

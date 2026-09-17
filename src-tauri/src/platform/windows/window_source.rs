@@ -1,10 +1,6 @@
 //! Windows window geometry via EnumWindows and GetWindowRect.
-//!
-//! EnumWindows returns visible windows in z-order. Filters to normal application
-//! windows (WS_VISIBLE, not WS_EX_TOOLWINDOW), reads bounds with GetWindowRect,
-//! and filters own overlays by process ID. Window owner from its process's
-//! image name, so `owner` is an application name on every platform (#197).
-//! Consent-free, like macOS CGWindowListCopyWindowInfo and X11 _NET_CLIENT_LIST.
+//! Visible application windows in z-order; owner is the process image name
+//! so `owner` is an application name on every platform. Consent-free.
 
 use std::sync::Mutex;
 
@@ -70,10 +66,6 @@ impl WindowSource for WindowsWindowSource {
 }
 
 /// Visible application windows, frontmost first (z-order).
-///
-/// EnumWindows returns windows in z-order, top to bottom, which matches the
-/// Engine's expectation. Filters to visible, non-tool windows with WS_VISIBLE
-/// and without WS_EX_TOOLWINDOW.
 fn visible_windows() -> Vec<WindowRect> {
     let windows: Mutex<Vec<WindowRect>> = Mutex::new(Vec::new());
 
@@ -88,10 +80,8 @@ fn visible_windows() -> Vec<WindowRect> {
 }
 
 /// EnumWindows callback that collects visible application windows.
-///
-/// SAFETY: EnumWindows contract guarantees hwnd is valid for the call, and
-/// lparam is the pointer visible_windows passed in — still live, correctly
-/// aligned, and pointing at the Mutex that owns the Vec.
+/// SAFETY: hwnd is valid for the call; lparam is the pointer
+/// `visible_windows` passed in, still live and pointing at the Mutex.
 unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let windows = &*(lparam as *const Mutex<Vec<WindowRect>>);
 
@@ -104,7 +94,6 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
     TRUE
 }
 
-/// Read one window's geometry and owner, or None if it should be skipped.
 fn window_rect(hwnd: HWND) -> Option<WindowRect> {
     // SAFETY: hwnd comes from EnumWindows, which guarantees it is valid for
     // the callback's execution. IsWindowVisible is a simple read.
@@ -142,15 +131,9 @@ fn window_rect(hwnd: HWND) -> Option<WindowRect> {
         return None;
     }
 
-    // No fallback to the window title when the process cannot be named: the
-    // title was the bug (#197), and restoring it here would restore it
-    // silently. "Unknown" is what X11 reports for an owner it cannot read —
-    // it matches no exclusion anyone would write, so the window is reported
-    // naming nobody rather than under a name the user did not exclude. macOS
-    // drops such a window instead, and keeping it is the deliberate half of
-    // the trade: the Engine still needs the rectangle to Perch on and to
-    // occlude with, and what a nameless row leaks is that rectangle and the
-    // word "Unknown", never a title.
+    // No title fallback when the process cannot be named: the title was the
+    // bug. "Unknown" matches no exclusion, so the Engine still gets a Perch
+    // rectangle and leaks that word, never a title.
     let owner = window_owner(hwnd).unwrap_or_else(|| "Unknown".to_string());
 
     Some(WindowRect {
@@ -167,9 +150,8 @@ fn window_rect(hwnd: HWND) -> Option<WindowRect> {
 }
 
 /// Whether this window is one of our own overlay windows.
-///
-/// ai-buddy's overlays run in this process, so the process ID answers it. This
-/// prevents our overlays from blocking Perch detection.
+/// Overlays run in this process, so the process ID answers it and they
+/// cannot block Perch detection.
 fn is_own_overlay(hwnd: HWND) -> bool {
     let mut window_pid: u32 = 0;
     // SAFETY: GetWindowThreadProcessId writes the process ID into the

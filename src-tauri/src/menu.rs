@@ -27,7 +27,7 @@ pub enum MenuAction {
     SpawnInstance,
     /// Session Director on/off. Off leaves Static weights running the life.
     ToggleDirector,
-    /// Quiet without hiding. #84: proposals stop; the Character stays on screen.
+    /// Quiet without hiding. Proposals stop; the Character stays on screen.
     ToggleDnd,
     /// Hide the Character instantly, same path as the hotkey.
     Hide,
@@ -68,9 +68,7 @@ pub struct MenuSnapshot<'a> {
 
 /// One row of the menu, as data.
 ///
-/// Ids are only on the rows that can be chosen. A submenu is opened rather than
-/// selected, and a separator cannot be clicked at all, so neither has one to
-/// look up.
+/// Ids are only on rows that can be chosen. A submenu is opened, a separator cannot be clicked.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenuEntry {
     /// A plain row. Disabled rows are still listed: the menu says what exists.
@@ -95,47 +93,32 @@ pub enum MenuEntry {
 
 /// The whole menu as data: the rows, and what the clickable ones do.
 ///
-/// Everything here is owned, so this crosses a thread boundary. That is the
-/// point of it: the description is built where the state lives, on the frame
-/// loop, and the menu is built where the window server insists, on the main
-/// thread.
+/// Everything here is owned so this crosses a thread boundary: built on the frame loop, drawn on the main thread.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuDescription {
     pub entries: Vec<MenuEntry>,
     pub actions: HashMap<String, MenuAction>,
 }
 
-/// The id of the Do Not Disturb checkbox.
 const DND_ID: &str = "dnd";
 
-/// The id of the Hide / Come back row.
 const HIDE_ID: &str = "hide";
 
-/// The id of the Chat row.
-///
-/// It has one despite being disabled, so that wiring the row (#17) is a
-/// change to one flag rather than to the shape of the menu.
 const CHAT_ID: &str = "chat";
 
-/// The id of the Director checkbox.
 const DIRECTOR_ID: &str = "director";
 
-/// The id of the Memory row.
 const MEMORY_ID: &str = "memory";
 
-/// The id of the Action Log row.
 const ACTION_LOG_ID: &str = "action-log";
 
 /// The id of the Settings row, and of Hotkey… which opens the same window.
 const SETTINGS_ID: &str = "settings";
 
-/// The id of New… under Instances.
 const SPAWN_ID: &str = "spawn";
 
-/// The id of Hide in fullscreen apps.
 const FULLSCREEN_ID: &str = "fullscreen";
 
-/// The id of the hotkey row under Hide rules.
 const HOTKEY_ID: &str = "hotkey";
 
 /// The id of Quit. Owned here so the tray event hook and the action table
@@ -144,9 +127,7 @@ pub(crate) const QUIT_ID: &str = "quit";
 
 /// Native id of Quit for one tray (or sprite) draw.
 ///
-/// The description still keys the action as `QUIT_ID`. The native item uses
-/// this so replacing the tray mints a new id: muda can deliver the dropped
-/// item's teardown as a click, and that click must not be the live Quit.
+/// The native item uses this so replacing the tray mints a new id: muda can deliver the dropped item's teardown as a click.
 pub(crate) fn quit_item_id(generation: u64) -> String {
     format!("{QUIT_ID}:{generation}")
 }
@@ -162,8 +143,7 @@ const CHARACTER_PREFIX: &str = "character:";
 
 /// Describe the menu. Tray and sprite both call this.
 ///
-/// Checkboxes report the Engine and settings rather than a copy that could
-/// drift: opening the menu twice around a toggle has to show the toggle.
+/// Checkboxes report the Engine and settings rather than a copy that could drift.
 pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     let mut entries = Vec::new();
     let mut actions = HashMap::new();
@@ -175,11 +155,8 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
 
-    // Character ▸ — one row per installed package, current check-marked.
-    //
-    // Omitted entirely when nothing is installed rather than shown empty. An
-    // empty submenu is a dead end that looks like a bug; no submenu says there
-    // is nothing to choose between, which is the truth.
+    // Omitted when nothing is installed rather than shown empty: an empty
+    // submenu looks like a bug; no submenu says there is nothing to choose.
     if !snapshot.installed.is_empty() {
         let items = snapshot
             .installed
@@ -316,9 +293,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
 
 /// The next tray draw, if this description is not the one already showing.
 ///
-/// Settings can dismiss or spawn without a menu click. The tray only
-/// updates when someone pushes a new description, so "did a row change"
-/// is the gate, not "did they click".
+/// Settings can dismiss or spawn without a menu click, so "did a row change" is the gate.
 pub fn replace_if_changed(
     previous: &mut Option<MenuDescription>,
     next: MenuDescription,
@@ -333,12 +308,7 @@ pub fn replace_if_changed(
 
 /// Build the native menu from a description.
 ///
-/// Must be called on the main thread. Every constructor here reaches the
-/// window server, which on macOS answers only the main thread, and the objects
-/// they return cannot be sent to another one.
-///
-/// Tray and sprite both start here, so a row cannot exist in one and not the
-/// other.
+/// Must be called on the main thread: constructors reach the window server, and the objects they return are not `Send`.
 pub fn build(
     app: &tauri::AppHandle,
     description: &MenuDescription,
@@ -412,13 +382,7 @@ pub fn build(
 
 /// Pop the described menu over `window`.
 ///
-/// `position` is logical points from the window's top-left corner, which is
-/// where the cursor was when the right button went down. Passing the window
-/// rather than a raw view is what keeps this honest: the runtime resolves the
-/// view it actually drew, so there is no null handle to get wrong.
-///
-/// Returns as soon as the menu is on screen. The selection, if the user makes
-/// one, arrives on the app's menu event channel — see `MenuDescription`.
+/// `position` is logical points from the window's top-left. Returns as soon as the menu is on screen; the selection arrives later on the menu event channel.
 pub fn show(
     app: &tauri::AppHandle,
     description: &MenuDescription,
@@ -462,12 +426,8 @@ mod tests {
         }
     }
 
-    /// The whole reason the description exists: it can cross to the main thread.
-    ///
-    /// A compile-time check rather than a runtime one — it fails the build, not
-    /// the run. Putting a native handle in a `MenuEntry` would make the menu
-    /// unsendable and there would be nothing to build over there from, which is
-    /// the mistake this stands in the way of.
+    /// The description exists so it can cross to the main thread. A compile-time
+    /// `Send` check: a native handle in a `MenuEntry` would make the menu unsendable.
     #[test]
     fn a_description_can_be_sent_to_another_thread() {
         fn assert_send<T: Send>() {}
@@ -483,7 +443,6 @@ mod tests {
         assert!(moved.join().expect("the thread panicked") > 0);
     }
 
-    /// The row a description carries for `id`, whatever kind it is.
     fn entry_with_id<'a>(description: &'a MenuDescription, id: &str) -> Option<&'a MenuEntry> {
         description.entries.iter().find(|entry| match entry {
             MenuEntry::Item { id: got, .. } | MenuEntry::Check { id: got, .. } => got == id,
@@ -521,7 +480,6 @@ mod tests {
         }
     }
 
-    /// The rows of the Instances submenu.
     fn instance_items(description: &MenuDescription) -> Option<&Vec<MenuEntry>> {
         description.entries.iter().find_map(|entry| match entry {
             MenuEntry::Submenu { label, items } if label == "Instances" => Some(items),
@@ -540,7 +498,6 @@ mod tests {
             .collect()
     }
 
-    /// The rows of the Character submenu, or none if there is no submenu.
     fn character_items(description: &MenuDescription) -> Option<&Vec<MenuEntry>> {
         description.entries.iter().find_map(|entry| match entry {
             MenuEntry::Submenu { label, items } if label == "Character" => Some(items),
@@ -548,8 +505,6 @@ mod tests {
         })
     }
 
-    /// The menu says what exists. Chat is in it and cannot be clicked, because
-    /// the row moving later is worse than a row that cannot be clicked yet.
     #[test]
     fn chat_is_listed_and_enabled() {
         let description = describe(snapshot(&[], "bmo", false));
@@ -582,7 +537,6 @@ mod tests {
         );
     }
 
-    /// Every package the loader found is offered, in the order it found them.
     #[test]
     fn the_character_submenu_lists_every_installed_package() {
         let installed = names(&["bmo", "nim", "cat"]);
@@ -600,7 +554,6 @@ mod tests {
         assert_eq!(labels, vec!["bmo", "nim", "cat"]);
     }
 
-    /// The checkmark is how the menu says which Character is on screen.
     #[test]
     fn only_the_current_character_is_check_marked() {
         let installed = names(&["bmo", "nim"]);
@@ -643,8 +596,7 @@ mod tests {
         );
     }
 
-    /// Consent lives in settings (#148), not here. A menu row would look
-    /// like a prompt on right-click, which decision 9 still refuses.
+    /// Consent lives in settings, not here. A menu row would look like a prompt on right-click, which decision 9 refuses.
     #[test]
     fn the_consent_row_is_absent_rather_than_disabled() {
         let installed = names(&["bmo"]);
@@ -678,9 +630,6 @@ mod tests {
         assert_eq!(description.actions.get("quit"), Some(&MenuAction::Quit));
     }
 
-    /// Dismiss rebuilds the tray. The old Quit item must not still be the live
-    /// one, or its teardown click is `quit_now` and the app leaves with the
-    /// buddy that was only meant to go.
     #[test]
     fn a_replaced_tray_quit_is_not_the_live_one() {
         assert_ne!(
@@ -822,8 +771,7 @@ mod tests {
         );
     }
 
-    /// #687: every reply the buddy gave is already in `action-log.jsonl`, and
-    /// nothing in the app opened it. This row is the whole reader.
+    /// Every reply is already in `action-log.jsonl`; this row is the whole reader.
     #[test]
     fn the_action_log_is_reachable() {
         let description = describe(snapshot(&[], "bmo", false));
@@ -904,7 +852,7 @@ mod tests {
             Some(&MenuAction::OpenSettings),
             "the hotkey row opens settings, where it is bound"
         );
-        // DESIGN.md: quiet is not gone. DND lives on the menu, not in this list.
+        // Quiet is not gone. DND lives on the menu, not in this list.
         assert!(
             items.iter().all(|entry| match entry {
                 MenuEntry::Check { id, .. } | MenuEntry::Item { id, .. } => id != "dnd",

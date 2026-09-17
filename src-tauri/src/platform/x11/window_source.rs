@@ -29,17 +29,8 @@ impl X11WindowSource {
 
 impl WindowSource for X11WindowSource {
     /// `window_geometry` stays true under XWayland, where the list is partial.
-    ///
-    /// XWayland does not put native Wayland clients in `_NET_CLIENT_LIST`, so on
-    /// a Wayland session this reports the X11 clients only and Perches on a
-    /// native Wayland window stay impossible. True anyway, because the
-    /// capability answers "are the rectangles I am handed real geometry", and
-    /// they are: a window missing from the list costs one Perch, which is the
-    /// same shortfall an unmapped or unmanaged window already causes on a real
-    /// X11 session. Declaring it false would cost every Perch on every Wayland
-    /// desktop — the bug #266 exists to fix — to describe a smaller world more
-    /// precisely, and telling the two sessions apart would mean reading
-    /// `WAYLAND_DISPLAY` again, which is the test #266 removed.
+    /// The rectangles are real; a missing client costs one Perch. Declaring
+    /// false, or reading `WAYLAND_DISPLAY` again, is the test #266 removed.
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             window_geometry: true,
@@ -58,15 +49,8 @@ impl WindowSource for X11WindowSource {
 }
 
 /// Visible windows, frontmost first.
-///
-/// Reads _NET_CLIENT_LIST_STACKING from the root window and reverses it:
-/// X11 stacks bottom-to-top, the Engine wants frontmost first.
-///
-/// Falls back to _NET_CLIENT_LIST when STACKING is unavailable or empty,
-/// as some window managers do not support stacking order.
-///
-/// Our own windows are in the list like anyone else's; `window_rect` reports
-/// the level that keeps the overlay out of the world.
+/// `_NET_CLIENT_LIST_STACKING` is bottom-to-top, so reverse it. Fall back to
+/// `_NET_CLIENT_LIST` when stacking is missing. Own windows stay; `window_rect` sets the overlay's level.
 fn visible_windows() -> Vec<WindowRect> {
     use std::sync::atomic::{AtomicBool, Ordering};
     static LOGGED: AtomicBool = AtomicBool::new(false);
@@ -126,11 +110,9 @@ fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Windo
     )
 }
 
-/// Read _NET_CLIENT_LIST: windows in arbitrary order.
-///
-/// Fallback for window managers that do not maintain _NET_CLIENT_LIST_STACKING.
-/// Order is undefined, so z-order occlusion may be incorrect, but some Perches
-/// are better than none.
+/// Read `_NET_CLIENT_LIST`: windows in arbitrary order.
+/// Fallback when STACKING is missing. Order is undefined, so occlusion may
+/// be wrong, but some Perches are better than none.
 fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     let list_atom = super::atoms::atoms()?.net_client_list;
     let reply = xproto::get_property(conn, false, root, list_atom, AtomEnum::WINDOW, 0, u32::MAX)
@@ -153,7 +135,6 @@ fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     )
 }
 
-/// Read one window's geometry, owner, and layer, or None if it should be skipped.
 fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     if !is_normal_window(conn, window) {
         return None;
@@ -189,12 +170,9 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     })
 }
 
-/// Whether the window manager keeps this window above ordinary ones:
-/// `_NET_WM_STATE_ABOVE`, X11's answer to a macOS floating window level, and
-/// what now keeps the overlay out of the world. `overlay::set_ewmh_states`
-/// writes the state on the overlay itself, so the answer waits on no window
-/// manager echoing it back. The WM_CLASS exclusion this replaces covered every
-/// window a GTK process owns, the Chat surface (#362) and Settings included.
+/// Whether the window manager keeps this window above ordinary ones.
+/// `_NET_WM_STATE_ABOVE` is written on the overlay itself. WM_CLASS exclusion
+/// covered every GTK window, Chat (#362) and Settings included.
 fn is_above(conn: &RustConnection, window: Window) -> bool {
     let Some(atoms) = super::atoms::atoms() else {
         return false;
@@ -329,17 +307,13 @@ fn frame_geometry(
     )
 }
 
-/// Read WM_CLASS to get the window's application name.
 fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
     super::atoms::window_class(conn, window)
 }
 
-/// Read _NET_WM_STRUT_PARTIAL from dock/panel windows to find the panel bounds.
-///
-/// EWMH _NET_WM_STRUT_PARTIAL is 12 CARDINALs: [left, right, top, bottom,
-/// left_start_y, left_end_y, right_start_y, right_end_y, top_start_x, top_end_x,
-/// bottom_start_x, bottom_end_x]. For a bottom panel, bottom != 0 and
-/// bottom_start_x/bottom_end_x define the horizontal span.
+/// Read `_NET_WM_STRUT_PARTIAL` from dock/panel windows for panel bounds.
+/// 12 CARDINALs; for a bottom panel, `strut[3]` is height and
+/// `strut[10]`/`strut[11]` are the horizontal span.
 fn strut_panel_bounds() -> Option<Rect> {
     let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
@@ -407,7 +381,6 @@ fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
         .any(|chunk| u32::from_ne_bytes(*chunk) == atoms.net_wm_window_type_dock)
 }
 
-/// Read _NET_WM_STRUT_PARTIAL property as 12 u32 values.
 fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]> {
     let strut_atom = super::atoms::atoms()?.net_wm_strut_partial;
 

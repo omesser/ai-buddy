@@ -12,11 +12,8 @@ use objc2_foundation::{ns_string, MainThreadMarker, NSSize, NSUserDefaults};
 const MENU_BAR_ICON_HEIGHT: f64 = 22.0;
 
 /// Seed a rightward slot before the status item exists.
-///
-/// macOS reads `NSStatusItem Preferred Position Item-N` from NSUserDefaults
-/// only when the item is first created. Lower values sit further right, toward
-/// the clock. We write once — if the key is already present, the user has
-/// Cmd-dragged and that choice wins.
+/// macOS reads the preferred-position key only at first create; lower sits
+/// further right. Skip if present: the user has Cmd-dragged and that wins.
 pub fn seed_status_item_position() {
     let _mtm = MainThreadMarker::new().expect("tray setup runs on the main thread");
     let defaults = NSUserDefaults::standardUserDefaults();

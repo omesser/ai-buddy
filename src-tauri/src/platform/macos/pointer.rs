@@ -16,11 +16,8 @@ use objc2_app_kit::NSEvent;
 use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
 
 /// Whether the primary mouse button is down.
-///
-/// `CombinedSessionState` rather than the HID state, so a trackpad, a mouse and
-/// a tablet all count, and so does a button held while another application is
-/// frontmost — the overlay never takes focus, so that is every drag it will
-/// ever see.
+/// `CombinedSessionState` rather than HID, so a trackpad, mouse, and tablet
+/// all count, including a hold while another app is frontmost.
 pub fn primary_button_down() -> bool {
     CGEventSource::button_state(
         CGEventSourceStateID::CombinedSessionState,
@@ -37,9 +34,6 @@ pub fn secondary_button_down() -> bool {
 }
 
 /// The OS double-click interval, in milliseconds.
-///
-/// Reads NSEvent.doubleClickInterval (seconds) and converts to milliseconds.
-/// Returns None if the query fails.
 pub fn double_click_interval_ms() -> Option<u32> {
     let seconds = NSEvent::doubleClickInterval();
     if seconds > 0.0 {

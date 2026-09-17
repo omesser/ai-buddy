@@ -17,9 +17,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 /// Float above other windows, non-activating, excluded from screen capture.
-///
-/// Returns Err when the window handle is not available yet, so the caller can
-/// retry on subsequent frames once the window is realized.
+/// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let raw_window_handle = match window.window_handle() {
         Ok(handle) => handle,
@@ -43,12 +41,8 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 /// SetWindowRgn carves the click-through region from the sprite's alpha mask.
-///
-/// `None` makes the entire window click-through by applying WS_EX_TRANSPARENT.
-/// `Some` creates a region from the opaque pixels, unions the hotspot
-/// rectangles so a control drawn outside the art still receives clicks,
-/// and removes WS_EX_TRANSPARENT so clicks hit the combined region and
-/// pass through everywhere else.
+/// `None` is WS_EX_TRANSPARENT (whole window). `Some` is the opaque pixels
+/// plus hotspots, with WS_EX_TRANSPARENT removed so clicks hit that region.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
@@ -89,12 +83,9 @@ pub fn update_input_region(
     Ok(())
 }
 
-/// Apply the extended window styles: non-activating, topmost, toolwindow, transparent.
 fn set_window_styles(hwnd: HWND) -> Result<(), String> {
-    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle (validated
-    // in configure_overlay). GetWindowLongW, SetWindowLongW, and SetWindowPos
-    // are documented safe with valid HWNDs; SetWindowLongW returns 0 on error
-    // or when the previous value was 0, disambiguated by checking equality.
+    // SAFETY: hwnd is a valid HWND from Tauri. SetWindowLongW returns 0 on
+    // error or when the previous value was 0; disambiguate by checking equality.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style
@@ -125,7 +116,6 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// Make the window topmost without changing its size or position.
 fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
     // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. SetWindowPos
     // is documented safe with valid HWNDs and standard z-order/positioning flags.
@@ -147,11 +137,8 @@ fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
 }
 
 /// Apply capture policy based on user settings.
-///
-/// `capturable: true` (default) allows the window to appear in screen recordings and
-/// shares (WDA_NONE). `capturable: false` excludes it via WDA_EXCLUDEFROMCAPTURE.
-/// The Presence checkbox "Hide from screenshots and screen shares" writes the inverse:
-/// checked → `capturable = false` → excluded.
+/// The Presence "Hide from screenshots" checkbox writes the inverse:
+/// checked → `capturable = false` → WDA_EXCLUDEFROMCAPTURE.
 fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
     // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
     // SetWindowDisplayAffinity is documented safe with valid HWNDs.
@@ -170,12 +157,8 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
 }
 
 /// Apply the alpha mask as the input region using SetWindowRgn.
-///
-/// Creates a region from the opaque pixels in the sprite's alpha mask, applying
-/// scale and facing. The region is positioned at sprite_x, sprite_y in window
-/// coordinates. Facing < 0 mirrors the mask horizontally. Hotspot rectangles
-/// (in overlay-local coordinates) are OR'd in so a control drawn outside the
-/// art still receives clicks.
+/// Facing < 0 mirrors the mask. Hotspot rectangles are OR'd in so a control
+/// drawn outside the art still receives clicks.
 #[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,
@@ -188,10 +171,8 @@ fn apply_input_mask(
 ) -> Result<(), String> {
     let (width, height, opaque) = mask.raw();
 
-    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. CreateRectRgn,
-    // CombineRgn, DeleteObject, and SetWindowRgn are documented safe with valid
-    // HWNDs and HRGNs. Region handles are checked for null and freed on all error
-    // paths before returning. SetWindowRgn takes ownership of combined_rgn on
+    // SAFETY: hwnd is valid. Region handles are checked for null and freed on
+    // every error path. SetWindowRgn takes ownership of combined_rgn on
     // success, so it is not freed afterward.
     unsafe {
         let mut combined_rgn: HRGN = std::ptr::null_mut();
@@ -303,9 +284,6 @@ fn apply_input_mask(
 }
 
 /// Clear the input region, making the entire window click-through.
-///
-/// Applies WS_EX_TRANSPARENT so all clicks pass through, then removes any
-/// existing window region.
 fn clear_input_region(hwnd: HWND) -> Result<(), String> {
     // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. GetWindowLongW,
     // SetWindowLongW, and SetWindowRgn are documented safe with valid HWNDs; passing

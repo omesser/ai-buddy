@@ -9,11 +9,9 @@ use objc2_app_kit::{
     NSWindowStyleMask,
 };
 
-/// An `NSPanel` subclass that refuses to become the key or main window.
-///
-/// This is the whole reason for the re-classing below. A window that cannot
-/// become key cannot take keyboard focus, so the sprite can be clicked while the
-/// user keeps typing into whatever was already frontmost.
+/// An `NSPanel` subclass that refuses to become the key or main window, so
+/// the sprite can be clicked while the user keeps typing into whatever was
+/// already frontmost.
 fn overlay_panel_class() -> &'static AnyClass {
     static CLASS: OnceLock<&'static AnyClass> = OnceLock::new();
 
@@ -45,19 +43,7 @@ fn overlay_panel_class() -> &'static AnyClass {
 
 /// Make the overlay a floating, non-activating panel that follows the user
 /// across Spaces, stays out of the application switcher, and is never captured.
-///
-/// Never captured is DESIGN.md decision 8's screen-share rule, answered by the
-/// window server instead of by a rule. macOS publishes no way for an app to
-/// learn that its screen is being shared — Apple's own guidance is that there
-/// is none, and that guessing breaks on every third-party sharing tool — but a
-/// window may declare that its content must not be captured at all. So rather
-/// than detect a share and hide, the Character is absent from every screen
-/// recording, screen share and remote view while its owner keeps it on screen.
-///
-/// The price is that the Character cannot be screenshotted either: the system's
-/// own capture goes down the same path. `AI_BUDDY_CAPTURABLE=1` gives the
-/// exclusion up for one run, which is how to photograph your own Character, and
-/// how anyone drawing one looks at its art against a real desktop.
+/// No API reports a share, so the window opts out of capture; `AI_BUDDY_CAPTURABLE=1` gives that up for one run.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ptr = window
         .ns_window()
@@ -67,13 +53,9 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     // SAFETY: Tauri hands us a live NSWindow for a window it is still holding.
     let ns_window = unsafe { &*ptr };
 
-    // Re-class the window to our NSPanel subclass. NSPanel declares no ivars
-    // beyond NSWindow, so the instance layout is unchanged and only the method
-    // table moves. This is the established way to get panel behaviour out of a
-    // window created by someone else's toolkit.
-    //
-    // SAFETY: the new class is a subclass of NSPanel, which is itself a subclass
-    // of NSWindow, so every message the toolkit still sends remains valid.
+    // Re-class to our NSPanel subclass: NSPanel adds no ivars beyond NSWindow,
+    // so only the method table moves.
+    // SAFETY: the new class is an NSPanel, hence an NSWindow; toolkit messages stay valid.
     unsafe { AnyObject::set_class(ns_window, overlay_panel_class()) };
 
     let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
@@ -102,10 +84,6 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 /// Whether this run allows itself to be captured. See `configure_overlay`.
-///
-/// `capturable: true` (default) means the buddy appears in screenshots and shares.
-/// `capturable: false` excludes it. The env var `AI_BUDDY_CAPTURABLE` can override:
-/// `=1` forces visible, `=0` forces hidden.
 fn sharing_type() -> NSWindowSharingType {
     if crate::dev_flags::CAPTURABLE.is_on() {
         NSWindowSharingType::ReadOnly

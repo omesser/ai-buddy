@@ -1,9 +1,6 @@
 //! XI2 raw input events for event-driven pointer input on X11.
-//!
-//! Listens for mouse button and motion events via XInput2 raw events, which are
-//! permission-free and work on the root window. This replaces polling when the
-//! sprite is idle, letting the frame loop block on `recv()` instead of waking
-//! at 16ms. #183.
+//! Permission-free raw events on the root window, so the frame loop can
+//! block on `recv()` instead of waking at 16ms while idle. #183.
 
 use std::sync::mpsc;
 use std::thread;
@@ -21,19 +18,9 @@ pub enum InputEvent {
     Motion,
 }
 
-/// Spawn a thread that listens for XI2 raw input events and sends them to the
-/// returned channel. Returns `None` if XI2 cannot be set up.
-///
-/// The thread blocks on the X11 connection's event stream and runs for the life
-/// of the process. It filters for button and motion events and sends `InputEvent`
-/// to wake the frame loop from idle wait. The frame loop still polls cursor
-/// position and button state after waking via the existing Witness path.
-///
-/// **Shared X11 connection:** This thread calls `wait_for_event()` on the shared
-/// `OnceLock` X11 connection that the frame thread also uses (cursor polling,
-/// window queries). Concurrent access is allowed by x11rb's `Sync` impl, but
-/// `wait_for_event` blocks until an event arrives. No known issue observed, but
-/// worth noting for diagnosis if event processing stalls.
+/// Spawn a thread that listens for XI2 raw events; `None` if XI2 cannot set up.
+/// It `wait_for_event()`s on the shared X11 connection the frame thread also
+/// uses. x11rb `Sync` allows that; if event processing stalls, look here.
 pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
     let display = super::connection::connection()?;
     let (sender, receiver) = mpsc::channel();
@@ -54,7 +41,6 @@ pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
     Some(receiver)
 }
 
-/// Set up XI2 extension and register for raw input events on the root window.
 fn setup_xi2(
     display: &impl Connection,
     root: xproto::Window,
@@ -65,7 +51,6 @@ fn setup_xi2(
         return Err("XI2 not available".into());
     }
 
-    // XI2 raw event mask: select RawButtonPress, RawButtonRelease, and RawMotion.
     let mask = vec![
         xinput::XIEventMask::RAW_BUTTON_PRESS,
         xinput::XIEventMask::RAW_BUTTON_RELEASE,
@@ -84,7 +69,6 @@ fn setup_xi2(
     Ok(())
 }
 
-/// Block on the X11 connection and send input events until the channel closes.
 fn listen_loop(sender: mpsc::Sender<InputEvent>) {
     let Some(display) = super::connection::connection() else {
         return;
@@ -101,7 +85,6 @@ fn listen_loop(sender: mpsc::Sender<InputEvent>) {
     }
 }
 
-/// Classify an X11 event into an `InputEvent` if it is one the frame loop cares about.
 fn classify_event(
     _display: &impl Connection,
     event: &x11rb::protocol::Event,

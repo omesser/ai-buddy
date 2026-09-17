@@ -75,22 +75,15 @@ impl Endpoint {
     }
 
     /// The URL and the raw token, for the Settings box that shows a user how
-    /// to register this endpoint with a Harness they run themselves (#577).
-    ///
-    /// A method for the same reason `authorization` is one: the token leaves
-    /// this type only where it is being handed to whoever will present it.
-    /// Raw rather than `Bearer `-prefixed because three of the five
-    /// registration templates add that prefix themselves.
+    /// to register this endpoint with a Harness they run themselves.
+    /// Raw rather than `Bearer `-prefixed because three of the five registration templates add that prefix themselves.
     pub fn registration(&self) -> (String, String) {
         (self.url.clone(), self.token.clone())
     }
 
     /// What a stdio shim needs to dial this endpoint, as environment
     /// variables for the child the Harness spawns (ADR-0026).
-    ///
-    /// A method for the same reason `authorization` is one: the token leaves
-    /// this type only where it is being handed to the process that will
-    /// present it.
+    /// A method so the token leaves this type only where it is handed to that process.
     pub fn stdio_env(&self) -> Vec<(String, String)> {
         vec![
             (ai_buddy_mcp_server::URL_VAR.to_string(), self.url.clone()),
@@ -106,9 +99,7 @@ static ENDPOINT: OnceLock<Option<Endpoint>> = OnceLock::new();
 
 /// Bind loopback and serve, once per app run.
 ///
-/// `None` is a bind or a token that failed, which is a session with no tools
-/// rather than an app that will not start: everything the buddy does on its
-/// own still works.
+/// `None` is a bind or a token that failed: a session with no tools rather than an app that will not start.
 pub fn serve(calls: mpsc::Sender<Call>) -> Option<Endpoint> {
     ENDPOINT
         .get_or_init(|| match start(calls) {
@@ -282,8 +273,7 @@ fn error_body(id: &Value, code: i64, message: &str) -> String {
 
 /// One JSON-RPC message in, its response out — `None` for a notification.
 ///
-/// Public so the tests can drive the protocol without a socket, which is the
-/// half of this file worth testing.
+/// Public so the tests can drive the protocol without a socket.
 pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<String> {
     let method = message
         .get("method")
@@ -421,8 +411,7 @@ mod tests {
         assert_eq!(call.arguments["message"], json!("hi"));
     }
 
-    /// The bug this file exists for: a `speak` nothing could apply used to come
-    /// back as success. A frame loop that refuses is an `isError` result.
+    /// A frame loop that refuses is an `isError` result, not success.
     #[test]
     fn a_refused_tool_call_is_reported_as_an_error_not_as_success() {
         let (tx, rx) = mpsc::channel::<Call>();

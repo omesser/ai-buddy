@@ -11,10 +11,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use crate::platform::ButtonsDown;
 
 /// Both buttons from GetAsyncKeyState.
-///
-/// GetAsyncKeyState returns a SHORT where the high bit indicates the button is
-/// currently pressed. No connection or API failure reads as nothing held. The
-/// overlay witness in `platform.rs` is the other half of the answer.
+/// High bit means pressed. Failure reads as nothing held. The overlay
+/// witness in `platform.rs` is the other half of the answer.
 pub fn buttons_down() -> ButtonsDown {
     ButtonsDown {
         primary: button_down(VK_LBUTTON.into()),
@@ -23,17 +21,12 @@ pub fn buttons_down() -> ButtonsDown {
 }
 
 fn button_down(vk_button: i32) -> bool {
-    // SAFETY: GetAsyncKeyState takes a virtual-key code and returns a SHORT
-    // indicating button state. The high bit signals the button is currently
-    // pressed. The call is documented as safe; a bad vk_button yields zero
-    // (not pressed), which is the safe answer.
+    // SAFETY: GetAsyncKeyState is documented safe; a bad vk_button yields
+    // zero (not pressed), which is the safe answer. High bit means down.
     unsafe { GetAsyncKeyState(vk_button) < 0 }
 }
 
 /// The OS double-click interval, in milliseconds.
-///
-/// Reads GetDoubleClickTime() from Windows. Returns None if zero (should not
-/// happen in practice, but handles the unusual case).
 pub fn double_click_interval_ms() -> Option<u32> {
     let ms = unsafe { GetDoubleClickTime() };
     if ms > 0 {

@@ -77,18 +77,8 @@ const AX_SUCCESS: i32 = 0;
 use crate::platform::DockSource;
 
 /// The Dock's real rectangle in points and where it came from, or `None`
-/// when no source can say.
-///
-/// `None` when the SPI is gone and Accessibility is not granted (this never
-/// prompts), when the Dock is not running, or when it sits on a side edge —
-/// a side Dock is a wall the work area already places, and only a bottom
-/// Dock leaves floor beside itself to give back. Coordinates arrive in the
-/// same top-left global point space `CGWindowList` uses. The caller still
-/// owes the answer a `plausible_dock` check against its displays: this
-/// module can say "shaped like a bottom Dock", not "on your screen".
-///
-/// Call it on the main thread beside the display read: the calls are IPC to
-/// the Dock, cheap at that cadence and not worth a poll of their own.
+/// when no source can say. Never prompts. Only a bottom Dock reports; a side
+/// Dock is already the work-area wall. Caller still owes `plausible_dock`.
 pub fn dock_bounds() -> Option<(Rect, DockSource)> {
     let horizontal = |bounds: Rect| {
         // A Dock on the left or the right is taller than wide. Its wall is
@@ -107,11 +97,8 @@ pub fn dock_bounds() -> Option<(Rect, DockSource)> {
         .map(|bounds| (bounds, DockSource::Accessibility))
 }
 
-/// `CoreDockGetRect`, if this macOS still ships it.
-///
-/// Resolved by name on every call rather than linked: a link-time reference
-/// to a private symbol turns its removal into a launch failure, and a lookup
-/// turns it into `None`. `dlsym` costs nothing at a two-a-second cadence.
+/// `CoreDockGetRect`, if this macOS still ships it. Resolved by name rather
+/// than linked: a private-symbol link turns removal into a launch failure.
 fn core_dock_rect() -> Option<Rect> {
     // The SPI takes a pointer to a CGRect and fills it; reverse-engineered,
     // stable in this shape for two decades, and trusted no further than the
@@ -126,11 +113,8 @@ fn core_dock_rect() -> Option<Rect> {
     }
     let mut rect = objc2_core_foundation::CGRect::ZERO;
     // SAFETY: dlsym proves the name resolves, never the arity or the ABI.
-    // The signature is the SPI's long-known shape — out-pointer in, nothing
-    // back — and a release that reshaped it would smash here, during the
-    // call: the plausibility gate downstream can reject wrong values, never
-    // a wrong ABI. That residual risk is the one the module doc records as
-    // accepted knowingly. The out-pointer lives for the call.
+    // A reshape would smash during the call; plausibility rejects wrong
+    // values, never a wrong ABI. The out-pointer lives for the call.
     unsafe {
         let get_rect: CoreDockGetRect = std::mem::transmute(symbol);
         get_rect(&raw mut rect);
@@ -206,7 +190,6 @@ fn list_bounds(application: *const c_void) -> Option<Rect> {
 }
 
 /// One AX attribute of `child`, decoded into `out` through `AXValueGetValue`.
-///
 /// SAFETY: the caller passes an `out` matching `value_type`, and the copied
 /// attribute is released before returning.
 unsafe fn ax_value(child: *const c_void, name: &str, value_type: u32, out: *mut c_void) -> bool {
