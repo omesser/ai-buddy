@@ -887,9 +887,9 @@ fn overlay_secondary(down: bool) {
     platform::set_overlay_secondary(down);
 }
 
-/// Whether reporting an off-art rectangle would actually win the click.
-/// Asked once at startup: a property of the lane, not of a window. Replaces a
-/// user-agent sniff that said "macOS" when the question is hotspot hit-testing.
+/// Whether reporting an off-art rectangle would actually win the click (#547).
+/// Asked once at startup: a lane property, not a window. Replaces a UA sniff
+/// that agrees today and parts when X11 or Windows unions off-art rects.
 #[tauri::command]
 fn overlay_hit_tests_hotspots() -> bool {
     platform::hotspots_hit_tested()
@@ -1071,9 +1071,9 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     }
 }
 
-/// Draw one forwarded permission request on every Chat surface, and make
-/// sure one is visible. A window rather than a Speech line: ADR-0010 forbids
-/// choosing an option, and a minimized window is a request nobody sees.
+/// Draw one forwarded permission request on every Chat surface, visible and
+/// unminimized. ADR-0010 forbids choosing an option. ADR-0013: only Chat can
+/// draw them; a bubble can only point at a window that is not open.
 fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;
@@ -1118,9 +1118,9 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     }
 }
 
-/// Show the latest thought in every open Chat surface. Every one: the
-/// session is shared and the wire does not say whose turn is on it. Nothing
-/// is held for a later surface; a thought is only worth reading while it is being thought.
+/// Show the latest thought in every open Chat surface, from whichever
+/// Completer is on the wire: Harness, or HTTP marked reasoning (#611).
+/// Every one: the session is shared and the wire does not say whose turn is on it.
 fn show_thought(app: &tauri::AppHandle, line: String) {
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
