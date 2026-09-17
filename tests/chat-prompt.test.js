@@ -39,9 +39,10 @@ test("nothing in the Chat surface saves on a keystroke", () => {
   // The composer's send key is the one listener that may fire mid-typing: the
   // field is a textarea, which does not submit its form on Enter,
   // so Enter had to be wired by hand. It sends a turn; it does not save.
+  // Prompt-tab input/change only arm Save and Discard; they must not save.
   assert.deepEqual(
-    typing,
-    ["line.keydown"],
+    [...typing].sort(),
+    ["line.keydown", "promptText.change", "promptText.input"].sort(),
     `these fire while the user is still typing, and saving reopens the session: ${typing.join(", ")}`,
   );
 
@@ -52,6 +53,18 @@ test("nothing in the Chat surface saves on a keystroke", () => {
     /invoke\(/,
     "the send key reaches the Shell only through the submit listener, never the save",
   );
+
+  for (const name of ["input", "change"]) {
+    const start = js.indexOf(`promptText.addEventListener("${name}"`);
+    const stop = js.indexOf(";", start);
+    const body = js.slice(start, stop);
+    assert.doesNotMatch(body, /invoke\(/, `promptText.${name} must not reach the Shell`);
+    assert.doesNotMatch(
+      body,
+      /askingToSave\(true\)/,
+      `promptText.${name} must not open the confirm`,
+    );
+  }
 });
 
 test("the save is asked for twice before the conversation is spent", () => {
@@ -203,5 +216,68 @@ test("the save warning sits outside the Instance Prompt field", () => {
     section,
     /<\/div>\s*<p class="warn">/,
     "the warning follows the wrapper as a later grid sibling",
+  );
+});
+
+function listenerSlice(source, target, event) {
+  const token = `${target}.addEventListener("${event}"`;
+  const start = source.indexOf(token);
+  assert.ok(start >= 0, `${target}.${event} is missing`);
+  const next = source.indexOf(".addEventListener(", start + token.length);
+  return source.slice(start, next < 0 ? undefined : next);
+}
+
+test("Prompt tab Save and Discard stay disabled until the field is dirty", () => {
+  const section = promptSection(html);
+
+  assert.match(section, /id="prompt-discard"/, "Discard sits in the sticky footer");
+  assert.match(
+    section,
+    /id="prompt-save"[^>]*\bdisabled\b/,
+    "Save starts disabled: a clean field must not open the confirm",
+  );
+  assert.match(
+    section,
+    /id="prompt-discard"[^>]*\bdisabled\b/,
+    "Discard starts disabled with Save",
+  );
+
+  const discard = ruleBlock(css, "#prompt-discard");
+  assert.match(discard, /background:\s*transparent/, "Discard is the outline twin of Cancel, not accent");
+  assert.match(ruleBlock(css, "#prompt-save:disabled"), /cursor:\s*default|background:\s*var\(--chat-fill-soft\)/);
+
+  assert.match(js, /function promptDirty\(/);
+  assert.match(js, /promptText\.value !== savedPrompt/);
+  assert.match(
+    js,
+    /promptSave\.disabled = confirming \|\| !dirty/,
+    "Save is disabled while clean or confirming",
+  );
+  assert.match(
+    js,
+    /promptDiscard\.disabled = confirming \|\| !dirty/,
+    "Discard is disabled while clean or confirming",
+  );
+  assert.match(js, /promptDiscard\.hidden = asking/, "Discard does not compete with Confirm/Cancel");
+  assert.match(js, /showPrompt\([\s\S]*?syncPromptActions\(\)/s);
+
+  const saveClick = listenerSlice(js, "promptSave", "click");
+  assert.match(saveClick, /if \(!promptDirty\(\)\)/, "a clean Save click is a no-op, not a confirm");
+  assert.match(saveClick, /askingToSave\(true\)/);
+});
+
+test("Discard restores the last saved text; Cancel only aborts confirm", () => {
+  const discard = listenerSlice(js, "promptDiscard", "click");
+  assert.match(discard, /promptText\.value = savedPrompt/, "Discard puts the last saved text back");
+  assert.match(discard, /promptSaid\.textContent = ""/);
+  assert.match(discard, /askingToSave\(false\)/, "and leaves confirm if it was open");
+  assert.doesNotMatch(discard, /invoke\(/, "Discard never reaches the Shell");
+
+  const cancel = listenerSlice(js, "promptCancel", "click");
+  assert.match(cancel, /askingToSave\(false\)/);
+  assert.doesNotMatch(
+    cancel,
+    /promptText\.value/,
+    "Cancel aborts confirm only; the field keeps the unsaved sentence",
   );
 });

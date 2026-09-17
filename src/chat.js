@@ -33,6 +33,7 @@ const promptTab = document.getElementById("prompt");
 const promptText = document.getElementById("prompt-text");
 const promptSaid = document.getElementById("prompt-said");
 const promptSave = document.getElementById("prompt-save");
+const promptDiscard = document.getElementById("prompt-discard");
 const promptConfirm = document.getElementById("prompt-confirm");
 const promptCancel = document.getElementById("prompt-cancel");
 
@@ -381,6 +382,23 @@ function askingToSave(asking) {
   promptSave.hidden = asking;
   promptConfirm.hidden = !asking;
   promptCancel.hidden = !asking;
+  // Discard is a dirty-pair twin of Save, not of Cancel: Cancel aborts the
+  // confirm, Discard would restore the field mid-ask and compete with it.
+  promptDiscard.hidden = asking;
+  syncPromptActions();
+}
+
+function promptDirty() {
+  return promptText.value !== savedPrompt;
+}
+
+// Clean Save used to open the confirm and wipe the session for no change.
+// Disabled until the field differs from what the Shell last saved.
+function syncPromptActions() {
+  const confirming = !promptConfirm.hidden;
+  const dirty = promptDirty();
+  promptSave.disabled = confirming || !dirty;
+  promptDiscard.disabled = confirming || !dirty;
 }
 
 function fillFrozen(id, text) {
@@ -401,11 +419,24 @@ function showPrompt(opening) {
     promptText.value = opening.instance_prompt;
   }
   savedPrompt = opening.instance_prompt;
+  syncPromptActions();
 }
 
+promptText.addEventListener("input", syncPromptActions);
+promptText.addEventListener("change", syncPromptActions);
+
 promptSave.addEventListener("click", () => {
+  if (!promptDirty()) {
+    return;
+  }
   promptSaid.textContent = "";
   askingToSave(true);
+});
+
+promptDiscard.addEventListener("click", () => {
+  promptText.value = savedPrompt;
+  promptSaid.textContent = "";
+  askingToSave(false);
 });
 
 promptCancel.addEventListener("click", () => askingToSave(false));
@@ -422,9 +453,11 @@ promptConfirm.addEventListener("click", () => {
       promptSaid.textContent = "Saved.";
       // The log is cleared by `chat-session`: saving reopens the session, and
       // that event is the one place a replacement is drawn (ADR-0012).
+      syncPromptActions();
     })
     .catch((why) => {
       promptSaid.textContent = String(why);
+      syncPromptActions();
     });
 });
 

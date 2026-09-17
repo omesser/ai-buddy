@@ -323,11 +323,25 @@ body {
   cursor: pointer;
 }
 
-#prompt-cancel {
+#prompt-cancel,
+#prompt-discard {
   border: 1px solid var(--chat-line);
   background: transparent;
   color: var(--chat-ink-2);
   font-weight: 400;
+}
+
+.prompt-actions button:disabled {
+  cursor: default;
+}
+
+#prompt-save:disabled {
+  background: var(--chat-fill-soft);
+  color: var(--chat-ink-4);
+}
+
+#prompt-discard:disabled {
+  color: var(--chat-ink-4);
 }
 
 .prompt-actions button:focus-visible {
