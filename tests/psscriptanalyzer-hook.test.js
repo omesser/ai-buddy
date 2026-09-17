@@ -41,11 +41,12 @@ const runHook = ({ env = {}, pathHasPwsh = true } = {}) => {
   }
   writeFileSync(join(tmpDir, "probe.ps1"), "Write-Host 'hi'\n");
 
-  const path = pathHasPwsh
-    ? `${bin}:${process.env.PATH ?? ""}`
-    : `${bin}:/usr/bin:/bin`;
+  // ubuntu-latest ships pwsh in /usr/bin. A missing-pwsh case must not
+  // inherit that PATH or the hook finds the real binary and never skips.
+  // Invoke via /bin/bash so the hook does not need bash on PATH.
+  const path = pathHasPwsh ? `${bin}:${process.env.PATH ?? ""}` : bin;
 
-  return spawnSync(hook, ["probe.ps1"], {
+  return spawnSync("/bin/bash", [hook, "probe.ps1"], {
     cwd: tmpDir,
     encoding: "utf8",
     env: { ...process.env, ...env, PATH: path },
