@@ -24,9 +24,7 @@ pub struct Point {
 
 /// One visible window: which one it is, and where.
 ///
-/// The id is opaque here and only ever compared for equality. That comparison
-/// is the whole point: it is what says the window under the sprite this tick is
-/// the one it was standing on last tick, which geometry cannot say. #85.
+/// The id is what says the window under the sprite this tick is the one it was standing on last tick, which geometry cannot say.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Window {
     pub id: WindowId,
@@ -57,24 +55,16 @@ pub enum Verb {
     Poke,
     /// A right-click on the sprite. Opens the same menu the tray icon opens.
     Menu,
-    /// A double-click on the sprite. Opens the Chat surface, which the Shell
-    /// draws.
+
+    /// A double-click on the sprite. Opens the Chat surface, which the Shell draws.
     ///
-    /// Accepted now rather than added later because the verb set is fixed at
-    /// five: every verb is a tax on every Character that will ever exist, and a
-    /// sixth would mean a ninth Required Animation.
+    /// The verb set is fixed at five: every verb is a tax on every Character that will ever exist, and a sixth would mean a ninth Required Animation.
     Summon,
 }
 
-/// The one cue an interaction earned this tick, for the Shell to draw and to
-/// sound.
+/// The one cue an interaction earned this tick, for the Shell to draw and to sound.
 ///
-/// The Engine picks it because it is the only place that knows both the verbs
-/// and the `State::Dragged` transitions, and because it is pure — the choice is
-/// decided where a test can reach it without a window. The drawing and the
-/// synthesis are the webview's, so a cue costs no Character art and no manifest
-/// field, the way the speech bubble already costs none. The vocabulary is
-/// global: no Character declares a pitch or a colour. #277.
+/// The Engine picks it because it is the only place that knows both the verbs and the `State::Dragged` transitions, and because it is pure. Vocabulary is global: no Character declares a pitch or a colour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cue {
     /// A left click.
@@ -97,8 +87,7 @@ pub enum Cue {
 impl Cue {
     /// The name the webview's cue machine keys its visual and its sound by.
     ///
-    /// A name rather than a serialized enum, following `Frame::animation`: what
-    /// crosses to the webview is already a table lookup on the other side.
+    /// A name rather than a serialized enum, following `Frame::animation`: what crosses to the webview is already a table lookup on the other side.
     pub fn name(self) -> &'static str {
         match self {
             Self::Poke => "poke",
@@ -110,12 +99,9 @@ impl Cue {
         }
     }
 
-    /// The cue a verb carries on its own.
-    ///
     /// `Grab` and `Throw` carry none: a cue keyed on `Grab` would fire on every
     /// tick of a drag, and a `Throw` is answered by the transition out of
-    /// `Dragged` — which a slow release, emitting no verb at all, has to be
-    /// answered by anyway.
+    /// `Dragged` — which a slow release, emitting no verb at all, has to be answered by anyway.
     fn of_verb(verb: &Verb) -> Option<Self> {
         match verb {
             Verb::Poke => Some(Self::Poke),
@@ -128,9 +114,7 @@ impl Cue {
 
 /// What the Director proposed since the previous tick.
 ///
-/// Advisory: the Engine plays the named Behavior if the Character declares one
-/// by that name and the sprite's State permits its Primitives, and refuses it
-/// otherwise. The line is spoken either way, since speaking moves nothing.
+/// Advisory: the Engine plays the named Behavior if the Character declares one by that name and the sprite's State permits its Primitives, and refuses it otherwise. The line is spoken either way, since speaking moves nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BehaviorProposal {
     pub behavior: String,
@@ -142,12 +126,7 @@ pub struct BehaviorProposal {
 pub struct WorldSnapshot {
     /// The part of each visible display a sprite may occupy.
     ///
-    /// Not the whole display: a screen reserves strips of itself for furniture
-    /// the sprite must not go behind, and the Shell takes those off before the
-    /// Engine sees them. That is why the floor, the ceiling and both walls can
-    /// all be derived from these rectangles. The only thing the Engine knows
-    /// about the Dock is its Perch's reserved id, which makes its side a wall
-    /// (#176).
+    /// Not the whole display: the Shell strips furniture the sprite must not go behind, so floor, ceiling and walls derive from these. The Dock is known only by its Perch's reserved id, which makes its side a wall.
     pub displays: Vec<Rect>,
     /// Visible windows in descending z-order.
     pub windows: Vec<Window>,
@@ -159,12 +138,10 @@ pub struct WorldSnapshot {
     /// A Behavior proposal delivered since the previous tick, if the Director
     /// made one. Advisory: the Engine is free to refuse it.
     pub proposal: Option<BehaviorProposal>,
+
     /// Bumps when the assembler actually re-read the window list. Zero means
-    /// the caller did not say, and the Engine treats every tick as a fresh
-    /// sample — which is what the tests that construct snapshots by hand are.
-    /// A reused generation is a tick between polls: the rectangles have not
-    /// changed, and a riding sprite has to coast on the last Perch velocity
-    /// or it hitch-steps while the window slides. #98.
+    /// the caller did not say, and the Engine treats every tick as a fresh sample.
+    /// A reused generation is a tick between polls, so a riding sprite coasts or hitch-steps.
     pub poll_generation: u64,
 }
 
@@ -178,47 +155,35 @@ pub struct Frame {
     pub state: State,
     /// The Animation to play, by the name every Character Package must supply.
     pub animation: &'static str,
+
     /// How long the current Animation has been playing, in milliseconds.
     ///
-    /// Not a frame index: which frame that is depends on the fps and loop mode
-    /// the Character Manifest declares, which the Engine has no business
-    /// knowing. `character::Animation::frame_at` does that arithmetic.
+    /// Not a frame index: fps and loop mode are the Manifest's. `character::Animation::frame_at` does that arithmetic.
     pub animation_ms: u32,
-    /// The draw that decides which member of the Animation's variant ring is
-    /// on screen, weighed by `Character::draw` against what the Manifest
-    /// declared. Held for as long as the Animation plays and taken afresh when
-    /// it changes, so a Behavior stepping through `idle` shows one strip
-    /// instead of swapping costumes every Primitive turn. #316.
+
+    /// The draw that decides which member of the Animation's variant ring is on screen.
+    ///
+    /// Held for as long as the Animation plays and taken afresh when it changes, so a Behavior stepping through `idle` shows one strip instead of swapping costumes every Primitive turn.
     pub variant_draw: u64,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
-    /// The Behavior that started playing on this frame, if a proposal was
-    /// taken. An event like `dialogue`, and for the Shell rather than the
-    /// renderer: a proposal is advisory, so what the Director suggested and
-    /// what the user actually saw are different lists, and repetition is
-    /// suppressed on the second.
+
+    /// The Behavior that started playing on this frame, if a proposal was taken.
+    ///
+    /// An event like `dialogue`, for the Shell rather than the renderer: what the Director suggested and what the user actually saw are different lists, and repetition is suppressed on the second.
     pub behavior: Option<String>,
-    /// The Behavior whose Primitives are still playing, for every tick of the
-    /// span rather than the one it began on.
+
+    /// The Behavior whose Primitives are still playing, for every tick of the span rather than the one it began on.
     ///
-    /// A state where `behavior` above is an event, and the two answer
-    /// different questions: `behavior` says a proposal was taken *now*, which
-    /// is what records recency, and this says what the sprite is *in the
-    /// middle of*. A reader who conflated them would either report a Behavior
-    /// once and lose it, or record the same one as accepted on every tick it
-    /// ran for.
-    ///
-    /// `None` for the moments the Engine plays itself — a Land, a Hold, a
-    /// reaction to a Poke or to the cursor — which no Director named and which
-    /// are therefore nameless rather than anonymous.
+    /// `behavior` says a proposal was taken now; this says what the sprite is in the middle of. `None` for Engine-played moments no Director named.
     pub playing_behavior: Option<String>,
+
     /// The Primitive on screen: how far into its chain the Engine has got.
     ///
-    /// `None` once a chain has run out, including while a walk it started
-    /// carries on under its own velocity.
+    /// `None` once a chain has run out, including while a walk it started carries on under its own velocity.
     pub playing_primitive: Option<Primitive>,
     /// Whether this tick carried the sprite with a moving Perch. The Shell
-    /// polls the window list at the frame rate only then. #98.
+    /// polls the window list at the frame rate only then.
     pub riding: bool,
     /// Which way the sprite is pointed, as -1.0 (left) or 1.0 (right). Only
     /// horizontal travel turns it, so a stop keeps the last heading and the
@@ -228,15 +193,12 @@ pub struct Frame {
     /// Menu or a Dwell. The Shell wakes the session Director from this bit.
     pub addressed: bool,
     /// The cue this interaction earned, if one landed. A one-tick pulse like
-    /// `dialogue`, and at most one a tick — the precedence is in `tick`. #277.
+    /// `dialogue`, and at most one a tick — the precedence is in `tick`.
     pub cue: Option<Cue>,
-    /// A Behavior this Character declared, proposed this tick, and turned down
-    /// by `permitted`. A one-tick pulse like `behavior`, and never set on the
-    /// same tick as one.
+
+    /// A Behavior this Character declared, proposed this tick, and turned down by `permitted`.
     ///
-    /// Reported rather than dropped: a refusal and a model that proposed
-    /// nothing otherwise look identical in the trace. `crates/core` does no
-    /// I/O, so the Shell prints it. #318.
+    /// Reported rather than dropped: a refusal and a model that proposed nothing otherwise look identical in the trace. `crates/core` does no I/O, so the Shell prints it.
     pub refused: Option<String>,
 }
 
@@ -252,10 +214,9 @@ pub struct Frame {
 /// its own duration when a Character's art needs to outlast this one.
 const PRIMITIVE_MS: u32 = 600;
 
-/// How long a poked sprite stands still after reacting, before it may move
-/// again. A tuning knob. `PRIMITIVE_MS` is the length of the `react` art, not
-/// of a pause that reads as the character noticing you; 2.5 s is long enough
-/// to register and short enough that a click never feels like a freeze. #177.
+/// How long a poked sprite stands still after reacting, before it may move again.
+/// `PRIMITIVE_MS` is the length of the `react` art, not of a pause that reads as the character noticing you.
+/// 2.5 s is long enough to register and short enough that a click never feels like a freeze.
 const POKE_COOLDOWN_MS: u32 = 2_500;
 
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
@@ -263,10 +224,9 @@ const POKE_COOLDOWN_MS: u32 = 2_500;
 /// on an unattended desktop settles down.
 const SLEEP_AFTER_MS: u32 = 60_000;
 
-/// How long a sprite rests quietly on a Perch before leaving sit and idling in
-/// place. Long enough to read as settling onto the edge, and far short of
-/// nodding off. It bounds how much of a long idle strip a perched sprite gets
-/// through before the next wake. #310.
+/// How long a sprite rests quietly on a Perch before leaving sit and idling in place.
+/// Long enough to read as settling onto the edge, and far short of nodding off.
+/// It bounds how much of a long idle strip a perched sprite gets through before the next wake.
 const PERCHED_IDLE_AFTER_MS: u32 = 4_000;
 
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
@@ -277,75 +237,60 @@ const CLIMB_SPEED: f64 = 200.0;
 /// strolling along a title bar is not.
 const WALK_SPEED: f64 = 120.0;
 
-/// Points per second squared. A tuning knob: the number that makes a fall read
-/// as heavy rather than floaty is found by watching it, not by deriving it.
-/// 3600 keeps a Throw on the display long enough to see, instead of spending
-/// the flight above the usable frame. #100.
+/// Points per second squared. A tuning knob: the number that makes a fall read as heavy rather than floaty is found by watching it, not by deriving it.
+/// 3600 keeps a Throw on the display long enough to see, instead of spending the flight above the usable frame.
 const GRAVITY: f64 = 3600.0;
 
 /// Points per second a Jump launches upward at. A tuning knob. The peak is
 /// `JUMP_SPEED` squared over twice `GRAVITY`, so 900 clears about 110 points —
-/// roughly a sprite's height — and lands within half a second. #374.
+/// roughly a sprite's height — and lands within half a second.
 const JUMP_SPEED: f64 = 900.0;
 
-/// How much of the art must stay below the usable top for the feet to be put
-/// down there. Half: a buddy clipped at the crown still reads as itself, while
-/// a whole sprite's height refuses every window near the top of a display, a
-/// dead zone sized for the tallest Character and charged to all of them. #395.
+/// How much of the art must stay below the usable top for the feet to be put down there.
+/// Half: a buddy clipped at the crown still reads as itself, while a whole sprite's height refuses every window near the top of a display, a dead zone sized for the tallest Character and charged to all of them.
 const CEILING_VISIBLE_SHARE: f64 = 0.5;
 
-/// The clearance an Engine built without an art height uses: what #100 chose,
-/// 32px at 4×. Production always supplies one; this keeps a bare `Engine::new`
+/// The clearance an Engine built without an art height uses: 32px at 4×.
+/// Production always supplies one; this keeps a bare `Engine::new`
 /// standing where it always did.
 const CEILING_CLEARANCE_UNKNOWN: f64 = 128.0;
 
-/// How far from a horizontal display edge the feet must stay so the full
-/// sprite is on-screen when standing (not climbing). The Engine does not know
-/// the art's size; 64 is 16px at 4×, enough for a character of typical width.
-/// Climb frames assume the wall is in the middle of the frame, so this inset
-/// applies only to non-climb states.
+/// How far from a horizontal display edge the feet must stay so the full sprite is on-screen when standing (not climbing).
+/// The Engine does not know the art's size; 64 is 16px at 4×, enough for a character of typical width.
+/// Climb frames assume the wall is in the middle of the frame, so this inset applies only to non-climb states.
 const EDGE_CLEARANCE: f64 = 64.0;
 
-/// Points per second squared. The yank gate is this times `YANK_WINDOW_S`:
-/// a change in Perch speed larger than that, measured against the speed
-/// from about one idle poll ago, drops the sprite. The last 16 ms slope
-/// treats WindowServer jitter as a yank. #98.
+/// Points per second squared. The yank gate is this times `YANK_WINDOW_S`: a change in Perch speed larger than that, measured against the speed from about one idle poll ago, drops the sprite.
+/// The last 16 ms slope treats WindowServer jitter as a yank.
 pub const RIDE_ACCELERATION: f64 = 10_000.0;
 
 /// How far back the yank gate looks. Fast poll still tracks the window;
-/// only the fall decision stays on this cadence. #98.
+/// only the fall decision stays on this cadence.
 const YANK_WINDOW_S: f64 = 0.1;
 
-/// Cursor proximity radius in points. The cursor enters Near when it crosses
-/// this threshold around the sprite (#152).
+/// Cursor proximity radius in points.
 ///
-/// A tuning knob: close enough to react before the hand is on top of the sprite,
-/// far enough that the buddy does not jump at every scroll or window move.
+/// Close enough to react before the hand is on top of the sprite, far enough that the buddy does not jump at every scroll or window move.
 const NEAR_RADIUS: f64 = 150.0;
 
-/// How long the cursor must rest on the sprite to count as Dwell, in milliseconds (#152).
+/// How long the cursor must rest on the sprite to count as Dwell, in milliseconds.
 ///
-/// A tuning knob: long enough that passing over the sprite does not wake the
-/// Director, short enough that intentionally addressing feels immediate.
+/// Long enough that passing over the sprite does not wake the Director, short enough that intentionally addressing feels immediate.
 const DWELL_MS: u32 = 400;
 
-/// Minimum cursor velocity toward the sprite to count as a Rush, in points per second (#152).
+/// Minimum cursor velocity toward the sprite to count as a Rush, in points per second.
 ///
-/// A tuning knob: fast enough to read as a startle (a flick or a fast approach),
-/// slow enough that ordinary cursor travel near the sprite does not trigger it.
+/// Fast enough to read as a startle (a flick or a fast approach), slow enough that ordinary cursor travel near the sprite does not trigger it.
 const RUSH_VELOCITY: f64 = 800.0;
 
-/// Maximum time the chase Primitive pursues the cursor before giving up, in milliseconds (#153).
+/// Maximum time the chase Primitive pursues the cursor before giving up, in milliseconds.
 ///
-/// A tuning knob: long enough to catch a cursor that is moving or that starts far away,
-/// short enough that a chase that will never close still disengages in time for the
-/// sprite to do something else. Boredom is the realism.
+/// Long enough to catch a cursor that is moving or that starts far away, short enough that a chase that will never close still disengages. Boredom is the realism.
 const CHASE_TIMEOUT_MS: u32 = 8000;
 
-/// How close the sprite's x must be to the cursor's x to count as arrival, in points (#153).
+/// How close the sprite's x must be to the cursor's x to count as arrival, in points.
 ///
-/// A tuning knob: close enough to read as catching it, loose enough that the
-/// sprite does not overshoot and backtrack.
+/// Close enough to read as catching it, loose enough that the sprite does not overshoot and backtrack.
 const CHASE_ARRIVAL_THRESHOLD: f64 = 30.0;
 
 pub struct Engine {
@@ -355,20 +300,19 @@ pub struct Engine {
     /// Milliseconds the sprite has spent on its feet, untouched.
     idle_ms: u32,
     /// Milliseconds the sprite has been quietly resting while Perched: not
-    /// riding, not walking, no Primitive playing. #310.
+    /// riding, not walking, no Primitive playing.
     perched_rest_ms: u32,
     animation: &'static str,
-    /// Milliseconds since the current Animation started.
+
     animation_ms: u32,
-    /// The draw the renderer weighs against the Animation's variant ring, and
-    /// the source it comes from. The Engine knows when an Animation starts and
-    /// nothing about the art, which is exactly what the draw needs and all it
-    /// needs; which strip the number lands on is the Character's. #316.
+
+    /// The draw the renderer weighs against the Animation's variant ring, and the source it comes from.
+    /// The Engine knows when an Animation starts and nothing about the art; which strip the number lands on is the Character's.
     variant_draw: u64,
     variants: Seeded,
     /// The Behaviors the Character declares, which a proposal names.
     behaviors: BTreeMap<String, Behavior>,
-    /// This Instance's standing height in points, when it is known.
+
     sprite_height: Option<f64>,
     /// The windows of the previous tick, to tell a window that has come to
     /// contain the sprite from one that contained it all along. See
@@ -377,87 +321,80 @@ pub struct Engine {
     /// Where the sprite stood at the end of the previous tick — the other half
     /// of what says whether a window has come to contain it.
     previous_position: Point,
-    /// The Primitives of the Behavior being played, last first, so the one on
-    /// screen is on top.
+
+    /// The Primitives of the Behavior being played, last first, so the one on screen is on top.
     ///
-    /// Not a State: playing a Behavior is something the sprite does while
-    /// standing, falling or perched, and giving it a State would mean deciding
-    /// what it resumes as.
+    /// Not a State: playing a Behavior is something the sprite does while standing, falling or perched, and giving it a State would mean deciding what it resumes as.
     playing: Vec<Primitive>,
+
     /// The name of the Behavior `playing` was flattened from, while it lasts.
     ///
-    /// The Primitives alone cannot be traced back to it: `chain` flattens a
-    /// Behavior and the Behaviors it links to into one list precisely so the
-    /// whole is one thing to abandon, and two Characters may declare the same
-    /// Primitives under different names. Kept beside `playing` and cleared
-    /// with it, so the pair is never half true.
+    /// The Primitives alone cannot be traced back to it: `chain` flattens a Behavior and the Behaviors it links to into one list, and two Characters may declare the same Primitives under different names. Kept beside `playing` and cleared with it, so the pair is never half true.
     playing_behavior: Option<String>,
-    /// Milliseconds left of the Primitive being played.
+
     primitive_ms: u32,
     /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
     /// and the Primitive carries none, so it goes the way it was last heading.
     facing: f64,
     /// Whether this tick translated the sprite with a moving Perch. Decides
-    /// the Hold animation; not a State — the sprite is still Perched. #98.
+    /// the Hold animation; not a State — the sprite is still Perched.
     riding: bool,
     /// Last observed velocity of the ridden Perch, for the acceleration gate
-    /// and for coasting between polls. #98.
+    /// and for coasting between polls.
     perch_velocity: Point,
     /// Last observed acceleration of the ridden Perch. Constant-velocity
     /// coasting hitch-steps when a drag speeds up or slows; keeping the
-    /// derivative lets the in-between ticks follow the curve. #98.
+    /// derivative lets the in-between ticks follow the curve.
     perch_acceleration: Point,
     /// Seconds since the last fresh window sample, so a coast integrates
     /// from the sample rather than compounding Euler error each tick.
     coast_s: f64,
     /// The assembler's last `poll_generation`. Equal generations mean the
-    /// window list was reused and a ride has to coast rather than wait. #98.
+    /// window list was reused and a ride has to coast rather than wait.
     last_poll_generation: u64,
-    /// The Perch the sprite last stood on, remembered so a coast that has
-    /// left the stale rectangle can still match the window when it updates.
-    /// The id is what matches it in the next sample; the rectangle is the
-    /// origin a coast integrates from. #85.
+
+    /// The Perch the sprite last stood on, remembered so a coast that has left the stale rectangle can still match the window when it updates.
+    /// The id is what matches it in the next sample; the rectangle is the origin a coast integrates from.
     last_perch: Option<Window>,
     /// How far along that Perch the sprite stands, so a snap back onto a
     /// fresh sample keeps the place it was holding.
     hold_offset_x: f64,
     /// Seconds since the last fresh window sample. Velocity and acceleration
-    /// are that interval, not a constant poll, because idle and ride differ. #98.
+    /// are that interval, not a constant poll, because idle and ride differ.
     since_sample_s: f64,
     /// Perch velocity from about `YANK_WINDOW_S` ago. The fall decision
-    /// compares against this, not the last 16 ms sample. #98.
+    /// compares against this, not the last 16 ms sample.
     yank_reference: Point,
     since_yank_ref_s: f64,
-    /// #84: quiet but not gone. Director proposals are refused and unprompted
+    /// Quiet but not gone. Director proposals are refused and unprompted
     /// dialogue is not spoken, while Poke/Grab/Throw still work and the
     /// Character stays visible.
     do_not_disturb: bool,
-    /// Character's reactions to cursor proximity (#152).
+
     near_reaction: CursorReaction,
     rush_reaction: CursorReaction,
-    /// Whether the cursor is currently within NEAR_RADIUS of the sprite (#152).
+
     cursor_near: bool,
-    /// Milliseconds the cursor has rested on the sprite without pressing (#152).
+    /// Milliseconds the cursor has rested on the sprite without pressing.
     cursor_dwell_ms: u32,
-    /// Whether this dwell session has already addressed the Director (#152).
+    /// Whether this dwell session has already addressed the Director.
     cursor_dwell_addressed: bool,
-    /// Last observed cursor position, for Rush velocity calculation (#152).
+    /// Last observed cursor position, for Rush velocity calculation.
     last_cursor: Point,
-    /// Last observed cursor velocity, for Rush detection (#152).
+    /// Last observed cursor velocity, for Rush detection.
     cursor_velocity: Point,
-    /// Whether a Rush has already been reported this Near session (#152).
+    /// Whether a Rush has already been reported this Near session.
     /// Prevents repeated Rush reactions while the cursor stays near.
     rush_reported: bool,
-    /// Milliseconds since the chase Primitive started (#153).
+
     chase_ms: u32,
     /// Milliseconds left of standing still after a Poke. While it runs, a
     /// proposal that would move the sprite is refused; a Grab, a Throw or
-    /// losing the ground ends it at once. #177.
+    /// losing the ground ends it at once.
     poke_cooldown_ms: u32,
-    /// Whether the previous tick already carried `Verb::Menu`. The Shell
-    /// re-injects that verb every tick the popup is held (#507), so a cue
-    /// keyed on the verb would fire for as long as the menu is open. The
-    /// press edge is the cue; a gap clears this and the next press cues again.
+
+    /// Whether the previous tick already carried `Verb::Menu`. The Shell re-injects that verb every tick the popup is held, so a cue keyed on the verb would fire for as long as the menu is open.
+    /// The press edge is the cue; a gap clears this and the next press cues again.
     menu_held: bool,
 }
 
@@ -517,8 +454,7 @@ impl Engine {
 
     /// How tall this Instance's art stands, in points.
     ///
-    /// Without it the Engine falls back to a fixed guess sized for the tallest
-    /// Character and charged to every one. #395.
+    /// Without it the Engine falls back to a fixed guess sized for the tallest Character and charged to every one.
     pub fn with_sprite_height(mut self, height: f64) -> Self {
         self.sprite_height = height.is_finite().then_some(height).filter(|h| *h > 0.0);
         self
@@ -532,33 +468,25 @@ impl Engine {
             })
     }
 
-    /// The seed this Instance's variant draws come from, so two buddies of one
-    /// Character do not idle in lockstep.
+    /// The seed this Instance's variant draws come from, so two buddies of one Character do not idle in lockstep.
     ///
-    /// Passed in rather than read, like the Static Director's seed: the Engine
-    /// has no clock, and a draw no test could reproduce would be worse than no
-    /// draw at all. The first is taken here, because the Animation a sprite
-    /// spawns in is one the seed should reach as well.
+    /// Passed in rather than read: the Engine has no clock, and a draw no test could reproduce would be worse than no draw at all. The first is taken here, because the Animation a sprite spawns in is one the seed should reach as well.
     pub fn with_variant_seed(mut self, seed: u64) -> Self {
         self.variants = Seeded::new(seed);
         self.variant_draw = self.variants.draw();
         self
     }
 
-    /// The Character's cursor reactions (#152).
+    /// The Character's cursor reactions.
     pub fn with_cursor_reactions(mut self, near: CursorReaction, rush: CursorReaction) -> Self {
         self.near_reaction = near;
         self.rush_reaction = rush;
         self
     }
 
-    /// #84: toggle Do Not Disturb. The Character stays visible but stops
-    /// starting things: no Director proposals are applied and no unprompted
-    /// dialogue is spoken. Poke, Grab, and Throw still work.
+    /// Toggle Do Not Disturb. The Character stays visible but stops starting things: no Director proposals are applied and no unprompted dialogue is spoken. Poke, Grab, and Throw still work.
     ///
-    /// A walk already under way has to be sat down too. Walk velocity
-    /// outlives the Primitive that started it, so refusing the next
-    /// proposal would otherwise leave the sprite pacing.
+    /// A walk already under way has to be sat down too. Walk velocity outlives the Primitive that started it, so refusing the next proposal would otherwise leave the sprite pacing.
     pub fn set_do_not_disturb(&mut self, enabled: bool) {
         self.do_not_disturb = enabled;
         if enabled
@@ -577,9 +505,7 @@ impl Engine {
 
     /// Swap the Character this Engine is playing without moving the sprite.
     ///
-    /// A switch is a new set of Behaviors and cursor reactions, not a new
-    /// body: dropping the sprite so it can fall as someone else would be a
-    /// teleport the user did not ask for.
+    /// A switch is a new set of Behaviors and cursor reactions, not a new body: dropping the sprite so it can fall as someone else would be a teleport the user did not ask for.
     pub fn retarget(
         &mut self,
         behaviors: BTreeMap<String, Behavior>,
@@ -609,7 +535,7 @@ impl Engine {
         }
 
         // Quiet perch rest is narrower than idle: Perched only, not riding,
-        // not walking, no Primitive playing. #310.
+        // not walking, no Primitive playing.
         let quietly_resting_perched = matches!(self.state, State::Perched)
             && !self.riding
             && self.velocity.x == 0.0
@@ -621,20 +547,15 @@ impl Engine {
             self.perched_rest_ms = 0;
         }
 
-        // Being addressed is not being left alone, so a proposal holds off the
-        // sleep timer without waking a sprite that has already nodded off —
-        // only a verb does that. The timer is otherwise still running when the
-        // Behavior is played at the end of the tick, and a sprite that nods off
-        // first is asleep when the gate reads its State. #5.
-        //
-        // #84: Do Not Disturb means proposals do not count as being addressed,
-        // so the idle timer keeps running and the sprite settles to sleep.
+        // A proposal holds off the sleep timer without waking a sprite that has already nodded off; only a verb does that.
+        // The timer is otherwise still running when the Behavior is played at the end of the tick, and a sprite that nods off first is asleep when the gate reads its State.
+        // Do Not Disturb means proposals do not count as being addressed, so the idle timer keeps running.
         if snapshot.proposal.is_some() && !self.do_not_disturb {
             self.idle_ms = 0;
         }
 
         // Chase times out on wall time, not Primitive turns, so the clock
-        // runs while Chase is on screen (#153).
+        // runs while Chase is on screen.
         if self.on_screen() == Some(Primitive::Chase) {
             self.chase_ms = self.chase_ms.saturating_add(snapshot.elapsed_ms);
         }
@@ -648,12 +569,8 @@ impl Engine {
         // on is not mistaken for one it arrived at. See the landing below.
         let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
 
-        // The cooldown is a thing the sprite does on its feet. Being picked up
-        // or losing the ground ends it, because a cooldown that outlived the
-        // ground would refuse the first walk after the landing. `state` is
-        // what the verbs made of it; a fall the world causes is decided at
-        // `on_contact` below, so that clear lands one tick late — harmless,
-        // since `permitted` refuses a walk while Falling anyway.
+        // The cooldown is a thing the sprite does on its feet. Being picked up or losing the ground ends it, because a cooldown that outlived the ground would refuse the first walk after the landing.
+        // `state` is what the verbs made of it; a fall the world causes is decided at `on_contact` below, so that clear lands one tick late — harmless, since `permitted` refuses a walk while Falling anyway.
         self.poke_cooldown_ms = match state {
             State::Grounded | State::Perched => {
                 self.poke_cooldown_ms.saturating_sub(snapshot.elapsed_ms)
@@ -661,23 +578,14 @@ impl Engine {
             _ => 0,
         };
 
-        // Any Verb aborts chase like it aborts walk (#153).
         if !snapshot.verbs.is_empty() && self.on_screen() == Some(Primitive::Chase) {
             self.stop_playing();
             self.chase_ms = 0;
         }
 
-        // A Grab wins over whatever the sprite was doing, the usable floor
-        // included: the user's hand is the one input that outranks the world,
-        // and a held sprite goes where the cursor goes. Letting go settles it
-        // somewhere legal, because a fall ends on the usable floor like any
-        // other.
-        //
-        // The pickup and the drop cue are decided here rather than from a verb,
-        // and this is the only place they can be: `Verb::Grab` is present on
-        // every tick the sprite is held, and a slow release emits no verb at
-        // all. The transition is the edge, and both States are in hand only
-        // between `on_verbs` above and `on_contact` below. #277.
+        // A Grab wins over whatever the sprite was doing, the usable floor included: the user's hand outranks the world.
+        // Pickup and drop cues are decided here: `Verb::Grab` is present on every tick the sprite is held, and a slow release emits no verb at all.
+        // The transition is the edge, and both States are in hand only between `on_verbs` above and `on_contact` below.
         let mut cue = None;
         if state == State::Dragged {
             if self.state != State::Dragged {
@@ -686,7 +594,6 @@ impl Engine {
             self.position = snapshot.cursor;
             self.velocity = Point::default();
         } else if self.state == State::Dragged {
-            // Let go. With velocity that is a Throw; without, it simply drops.
             let thrown = thrown_velocity(snapshot);
             cue = Some(if thrown.is_some() {
                 Cue::Throw
@@ -697,13 +604,12 @@ impl Engine {
         }
 
         // The cursor already arrives every tick for hit-testing, so noticing
-        // costs no new sensing (#152).
+        // costs no new sensing.
         let cursor_distance =
             (snapshot.cursor.x - self.position.x).hypot(snapshot.cursor.y - self.position.y);
         let was_near = self.cursor_near;
         self.cursor_near = cursor_distance < NEAR_RADIUS;
 
-        // Cursor velocity for Rush detection: points moved since last tick.
         let cursor_moved = Point {
             x: snapshot.cursor.x - self.last_cursor.x,
             y: snapshot.cursor.y - self.last_cursor.y,
@@ -718,7 +624,7 @@ impl Engine {
         };
         self.last_cursor = snapshot.cursor;
 
-        // Crossing into Near plays the Character's near_reaction, including under DND (#152).
+        // Crossing into Near plays the Character's near_reaction, including under DND.
         if self.cursor_near && !was_near {
             self.rush_reported = false;
             match self.near_reaction {
@@ -734,7 +640,7 @@ impl Engine {
                     };
                 }
                 CursorReaction::Toward => {
-                    // One-shot walk, not pursuit: Chase is the Primitive that follows (#153).
+                    // One-shot walk, not pursuit: Chase is the Primitive that follows.
                     self.facing = if snapshot.cursor.x > self.position.x {
                         1.0
                     } else {
@@ -757,7 +663,7 @@ impl Engine {
         }
 
         // Leaving Near does not cancel a walk the reaction started. Chase is
-        // what follows a cursor; this walk keeps going until it runs out (#153).
+        // what follows a cursor; this walk keeps going until it runs out.
         if !self.cursor_near && was_near {
             self.cursor_dwell_ms = 0;
             self.cursor_dwell_addressed = false;
@@ -765,7 +671,7 @@ impl Engine {
         }
 
         // Rush (startle): once per Near session, or a fast cursor still in the
-        // radius retriggers every tick (#152).
+        // radius retriggers every tick.
         if self.cursor_near && !self.rush_reported {
             let velocity_magnitude = self.cursor_velocity.x.hypot(self.cursor_velocity.y);
             // Speed while already Near is the whole test; direction is not
@@ -808,10 +714,7 @@ impl Engine {
             }
         }
 
-        // Dwell is the cursor on the art, not merely Near. 30 points is a
-        // typical sprite half-width; `NEAR_RADIUS` would address from a
-        // window away (#152).
-        //
+        // Dwell is the cursor on the art, not merely Near. 30 points is a typical sprite half-width; `NEAR_RADIUS` would address from a window away.
         // Counts as addressing: `addressed` makes the next Director wake reactive.
         let mut addressed = false;
         if cursor_distance < 30.0 {
@@ -826,17 +729,9 @@ impl Engine {
             self.cursor_dwell_addressed = false;
         }
 
-        // Walking is the Engine's, deciding to walk is not. A walk lasts until
-        // the sprite runs out of Perch, so the velocity holds after the
-        // Behavior that started it is over. What stops it is a Primitive that
-        // stands the sprite still (`walk sit` would otherwise slide along the
-        // edge it sat down on), or a Poke or Summon, which zeroes the feet and
-        // starts the cooldown (#177).
-        //
-        // Chase steers walk velocity toward the cursor's x along the ground:
-        // y is a fall, not a pursuit. Arrival is a swat, not overlap;
-        // without a timeout the sprite would walk off the display after a
-        // cursor that never stops.
+        // A walk lasts until the sprite runs out of Perch, so the velocity holds after the Behavior that started it. A still Primitive stops it (`walk sit` would otherwise slide).
+        // Chase steers toward the cursor's x along the ground: y is a fall, not a pursuit.
+        // Arrival is a swat, not overlap; without a timeout the sprite would walk off the display after a cursor that never stops.
         if matches!(state, State::Grounded | State::Perched) {
             match self.on_screen() {
                 Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
@@ -861,11 +756,9 @@ impl Engine {
                         self.velocity.x = self.facing * WALK_SPEED;
                     }
                 }
-                // The whole of a jump: an upward velocity, plus a forward
-                // one so the flight is an arc. The rest is the Throw's path.
-                // `integrate` reads the rising sprite as a lost footing,
-                // `transition` makes that a fall, and the fall lands through
-                // the existing landing. #374.
+
+                // An upward velocity, plus a forward one so the flight is an arc.
+                // `integrate` reads the rising sprite as a lost footing, `transition` makes that a fall, and the fall lands through the existing landing.
                 Some(Primitive::Jump) => {
                     self.velocity = Point {
                         x: self.facing * WALK_SPEED,
@@ -891,15 +784,9 @@ impl Engine {
             self.facing = self.velocity.x.signum();
         }
 
-        // Standing at an edge: inset to keep the full sprite on-screen and
-        // face away. Dragged follows the cursor including over edges (#39);
-        // Falling must reach the wall to trigger Contact::Wall; riding and
-        // coasting have their own display-edge logic this must not fight.
-        // Climb frames assume the wall is in the middle, so clipping is
-        // intentional. A held walk is excluded the same way: it drives at the
-        // edge on purpose, that is how the wall is reached and climbed, and
-        // correcting it mid-travel sets the sprite back a step each time it
-        // closes the gap.
+        // Inset a standing sprite at a display edge so the full sprite is on-screen, and face away.
+        // Dragged follows the cursor over edges; Falling must reach the wall; riding and coasting have their own edge logic.
+        // Climb frames put the wall in the middle, so clipping is intentional. A held walk drives at the edge to reach the wall.
         let stationary = matches!(self.state, State::Grounded | State::Perched | State::Asleep)
             && self.velocity.x == 0.0
             && !self.riding
@@ -928,26 +815,15 @@ impl Engine {
             }
         }
 
-        // Losing its footing abandons the rest of a Behavior: what the sprite
-        // was in the middle of doing was only ever a thing to do standing up.
-        //
-        // A Jump is the exception: it lost the footing on purpose one tick ago,
-        // so this gate would abandon it mid-arc and the flight would draw as a
-        // plain fall. It keeps the screen for its turn. Whatever chains after
-        // it is abandoned on the next turn, as before. #374.
+        // Losing its footing abandons the rest of a Behavior: what the sprite was in the middle of doing was only ever a thing to do standing up.
+        // A Jump is the exception: it lost the footing on purpose, so this gate would abandon it mid-arc and the flight would draw as a plain fall. It keeps the screen for its turn.
         if self.on_screen() != Some(Primitive::Jump) && !self.permitted(&self.playing) {
             self.stop_playing();
             started = true;
         }
 
-        // Arriving is an event and not a State: by the time the sprite has
-        // landed it is already standing, and `land` is the animation of the
-        // moment in between. The Engine plays it itself because no Director
-        // could propose it in time.
-        //
-        // Not a sprite woken onto the same footing it fell asleep on: settling
-        // that by falling is how the Engine asks what is underneath, and a
-        // sprite that answers in the tick it was asked never left the ground.
+        // Arriving is an event and not a State: by the time the sprite has landed it is already standing, and `land` is the animation of the moment in between. The Engine plays it itself because no Director could propose it in time.
+        // Not a sprite woken onto the same footing it fell asleep on: settling that by falling is how the Engine asks what is underneath, and a sprite that answers in the tick it was asked never left the ground.
         // A wake with nothing under it still falls, and still lands, later.
         if matches!(contact, Some(transition::Contact::Landed(_))) && !woke {
             started |= self.play(&[Primitive::Land]);
@@ -955,7 +831,7 @@ impl Engine {
 
         // Riding is an event the Director cannot propose in time, the same
         // as landing. Holding on is not resting, so an Asleep sprite that
-        // has to ride wakes rather than sleeping through the move. #98.
+        // has to ride wakes rather than sleeping through the move.
         if self.riding {
             self.idle_ms = 0;
             self.state = State::Perched;
@@ -967,27 +843,18 @@ impl Engine {
             started = true;
         }
 
-        // A proposal is advisory, so a Behavior this Character does not declare
-        // is refused rather than reported, and refusing it interrupts nothing.
-        //
-        // After the sprite has been moved, so the State the gate reads is the
-        // one the tick ends in. A walk therefore takes its first step on the
-        // tick after the proposal, which is what SPEC.md asks for.
-        //
-        // Do Not Disturb refuses proposals before they reach the State gate,
-        // so the Character stops starting things while staying visible. #84.
+        // A proposal is advisory, so a Behavior this Character does not declare is refused rather than reported, and refusing it interrupts nothing.
+        // After the sprite has been moved, so the State the gate reads is the one the tick ends in. A walk therefore takes its first step on the tick after the proposal, which is what SPEC.md asks for.
+        // Do Not Disturb refuses proposals before they reach the State gate, so the Character stops starting things while staying visible.
         let mut behavior = None;
         // The State gate's refusals only. Do Not Disturb is a silence the
-        // user asked for, and an undeclared name is traced at the parse (#318).
+        // user asked for, and an undeclared name is traced at the parse.
         let mut refused = None;
         if let Some(proposal) = &snapshot.proposal {
             if !self.do_not_disturb {
                 if let Some(primitives) = self.chain(&proposal.behavior) {
-                    // #177: mid-cooldown, `play` refuses a chain that would move
-                    // the sprite — whole, greeting included, since a Behavior
-                    // is one thing to refuse. A line or a gesture on its own
-                    // plays. What comes after the cooldown is the Director's
-                    // fresh call, not the interrupted walk resuming.
+                    // Mid-cooldown, `play` refuses a chain that would move the sprite — whole, greeting included, since a Behavior is one thing to refuse. A line or a gesture on its own plays.
+                    // What comes after the cooldown is the Director's fresh call, not the interrupted walk resuming.
                     if self.play(&primitives) {
                         started = true;
                         behavior = Some(proposal.behavior.clone());
@@ -1007,24 +874,16 @@ impl Engine {
             }
         }
 
-        // A Poke is answered, whatever else is going on. Being prodded is the
-        // one thing a companion must never ignore, and it reads as alive
-        // exactly because it interrupts — including a Behavior, and including
-        // its own reaction: prodded again, it reacts again from the beginning.
-        //
-        // A Summon is the second click of a pair, emitted in place of that
-        // click's Poke (#277), so it is answered the same way — a double-click
-        // that did visibly less than a single click would read as a miss.
+        // A Poke is answered, whatever else is going on, including a Behavior and its own reaction: prodded again, it reacts again from the beginning.
+        // A Summon is the second click of a pair, emitted in place of that click's Poke, so it is answered the same way — a double-click that did visibly less than a single click would read as a miss.
         // Menu is not: the tray menu opening is its response.
         if snapshot
             .verbs
             .iter()
             .any(|verb| matches!(verb, Verb::Poke | Verb::Summon))
         {
-            // On its feet, a Poke also stops them: the reaction is the
-            // character noticing you, and a character that notices you does
-            // not keep strolling past. Mid-air it changes nothing about the
-            // flight. #177.
+            // On its feet, a Poke also stops them: noticing you does not keep strolling past.
+            // Mid-air it changes nothing about the flight.
             if matches!(self.state, State::Grounded | State::Perched) {
                 self.velocity.x = 0.0;
                 self.poke_cooldown_ms = POKE_COOLDOWN_MS;
@@ -1039,14 +898,9 @@ impl Engine {
             .iter()
             .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Menu));
 
-        // One cue a tick, and a hand transition outranks a click: the verb that
-        // shares a tick with a pickup or a drop is the incidental one — a
-        // right-click during a drag, say — and the hand is what the user is
-        // plainly doing. Among the click verbs the first is taken, which is
-        // every case there is: two clicks cannot land inside one tick.
-        //
-        // Menu is the Grab shape: the Shell leaves the verb on every held
-        // tick, so the cue keys on the press edge, not the level. #507.
+        // One cue a tick, and a hand transition outranks a click: the verb that shares a tick with a pickup or a drop is the incidental one.
+        // Among the click verbs the first is taken: two clicks cannot land inside one tick.
+        // Menu is the Grab shape: the Shell leaves the verb on every held tick, so the cue keys on the press edge, not the level.
         let menu_now = snapshot.verbs.iter().any(|verb| matches!(verb, Verb::Menu));
         let cue = cue.or_else(|| {
             snapshot
@@ -1068,7 +922,7 @@ impl Engine {
             // with it rather than dropping back to standing mid-stride.
             None if self.is_walking() => "walk",
             // A sprite that rests quietly on a Perch idles in place: still
-            // Perched, same edge, idle art and idle life. #310.
+            // Perched, same edge, idle art and idle life.
             None if matches!(self.state, State::Perched)
                 && self.perched_rest_ms >= PERCHED_IDLE_AFTER_MS =>
             {
@@ -1078,23 +932,16 @@ impl Engine {
         };
         // A fresh variant draw on the Animation, not on the Primitive: `idle`
         // and a variant of `idle` are one family, and re-drawing every turn of
-        // a 600ms Primitive would flicker between strips mid-Behavior. #316.
+        // a 600ms Primitive would flicker between strips mid-Behavior.
         let new_family = animation != self.animation;
         if new_family {
             self.animation = animation;
             self.variant_draw = self.variants.draw();
         }
-        // Startling is the one moment whose replay is the point: `react` is
-        // `loop = once` in every package, so a second Poke arriving on the
-        // held last frame of the first would be invisible. `land` is the other
-        // once-loop the Engine plays and needs no such clause — a second
-        // arrival comes through a fall, and the fall is a change of name.
-        //
-        // Everything else keeps its clock across the Primitives that step
-        // through it, because `PRIMITIVE_MS` is the Engine's turn and not the
-        // art's length: no `idle` in the repository is that short, and a clock
-        // each turn restarted would draw the first 600ms of the strip and
-        // never the rest. #368.
+
+        // `react` is `loop = once`, so a second Poke on the held last frame would be invisible unless the clock restarts.
+        // `land` needs no such clause: a second arrival comes through a fall, which is a change of name.
+        // Everything else keeps its clock across Primitive turns, because restarting each turn would draw the first 600ms of the strip and never the rest.
         let startled = self.on_screen() == Some(Primitive::React);
         if new_family || (started && startled) {
             self.animation_ms = 0;
@@ -1142,10 +989,9 @@ impl Engine {
         }
     }
 
-    /// Move the sprite through one tick's worth of `state`'s physics, and
-    /// report what its body met. Position and velocity are settled here; what
-    /// the sprite becomes as a result is `transition`'s to say, so no State is
-    /// read or written past the one this is handed.
+    /// Move the sprite through one tick's worth of `state`'s physics, and report what its body met.
+    ///
+    /// Position and velocity are settled here; what the sprite becomes as a result is `transition`'s to say, so no State is read or written past the one this is handed.
     fn integrate(
         &mut self,
         state: State,
@@ -1163,10 +1009,8 @@ impl Engine {
                 if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot)
                     .or_else(|| dock_side_reached(self.position, self.velocity.x, snapshot))
                 {
-                    // Arriving at a screen edge sideways is a catch, not a stop.
-                    // It also keeps the sprite inside the displays. The Dock's
-                    // side catches the same way: a low throw or a drop under
-                    // the Dock climbs out instead of resting behind it.
+                    // Arriving at a screen edge sideways is a catch, not a stop. It also keeps the sprite inside the displays.
+                    // The Dock's side catches the same way: a low throw or a drop under the Dock climbs out instead of resting behind it.
                     self.position.x = wall;
                     self.velocity = Point::default();
                     Some(Contact::Wall)
@@ -1174,7 +1018,7 @@ impl Engine {
                     let next_y = self.position.y + self.velocity.y * dt;
 
                     // Rising only: a Grab can put the feet above the ceiling,
-                    // and snapping them down would teleport a drop. #100.
+                    // and snapping them down would teleport a drop.
                     if self.velocity.y < 0.0 {
                         if let Some(ceiling) =
                             ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
@@ -1204,11 +1048,8 @@ impl Engine {
             State::Climbing => {
                 let next_y = self.position.y - CLIMB_SPEED * dt;
 
-                // Climbing the Dock's side ends on its top: the Dock is a
-                // Perch, and the feet reaching its top edge is a landing, not
-                // a ceiling. The step inward is what the climb was for — a
-                // sprite that stopped clear of the side is standing beside the
-                // Dock, not on it. #176.
+                // Climbing the Dock's side ends on its top: the Dock is a Perch, and the feet reaching its top edge is a landing, not a ceiling.
+                // The step inward is what the climb was for — a sprite that stopped clear of the side is standing beside the Dock, not on it.
                 if let Some(dock) = dock_in(snapshot) {
                     if self.position.y > dock.y && next_y <= dock.y {
                         if let Some(x) = dock_top_at(self.position.x, dock) {
@@ -1231,16 +1072,14 @@ impl Engine {
                     None
                 }
             }
+
             // Resting is only ever resting on something. When that something
-            // moves slowly the sprite Holds and rides it, a resize of the top
-            // edge included (#98). A yank, a close, or walking off the end
-            // leaves it in the air, carrying whatever speed it had.
+            // moves slowly the sprite Holds and rides it, a resize of the top edge included.
+            // A yank, a close, or walking off the end leaves it in the air, carrying whatever speed it had.
             State::Grounded | State::Perched | State::Asleep => {
-                // Rising off the surface it stood on. A Jump is the only way
-                // a resting sprite gets upward velocity, and reporting the
-                // Contact lets `transition` make the fall, so no State is
-                // written outside that module. The arc starts one tick later.
-                // #374.
+                // Rising off the surface it stood on. A Jump is the only way a resting sprite gets upward velocity.
+                // Reporting the Contact lets `transition` make the fall, so no State is written outside that module.
+                // The arc starts one tick later.
                 if self.velocity.y < 0.0 {
                     return Some(Contact::Airborne);
                 }
@@ -1249,13 +1088,9 @@ impl Engine {
                     self.hold_offset_x += self.velocity.x * dt;
                 }
 
-                // A walk on the floor beside the Dock stops clear of its
-                // side and climbs it (#176). Placed there once rather than
-                // corrected back a step each tick, which a held walk would
-                // re-close into a stutter. The Engine does not clamp `dt`, so
-                // a step longer than the Dock is wide would cross it unseen;
-                // the snapshot assembler caps `elapsed_ms` at one poll
-                // interval, which is what keeps a step small.
+                // A walk on the floor beside the Dock stops clear of its side and climbs it.
+                // Placed there once rather than corrected back a step each tick, which a held walk would re-close into a stutter.
+                // The Engine does not clamp `dt`, so a step longer than the Dock is wide would cross it unseen; the snapshot assembler caps `elapsed_ms` at one poll interval, which is what keeps a step small.
                 if let Some(side) = dock_side_reached(self.position, self.velocity.x, snapshot) {
                     self.position.x = side;
                     self.velocity = Point::default();
@@ -1305,11 +1140,10 @@ impl Engine {
                                 + self.perch_velocity.y * t
                                 + 0.5 * self.perch_acceleration.y * t * t,
                         };
-                        // A coast places the sprite with no sample to approve
-                        // it, and it runs on every tick the poll is late
-                        // rather than on one — so an extrapolation off the
-                        // displays is a long absence, not a frame of one. It
-                        // lets go instead. #128.
+
+                        // A coast places the sprite with no sample to approve it, and it runs on every late-poll tick,
+                        // so an extrapolation off the displays is a long absence, not a frame of one.
+                        // It lets go instead.
                         if !on_a_display(coasted, snapshot, self.ceiling_clearance()) {
                             self.rest_perch();
                             return Some(Contact::Airborne);
@@ -1338,7 +1172,7 @@ impl Engine {
         }
     }
 
-    /// What a fresh window sample says about the Perch the sprite was on. #98.
+    /// What a fresh window sample says about the Perch the sprite was on.
     fn perch_carry(&mut self, snapshot: &WorldSnapshot, sample_s: f64) -> PerchCarry {
         let Some(previous) = self
             .last_perch
@@ -1354,10 +1188,10 @@ impl Engine {
             return PerchCarry::Lost;
         };
         let current = snapshot.windows[index];
-        // An edge you cannot see is gone, whether the sprite was landing or
-        // already standing on it. Asked at the arrival x, because both answers
-        // below place the sprite and a sideways ride carries it as far as the
-        // window went. #100.
+
+        // An edge you cannot see is gone, whether the sprite was landing or already standing on it.
+        // Asked at the arrival x, because both answers below place the sprite
+        // and a sideways ride carries it as far as the window went.
         if !is_perch(
             index,
             self.arrival_x(current),
@@ -1420,7 +1254,7 @@ impl Engine {
     }
 
     /// Where `place_on` will put the feet, which is what a ride has to ask
-    /// its questions about rather than about where they are. #128.
+    /// its questions about rather than about where they are.
     fn arrival_x(&self, window: Window) -> f64 {
         window.rect.x + self.hold_offset_x
     }
@@ -1431,15 +1265,9 @@ impl Engine {
         self.position.y = window.rect.y;
     }
 
-    /// Whether `window` has come to contain the sprite this tick: dragged over
-    /// it, or walked into where two windows overlap. One that already had the
-    /// sprite inside it is not swallowing it — a maximized window contains
-    /// every smaller window in front of it, so the sprite is inside one from
-    /// the moment it lands, and raising that window would otherwise fling the
-    /// sprite to the top of the screen and keep it there. #78.
+    /// Whether `window` has come to contain the sprite this tick.
     ///
-    /// An Engine method rather than part of `footing` because "come to" takes
-    /// the previous tick to judge, and the Engine is what remembers one.
+    /// Already-inside is not swallowing: a maximized window contains every smaller window, so raising it would fling the sprite to the top. Lives here because "come to" takes the previous tick, and the Engine remembers one.
     fn swallowed_by(&self, window: &Window) -> bool {
         swallows(&window.rect, self.position)
             && !self.previous_windows.iter().any(|before| {
@@ -1458,9 +1286,7 @@ impl Engine {
         matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
     }
 
-    /// Age the Behavior being played by `elapsed_ms`, moving on to each
-    /// Primitive as the one before it runs out. True when the Primitive on
-    /// screen changed.
+    /// True when the Primitive on screen changed.
     fn advance(&mut self, elapsed_ms: u32) -> bool {
         let mut left = elapsed_ms;
         let mut moved_on = false;
@@ -1486,27 +1312,21 @@ impl Engine {
 
     /// Abandon whatever is playing, name included.
     ///
-    /// One method rather than a `playing.clear()` at each abort site, because
-    /// the name and the Primitives it was flattened from have to go together:
-    /// a site that dropped only the list would leave the Engine reporting a
-    /// Behavior that stopped several ticks ago.
+    /// One method rather than a `playing.clear()` at each abort site, because the name and the Primitives it was flattened from have to go together: a site that dropped only the list would leave the Engine reporting a Behavior that stopped several ticks ago.
     fn stop_playing(&mut self) {
         self.playing.clear();
         self.playing_behavior = None;
         self.primitive_ms = 0;
     }
 
-    /// Start playing `primitives`, unless the State the sprite is in forbids
-    /// any of them. True when it started.
+    /// Start playing `primitives`, unless the State the sprite is in forbids any of them. True when it started.
     ///
-    /// All or nothing: a Behavior is a sequence its author meant to be seen
-    /// whole, and playing the half of it that fits leaves the sprite stopping
-    /// mid-thought.
+    /// All or nothing: a Behavior is a sequence its author meant to be seen whole, and playing the half of it that fits leaves the sprite stopping mid-thought.
     fn play(&mut self, primitives: &[Primitive]) -> bool {
         if primitives.is_empty() || !self.permitted(primitives) {
             return false;
         }
-        // Last first, so the Primitive on screen is the one on top.
+
         self.playing = primitives.iter().rev().copied().collect();
         // Nameless until a caller says otherwise. Most callers are the Engine
         // playing a moment of its own — a Land, a Hold, a startle — and the
@@ -1514,7 +1334,7 @@ impl Engine {
         self.playing_behavior = None;
 
         // A new Chase is a new pursuit; leftover ms from the last one would
-        // time out mid-stride (#153).
+        // time out mid-stride.
         if primitives.contains(&Primitive::Chase) {
             self.chase_ms = 0;
         }
@@ -1522,11 +1342,9 @@ impl Engine {
         true
     }
 
-    /// Whether the State the sprite is in permits every one of `primitives`.
-    ///
-    /// Expression carries in any State; motion also needs the post-Poke
-    /// cooldown, gated here because chases and cursor reactions start walks
-    /// too (#177).
+    /// Whether the sprite's State permits every one of `primitives`. Expression
+    /// carries in any State; motion also needs the post-Poke cooldown, gated here
+    /// because chases and cursor reactions start walks too (#177).
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
@@ -1538,15 +1356,9 @@ impl Engine {
         })
     }
 
-    /// Every Primitive a named Behavior plays, the Behaviors it chains into
-    /// included, or nothing when the Character does not declare it.
+    /// Every Primitive a named Behavior plays, the Behaviors it chains into included, or nothing when the Character does not declare it.
     ///
-    /// Flattened when play starts rather than followed a link at a time,
-    /// because a Behavior is one thing to abandon and one thing to refuse.
-    /// Load-time validation rejects a chain that comes back on itself, and this
-    /// stops on one anyway: the Engine is handed Behaviors rather than a
-    /// validated Character, and hanging the frame loop is the one thing
-    /// ADR-0002 promises no package can do.
+    /// Flattened when play starts because a Behavior is one thing to abandon and refuse. Stops a cycle anyway: the Engine is handed Behaviors rather than a validated Character, and hanging the frame loop is the one thing ADR-0002 promises no package can do.
     fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
         let mut primitives = Vec::new();
         let mut walked: BTreeSet<&str> = BTreeSet::new();
@@ -1580,19 +1392,17 @@ fn animation_of(primitive: Primitive) -> &'static str {
         Primitive::React => "react",
         Primitive::Talk => "talk",
         Primitive::Hold => "hold",
-        // No chase Animation in the required set; walk is the motion (#153).
+        // No chase Animation in the required set; walk is the motion.
         Primitive::Chase => "walk",
         // Optional art: the renderer resolves it to `fall` when a package
-        // draws none, so the required set stays at nine (ADR-0007, #374).
+        // draws none, so the required set stays at nine (ADR-0007).
         Primitive::Jump => "jump",
     }
 }
 
 /// Which Animation a State plays.
 ///
-/// A grab cannot reuse `hold`, which the required set spends on riding a
-/// moving Perch. It gets an optional Animation of its own: a package that
-/// declares no `grab` goes on dangling from the cursor in its `fall`. #364.
+/// A grab cannot reuse `hold`, which the required set spends on riding a moving Perch. It gets an optional Animation of its own: a package that declares no `grab` goes on dangling from the cursor in its `fall`.
 fn animation_for(state: State) -> &'static str {
     match state {
         State::Grounded => "idle",
@@ -1631,7 +1441,6 @@ mod tests {
     use crate::character::DEFAULT_WEIGHT;
     use crate::window_source::DOCK_PERCH_ID;
 
-    /// One 1000x800 display with its top-left at the origin.
     fn one_display() -> Rect {
         Rect {
             x: 0.0,
@@ -1661,8 +1470,7 @@ mod tests {
         (0..40).map(|_| engine.tick(snapshot)).last().unwrap()
     }
 
-    /// Whether a display covers `position` — the invariant #5 and #85
-    /// criterion 9 are about, asked of a point rather than of a resting place.
+    /// Asked of a point rather than of a resting place.
     fn covered(position: Point, snapshot: &WorldSnapshot) -> bool {
         snapshot.displays.iter().any(|display| {
             display.spans_x(position.x) && position.y >= display.y && position.y <= display.bottom()
@@ -1671,8 +1479,7 @@ mod tests {
 
     /// A Perch on a second display too short to hold it, `x` points along.
     /// Nothing covers x 1000..2000 outside y 300..500, and nothing at all
-    /// covers past x 2000, so a window dragged right runs its edge out of the
-    /// displays while still spanning the sprite.
+    /// covers past x 2000, so a window dragged right runs its edge out of the displays while still spanning the sprite.
     fn strip_perch(x: f64) -> WorldSnapshot {
         WorldSnapshot {
             displays: vec![
@@ -1699,8 +1506,7 @@ mod tests {
 
     /// A day in the life, as snapshots: the sprite falls onto a window, the
     /// window closes, it lands on the floor, dozes off, is poked awake, is
-    /// picked up and carried, is dropped, then is picked up again and flung at
-    /// the screen edge, which it climbs.
+    /// picked up and carried, is dropped, then is picked up again and flung at the screen edge, which it climbs.
     fn a_day_in_the_life() -> Vec<WorldSnapshot> {
         let on_a_window = WorldSnapshot {
             windows: vec![window(
@@ -1783,8 +1589,6 @@ mod tests {
         assert_eq!(play(&script), play(&script));
     }
 
-    /// The Behaviors the Blip Character declares: a greeting that chains
-    /// into settling down, and a stroll.
     fn declared_behaviors() -> BTreeMap<String, Behavior> {
         BTreeMap::from([
             (
@@ -1826,16 +1630,13 @@ mod tests {
         ])
     }
 
-    /// A sprite dropped at `position` with those Behaviors to play.
     fn a_character_at(position: Point) -> Engine {
         Engine::new(position).with_behaviors(declared_behaviors())
     }
 
     /// A held walk drives the sprite at the display edge on purpose: that is
-    /// how it reaches the wall and climbs. The edge correction is for coming
-    /// to rest (#123) and must not fight the travel — correcting a moving
-    /// sprite teleports it back a step each time it closes the gap, a visible
-    /// stutter, and the wall becomes unreachable.
+    /// how it reaches the wall. Correcting a moving sprite teleports it back
+    /// a step each time it closes the gap, and the wall becomes unreachable.
     #[test]
     fn a_walk_reaches_the_display_edge_without_being_set_back() {
         let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
@@ -1910,8 +1711,7 @@ mod tests {
 
     /// The Dock is the one thing on screen drawn in front of the sprite, so a
     /// walk that carries on under it puts the sprite where nobody can see or
-    /// grab it. Its side is a wall: the walk stops short of it and climbs onto
-    /// the top, a Perch the sprite already knows how to stand on. #176.
+    /// grab it. Its side is a wall.
     #[test]
     fn a_walk_into_the_dock_climbs_onto_it_rather_than_behind_it() {
         let dock = dock();
@@ -1951,8 +1751,7 @@ mod tests {
 
     /// The Dock's side is a wall for a sprite walking into it, and not for one
     /// that has just walked off the top. Catching that one puts it back on the
-    /// top to walk off again, and everything past the Dock stays unreachable
-    /// for as long as the app runs. #361.
+    /// top to walk off again, and everything past the Dock stays unreachable.
     #[test]
     fn a_walk_off_the_dock_top_carries_on_past_it_rather_than_climbing_back() {
         let dock = dock();
@@ -1998,8 +1797,7 @@ mod tests {
         panic!("the walk never got past the Dock to the display edge");
     }
 
-    /// Standing on the Dock's top is standing above its side, not behind it:
-    /// a walk along the top meets no wall.
+    /// Standing on the Dock's top is standing above its side, not behind it.
     #[test]
     fn a_walk_along_the_dock_top_meets_no_wall() {
         let mut engine = a_character_at(Point { x: 500.0, y: 0.0 });
@@ -2020,10 +1818,9 @@ mod tests {
         }
     }
 
-    /// Let go with the cursor over the Dock and the sprite falls behind it. It
-    /// does not come to rest there: it climbs the nearer side out, however far
-    /// out that is — a real Dock is wide, and the way out from the middle of
-    /// one is a long way sideways.
+    /// Let go with the cursor over the Dock and the sprite falls behind it.
+    /// It climbs the nearer side out: a real Dock is wide, and the way out
+    /// from the middle of one is a long way sideways.
     #[test]
     fn a_sprite_dropped_behind_the_dock_climbs_out_onto_it() {
         let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
@@ -2057,8 +1854,7 @@ mod tests {
         assert_eq!(frame.position, on_the_dock_from_the_right());
     }
 
-    /// The sprite need not walk into the Dock to end up behind it: an
-    /// autohidden Dock slides out around whatever is standing there, asleep
+    /// An autohidden Dock slides out around whatever is standing there, asleep
     /// included. The sprite that was resting in front of nothing is now behind
     /// something, and climbs out the same way.
     #[test]
@@ -2073,11 +1869,9 @@ mod tests {
         assert_eq!(frame.position, on_the_dock_from_the_left());
     }
 
-    /// Behind the Dock means behind the Dock's own display. Displays stack
-    /// vertically as well as side by side, and a display below this one shares
-    /// its x-range: a sprite on that floor is under the Dock's columns and
-    /// behind none of it. Treating it as hidden climbs it onto a Dock on
-    /// another screen, or loops it for ever — climb, top out, fall, climb.
+    /// Behind the Dock means behind the Dock's own display. A display below
+    /// this one shares its x-range: a sprite on that floor is under the Dock's
+    /// columns and behind none of it. Treating it as hidden loops it for ever.
     #[test]
     fn a_sprite_on_a_display_below_the_docks_is_not_behind_the_dock() {
         let below = Rect {
@@ -2103,8 +1897,6 @@ mod tests {
         }
     }
 
-    /// A sprite standing on the floor of one display, with those Behaviors to
-    /// play.
     fn a_resting_sprite() -> Engine {
         let mut engine = a_character_at(Point { x: 100.0, y: 0.0 });
         settle(&mut engine, &snapshot(100));
@@ -2121,8 +1913,6 @@ mod tests {
         }
     }
 
-    /// What plays over `ticks` further 100ms ticks, as each Animation and the
-    /// number of ticks it held the screen for.
     fn played(engine: &mut Engine, ticks: usize) -> Vec<(&'static str, usize)> {
         let mut run: Vec<(&'static str, usize)> = Vec::new();
         for _ in 0..ticks {
@@ -2135,9 +1925,8 @@ mod tests {
         run
     }
 
-    /// #8's first criterion. `greet` is two Primitives and then the two of
-    /// `settle`, so a chain is played as one Behavior rather than stopping at
-    /// the word that joins them.
+    /// `greet` is two Primitives and then the two of `settle`, so a chain is
+    /// played as one Behavior rather than stopping at the word that joins them.
     #[test]
     fn a_behavior_plays_its_primitives_in_order_and_follows_the_one_it_names() {
         let mut engine = a_resting_sprite();
@@ -2162,10 +1951,8 @@ mod tests {
         );
     }
 
-    /// #8: `land` is the last of the nine required Animations nothing could
-    /// reach. Landing is not a State — the sprite is standing the moment it
-    /// arrives — so the end of a fall is played as a Primitive over the
-    /// standing, the same as any other Behavior.
+    /// Landing is not a State: the sprite is standing the moment it arrives,
+    /// so the end of a fall is played as a Primitive over the standing.
     #[test]
     fn a_fall_ends_in_the_landing_animation_before_the_sprite_idles() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -2183,8 +1970,8 @@ mod tests {
         );
     }
 
-    /// #8's second criterion. The window it was sitting on closes mid-Behavior,
-    /// and sitting in mid-air is not a thing the sprite can be doing.
+    /// The window it was sitting on closes mid-Behavior, and sitting in
+    /// mid-air is not a thing the sprite can be doing.
     #[test]
     fn a_behavior_that_becomes_invalid_mid_play_is_abandoned() {
         let window = window(
@@ -2227,9 +2014,8 @@ mod tests {
         );
     }
 
-    /// #8's third criterion. Refused rather than deferred: a Behavior proposed
-    /// for a sprite in mid-air was proposed for a sprite that no longer exists
-    /// by the time it lands.
+    /// Refused rather than deferred: a Behavior proposed for a sprite in
+    /// mid-air was proposed for a sprite that no longer exists by the time it lands.
     #[test]
     fn a_behavior_the_state_forbids_is_refused() {
         let mut engine = a_character_at(Point { x: 100.0, y: 0.0 });
@@ -2252,12 +2038,9 @@ mod tests {
         );
     }
 
-    /// The rest of #8's third criterion. Falling is only one of the four States
-    /// that are not standing on something, and the gate is one rule for all of
-    /// them: asleep is a thing to be woken out of rather than acted from, and a
-    /// sprite hauling itself up a screen edge has no more floor than one in
-    /// mid-air. `settle` opens on `sit`, which neither State draws by itself,
-    /// so the Animation says whether the gate let it through.
+    /// The gate is one rule for every State that is not standing on something:
+    /// asleep is a thing to be woken out of rather than acted from, and a climb
+    /// has no more floor than a fall. `settle` opens on `sit`, which neither draws.
     #[test]
     fn a_behavior_that_settles_is_refused_asleep_and_mid_climb() {
         let mut engine = a_resting_sprite();
@@ -2312,9 +2095,8 @@ mod tests {
     }
 
     /// Load-time validation rejects a chain that comes back on itself, so this
-    /// is the second lock on the same door: the Engine is handed Behaviors
-    /// rather than a validated Character, and a Behavior that could hang the
-    /// frame loop is the one thing ADR-0002 promises no package can be.
+    /// is the second lock: the Engine is handed Behaviors rather than a
+    /// validated Character, and ADR-0002 promises no package can hang the frame loop.
     #[test]
     fn a_behavior_that_chains_back_to_itself_still_ends() {
         let pacing = |then: &str| Behavior {
@@ -2354,9 +2136,9 @@ mod tests {
         );
     }
 
-    /// #10 suppresses Behaviors the user has recently *seen*, and the Shell
-    /// keeps that list. A proposal is advisory, so what was proposed and what
-    /// was played are different lists, and only the Engine knows the second.
+    /// The Shell suppresses Behaviors the user has recently seen. A proposal
+    /// is advisory, so what was proposed and what was played are different
+    /// lists, and only the Engine knows the second.
     #[test]
     fn a_frame_names_the_behavior_that_started_and_not_one_that_was_refused() {
         let mut engine =
@@ -2503,10 +2285,6 @@ mod tests {
         );
     }
 
-    /// #39, at the end of the screen no falling test could reach: furniture at
-    /// the top is only ever met by a climb, so a sprite that let go behind the
-    /// menu bar was a defect nothing would have caught.
-    ///
     /// The Engine learns nothing about menu bars here. It is handed the usable
     /// part of the display instead of the whole of it, and the ceiling it
     /// already derives moves with it.
@@ -2555,8 +2333,7 @@ mod tests {
     }
 
     /// A second Poke restarts the reaction rather than extending a held frame.
-    /// `react` is declared `loop = once`, so an Animation left running past its
-    /// last frame simply holds it: without restarting the clock, prodding twice
+    /// `react` is `loop = once`, so without restarting the clock, prodding twice
     /// would look exactly like prodding once.
     #[test]
     fn poking_again_mid_reaction_starts_the_reaction_over() {
@@ -2580,11 +2357,9 @@ mod tests {
         );
     }
 
-    /// #368: `PRIMITIVE_MS` is how long the Engine gives a Primitive, not how
-    /// long the art runs. Every base `idle` a shipped Character declares is
-    /// longer — twelve seconds for Black Mage, and the shortest is 750ms — so a
-    /// clock each turn restarted would draw the opening of the strip over and
-    /// over and none of the rest.
+    /// `PRIMITIVE_MS` is how long the Engine gives a Primitive, not how long
+    /// the art runs. Every base `idle` is longer — twelve seconds for Black Mage,
+    /// shortest 750ms — so a restarted clock would draw only the opening of the strip.
     #[test]
     fn a_behaviors_idle_keeps_one_clock_across_its_primitive_turns() {
         let mut engine =
@@ -2618,7 +2393,7 @@ mod tests {
         );
     }
 
-    /// #368: the ride replays Hold for as long as the Perch keeps moving, and
+    /// The ride replays Hold for as long as the Perch keeps moving, and
     /// nim's `hold` is a second of `loop = once`. A clock the replay restarted
     /// would leave the grip it ends on unreachable.
     #[test]
@@ -2641,10 +2416,9 @@ mod tests {
         );
     }
 
-    /// #368: the cursor's own startle is a startle. Reaching at a sprite that
-    /// is still mid-`react` has to look like a second reach, which is what a
-    /// second Poke gets, so the `loop = once` art plays again from frame 0
-    /// rather than holding the frame it had already clamped to.
+    /// The cursor's own startle is a startle. Reaching at a sprite that is
+    /// still mid-`react` has to look like a second reach, so the `loop = once`
+    /// art plays again from frame 0 rather than holding the clamped frame.
     #[test]
     fn a_cursor_reaction_starts_a_reaction_already_playing_over() {
         let mut engine = a_resting_sprite()
@@ -2677,10 +2451,9 @@ mod tests {
         assert_eq!(again.animation_ms, 0, "and it startles again");
     }
 
-    /// #368: speaking is not startling. A Character that talks at the cursor
-    /// gets a second approach while the first line is still on screen, and
-    /// cutting the mouth back to its first frame there is a hitch with nothing
-    /// behind it — `talk` loops, so there is no held frame to escape.
+    /// Speaking is not startling. A second approach while the first line is
+    /// still on screen is a hitch with nothing behind it — `talk` loops, so
+    /// there is no held frame to escape.
     #[test]
     fn a_cursor_reaction_lets_a_talk_already_playing_run_on() {
         let mut engine = a_resting_sprite()
@@ -2712,11 +2485,9 @@ mod tests {
         assert_eq!(again.animation_ms, 200, "one line, still being said");
     }
 
-    /// #6: verbs arriving in the same tick resolve deterministically. A Grab
-    /// and a Poke together is the ordinary case — a press that has just become
-    /// a drag can share a tick with the click that preceded it — and the hand
-    /// has to win, because a sprite that reacts instead of being picked up is a
-    /// sprite that ignored you.
+    /// Verbs in the same tick resolve deterministically. A Grab and a Poke
+    /// together is the ordinary case of a press becoming a drag, and the hand
+    /// has to win, because a sprite that reacts instead of being picked up is a sprite that ignored you.
     #[test]
     fn a_grab_and_a_poke_in_one_tick_resolve_the_same_way_every_time() {
         let together = || WorldSnapshot {
@@ -2747,10 +2518,9 @@ mod tests {
         );
     }
 
-    /// #6: a Grab overrides any State. The hand is the one input that outranks
-    /// everything else the sprite might be doing — asleep, perched, halfway up
-    /// a screen edge — because a companion you cannot pick up whenever you like
-    /// is furniture.
+    /// A Grab overrides any State. The hand is the one input that outranks
+    /// everything else the sprite might be doing, because a companion you
+    /// cannot pick up whenever you like is furniture.
     #[test]
     fn a_grab_takes_the_sprite_out_of_whatever_state_it_was_in() {
         let day = a_day_in_the_life();
@@ -2784,8 +2554,7 @@ mod tests {
 
     /// Summon opens the chat surface and Menu opens the tray's menu; neither
     /// moves the sprite. They are still the user reaching for it, so a sleeping
-    /// one wakes, and the Director hears it: otherwise the loudest interactions
-    /// there are would be the ones it never learned of (#277).
+    /// one wakes, and the Director hears it.
     #[test]
     fn a_summon_or_a_menu_wakes_the_sprite_and_addresses_the_director() {
         for verb in [Verb::Summon, Verb::Menu] {
@@ -2814,9 +2583,9 @@ mod tests {
         }
     }
 
-    /// #277: a double-click is a Poke and then a Summon, and the Summon stands
-    /// where the second click's Poke used to. It plays the reaction that Poke
-    /// brought, or a double-click would visibly do less than a single click.
+    /// A double-click is a Poke and then a Summon, and the Summon stands
+    /// where the second click's Poke used to. It plays that reaction, or a
+    /// double-click would visibly do less than a single click.
     #[test]
     fn a_summon_plays_the_reaction() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
@@ -2829,10 +2598,9 @@ mod tests {
         assert_eq!(summoned.animation, "react");
     }
 
-    /// #277: the cue is the Engine's to pick, because it is the only place that
-    /// knows both the verbs and the `Dragged` transitions. A click verb carries
-    /// its own cue, and it is a pulse — the tick after is silent, or a single
-    /// click would sound for as long as the reaction plays.
+    /// The cue is the Engine's to pick: it is the only place that knows both
+    /// the verbs and the `Dragged` transitions. A click verb's cue is a pulse,
+    /// or a single click would sound for as long as the reaction plays.
     #[test]
     fn a_click_verb_carries_its_own_cue() {
         for (verb, cue) in [
@@ -2854,10 +2622,9 @@ mod tests {
         }
     }
 
-    /// #507: the Shell re-injects `Verb::Menu` every tick the popup is held, the
+    /// The Shell re-injects `Verb::Menu` every tick the popup is held, the
     /// way `Verb::Grab` is present for a whole drag. A cue keyed on the verb
-    /// would sound sixty times a second under the menu. Only the press edge
-    /// cues, and a later right-click after a gap cues again.
+    /// would sound sixty times a second; only the press edge cues.
     #[test]
     fn the_menu_cue_fires_on_the_press_and_not_every_held_tick() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
@@ -2881,7 +2648,7 @@ mod tests {
         assert_eq!(again.cue, Some(Cue::Menu), "a later press after a gap");
     }
 
-    /// #277: `Verb::Grab` is present on every tick the sprite is held, so a cue
+    /// `Verb::Grab` is present on every tick the sprite is held, so a cue
     /// keyed on the verb would sound sixty times a second for as long as the
     /// drag lasts. The pickup cue keys on entering `Dragged`.
     #[test]
@@ -2905,7 +2672,7 @@ mod tests {
         );
     }
 
-    /// #277: there is no drop verb and a sixth is not allowed, so both cues key
+    /// There is no drop verb and a sixth is not allowed, so both cues key
     /// on leaving `Dragged` — which is also what tells them apart, a throw
     /// being the only one of the two that carries a velocity.
     #[test]
@@ -2943,8 +2710,8 @@ mod tests {
         }
     }
 
-    /// Menu plays nothing. The tray menu opening is its response, and a
-    /// reaction under a context menu would be a sprite gesturing at a list.
+    /// The tray menu opening is its response, and a reaction under a context
+    /// menu would be a sprite gesturing at a list.
     #[test]
     fn a_menu_plays_nothing() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
@@ -2958,9 +2725,8 @@ mod tests {
     }
 
     /// Menu interrupts what the sprite is doing, not where it is going: the
-    /// walk it was on carries on through the menu being shown. This matches
-    /// Poke: both are interactions that acknowledge the user without stopping
-    /// the sprite's motion.
+    /// walk it was on carries on. This matches Poke: both acknowledge the
+    /// user without stopping the sprite's motion.
     #[test]
     fn a_menu_mid_stroll_does_not_stop_the_walk() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
@@ -3033,7 +2799,7 @@ mod tests {
 
     /// Menu during a chase behaves like Poke during a walk: the chase is
     /// interrupted (aborted), but the sprite's current velocity persists.
-    /// This pins the Menu verb's contract against the chase Primitive (#164).
+    /// This pins the Menu verb's contract against the chase Primitive.
     #[test]
     fn a_menu_during_a_chase_aborts_the_chase() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
@@ -3071,10 +2837,9 @@ mod tests {
         );
     }
 
-    /// The other side of the wake that plays nothing: a wake is not an arrival
-    /// only because the sprite is put straight back on the footing it fell
-    /// asleep on. Woken with that footing gone, it is in the air like anything
-    /// else, and the landing at the end of the fall is a real one.
+    /// A wake is not an arrival only because the sprite is put straight back
+    /// on the footing it fell asleep on. Woken with that footing gone, it is
+    /// in the air, and the landing at the end of the fall is a real one.
     #[test]
     fn a_sprite_woken_with_its_perch_gone_still_lands() {
         let perch = window(
@@ -3120,13 +2885,9 @@ mod tests {
         );
     }
 
-    /// #6: a Director proposal arriving during a Grab is deferred or dropped,
-    /// never yanking the sprite. Being held is the one moment the sprite is the
-    /// user's rather than the Director's.
-    ///
-    /// `settle` is a Behavior this Character does declare, so what refuses it
-    /// is the State gate and not the name: a proposal nobody declares is
-    /// refused on the way in, and would leave this rule unguarded.
+    /// A proposal during a Grab is deferred or dropped, never yanking the
+    /// sprite. `settle` is a Behavior this Character does declare, so what
+    /// refuses it is the State gate and not the name.
     #[test]
     fn a_proposal_during_a_grab_never_moves_the_sprite() {
         let mut engine = a_character_at(Point { x: 500.0, y: 100.0 });
@@ -3162,10 +2923,9 @@ mod tests {
         );
     }
 
-    /// #364: held and tumbling are different beats, so they name different
-    /// Animations. The Engine asks for `grab` whoever is being dragged; a
-    /// package that declares none draws its `fall` instead, which is the
-    /// renderer's business and is asserted on the loader in `character.rs`.
+    /// Held and tumbling are different beats, so they name different
+    /// Animations. The Engine asks for `grab`; a package that declares none
+    /// draws its `fall` instead, which the loader asserts in `character.rs`.
     #[test]
     fn a_grab_and_a_fall_ask_for_different_animations() {
         let mut engine = a_character_at(Point { x: 500.0, y: 100.0 });
@@ -3196,9 +2956,9 @@ mod tests {
         assert_eq!(thrown.animation, "fall", "let go, it is tumbling again");
     }
 
-    /// #39 left this decision to #6 and asked for it to be asserted: a held
-    /// sprite may be taken below the usable floor, over the Dock, because the
-    /// cursor may go there. Letting go puts it back somewhere it can stand.
+    /// A held sprite may be taken below the usable floor, over the Dock,
+    /// because the cursor may go there. Letting go puts it back somewhere
+    /// it can stand.
     #[test]
     fn a_sprite_dropped_below_the_usable_floor_settles_back_onto_it() {
         // A display whose usable part stops short of its bottom edge, as one
@@ -3230,10 +2990,8 @@ mod tests {
         assert_eq!(landed.state, State::Grounded);
     }
 
-    /// #6: a Poke is the one interaction that has to be visible, and the
-    /// Required Animation Set carries `react` for it. Before this the verb only
-    /// woke a sleeping sprite and reset the idle timer, so prodding a wide-awake
-    /// one did nothing at all.
+    /// A Poke is the one interaction that has to be visible, and the
+    /// Required Animation Set carries `react` for it.
     #[test]
     fn a_poke_plays_the_reaction_and_then_goes_back_to_what_it_was_doing() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
@@ -3264,7 +3022,6 @@ mod tests {
         assert_eq!(after.animation, "idle", "then back to idling");
     }
 
-    /// Being prodded mid-air is answered too, and does not change the fall.
     #[test]
     fn a_poke_while_falling_reacts_without_interrupting_the_fall() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
@@ -3283,10 +3040,9 @@ mod tests {
         );
     }
 
-    /// #6: a click is a Poke, and a Poke addresses the Director. That is how
-    /// the user tests the session: react on screen, and a reactive wake with
-    /// `happened: poked`. Dwell (#152) is the other addressing path; a click
-    /// must not wait for it.
+    /// A click is a Poke, and a Poke addresses the Director. That is how
+    /// the user tests the session: react on screen, and a reactive wake.
+    /// Dwell is the other addressing path; a click must not wait for it.
     #[test]
     fn a_poke_addresses_the_director() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
@@ -3331,8 +3087,6 @@ mod tests {
             "it goes up: {ascending:?}"
         );
 
-        // Climbing ends: at the top of the display there is nothing left to
-        // climb, so it lets go and drops to the floor.
         let landed = settle(&mut engine, &snapshot(100));
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0);
@@ -3368,7 +3122,6 @@ mod tests {
         );
     }
 
-    /// A window whose top edge sits `y` points down a 800-point display.
     fn perch_at_height(y: f64) -> WorldSnapshot {
         WorldSnapshot {
             windows: vec![window(
@@ -3387,7 +3140,6 @@ mod tests {
     }
 
     /// Falls onto the window from above it and reports where it came to rest.
-    ///
     /// Longer than `settle`: a sprite the window refuses falls the whole
     /// display, which takes more ticks than one that lands part way down.
     fn dropped_onto(mut engine: Engine, world: &WorldSnapshot) -> (State, f64) {
@@ -3395,10 +3147,9 @@ mod tests {
         (frame.state, frame.position.y)
     }
 
-    /// #395: the dead zone is the Character's own height, not the tallest one
+    /// The dead zone is the Character's own height, not the tallest one
     /// anybody ships. A 64-point buddy needs 32 above its feet, so a title bar
-    /// at y=80 holds it — the fixed 128 refused every window in the top 128
-    /// points to every Character alike.
+    /// at y=80 holds it; the fixed 128 refused every window in the top 128 points.
     #[test]
     fn a_short_character_perches_where_a_tall_one_may_not() {
         let world = perch_at_height(80.0);
@@ -3425,7 +3176,7 @@ mod tests {
         );
     }
 
-    /// An Engine told nothing keeps #100's fixed clearance, which is what
+    /// An Engine told nothing keeps the fixed clearance, which is what
     /// every existing test in this file is written against.
     #[test]
     fn an_unknown_height_keeps_the_old_clearance() {
@@ -3441,7 +3192,7 @@ mod tests {
     }
 
     /// Art taller than the screen must not leave nowhere to stand: no display
-    /// gives up more than half its height. #395.
+    /// gives up more than half its height.
     #[test]
     fn art_taller_than_the_display_still_leaves_somewhere_to_stand() {
         let world = perch_at_height(500.0);
@@ -3455,7 +3206,6 @@ mod tests {
         assert_eq!(y, 500.0);
     }
 
-    /// A window wide enough to walk along, with its top edge at y=400.
     fn a_long_perch() -> WorldSnapshot {
         WorldSnapshot {
             windows: vec![window(
@@ -3523,10 +3273,9 @@ mod tests {
         assert_eq!(strolling.facing, -1.0);
     }
 
-    /// The Primitive is what walks, not the name over it. A Character is free to
-    /// call a stroll anything, and a Director that proposes one gets a sprite
-    /// that moves — which is what makes `walk` a Primitive rather than a name
-    /// the Engine keeps a list of.
+    /// The Primitive is what walks, not the name over it. A Character is free
+    /// to call a stroll anything, and a Director that proposes one gets a
+    /// sprite that moves.
     #[test]
     fn a_walk_is_the_primitive_that_reaches_the_screen_and_not_the_behaviors_name() {
         let mut engine = Engine::new(Point { x: 200.0, y: 0.0 }).with_behaviors(BTreeMap::from([
@@ -3590,10 +3339,9 @@ mod tests {
         );
     }
 
-    /// A proposal is gated on the State the tick ends in, not the one it opened
-    /// with. A sprite woken by a Summon is put back on its feet by falling, so
-    /// reading the State before that is asking a sprite that is standing on the
-    /// floor whether it is in mid-air.
+    /// A proposal is gated on the State the tick ends in, not the one it
+    /// opened with. Reading the State before a Summon wake is asking a sprite
+    /// standing on the floor whether it is in mid-air.
     #[test]
     fn a_proposal_is_gated_on_the_state_the_tick_ends_in() {
         let mut engine = a_resting_sprite();
@@ -3614,7 +3362,7 @@ mod tests {
         );
     }
 
-    /// #277: the Summon that replaced the second click's Poke keeps its stop
+    /// The Summon that replaced the second click's Poke keeps its stop
     /// and its cooldown too, so a double-click on a strolling sprite holds it
     /// exactly as it did before. Menu is the verb that lets the walk carry on.
     #[test]
@@ -3641,9 +3389,9 @@ mod tests {
         );
     }
 
-    /// #177: a Poke stops the stroll. Reacting while carrying on walking read
-    /// as something that happened to the animation rather than to the
-    /// character, so the sprite stands for a beat and only then may move.
+    /// A Poke stops the stroll. Reacting while carrying on walking read as
+    /// something that happened to the animation rather than to the character,
+    /// so the sprite stands for a beat and only then may move.
     #[test]
     fn a_poke_mid_stroll_stops_the_walk_for_a_beat() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
@@ -3795,9 +3543,8 @@ mod tests {
     }
 
     /// The cooldown's edge, pinned to the tick. A tick is 100 ms and the Poke
-    /// sets POKE_COOLDOWN_MS after that tick's decrement, so the cooldown is exactly
-    /// POKE_COOLDOWN_MS / 100 ticks after the Poke: a walk proposed one tick sooner
-    /// is refused, one proposed on that tick is taken up.
+    /// sets POKE_COOLDOWN_MS after that tick's decrement, so the cooldown is
+    /// exactly POKE_COOLDOWN_MS / 100 ticks after the Poke.
     #[test]
     fn the_cooldown_ends_on_the_tick_it_says_it_does() {
         let ticks = (POKE_COOLDOWN_MS / 100) as usize;
@@ -3892,7 +3639,6 @@ mod tests {
         assert_eq!(held.last().unwrap().animation, "idle");
     }
 
-    /// A second Poke restarts the cooldown rather than queuing another one.
     #[test]
     fn a_second_poke_mid_cooldown_restarts_the_cooldown() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
@@ -4004,7 +3750,6 @@ mod tests {
         assert_eq!(off_the_left.position.y, 800.0);
     }
 
-    /// Told to walk once, then left alone until it comes to rest again.
     fn walked_off(engine: &mut Engine) -> Frame {
         engine.tick(&WorldSnapshot {
             proposal: walk(),
@@ -4016,7 +3761,7 @@ mod tests {
             .expect("two hundred ticks produce two hundred frames")
     }
 
-    /// #5: a walk under way keeps the sprite awake. Nodding off is for a sprite
+    /// A walk under way keeps the sprite awake. Nodding off is for a sprite
     /// that has been left alone, and a Director prodding an idle sprite into a
     /// walk is exactly when the sleep timer is about to come due.
     #[test]
@@ -4051,11 +3796,9 @@ mod tests {
         );
     }
 
-    /// #5, and DESIGN.md decision 7: the bad case is a sprite trapped inside an
+    /// DESIGN.md decision 7: the bad case is a sprite trapped inside an
     /// occluded window, not a sprite standing on the ground in front of one.
-    /// Windows routinely hang below the usable floor — anything behind the Dock
-    /// does — and the floor is under everything, so being within one is the
-    /// normal state of a sprite standing on the ground.
+    /// Windows hang below the usable floor, so being within one is the normal ground state.
     #[test]
     fn a_window_over_the_floor_leaves_the_sprite_standing_on_it() {
         let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
@@ -4146,7 +3889,6 @@ mod tests {
         assert_eq!(perched.state, State::Perched);
         assert_eq!(perched.position.y, 400.0, "the window's top edge");
 
-        // The window closes out from under it.
         let dropped = engine.tick(&snapshot(100));
         assert_eq!(dropped.state, State::Falling);
 
@@ -4156,8 +3898,8 @@ mod tests {
     }
 
     /// The sibling of the window closing: the window is still there, it has
-    /// simply been yanked elsewhere in one poll. A slow drag is ridden (#98),
-    /// so what drops the sprite here is the speed, not the move.
+    /// simply been yanked elsewhere in one poll. A slow drag is ridden, so
+    /// what drops the sprite here is the speed, not the move.
     #[test]
     fn a_perch_yanked_out_from_under_the_sprite_drops_it() {
         let window = |x: f64| WorldSnapshot {
@@ -4178,7 +3920,7 @@ mod tests {
         assert_eq!(perched.state, State::Perched);
         assert_eq!(perched.position.y, 400.0);
 
-        // The same window, yanked out from under it rather than closed. #98.
+        // The same window, yanked out from under it rather than closed.
         let dropped = engine.tick(&window(600.0));
         assert_eq!(dropped.state, State::Falling);
 
@@ -4203,7 +3945,7 @@ mod tests {
         }
     }
 
-    /// #98: a Perch dragged slowly is still underfoot. The sprite keeps the
+    /// A Perch dragged slowly is still underfoot. The sprite keeps the
     /// place it had on the edge rather than falling through the window that
     /// now contains it.
     #[test]
@@ -4256,7 +3998,7 @@ mod tests {
         assert_eq!(down.velocity, Point::default());
     }
 
-    /// #98: window geometry is reused between polls. The sprite has to keep
+    /// Window geometry is reused between polls. The sprite has to keep
     /// the last Perch velocity on those ticks, or it hitch-steps at the poll
     /// rate while the window itself slides every frame.
     #[test]
@@ -4282,7 +4024,7 @@ mod tests {
         );
     }
 
-    /// #98: a Perch that is speeding up is not at constant velocity between
+    /// A Perch that is speeding up is not at constant velocity between
     /// polls. Coasting with the last acceleration keeps the sprite on the
     /// window instead of hitching every time a new sample snaps it back.
     #[test]
@@ -4311,7 +4053,7 @@ mod tests {
         );
     }
 
-    /// #98: the ride ends when the Perch is still. Holding on is the motion,
+    /// The ride ends when the Perch is still. Holding on is the motion,
     /// not a new way to sit.
     #[test]
     fn a_still_perch_returns_the_sprite_to_sitting() {
@@ -4326,7 +4068,7 @@ mod tests {
         assert!(!still.riding);
     }
 
-    /// #310: a sprite that rests quietly on a Perch for a while idles in
+    /// A sprite that rests quietly on a Perch for a while idles in
     /// place rather than staying in sit. Still Perched, same edge, but idle
     /// art and idle life can run.
     #[test]
@@ -4364,7 +4106,7 @@ mod tests {
         assert_eq!(idling.animation, "idle", "now idle after the timer");
     }
 
-    /// #310: the timer resets when the sprite walks, so a stroll interrupted
+    /// The timer resets when the sprite walks, so a stroll interrupted
     /// by rest briefly shows sit again before idling.
     #[test]
     fn perched_idle_timer_resets_when_walking() {
@@ -4390,7 +4132,6 @@ mod tests {
         let walking_tick = engine.tick(&a_long_perch());
         assert_eq!(walking_tick.animation, "walk", "walking continues");
 
-        // A Poke stops the walk.
         engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Poke],
             ..a_long_perch()
@@ -4434,8 +4175,7 @@ mod tests {
         assert_eq!(still.animation, "sit", "back to sit after ride ends");
     }
 
-    /// #310: a Behavior resets the timer, so the sprite sits briefly after
-    /// a reaction before idling again.
+    /// The sprite sits briefly after a reaction before idling again.
     #[test]
     fn perched_idle_timer_resets_when_a_behavior_plays() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -4465,8 +4205,7 @@ mod tests {
         assert_eq!(resting.animation, "sit", "back to sit after reaction");
     }
 
-    /// #310: leaving the Perched state resets the timer. Landing back on the
-    /// same edge shows sit first.
+    /// Landing back on the same edge shows sit first.
     #[test]
     fn perched_idle_timer_resets_when_leaving_perched() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -4499,8 +4238,8 @@ mod tests {
         assert_eq!(landed.animation, "sit", "sit first after landing");
     }
 
-    /// #310: the sleep path from Perched rest still works. The idle timer is
-    /// much shorter than sleep, so a sprite idles first and sleeps later.
+    /// The idle timer is much shorter than sleep, so a sprite idles first
+    /// and sleeps later.
     #[test]
     fn a_perched_sprite_idles_then_sleeps_if_left_alone() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -4521,11 +4260,9 @@ mod tests {
         assert_eq!(asleep.animation, "sleep");
     }
 
-    /// #85: what the window server's id buys, and geometry could not. The
-    /// Perch closes, and a window of the same size — the same app's second
-    /// document, say — is sitting a few points away. Matching by size and
-    /// displacement called that the same window and slid the sprite onto it.
-    /// The ids differ, so the Perch is gone and the sprite falls.
+    /// Matching by size and displacement would take a nearby same-size window
+    /// and slide the sprite onto it. The ids differ, so the Perch is gone and
+    /// the sprite falls.
     #[test]
     fn a_perch_that_closes_is_not_the_same_window_as_one_of_its_size_nearby() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -4556,9 +4293,7 @@ mod tests {
         );
     }
 
-    /// #85, the other half: a second window of the same size that ends up
-    /// nearer the Perch's old origin than the Perch itself. Geometry had no
-    /// way to tell them apart and took the nearer one, which put the sprite on
+    /// Geometry would take the nearer same-size window and put the sprite on
     /// the wrong window at the wrong offset. The id picks the window it was
     /// actually standing on.
     #[test]
@@ -4608,10 +4343,9 @@ mod tests {
         );
     }
 
-    /// #85: a resize moves the top edge, so it is a move. Matching the Perch
-    /// by size ruled every resize out and dropped the sprite off a window
-    /// that was still under it; matching by id carries it, and the grip gate
-    /// still governs how fast the edge may go.
+    /// Matching the Perch by size dropped the sprite off a resized window
+    /// still under it. Matching by id carries it, and the grip gate still
+    /// governs how fast the edge may go.
     #[test]
     fn a_perch_resized_from_its_top_edge_is_ridden_like_one_that_moved() {
         let sized = |y: f64, height: f64| WorldSnapshot {
@@ -4647,9 +4381,8 @@ mod tests {
         assert_eq!(yanked.position.y, 400.0, "left where it stood");
     }
 
-    /// #85 criterion 2: the two sides of the gate on a downward drag. The
-    /// slow one is ridden; the fast one outruns the sprite, which is left in
-    /// the air and re-lands on the same edge, now below it.
+    /// The fast descent leaves the sprite in the air; it re-lands on the
+    /// same edge, now below it.
     #[test]
     fn a_slow_descent_is_ridden_and_a_fast_one_leaves_the_sprite_behind() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -4673,11 +4406,9 @@ mod tests {
         assert_eq!(landed.position.y, 600.0, "onto the same edge, now below it");
     }
 
-    /// #85 criterion 5: a sideways yank with the edge still plainly under the
-    /// sprite. The window keeps spanning where the sprite stands, so the
-    /// visibility re-check in `perch_carry` is satisfied throughout and the
-    /// gate is the only thing that can drop it — which is what makes the two
-    /// guards individually load-bearing rather than covering for each other.
+    /// A sideways yank with the edge still under the sprite. The visibility
+    /// re-check in `perch_carry` stays satisfied, so only the gate can drop
+    /// it — the two guards do not cover for each other.
     #[test]
     fn a_sideways_yank_leaves_the_sprite_standing_where_it_was() {
         let wide = |x: f64| WorldSnapshot {
@@ -4715,11 +4446,9 @@ mod tests {
         );
     }
 
-    /// #85 criterion 9 and sub-decision 1: the ride stops where the displays
-    /// do. Two displays, the right one short, and the Perch is dragged slowly
-    /// down until its edge is below the shorter display's usable floor —
-    /// somewhere no display covers, and so not somewhere to stand. The sprite
-    /// lets go rather than being carried out there behind the Dock.
+    /// Two displays, the right one short. The Perch is dragged slowly down
+    /// until its edge is below the shorter usable floor, somewhere no display
+    /// covers. The sprite lets go rather than riding out behind the Dock.
     #[test]
     fn a_ride_never_carries_the_sprite_where_no_display_covers() {
         // Nothing covers x 1000..2000 outside y 300..500.
@@ -4773,12 +4502,9 @@ mod tests {
         );
     }
 
-    /// #128: the sideways half of the same criterion. Vertically the Perch is
-    /// what moves, so asking where the sprite stands asks where it will be;
-    /// sideways the sprite moves with the edge, and the x it is leaving
-    /// answers for a point the ride is about to abandon. It has to be off the
-    /// displays on the tick it is drawn there, which is why this watches every
-    /// tick rather than settling first.
+    /// Sideways the sprite moves with the edge, so the x it is leaving is a
+    /// point the ride is about to abandon. Watch every tick rather than
+    /// settling first: it has to be off the displays on the tick it is drawn there.
     #[test]
     fn a_sideways_ride_never_carries_the_sprite_where_no_display_covers() {
         let mut engine = Engine::new(Point {
@@ -4805,7 +4531,6 @@ mod tests {
             );
         }
 
-        // And it stays on a display for every tick of the fall that follows.
         for _ in 0..40 {
             let frame = engine.tick(&strip_perch(1480.0));
             assert!(
@@ -4817,7 +4542,7 @@ mod tests {
 
     /// Between polls the window list is stale and the sprite coasts on the last
     /// Perch velocity, which no sample gets to approve, so a coast runs off the
-    /// displays for as many ticks as the poll is late rather than for one. #128.
+    /// displays for as many ticks as the poll is late rather than for one.
     #[test]
     fn a_coast_never_carries_the_sprite_where_no_display_covers() {
         let mut engine = Engine::new(Point {
@@ -4843,10 +4568,9 @@ mod tests {
         }
     }
 
-    /// #85 criterion 8: maximizing moves the top edge a long way in one step,
-    /// which is a yank by definition. The new edge is perfectly good to stand
-    /// on — only the gate catches this — so a naive implementation snaps the
-    /// sprite up to it. The sprite is left behind instead.
+    /// Maximizing moves the top edge a long way in one step, a yank. The new
+    /// edge is perfectly good to stand on, so a naive implementation snaps the
+    /// sprite up to it.
     #[test]
     fn a_maximized_perch_leaves_the_sprite_behind_rather_than_snapping_it_up() {
         let world = |rect: Rect| WorldSnapshot {
@@ -4884,11 +4608,9 @@ mod tests {
         );
     }
 
-    /// #85 criterion 7: a minimized window leaves the window server's
-    /// on-screen list, so the Engine sees a close and nothing more. Confirmed
-    /// rather than assumed, against a real window server: a window of our own
-    /// is in `CGWindowListCopyWindowInfo(.optionOnScreenOnly)` by its
-    /// `kCGWindowNumber`, absent while miniaturized, and back on deminiaturize.
+    /// A minimized window leaves the window server's on-screen list, so the
+    /// Engine sees a close. Confirmed on a real window server: present in
+    /// `CGWindowListCopyWindowInfo(.optionOnScreenOnly)`, absent while miniaturized.
     #[test]
     fn a_minimized_perch_drops_the_sprite_as_a_closed_one_does() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -4922,13 +4644,13 @@ mod tests {
         assert_eq!(riding.animation, "hold");
     }
 
-    /// #98: a yank is a loss of footing even when the window moves up over
-    /// the sprite. Lifted is for a *different* window that has come to
-    /// contain it, not for the Perch it just lost.
+    /// A yank is a loss of footing even when the window moves up over the
+    /// sprite. Lifted is for a *different* window that has come to contain
+    /// it, not for the Perch it just lost.
     #[test]
     fn an_upward_yank_drops_the_sprite_rather_than_lifting_it() {
-        // #85 criterion 4 wants somewhere to land, so there is a second window
-        // below the Perch, clear of its bottom edge and so plainly visible.
+        // A second window below the Perch, clear of its bottom edge and so
+        // plainly visible.
         let world = |y: f64| WorldSnapshot {
             windows: vec![
                 window(
@@ -4956,7 +4678,7 @@ mod tests {
         assert_eq!(settle(&mut engine, &world(400.0)).position.y, 400.0);
 
         // Far enough to exceed the ride gate, near enough that the sprite is
-        // still inside the rectangle — the case that used to Lift it. #98.
+        // still inside the rectangle.
         let yanked = engine.tick(&world(250.0));
         assert_eq!(yanked.state, State::Falling, "{yanked:?}");
         assert_eq!(
@@ -4972,10 +4694,9 @@ mod tests {
         );
     }
 
-    /// The same drop, with a window arriving over the sprite as its Perch
-    /// leaves. Stepping up onto a window is a step up from something: with its
-    /// Perch gone the sprite is in the air, and a window that comes over it in
-    /// that same tick is not a rescue. #78.
+    /// With its Perch gone the sprite is in the air. A window that comes over
+    /// it in that same tick is not a rescue: stepping up onto a window is a
+    /// step up from something.
     #[test]
     fn a_perch_that_moves_drops_the_sprite_even_as_a_window_arrives_over_it() {
         // Frontmost first: the window that arrives is in front of the Perch.
@@ -5033,9 +4754,8 @@ mod tests {
         })
     }
 
-    /// #5: the sprite is never left inside a window rectangle. The overlay is
-    /// always on top, so a sprite standing inside one is not hidden by it — it
-    /// is drawn floating in the middle of the window, sitting on nothing.
+    /// The overlay is always on top, so a sprite standing inside a window is
+    /// not hidden by it — it is drawn floating in the middle, sitting on nothing.
     #[test]
     fn a_window_dragged_over_the_sprite_lifts_it_onto_its_edge() {
         let perch = window(
@@ -5054,7 +4774,6 @@ mod tests {
         let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
         assert_eq!(settle(&mut engine, &resting).position.y, 400.0);
 
-        // A second window is dragged over it, swallowing the edge it stands on.
         let covered = WorldSnapshot {
             windows: vec![
                 window(
@@ -5137,10 +4856,9 @@ mod tests {
         assert_eq!(landed.position.y, 800.0, "down to the floor: {landed:?}");
     }
 
-    /// #78, and the other side of the rule above: a window only swallows the
-    /// sprite when it is drawn in front of the Perch the sprite stands on. This
-    /// one is dragged across the desktop behind that Perch, so the edge under
-    /// the sprite stays in plain sight and the sprite stays on it.
+    /// A window only swallows the sprite when it is drawn in front of the Perch
+    /// the sprite stands on. This one is dragged behind that Perch, so the edge
+    /// under the sprite stays in plain sight.
     #[test]
     fn a_window_behind_the_perch_does_not_swallow_the_sprite() {
         let perch = window(
@@ -5184,9 +4902,8 @@ mod tests {
     }
 
     /// A Perch you cannot see is gone: alt-tab puts another window in front and
-    /// the edge under the sprite disappears, leaving it floating on a title bar
-    /// nobody can see. It falls, and is not hoisted onto the raised window's own
-    /// top edge, which that window already contained it under. #100.
+    /// the edge under the sprite disappears. It falls, and is not hoisted onto
+    /// the raised window's top edge, which already contained it.
     #[test]
     fn a_window_raised_over_the_perch_drops_the_sprite() {
         let maximized = window(
@@ -5317,9 +5034,8 @@ mod tests {
         }
     }
 
-    /// #5: overlapping windows resolve to one Perch and stay there. Two edges
-    /// under one sprite is the arrangement that would have it flicking between
-    /// them, one per tick, for as long as both windows are open.
+    /// Two edges under one sprite is the arrangement that would have it
+    /// flicking between them, one per tick, for as long as both windows are open.
     #[test]
     fn overlapping_windows_resolve_to_one_perch_without_jitter() {
         let mut engine = Engine::new(Point { x: 400.0, y: 0.0 });
@@ -5349,8 +5065,6 @@ mod tests {
         );
     }
 
-    /// #5: a top edge hidden behind the window in front of it is not a Perch.
-    /// The sprite falls past the covered edge to the floor.
     #[test]
     fn an_edge_hidden_behind_the_window_in_front_of_it_is_not_a_perch() {
         // Frontmost first, and the second window's top edge falls inside the
@@ -5388,9 +5102,8 @@ mod tests {
         );
     }
 
-    /// #5: a top edge no display covers is not a Perch either. One window
-    /// straddles two displays of different heights, and the sprite is thrown
-    /// out over the shorter one, where that edge hangs over nothing.
+    /// One window straddles two displays of different heights, and the sprite
+    /// is thrown out over the shorter one, where that edge hangs over nothing.
     #[test]
     fn an_edge_over_no_display_is_not_a_perch() {
         // Bottom-aligned displays of different heights, the ordinary
@@ -5477,10 +5190,9 @@ mod tests {
             ..snapshot(100)
         });
 
-        // A production tick, not the 100 ms the other tests use to settle: on
-        // a long tick gravity wins a 200-point throw in one step and this
-        // would say the sprite never rose. Started below the ceiling so the
-        // rise is not stopped in the same tick. #100.
+        // A production tick, not the 100 ms the other tests use to settle. On a
+        // long tick gravity wins a 200-point throw in one step. Started below
+        // the ceiling so the rise is not stopped in the same tick.
         let thrown = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
                 velocity: Point {
@@ -5500,9 +5212,8 @@ mod tests {
         );
     }
 
-    /// #100: a hard upward flick used to spend most of the flight above the
-    /// usable frame. The usable top is a ceiling, and the sprite is heavy
-    /// enough to come back down onto a Surface.
+    /// The usable top is a ceiling, and the sprite is heavy enough to come
+    /// back down onto a Surface.
     #[test]
     fn a_hard_upward_throw_stays_on_the_display_and_lands() {
         let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
@@ -5540,7 +5251,6 @@ mod tests {
         assert_eq!(landed.position.y, 800.0, "on the floor: {landed:?}");
     }
 
-    /// #100: a title bar under the menu bar is the usable top, not a Perch.
     /// Landing there leaves only the feet on screen, and often unclickable.
     #[test]
     fn a_window_flush_with_the_usable_top_is_not_a_perch() {
@@ -5650,7 +5360,6 @@ mod tests {
         let resting = settle(&mut engine, &snapshot(100));
         assert_eq!(resting.state, State::Grounded);
 
-        // A Throw with nothing holding the sprite is not a Throw at all.
         let unmoved = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
                 velocity: Point {
@@ -5665,10 +5374,9 @@ mod tests {
         assert_eq!(unmoved.velocity, Point::default());
     }
 
-    /// Two displays with a gap between them, which is what "the union of
-    /// visible display frames, not their bounding rectangle" is about. A sprite
-    /// that lands in the gap is over no display at all: nothing holds it up,
-    /// nothing draws it, and nothing brings it back.
+    /// Two displays with a gap between them: the union of visible display
+    /// frames, not their bounding rectangle. A sprite in the gap is over no
+    /// display at all: nothing holds it up, nothing draws it, nothing brings it back.
     fn displays_with_a_gap() -> WorldSnapshot {
         WorldSnapshot {
             displays: vec![
@@ -5690,15 +5398,9 @@ mod tests {
         }
     }
 
-    /// #4: the sprite is caught by the union of the displays, not by the
-    /// rectangle that bounds them.
-    ///
-    /// Dropped rather than thrown, because that is the case that actually
-    /// strands it. A throw carries enough sideways speed to clear the gap
-    /// before gravity matters; letting go over the gap leaves the sprite with
-    /// no horizontal velocity at all, so it stays over nothing. `floor_under`
-    /// finds no display at that x, `support_below` returns nothing, and it
-    /// falls for ever with no edge to catch.
+    /// Dropped rather than thrown: a throw carries enough sideways speed to
+    /// clear the gap before gravity matters. Letting go leaves no horizontal
+    /// velocity, so it stays over nothing with no edge to catch.
     #[test]
     fn a_sprite_dropped_into_the_gap_between_displays_is_caught_rather_than_lost() {
         let mut engine = Engine::new(Point { x: 900.0, y: 100.0 });
@@ -5753,14 +5455,9 @@ mod tests {
         );
     }
 
-    /// #4 asks for an L-shaped arrangement, where the bounding rectangle and
-    /// the union differ in y rather than in x. A second display dropped below
-    /// the first leaves the top-right of the bounding rectangle covering no
-    /// screen at all.
-    ///
-    /// It does not strand the sprite, and this says so rather than assuming it:
-    /// every x in the bounding rectangle is spanned by some display, so there is
-    /// always a floor somewhere below.
+    /// L-shaped: the bounding rectangle and the union differ in y. It does not
+    /// strand the sprite: every x in the bounding rectangle is spanned by some
+    /// display, so there is always a floor somewhere below.
     #[test]
     fn an_l_shaped_arrangement_leaves_the_sprite_a_floor_everywhere() {
         let l_shaped = || WorldSnapshot {
@@ -5798,9 +5495,8 @@ mod tests {
         assert_eq!(landed.position.x, 1500.0, "and does not drift sideways");
     }
 
-    /// And a diagonal arrangement, the other case #4 names: two displays meeting
-    /// at a corner. The x ranges still touch, so there is no gap to fall into,
-    /// and the sprite reaches the lower display's floor.
+    /// Two displays meeting at a corner. The x ranges still touch, so there
+    /// is no gap to fall into.
     #[test]
     fn a_diagonal_arrangement_leaves_the_sprite_a_floor_everywhere() {
         let diagonal = || WorldSnapshot {
@@ -5888,8 +5584,6 @@ mod tests {
         );
     }
 
-    /// #84: Do Not Disturb refuses Director proposals while the Character stays
-    /// visible on screen.
     #[test]
     fn a_proposal_offered_under_do_not_disturb_is_not_applied() {
         let mut engine = a_resting_sprite();
@@ -5911,8 +5605,8 @@ mod tests {
         );
     }
 
-    /// #84: turning Do Not Disturb off resumes proposals on the next wake
-    /// without reconstructing the Engine.
+    /// Turning Do Not Disturb off resumes proposals on the next wake without
+    /// reconstructing the Engine.
     #[test]
     fn the_same_proposal_is_applied_once_do_not_disturb_is_off() {
         let mut engine = a_resting_sprite();
@@ -5930,8 +5624,7 @@ mod tests {
         assert_eq!(applied.behavior, Some("greet".to_string()));
     }
 
-    /// #84: Poke still plays `react` from the Engine, the user-initiated
-    /// reaction.
+    /// Poke still plays `react`, the user-initiated reaction.
     #[test]
     fn poke_still_plays_react_while_do_not_disturb_is_on() {
         let mut engine = a_resting_sprite();
@@ -5948,7 +5641,6 @@ mod tests {
         );
     }
 
-    /// #84: Grab and Throw still move the sprite while Do Not Disturb is on.
     #[test]
     fn grab_and_throw_still_move_the_sprite_under_do_not_disturb() {
         let mut engine = a_resting_sprite();
@@ -5989,8 +5681,6 @@ mod tests {
         );
     }
 
-    /// #84: unprompted Director dialogue is not spoken while Do Not Disturb is
-    /// on.
     #[test]
     fn unprompted_director_dialogue_is_not_spoken_under_do_not_disturb() {
         let mut engine = a_resting_sprite();
@@ -6010,8 +5700,6 @@ mod tests {
         );
     }
 
-    /// #84: idle Behaviors do not start while Do Not Disturb is on, and the
-    /// buddy settles into sleep.
     #[test]
     fn idle_behaviors_do_not_start_and_the_buddy_settles_to_sleep() {
         let mut engine = a_resting_sprite();
@@ -6042,8 +5730,8 @@ mod tests {
         );
     }
 
-    /// #84: walk velocity outlives the Primitive that started it, so refusing
-    /// the next proposal is not enough. Sit is what stops the feet.
+    /// Walk velocity outlives the Primitive that started it, so refusing the
+    /// next proposal is not enough. Sit is what stops the feet.
     #[test]
     fn toggling_do_not_disturb_stops_a_walk_and_sits_the_sprite_down() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
@@ -6231,7 +5919,6 @@ mod tests {
             "facing left after settling at right edge"
         );
 
-        // Now drag to the left edge
         let dragged = engine.tick(&WorldSnapshot {
             cursor: Point { x: 10.0, y: 400.0 },
             verbs: vec![Verb::Grab],
@@ -6297,11 +5984,10 @@ mod tests {
             ..snapshot(100)
         };
 
-        // Start the sprite on the window, away from edges, so no correction yet
+        // Start away from edges, so no correction yet
         let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
         settle(&mut engine, &snapshot(100));
 
-        // Grab and place on the narrow perch near right edge
         engine.tick(&WorldSnapshot {
             cursor: Point { x: 970.0, y: 200.0 },
             verbs: vec![Verb::Grab],
@@ -6320,8 +6006,7 @@ mod tests {
         assert_eq!(placed.facing, -1.0, "sprite faces away from right edge");
     }
 
-    /// #119: dialogue with an empty behavior plays `talk` for PRIMITIVE_MS,
-    /// independent of bubble duration.
+    /// Talk plays for PRIMITIVE_MS, independent of bubble duration.
     #[test]
     fn dialogue_with_empty_behavior_plays_talk() {
         let mut engine = a_resting_sprite();
@@ -6351,8 +6036,7 @@ mod tests {
         );
     }
 
-    /// #119: dialogue with a playable Behavior plays both — the Behavior and
-    /// its dialogue are independent.
+    /// The Behavior and its dialogue are independent.
     #[test]
     fn dialogue_with_a_playable_behavior_plays_the_behavior_not_talk() {
         let mut engine = a_resting_sprite();
@@ -6373,7 +6057,6 @@ mod tests {
         assert_eq!(spoken.behavior, Some("greet".to_string()));
     }
 
-    /// #119: a Behavior with no dialogue does not play talk.
     #[test]
     fn a_behavior_without_dialogue_does_not_play_talk() {
         let mut engine = a_resting_sprite();
@@ -6393,13 +6076,11 @@ mod tests {
 
     // Cursor awareness tests: scripted pointer tracks with no windowing system.
 
-    /// #152: Near reaction with indifferent keeps doing whatever it was doing.
     #[test]
     fn near_indifferent_keeps_the_sprite_doing_whatever_it_was_doing() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Indifferent, CursorReaction::Indifferent);
 
-        // Cursor far away: idle.
         let far = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: 1000.0,
@@ -6409,7 +6090,6 @@ mod tests {
         });
         assert_eq!(far.animation, "idle");
 
-        // Cursor enters Near radius: still idle.
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: engine.position.x + 50.0,
@@ -6420,13 +6100,11 @@ mod tests {
         assert_eq!(near.animation, "idle", "indifferent means no reaction");
     }
 
-    /// #152: Near reaction with speak plays talk.
     #[test]
     fn near_speak_plays_talk_when_cursor_enters_radius() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Speak, CursorReaction::Indifferent);
 
-        // Cursor enters Near radius.
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: engine.position.x + 50.0,
@@ -6437,14 +6115,12 @@ mod tests {
         assert_eq!(near.animation, "talk", "speak reaction plays talk");
     }
 
-    /// #152: Near reaction with face turns to face the cursor.
     #[test]
     fn near_face_turns_the_sprite_toward_the_cursor() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Face, CursorReaction::Indifferent);
-        engine.facing = -1.0; // Start facing left.
+        engine.facing = -1.0;
 
-        // Cursor enters Near radius to the right.
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: engine.position.x + 50.0,
@@ -6455,13 +6131,11 @@ mod tests {
         assert_eq!(near.facing, 1.0, "sprite faces right toward the cursor");
     }
 
-    /// #152: Near reaction with toward walks toward the cursor.
     #[test]
     fn near_toward_walks_the_sprite_toward_the_cursor() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Toward, CursorReaction::Indifferent);
 
-        // Cursor enters Near radius to the right.
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: engine.position.x + 100.0,
@@ -6477,13 +6151,11 @@ mod tests {
         );
     }
 
-    /// #152: Near reaction with away walks away from the cursor.
     #[test]
     fn near_away_walks_the_sprite_away_from_the_cursor() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Away, CursorReaction::Indifferent);
 
-        // Cursor enters Near radius to the right.
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: engine.position.x + 100.0,
@@ -6499,13 +6171,11 @@ mod tests {
         );
     }
 
-    /// #152: Near reaction with react plays react.
     #[test]
     fn near_react_plays_react_when_cursor_enters_radius() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::React, CursorReaction::Indifferent);
 
-        // Cursor enters Near radius.
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: engine.position.x + 50.0,
@@ -6516,14 +6186,13 @@ mod tests {
         assert_eq!(near.animation, "react", "react reaction plays react");
     }
 
-    /// #152: Rush (startle) plays the rush_reaction once when cursor rushes at sprite.
     #[test]
     fn rush_plays_the_rush_reaction_once_on_high_velocity_approach() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Indifferent, CursorReaction::React);
 
-        // Move cursor quickly toward sprite (high velocity). The first sample is
-        // outside Near so `last_cursor` has a position to measure speed from.
+        // The first sample is outside Near so `last_cursor` has a position to
+        // measure speed from.
         let mut last_x = engine.position.x + 300.0;
         for _ in 0..3 {
             let frame = engine.tick(&WorldSnapshot {
@@ -6535,7 +6204,6 @@ mod tests {
             });
             last_x -= 100.0; // Fast approach: 100 points per 16ms = high velocity
             if frame.animation == "react" {
-                // Continue for a few more ticks to verify it doesn't repeat.
                 for _ in 0..5 {
                     let _staying = engine.tick(&WorldSnapshot {
                         cursor: Point {
@@ -6551,8 +6219,8 @@ mod tests {
         panic!("Rush reaction was not triggered");
     }
 
-    /// #152: Rush `toward` walks at the cursor, not away from it. Facing
-    /// alone is not enough — the art can face one way and the feet the other.
+    /// Facing alone is not enough — the art can face one way and the feet
+    /// the other.
     #[test]
     fn rush_toward_walks_at_the_cursor_not_away() {
         let mut engine = a_resting_sprite()
@@ -6583,7 +6251,6 @@ mod tests {
         );
     }
 
-    /// #153: Chase steers toward cursor's x, swats on arrival, disengages.
     #[test]
     fn chase_walks_toward_cursor_and_swats_on_arrival() {
         let mut engine = a_resting_sprite();
@@ -6593,7 +6260,6 @@ mod tests {
         // the first tick is pursuit and not a swat.
         engine.play(&[Primitive::Chase]);
 
-        // First tick: should be chasing (walking).
         let chasing = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x + CHASE_ARRIVAL_THRESHOLD + 10.0,
@@ -6604,7 +6270,6 @@ mod tests {
         assert_eq!(chasing.animation, "walk", "chase uses walk art");
         assert_eq!(chasing.facing, 1.0, "faces toward cursor");
 
-        // Move cursor very close (within arrival threshold) or let sprite walk close enough.
         for _ in 0..20 {
             let frame = engine.tick(&WorldSnapshot {
                 cursor: Point {
@@ -6614,7 +6279,6 @@ mod tests {
                 ..snapshot(100)
             });
 
-            // When sprite gets close enough, it should swat.
             if frame.animation == "react" {
                 return;
             }
@@ -6627,7 +6291,6 @@ mod tests {
         );
     }
 
-    /// #153: Chase times out if cursor never arrives.
     #[test]
     fn chase_times_out_if_cursor_escapes() {
         let mut engine = a_resting_sprite();
@@ -6649,7 +6312,6 @@ mod tests {
             cursor_x += 50.0; // Stays ahead so arrival never fires; timeout is the path under test.
             ticks += 1;
 
-            // After timeout, chase should give up.
             if ticks > (CHASE_TIMEOUT_MS / 100) && engine.on_screen() != Some(Primitive::Chase) {
                 return;
             }
@@ -6657,13 +6319,11 @@ mod tests {
         panic!("Chase did not time out as expected");
     }
 
-    /// #153: Any Verb aborts chase.
     #[test]
     fn chase_aborts_on_any_verb() {
         let mut engine = a_resting_sprite();
         engine.play(&[Primitive::Chase]);
 
-        // Poke aborts chase.
         let poked = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Poke],
             cursor: Point {
@@ -6683,13 +6343,11 @@ mod tests {
         );
     }
 
-    /// #153: Chase never plays under Do Not Disturb.
     #[test]
     fn chase_is_refused_under_do_not_disturb() {
         let mut engine = a_resting_sprite();
         engine.set_do_not_disturb(true);
 
-        // Propose a behavior with chase.
         let frame = engine.tick(&WorldSnapshot {
             proposal: Some(BehaviorProposal {
                 behavior: "chase-test".to_string(),
@@ -6705,7 +6363,7 @@ mod tests {
         assert_eq!(frame.animation, "idle", "DND refuses chase proposals");
     }
 
-    /// #152: Near and Rush reactions still play under Do Not Disturb (like Poke).
+    /// Near and Rush reactions still play under Do Not Disturb, like Poke.
     #[test]
     fn cursor_reactions_play_under_do_not_disturb() {
         let mut engine =
@@ -6768,7 +6426,6 @@ mod tests {
             ..snapshot(16)
         });
 
-        // Near reaction still plays under DND when cursor enters radius (NEAR_RADIUS = 150).
         let near = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x + 149.0,
@@ -6782,15 +6439,12 @@ mod tests {
         );
     }
 
-    /// #152: Dwell addresses the Director when the cursor rests on the sprite
-    /// for the threshold duration.
     #[test]
     fn dwell_addresses_the_director() {
         let mut engine = a_resting_sprite();
         let sprite_x = engine.position.x;
         let sprite_y = engine.position.y;
 
-        // Cursor moves onto the sprite.
         let on_sprite = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x,
@@ -6811,7 +6465,6 @@ mod tests {
         });
         assert!(!dwelling.addressed, "still not addressed yet");
 
-        // Cursor continues to rest, crossing the threshold.
         let addressed = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x,
@@ -6823,7 +6476,6 @@ mod tests {
         assert!(addressed.addressed, "addressed after dwell threshold");
         assert_eq!(addressed.animation, "talk", "plays talk's first moment");
 
-        // Continuing to dwell doesn't address again.
         let still_dwelling = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x,
@@ -6837,15 +6489,12 @@ mod tests {
         );
     }
 
-    /// #152: A cursor that only passes through the sprite without dwelling
-    /// does not address the Director.
     #[test]
     fn passing_cursor_does_not_address() {
         let mut engine = a_resting_sprite();
         let sprite_x = engine.position.x;
         let sprite_y = engine.position.y;
 
-        // Cursor approaches and passes over the sprite quickly.
         let approach = engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x - 50.0,
@@ -6894,7 +6543,6 @@ mod tests {
 
         takes_engine_rect(source_rect);
 
-        // Also test direct assignment in WorldSnapshot assembly
         let geometry = window_source::WorldGeometry {
             usable_frames: vec![source_rect],
             windows: vec![],
@@ -6912,8 +6560,8 @@ mod tests {
         };
     }
 
-    /// #374: a jump leaves the floor, rises, comes down, and arrives through
-    /// the existing landing. No second physics and no State of its own.
+    /// A jump arrives through the existing landing. No second physics and no
+    /// State of its own.
     #[test]
     fn a_jump_arcs_off_the_floor_and_lands_through_the_landing_path() {
         let mut engine = a_resting_sprite();
@@ -6967,15 +6615,14 @@ mod tests {
         );
     }
 
-    /// #374: the Engine names the optional Animation and the renderer resolves
-    /// it, as it already does for `climb` and `grab`.
+    /// The Engine names the optional Animation and the renderer resolves it,
+    /// as it already does for `climb` and `grab`.
     #[test]
     fn a_jump_asks_for_optional_jump_art() {
         assert_eq!(animation_of(Primitive::Jump), "jump");
     }
 
-    /// #374: the sprite already walks off a window edge, so it may jump off
-    /// one too.
+    /// The sprite already walks off a window edge, so it may jump off one too.
     #[test]
     fn a_perched_sprite_may_jump_off_its_edge() {
         let mut engine =
@@ -6997,8 +6644,7 @@ mod tests {
         );
     }
 
-    /// Asleep refuses a jump, and the Frame reports the refusal instead of
-    /// dropping it. #374.
+    /// The Frame reports the refusal instead of dropping it.
     #[test]
     fn a_jump_is_refused_while_asleep_and_says_it_was() {
         let mut engine = a_resting_sprite();
