@@ -12,13 +12,28 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 function Find-SettingsWindow {
-    $condition = New-Object System.Windows.Automation.PropertyCondition(
+    $nativeCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
         "AiBuddySettings"
     )
+    $native = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        $nativeCond
+    )
+    if ($null -ne $native) { return $native }
+
+    $nameCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        "Settings"
+    )
+    $typeCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Window
+    )
+    $webviewCond = New-Object System.Windows.Automation.AndCondition($nameCond, $typeCond)
     return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
-        $condition
+        $webviewCond
     )
 }
 
