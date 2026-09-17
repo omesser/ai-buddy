@@ -142,6 +142,30 @@ func window(titled title: String) -> AXUIElement? {
 
 func settingsWindow() -> AXUIElement? { window(titled: "Settings") }
 
+/// A WKWebView publishes its tree only on request. The first pass into the
+/// window gets the content view as a childless AXGroup with no AXScrollArea
+/// or AXWebArea under it, and the real subtree lands 107 ms after that ask.
+/// Sleeping instead of asking never gets it, because the ask is what primes
+/// it. The native Settings window has no childless AXGroup among its own
+/// direct children, so that shape is an unprimed webview and nothing else. #706.
+func webContentSettled(_ window: AXUIElement) -> Bool {
+    if let area = find(window, where: { string($0, kAXRoleAttribute) == "AXWebArea" }) {
+        return !children(area).isEmpty
+    }
+    return !children(window).contains {
+        string($0, kAXRoleAttribute) == "AXGroup" && children($0).isEmpty
+    }
+}
+
+/// `tab`, `pick` and `dump` each address a control the webview owns, so each
+/// waits for that priming. `open` and `frame` do not: the status item and the
+/// window rectangle are AppKit's, and neither descends into the content. #779.
+func settledWindow(titled title: String) -> AXUIElement? {
+    guard let window = window(titled: title) else { return nil }
+    _ = waitFor(5, { webContentSettled(window) ? window : nil })
+    return window
+}
+
 switch args[0] {
 case "open":
     // The status item, not the app's own menu bar: Settings has no keyboard
@@ -170,7 +194,7 @@ case "open":
 
 case "tab":
     guard args.count >= 3 else { die("usage: ax-settings tab <pid> <title>") }
-    guard let window = settingsWindow() else { die("Settings is not open") }
+    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
     guard let tab = find(window, where: { string($0, kAXTitleAttribute) == args[2] }),
         press(tab)
     else {
@@ -182,7 +206,7 @@ case "pick":
     // two launches. The popup is addressed by the label above it, because the
     // tree is in render order and a label is stabler than an index.
     guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
-    guard let window = settingsWindow() else { die("Settings is not open") }
+    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
     var lastLabel = ""
     var popup: AXUIElement?
     func scan(_ element: AXUIElement, depth: Int) {
@@ -236,7 +260,7 @@ case "dump":
     // the shell can grep for a label and read the enabled flag beside it. Order
     // is the tree's own, which is the render order, so section order is assertable.
     let wanted = args.count >= 3 ? args[2] : "Settings"
-    guard let window = window(titled: wanted) else { die("\(wanted) is not open") }
+    guard let window = settledWindow(titled: wanted) else { die("\(wanted) is not open") }
     func walk(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }
         let role = string(element, kAXRoleAttribute) ?? "?"
@@ -264,21 +288,6 @@ case "dump":
                 + "|\(flat(placeholder))|\(enabled)|\(settable)")
         for child in children(element) { walk(child, depth: depth + 1) }
     }
-    /// A WKWebView publishes its tree only on request. The first pass into the
-    /// window gets the content view as a childless AXGroup with no AXScrollArea
-    /// or AXWebArea under it, and the real subtree lands 107 ms after that ask.
-    /// Sleeping instead of asking never gets it, because the ask is what primes
-    /// it. The native Settings window has no childless AXGroup among its own
-    /// direct children, so that shape is an unprimed webview and nothing else. #706.
-    func webContentSettled(_ window: AXUIElement) -> Bool {
-        if let area = find(window, where: { string($0, kAXRoleAttribute) == "AXWebArea" }) {
-            return !children(area).isEmpty
-        }
-        return !children(window).contains {
-            string($0, kAXRoleAttribute) == "AXGroup" && children($0).isEmpty
-        }
-    }
-    _ = waitFor(5, { webContentSettled(window) ? window : nil })
     walk(window, depth: 0)
 
 default:
