@@ -129,6 +129,8 @@ repos:
       - id: psscriptanalyzer-check
         name: PSScriptAnalyzer
         # Runs when pwsh is available; skips cleanly otherwise.
+        # A Darwin pwsh Abort trap / FileLoadException is the same skip:
+        # ubuntu-latest still runs the real lint.
         entry: scripts/hooks/psscriptanalyzer.sh
         language: system
         files: \.ps1$

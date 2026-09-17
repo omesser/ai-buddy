@@ -14,6 +14,43 @@ if ! pwsh -NoProfile -Command 'if (-not (Get-Module -ListAvailable PSScriptAnaly
   exit 0
 fi
 
+# macos-latest pwsh aborts Invoke-ScriptAnalyzer with FileLoadException
+# (exit 134 / Abort trap: 6) — a runtime crash, not a finding.
+# ubuntu-latest still runs the real lint.
+pwsh_runtime_crash() {
+  local status="$1"
+  local output="$2"
+  case "$output" in
+    *FileLoadException* | *"Abort trap"*) return 0 ;;
+  esac
+  # SIGABRT. EnableExit uses the finding count, so 134 findings would
+  # collide; those prints carry Severity/ParseError and are not skipped.
+  if [ "$status" -eq 134 ]; then
+    case "$output" in
+      *ParseError* | *Severity*) return 1 ;;
+    esac
+    return 0
+  fi
+  return 1
+}
+
 for f in "$@"; do
-  pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error,ParseError -EnableExit"
+  set +e
+  output=$(pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error,ParseError -EnableExit" 2>&1)
+  status=$?
+  set -e
+
+  if [ "$status" -eq 0 ]; then
+    [ -n "$output" ] && printf '%s\n' "$output"
+    continue
+  fi
+
+  if pwsh_runtime_crash "$status" "$output"; then
+    echo "skipped - pwsh crashed running PSScriptAnalyzer (exit ${status}); Ubuntu CI still runs the real lint" >&2
+    [ -n "$output" ] && printf '%s\n' "$output" >&2
+    exit 0
+  fi
+
+  [ -n "$output" ] && printf '%s\n' "$output"
+  exit "$status"
 done
