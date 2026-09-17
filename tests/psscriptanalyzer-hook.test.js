@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -46,15 +46,18 @@ const runHook = ({ env = {}, pathHasPwsh = true } = {}) => {
   // Invoke via /bin/bash so the hook does not need bash on PATH.
   const path = pathHasPwsh ? `${bin}:${process.env.PATH ?? ""}` : bin;
 
-  return spawnSync("/bin/bash", [hook, "probe.ps1"], {
+  const result = spawnSync("/bin/bash", [hook, "probe.ps1"], {
     cwd: tmpDir,
     encoding: "utf8",
     env: { ...process.env, ...env, PATH: path },
   });
+  result.bin = bin;
+  return result;
 };
 
 test("missing pwsh skips with the existing message", () => {
   const result = runHook({ pathHasPwsh: false });
+  assert.equal(existsSync(join(result.bin, "pwsh")), false);
   assert.equal(result.status, 0);
   assert.match(result.stderr, /skipped - pwsh not installed/);
 });
