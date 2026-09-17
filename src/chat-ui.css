@@ -197,16 +197,24 @@ body {
   outline-offset: 2px;
 }
 
-/* The Prompt tab: the two authored layers, the author's frozen above the
-   user's own. Scrolls in the log's place, because at 420 points a personality
-   and a paragraph do not both fit. */
+/* The Prompt tab: actions stay put; the authored layers scroll in the log's
+   place, because at 420 points a personality and a paragraph do not both fit. */
 .prompt {
   flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: grid;
   align-content: start;
   gap: 8px;
-  padding: 16px 18px 18px;
+  padding: 12px 18px 18px;
 }
 
 .prompt h2 {
@@ -223,8 +231,12 @@ body {
 }
 
 /* Read-only and drawn as read-only: the Character's, shown for reference and
-   editable nowhere. Wrapped like a turn, since it is prose someone wrote. */
+   editable nowhere. Wrapped like a turn, since it is prose someone wrote.
+   The three-line floor is the empty Instance Prompt's, so an empty Personality
+   (no personality.txt, or Blank AI) is a prose block rather than a capsule. */
 .frozen {
+  box-sizing: border-box;
+  min-height: calc(1.5em * 3 + 20px);
   padding: 9px 12px;
   border: 1px solid var(--chat-rule);
   border-radius: var(--chat-radius-control);
@@ -234,6 +246,10 @@ body {
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.frozen.is-empty {
+  color: var(--chat-ink-4);
 }
 
 /* The grid item is this box, not the textarea. A replaced textarea as a
@@ -283,10 +299,13 @@ body {
 }
 
 .prompt-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 2px;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid var(--chat-rule);
+  background: var(--chat-panel);
 }
 
 .prompt-actions button {

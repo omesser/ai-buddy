@@ -74,7 +74,27 @@ test("the tab warns that saving starts a new conversation before it offers to", 
   const save = html.indexOf('id="prompt-save"');
 
   assert.ok(warning > 0, "the cost of saving is written on the tab");
-  assert.ok(save > warning, "and it is written above the button that spends it");
+  assert.ok(save > 0, "and the button that spends it is on the tab");
+});
+
+test("Prompt tab actions sit above the authored layers, outside the scroll", () => {
+  const section = promptSection(html);
+  const prompt = ruleBlock(css, ".prompt");
+  const actions = ruleBlock(css, ".prompt-actions");
+  const body = ruleBlock(css, ".prompt-body");
+
+  assert.match(
+    section,
+    /^\s*<div class="prompt-actions">[\s\S]*?<div class="prompt-body">/,
+    "Save is the first thing on the tab, before Personality",
+  );
+  assert.match(prompt, /display:\s*flex/, "the tab is a column so the bar need not scroll");
+  assert.match(prompt, /flex-direction:\s*column/);
+  assert.match(prompt, /overflow:\s*hidden/, "the pane does not scroll; .prompt-body does");
+  assert.match(prompt, /min-height:\s*0/, "the flex child can shrink below its content");
+  assert.match(actions, /flex:\s*0 0 auto/, "the bar keeps its height");
+  assert.match(body, /overflow-y:\s*auto/, "Personality and the field scroll under the bar");
+  assert.match(body, /display:\s*grid/, "the authored layers still lay out as a grid");
 });
 
 test("the tab shows the two authored layers and not the assembled payload", () => {
@@ -87,9 +107,21 @@ test("the tab shows the two authored layers and not the assembled payload", () =
   );
 });
 
+test("an empty Personality block says Empty at the Instance Prompt's height", () => {
+  assert.match(js, /"Empty"/, "the frozen layer names Empty rather than collapsing");
+  const empty = ruleBlock(css, ".frozen.is-empty");
+  assert.match(
+    empty,
+    /color:\s*var\(--chat-ink-4\)/,
+    "Empty matches the textarea placeholder",
+  );
+});
+
 test("an empty Instance Prompt field keeps rows and matches the Personality block", () => {
   const field = ruleBlock(css, ".prompt-field");
   const textarea = ruleBlock(css, ".prompt textarea");
+  const frozen = ruleBlock(css, ".frozen");
+  const threeLines = /min-height:\s*calc\(\s*1\.5em\s*\*\s*3\s*\+\s*20px\s*\)/;
 
   assert.match(field, /width:\s*100%/, "the wrapper is as wide as the frozen Personality block");
   assert.match(field, /min-width:\s*0/, "so the grid item can shrink to that column");
@@ -97,11 +129,9 @@ test("an empty Instance Prompt field keeps rows and matches the Personality bloc
   assert.match(textarea, /width:\s*100%/, "as wide as the wrapper, which matches the Personality block");
   assert.match(textarea, /min-width:\s*0/, "so the field can shrink with the wrapper");
   assert.match(textarea, /box-sizing:\s*border-box/, "border sits inside the width the wrapper gives it");
-  assert.match(
-    textarea,
-    /min-height:\s*calc\(\s*1\.5em\s*\*\s*3\s*\+\s*20px\s*\)/,
-    "empty field cannot collapse below about three lines of copy",
-  );
+  assert.match(textarea, threeLines, "empty field cannot collapse below about three lines of copy");
+  assert.match(frozen, threeLines, "empty Personality keeps the same three-line floor");
+  assert.match(frozen, /box-sizing:\s*border-box/, "so that floor includes padding, as the field's does");
   assert.doesNotMatch(
     textarea,
     /align-self:/,
@@ -111,9 +141,9 @@ test("an empty Instance Prompt field keeps rows and matches the Personality bloc
 
 test("the save warning sits outside the Instance Prompt field", () => {
   const section = promptSection(html);
-  const prompt = ruleBlock(css, ".prompt");
+  const body = ruleBlock(css, ".prompt-body");
 
-  assert.match(prompt, /display:\s*grid/, "the Prompt tab still lays out as a grid");
+  assert.match(body, /display:\s*grid/, "the authored layers still lay out as a grid");
   assert.match(
     section,
     /<div class="prompt-field">\s*<textarea\b[\s\S]*?id="prompt-text"[\s\S]*?<\/textarea>\s*<\/div>/,
@@ -129,7 +159,7 @@ test("the save warning sits outside the Instance Prompt field", () => {
   assert.doesNotMatch(
     rest,
     /<textarea\b/,
-    "a textarea that is a direct .prompt child is a replaced grid item and paints over .warn",
+    "a textarea that is a direct grid child is a replaced item and paints over .warn",
   );
   assert.match(
     section,

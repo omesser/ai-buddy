@@ -384,9 +384,11 @@ function askingToSave(asking) {
 }
 
 function showPrompt(opening) {
-  // The string as sent. Empty under Blank AI because the built-in layer was
-  // emptied, not because the tab hid it.
-  document.getElementById("personality").textContent = opening.personality;
+  const personality = document.getElementById("personality");
+  const written = (opening.personality ?? "").trim();
+  personality.classList.toggle("is-empty", !written);
+  // "Empty", not a collapsed box: Blank AI empties the layer rather than hiding it.
+  personality.textContent = written || "Empty";
   // Said before it is hit as well as in the refusal after: the Shell owns the
   // number, so the tab reads it rather than restating it.
   document.getElementById("prompt-limit").textContent = opening.prompt_limit;
