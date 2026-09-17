@@ -86,7 +86,7 @@ all three it is a shortcut nobody can price.
 ## The ceiling
 
 `pre-commit` runs [ast-grep](https://ast-grep.github.io/) over every language it
-parses and rejects a comment block over 25 lines
+parses and rejects a comment block over 20 lines
 (`scripts/ast-grep/rules/comment-blocks.yml`). tree-sitter finds the comments,
 so a language this repository adds is understood on arrival.
 
@@ -104,6 +104,6 @@ follow-up choice, not this issue.
 
 Agents must not assume `.ps1` or `.toml` files are ceiling-checked.
 
-The 25 is what the tree passes today, not the bar this page argues for. It comes
+The 20 is what the tree passes today, not the bar this page argues for. It comes
 down as #744's compaction lands. A Rust `//!` module header is exempt — it
 documents the module rather than a line of code — and `///` item docs are not.

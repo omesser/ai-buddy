@@ -1,15 +1,12 @@
 <!doctype html>
 <!--
   The bubble design for omesser/ai-buddy#441, shipped by #456: the overlay's
-  speech bubble and thinking indicator drawn as a piece of the chat surface,
-  carried out onto the desktop — without taking the part of that surface that
-  only works inside a window.
+  speech bubble drawn as a piece of the chat surface, carried onto the
+  desktop without the part of that surface that only works inside a window.
 
-  The <style> block marked "spec" is what src/main.css draws, ported verbatim
-  by #456. A Dated page under ADR-0011: hand-written and frozen at its date, so
-  src/main.css is the thing that runs and this is the ground the design was
-  judged on. Everything else here is the harness that makes it judgeable.
-  Nothing here is loaded by the app.
+  The <style> block marked "spec" is src/main.css, ported verbatim by #456.
+  A Dated page under ADR-0011: hand-written and frozen at its date, so
+  src/main.css is what runs. Nothing here is loaded by the app.
 
   The design #456 retired is still drawn beside it, tagged `retired`, because
   the comparison is the argument: a light box with a #333 ring, a round thought
@@ -18,9 +15,8 @@
 
   Self-contained on purpose: no font link, no image file, no stylesheet beside
   it. BMO's idle frame is inlined, the same frame docs/design/cues.html uses.
-  The system font stack is not a compromise here — it is the design, because
-  --chat-sans is `system-ui, -apple-system, sans-serif` and the app's CSP
-  blocks the Google Fonts link this project's review pages have used before.
+  The system font stack is the design: --chat-sans is
+  `system-ui, -apple-system, sans-serif`, and the app's CSP blocks Google Fonts.
 -->
 <html lang="en">
 <head>

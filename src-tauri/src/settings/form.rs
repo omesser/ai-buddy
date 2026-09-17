@@ -714,27 +714,22 @@ fn harness_env_row_parts(label: &str) -> (String, bool, Option<String>) {
 /// variable. Returns (label, frozen, status).
 ///
 /// A Harness that *answers* is the Completer (ADR-0008), so these three drive
-/// nothing while one is up, and #272's rule applies for the same reason it
-/// applies to an exported variable: an edit the Director would discard is not
-/// an edit to offer. The source row below is never frozen by an attachment,
-/// so Off stays one pick and one launch away.
+/// nothing while one is up. #272: an edit the Director would discard is not
+/// an edit to offer. The source row is never frozen by an attachment, so Off
+/// stays one pick away.
 ///
-/// Driving rather than merely configured, which is what `harness::driving`
-/// asks: a Harness this machine has not got leaves a handle that never
-/// answers, and freezing these three on that would leave no reachable
-/// Completer at all (#452).
-///
-/// That leaves a third state, and #469 is what it costs: the handle stays the
-/// configured Completer whether or not its child is up, so an edit here is
-/// saved and not used. Live, because it is the way back; labelled, because a
-/// row that takes a key and changes nothing is worse than a frozen one.
-/// Handing the Director to the HTTP Completer the moment a session dies is the
-/// second mind ADR-0008 refuses.
+/// Driving rather than merely configured (`harness::driving`): a missing
+/// Harness leaves a handle that never answers, and freezing these three on
+/// that would leave no reachable Completer (#452). #469's third state: the
+/// handle stays the configured Completer whether or not its child is up, so
+/// an edit here is saved and not used. Live, because it is the way back;
+/// labelled, because a row that takes a key and changes nothing is worse
+/// than a frozen one. Handing the Director to HTTP the moment a session dies
+/// is the second mind ADR-0008 refuses.
 ///
 /// #500 narrowed the label rather than removing it. The wait is no longer a
-/// relaunch — the Session retries the child on its own backoff, and Model API
-/// in the source row hands these three back at once — so the label names the
-/// pick that ends it instead of a launch.
+/// relaunch: the Session retries the child, and Model API in the source row
+/// hands these three back at once, so the label names the pick that ends it.
 fn http_row_parts(
     label: &str,
     var: &str,
