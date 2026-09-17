@@ -1,8 +1,5 @@
-//! MCP tool dispatch.
-//!
-//! Maps tool names and JSON arguments onto tool handlers.
-//! Tested in-process without an MCP transport, so it can live in core beside
-//! the handlers it wraps.
+//! MCP tool dispatch: tool names and JSON arguments onto the handlers in
+//! `tools`. Tested in-process, with no MCP transport, so it can live in core.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,7 +9,6 @@ use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::WindowSource;
 
-// Re-export key types from tools so external crates import from dispatch
 pub use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,8 +170,7 @@ pub struct ToolInfo {
     pub input_schema: Value,
 }
 
-/// Returns exactly the seven tools from #15 / tools.rs, and none that post
-/// input events.
+/// The seven tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
     vec![
         ToolInfo {
@@ -576,7 +571,6 @@ mod tests {
         let describe_result =
             dispatch("describe_screen", describe_args, &mut context).expect("dispatch succeeds");
 
-        // Both tools should see exactly the same filtered windows
         let windows = list_result["windows"].as_array().expect("windows is array");
         let allowed_apps: Vec<String> = windows
             .iter()
@@ -608,7 +602,6 @@ mod tests {
         }
     }
 
-    /// Copy test helpers from roster.rs
     fn test_character(name: &str) -> crate::character::Character {
         use crate::character::{
             Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
@@ -687,7 +680,7 @@ mod tests {
         let character = test_character(name);
         let id = roster.spawn(&character, name.to_string(), Point { x: 100.0, y: 100.0 });
 
-        // Settle ~50 ticks so the sprite is Grounded before proposing
+        // Fifty ticks is enough for a spawn to reach Grounded before a proposal.
         let mut snapshot = test_snapshot();
         for _ in 0..50 {
             if let Some(instance) = roster.get_mut(&id) {
@@ -792,7 +785,6 @@ mod tests {
         assert_eq!(result["message"], "Hello, world!");
         drop(context);
 
-        // The Engine should have received the dialogue proposal and play talk
         let snapshot = test_snapshot();
         let instance = roster
             .get_mut(&instance_id)
@@ -830,7 +822,6 @@ mod tests {
         assert_eq!(result["behavior"], "wave");
         drop(context);
 
-        // wave's Primitive is React -> Frame.animation == "react" and Frame.behavior == Some("wave")
         let snapshot = test_snapshot();
         let instance = roster
             .get_mut(&instance_id)
@@ -888,9 +879,8 @@ mod tests {
         );
     }
 
-    /// Break: an Expression that reaches no Instance reports success again, or
-    /// stops saying why. Plain success there lets a stdio verification pass
-    /// against nothing at all. #502.
+    /// Break: success on an empty roster lets a stdio verification pass
+    /// against nothing at all.
     #[test]
     fn an_empty_roster_fails_and_says_no_instance_is_running() {
         let temp = TempDir::new("empty-roster");
@@ -915,7 +905,7 @@ mod tests {
         assert_eq!(played["reason"], spoke["reason"]);
     }
 
-    /// Break: empty message / empty behavior start reporting success, or become DispatchError.
+    /// Break: empty message or behavior reporting success, or becoming DispatchError.
     #[test]
     fn empty_message_and_empty_behavior_keep_the_existing_failure_shape() {
         let temp = TempDir::new("empty-inputs");
@@ -936,9 +926,8 @@ mod tests {
         assert_eq!(behavior_result["reason"], "The behavior name is empty");
     }
 
-    /// Break: a context with no handle reports success again. The stdio path
-    /// runs this way, so a roster it learns to populate must not be enough on
-    /// its own to make the answer say the Expression landed. #502.
+    /// Break: success with no handle. The stdio path runs this way, so a
+    /// populated roster must not be enough to claim the Expression landed.
     #[test]
     fn a_roster_without_a_handle_fails_and_says_there_is_no_connection() {
         let temp = TempDir::new("no-handle");
@@ -965,9 +954,8 @@ mod tests {
         assert_eq!(played["reason"], spoke["reason"]);
     }
 
-    /// Break: a stale roster entry reports success again. The roster a caller
-    /// resolves against is a snapshot, so the Instance it names can retire
-    /// before the enqueue — the same nothing-happened the empty roster is. #502.
+    /// Break: success on a stale roster entry. The caller's roster is a
+    /// snapshot, so the Instance it names can retire before the enqueue.
     #[test]
     fn a_retired_instance_fails_and_says_it_is_no_longer_running() {
         let temp = TempDir::new("retired-instance");
@@ -1021,12 +1009,10 @@ mod tests {
         let args = json!({"behavior": "undeclared_behavior"});
         let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
 
-        // Tool should still report success and enqueue
         assert_eq!(result["success"], true);
         assert_eq!(result["behavior"], "undeclared_behavior");
         drop(context);
 
-        // But Engine should refuse it - Frame.behavior is None
         let snapshot = test_snapshot();
         let instance = roster
             .get_mut(&instance_id)

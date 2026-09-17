@@ -1,36 +1,23 @@
 //! The roster of Character Instances: spawn, dismiss, list.
 //!
-//! One Engine per Instance. Instances differ in name, position, and current
-//! Behavior, never in knowledge — Memory is shared.
+//! One Engine per Instance. They differ in name, position, and Behavior. Memory is shared.
 
 use crate::character::Character;
 use crate::engine::{BehaviorProposal, Engine, Frame, Point, WorldSnapshot};
 use std::collections::BTreeMap;
 
 /// A stable identifier for one Character Instance.
-///
-/// Generated at spawn. A uuid v4 so Instance ids never collide across process
-/// restarts (#13).
+/// A uuid v4, so ids never collide across process restarts.
 pub type InstanceId = String;
 
 /// How long an Instance Prompt may be, in characters.
-///
-/// The author's bound, given to the user's layer: untrusted text in every
-/// opening turn, so an unbounded one spends the user's tokens and buries the
-/// sensing context under prose. Two authored layers double that worst case,
-/// which is the number to revisit if either bound moves (ADR-0012).
+/// Untrusted text in every opening turn. Two authored layers share this bound,
+/// so moving one without the other doubles the worst case (ADR-0012).
 pub const INSTANCE_PROMPT_LIMIT: usize = crate::character::PERSONALITY_LIMIT;
 
 /// `text` as an Instance Prompt, or why it cannot be one.
-///
-/// Refused rather than cut. A Personality Prompt over the bound is an author's
-/// mistake the loader reports at install; this one is a user's paste, and
-/// shortening it silently would drop words they can still see in the box. The
-/// length is in the message because "too long" alone does not say how much to
-/// take out.
-///
-/// Counted in characters, as the package loader counts a Personality Prompt,
-/// and counted after trimming because trimmed is what gets stored and sent.
+/// Refused rather than cut: silent shortening would drop words still visible
+/// in the box. Counted after trim, because trimmed is what is stored and sent.
 pub fn instance_prompt(text: &str) -> Result<String, String> {
     let text = text.trim();
     let length = text.chars().count();
@@ -43,22 +30,16 @@ pub fn instance_prompt(text: &str) -> Result<String, String> {
     Ok(text.to_string())
 }
 
-/// One Instance asked for at launch: which Character to run, what to call it,
-/// and what the user wrote for it last time.
-///
-/// A request rather than an Instance. The Engine arrives at `spawn`, and
-/// nothing here knows whether the Character named can actually be loaded.
-///
-/// Both new fields default, because a settings file written before them is the
-/// user's whole roster and must keep loading.
+/// One Instance asked for at launch: Character, name, and last-written prompt.
+/// A request, not an Instance. New fields default so an older settings file
+/// still loads.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InstanceSpec {
     pub character: String,
     pub name: String,
-    /// The id this Instance ran under last time, and `None` for one that has
-    /// not run: a spec off the launch configuration, or a settings file older
-    /// than this field. The Instance Prompt hangs off this id, so minting a
-    /// fresh one every launch is what would lose the text (ADR-0012).
+    /// Id this Instance ran under last time. `None` if it has not run.
+    /// The Instance Prompt hangs off this id, so a fresh uuid every launch
+    /// would lose the text (ADR-0012).
     #[serde(default)]
     pub id: Option<InstanceId>,
     /// The Instance Prompt the user wrote for it. Empty by default.
@@ -78,15 +59,9 @@ impl InstanceSpec {
     }
 }
 
-/// Read a list of Instances to run out of one configuration string.
-///
-/// The grammar is `character:name`, comma separated, with the name optional.
-/// It is small because it is temporary: naming an Instance belongs in #18's
-/// menu, and this is what stands in until there is somewhere to type a name.
-///
-/// Naming nothing is not a failure. An unset variable, an empty one and a
-/// stray comma are all the same request — run the default single Instance —
-/// because refusing to start over punctuation is a worse answer than starting.
+/// Read Instances to run from one configuration string.
+/// Grammar is `character:name`, comma separated, name optional. Empty, unset,
+/// or a stray comma all mean the default single Instance, not a failed start.
 pub fn parse_specs(raw: &str) -> Result<Vec<InstanceSpec>, String> {
     raw.split(',')
         .map(str::trim)
@@ -147,12 +122,9 @@ impl Instance {
         &self.character_name
     }
 
-    /// Whether this Instance is in Do Not Disturb, and so refusing to start
-    /// things of its own.
-    ///
-    /// Per Instance rather than per app: the mode says whether *this* buddy
-    /// should sit quietly, and silencing every buddy because one was told to
-    /// would make the setting mean something else. #84 owns what it does.
+    /// Whether this Instance is in Do Not Disturb.
+    /// Per Instance, not per app: silencing every buddy because one was told
+    /// to sit quietly would make the setting mean something else.
     pub fn do_not_disturb(&self) -> bool {
         self.engine.do_not_disturb()
     }
@@ -190,12 +162,8 @@ impl Instance {
 }
 
 /// Whether a name is the one an Instance gets when nobody named it.
-///
-/// That is the Character's own name, but it reaches `spawn` in two spellings:
-/// the display name a package declares (`Timber Wolf`) and the package id the
-/// Shell passes when settings carry only the package (`timber-wolf`). Case and
-/// separators are what differ, so both squash to the same thing and an exact
-/// comparison would quietly never match the spelling the app actually runs.
+/// Display name and package id differ in case and separators, so both squash.
+/// An exact comparison would never match the spelling the app runs.
 fn unnamed(name: &str, character: &str) -> bool {
     let squash = |text: &str| -> String {
         text.to_lowercase()
@@ -207,14 +175,8 @@ fn unnamed(name: &str, character: &str) -> bool {
 }
 
 /// The name a lone Instance should wear for `character`.
-///
-/// This Character's own default, any spelling, is left alone so a BMO called
-/// `bmo` stays the package id the Shell stored. A default that belongs to a
-/// *different* Character is a leftover from a switch that persisted the old
-/// name — that is what `{ character: "Timber Wolf", name: "bmo" }` is — and
-/// takes this Character's. A name the user typed matches nobody and survives.
-/// `known` is the catalog of Character names; empty, only this Character
-/// counts and the leftover cannot be seen. #375.
+/// Keep this Character's own default, any spelling. Replace a leftover default
+/// from a previous Character (`bmo` on Timber Wolf). A typed name survives.
 pub fn adopted_name<'a, I>(name: &str, character: &str, known: I) -> String
 where
     I: IntoIterator<Item = &'a str>,
@@ -232,9 +194,9 @@ where
 #[derive(Default)]
 pub struct Roster {
     instances: BTreeMap<InstanceId, Instance>,
-    /// Display names of installed Characters. A leftover default is a name
-    /// that squashes to one of these and not to the Instance's current
-    /// Character; without the catalog that leftover looks chosen. #375.
+    /// Display names of installed Characters. A leftover default squashes to
+    /// one of these and not to the current Character. Without the catalog that
+    /// leftover looks chosen.
     known_names: Vec<String>,
 }
 
@@ -249,22 +211,15 @@ impl Roster {
     }
 
     /// Spawn a Character Instance with the given name at the given position.
-    ///
-    /// Returns the generated stable id.
-    ///
-    /// Borrowed rather than owned, because the art is the heaviest thing a
-    /// Character carries and an Instance needs none of it: taking it by value
-    /// would copy every frame of every Animation per buddy, which is the cost
-    /// running several of one Character exists to avoid.
+    /// Borrowed, not owned: the art is unused here, and taking by value would
+    /// copy every frame per buddy.
     pub fn spawn(&mut self, character: &Character, name: String, position: Point) -> InstanceId {
         self.restore(character, name, position, None, String::new())
     }
 
-    /// The same, for an Instance that has run before: `id` is what it ran
-    /// under and `prompt` is the Instance Prompt written against that id.
-    ///
-    /// `spawn` is this with neither, because an Instance whose id changed every
-    /// launch is an Instance whose prompt cannot be found again (ADR-0012).
+    /// Spawn and restore a prior id and Instance Prompt.
+    /// `spawn` is this with neither. A new id every launch would lose the
+    /// prompt that hangs off the old one (ADR-0012).
     pub fn restore(
         &mut self,
         character: &Character,
@@ -281,9 +236,8 @@ impl Roster {
             // tallest one anybody ships. #395.
             .with_sprite_height(character.sprite_height())
             .with_cursor_reactions(character.near_reaction, character.rush_reaction)
-            // The id is already this Instance's one random number, so it is
-            // also what keeps two buddies of one Character from drawing the
-            // same idle variants at the same moments. #316.
+            // The id is this Instance's one random number, so two buddies of
+            // one Character do not draw the same idle variants at the same moments.
             .with_variant_seed(variant_seed(&id));
         let name = if self.instances.is_empty() {
             adopted_name(
@@ -332,15 +286,8 @@ impl Roster {
     }
 
     /// Switch one Instance's Character. False when the id is unknown.
-    ///
-    /// A lone Instance that never got a name of its own takes the new
-    /// Character's, so switching a BMO to Timber Wolf does not leave a wolf
-    /// called `bmo` in the roster and the window title. A leftover that
-    /// already mixed them — name `bmo`, Character Timber Wolf — is the same
-    /// default, seen through `known_names`. A name the user typed matches
-    /// neither and survives. With several buddies up, names tell them apart,
-    /// so a rename there could hand one a name another already answers to.
-    /// #375.
+    /// A lone unnamed Instance takes the new Character's name. A leftover
+    /// default does too. A typed name, or any name with several buddies up, stays.
     pub fn retarget(&mut self, id: &str, character: &Character) -> bool {
         let alone = self.instances.len() == 1;
         match self.instances.get_mut(id) {
@@ -382,12 +329,9 @@ impl Roster {
     }
 }
 
-/// The draw `id` seeds an Instance's variant ring with (#316).
-///
-/// An id ai-buddy minted is a uuid, and its first half is the random number
-/// #316 has always used. A restored id is that same uuid read back. A
-/// hand-edited settings file can hold anything, and hashing what is not a uuid
-/// keeps two of those apart where a constant would put them in lockstep.
+/// How `id` seeds this Instance's variant ring.
+/// A minted or restored uuid uses its first half. Anything else is hashed, so
+/// two hand-edited ids do not lockstep the way a constant would.
 fn variant_seed(id: &str) -> u64 {
     match uuid::Uuid::parse_str(id) {
         Ok(uuid) => uuid.as_u64_pair().0,
@@ -668,8 +612,6 @@ mod tests {
         );
     }
 
-    /// The launch configuration is the only way to name Instances until #18's
-    /// menu exists, so what it accepts is the whole of what a user can ask for.
     #[test]
     fn one_spec_names_a_character_and_what_to_call_it() {
         assert_eq!(
@@ -691,9 +633,8 @@ mod tests {
         );
     }
 
-    /// A Character named alone is the common case — one of each, called what
-    /// the package is called — and demanding `bmo:bmo` for it would be a tax on
-    /// the shortest thing anyone will write.
+    /// A Character named alone is called after its package. Demanding
+    /// `bmo:bmo` would tax the shortest thing anyone will write.
     #[test]
     fn a_character_named_alone_is_called_after_its_package() {
         assert_eq!(
@@ -705,8 +646,6 @@ mod tests {
         );
     }
 
-    /// Two Instances of one Character is the case #13 exists for, and they are
-    /// told apart by their names rather than by their Characters.
     #[test]
     fn the_same_character_twice_is_two_specs() {
         let specs = parse_specs("bmo:One,bmo:Two").expect("both parse");
@@ -715,9 +654,8 @@ mod tests {
         assert_ne!(specs[0].name, specs[1].name);
     }
 
-    /// Nothing named is not an error. An unset variable and one set to a
-    /// trailing comma are the same request — run the default single Instance —
-    /// and refusing to start over a stray comma would be a poor trade.
+    /// Nothing named is not an error. An unset variable and a trailing comma
+    /// are the same request, not a failed start.
     #[test]
     fn nothing_named_asks_for_no_instances_rather_than_failing() {
         assert_eq!(parse_specs(""), Ok(Vec::new()));
@@ -762,10 +700,8 @@ mod tests {
         assert!(!roster.retarget("missing", &second));
     }
 
-    /// #375: the Instance a first buddy gets is named after its Character, so
-    /// switching Character left a wolf on the desk called `bmo`. Both forms of
-    /// that default count, because the Shell passes the package id as the name
-    /// when settings carry only the package.
+    /// Both the display name and the package id count as this Character's
+    /// default, because the Shell passes the package id when settings carry only that.
     #[test]
     fn switching_renames_an_instance_that_still_wears_its_characters_name() {
         let wolf = test_character("Timber Wolf");
@@ -835,8 +771,8 @@ mod tests {
     }
 
     /// Production change that would fail this: returning `name` unchanged
-    /// when it is another Character's default. That is the leftover #375
-    /// persisted as `{ character: "Timber Wolf", name: "bmo" }`.
+    /// when it is another Character's default. That leftover is
+    /// `{ character: "Timber Wolf", name: "bmo" }`.
     #[test]
     fn adopted_name_replaces_another_characters_default() {
         assert_eq!(
@@ -866,9 +802,8 @@ mod tests {
         );
     }
 
-    /// Settings persisted `{ character: "Timber Wolf", name: "bmo" }` after a
-    /// switch that predated the rename. Spawn is the launch path, so the
-    /// leftover has to die here or every restart reprints `Timber Wolf as bmo`.
+    /// Spawn is the launch path, so a leftover `{ character: "Timber Wolf",
+    /// name: "bmo" }` has to die here or every restart reprints it.
     #[test]
     fn spawning_a_lone_instance_drops_another_characters_default_name() {
         let mut roster = Roster::new();
@@ -881,9 +816,8 @@ mod tests {
         assert_eq!(roster.list(), vec![(id, "Timber Wolf".to_string())]);
     }
 
-    /// The leftover is already on the desk; a later switch still has to
-    /// follow, because unnamed(name, current Character) is false once the
-    /// persist has mixed them.
+    /// A leftover already on the desk still has to rename on a later switch,
+    /// because `unnamed` is false once persist has mixed name and Character.
     #[test]
     fn switching_renames_a_default_that_belongs_to_a_different_character() {
         let mut roster = Roster::new();
@@ -900,9 +834,8 @@ mod tests {
         assert_eq!(roster.list(), vec![(id, "Cat".to_string())]);
     }
 
-    /// The load-bearing bug ADR-0012 names: the text hangs off the Instance's
-    /// id, and `spawn` minting a fresh uuid every launch would key it to an id
-    /// that never comes back — so the prompt would be gone on the next start.
+    /// The text hangs off the Instance's id. Minting a fresh uuid every launch
+    /// would key it to an id that never comes back (ADR-0012).
     #[test]
     fn a_restored_instance_keeps_its_id_and_the_prompt_written_against_it() {
         let character = test_character("bmo");
@@ -937,10 +870,7 @@ mod tests {
         );
     }
 
-    /// ADR-0012: the text follows the Instance, not the Character. Dropping it
-    /// on a switch is silent loss of the user's own words for a reversible act,
-    /// and switching back would then have to resurrect what was discarded.
-    ///
+    /// The text follows the Instance, not the Character (ADR-0012).
     /// Production change that would fail this: clearing the prompt in
     /// `Roster::retarget` beside the Behaviors and the name.
     #[test]
@@ -961,10 +891,8 @@ mod tests {
         );
     }
 
-    /// The other half of the switch: the reopened session's opening turn is the
-    /// new Character's personality with the text the Instance kept under it.
-    /// That is the moment the tab shows both, and it has to be the moment the
-    /// Director is told both.
+    /// The reopened session's opening turn is the new Character's personality
+    /// with the text the Instance kept. That is the moment the Director is told both.
     #[test]
     fn a_switched_instance_opens_the_new_character_with_the_text_it_kept() {
         let wolf = test_character("Timber Wolf");
@@ -1012,9 +940,7 @@ mod tests {
         );
     }
 
-    /// A spec with no id is an Instance that has not run: the launch
-    /// configuration's, and every settings file written before ids were
-    /// persisted. It gets one minted, as it always did.
+    /// A spec with no id is an Instance that has not run. It gets one minted.
     #[test]
     fn a_spec_with_no_id_is_spawned_under_a_fresh_one() {
         let mut roster = Roster::new();
@@ -1044,9 +970,9 @@ mod tests {
         assert!(spec.prompt.is_empty(), "empty by default (ADR-0012)");
     }
 
-    /// ADR-0012 gives the user's layer the bound the author's already has, and
-    /// counts characters rather than bytes as the package loader does — an
-    /// accented paragraph is not twice the prose of a plain one.
+    /// The user's layer has the bound the author's already has, counted in
+    /// characters rather than bytes: an accented paragraph is not twice the
+    /// prose of a plain one (ADR-0012).
     #[test]
     fn an_instance_prompt_at_the_limit_is_taken_and_one_over_it_is_refused() {
         let at_limit = "é".repeat(INSTANCE_PROMPT_LIMIT);
