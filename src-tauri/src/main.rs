@@ -74,37 +74,26 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 /// step with `bundle.resources` in `tauri.conf.json`.
 const BUNDLED_CHARACTERS: &str = "characters";
 
-/// One turn of the frame loop: roughly 60Hz. The desktop is read at 10Hz
-/// while the sprite is still, and at this rate only while it is riding.
-///
-/// It is a poll rather than an event stream for two reasons. A click-through
-/// window receives no mouse events at all, so the webview cannot tell us when
-/// the cursor returns — something outside the window has to ask where it is.
-/// And the Engine advances on elapsed time, so something has to advance it.
+/// One turn of the frame loop: roughly 60Hz. A poll, not an event stream: a
+/// click-through window receives no mouse events, and the Engine advances on
+/// elapsed time.
 const ENGINE_TICK: Duration = Duration::from_millis(16);
 
-/// How often the Free tier is read.
-///
-/// Far less often than the frame loop turns: the answers change at human speed,
-/// and each read is two calls into AppKit and CoreGraphics that the sprite's
-/// physics have no use for.
+/// How often the Free tier is read. Far less often than the frame loop: the
+/// answers change at human speed, and each read is two AppKit/CoreGraphics
+/// calls the sprite's physics have no use for.
 const SENSE_INTERVAL: Duration = Duration::from_secs(1);
 
-/// The label of the overlay covering the display at `index`.
-///
-/// One window per display, so the index is both the name and the way the frame
-/// loop finds the overlay belonging to a display. `capabilities/overlay.json`
-/// grants the same permissions to every `overlay-*`.
+/// The overlay covering the display at `index`. The index is both the name
+/// and how the frame loop finds it; `capabilities/overlay.json` grants every
+/// `overlay-*` the same permissions.
 fn overlay_label(index: usize) -> String {
     format!("overlay-{index}")
 }
 
-/// The label of the Chat surface belonging to `id`.
-///
-/// Outside the `overlay-` namespace on purpose: `place_overlays` closes every
-/// `overlay-{n}` past the display count, so a Chat surface sharing that prefix
-/// would be shut when a display is unplugged. `capabilities/chat.json` grants
-/// every `chat-*` the same permissions.
+/// The Chat surface belonging to `id`. Outside `overlay-` on purpose:
+/// `place_overlays` closes every `overlay-{n}` past the display count, so a
+/// Chat surface sharing that prefix would shut when a display is unplugged.
 fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
@@ -115,18 +104,14 @@ const FRAME_EVENT: &str = "frame";
 /// The event carrying one turn's answer to a Chat surface.
 const CHAT_EVENT: &str = "chat";
 
-/// The event carrying the Spatial Layer's state to a Chat surface's status bar.
-///
-/// Separate from `CHAT_EVENT`: this arrives whenever the sprite does something
-/// different, whether or not anyone has typed.
+/// Spatial Layer state for a Chat surface's status bar. Separate from
+/// `CHAT_EVENT`: this arrives whenever the sprite does something different,
+/// whether or not anyone has typed.
 const CHAT_STATUS_EVENT: &str = "chat-status";
 
-/// The event carrying a full opening to an already-open Chat surface.
-///
-/// Name and Character after a switch, and configured/enabled/login after a
-/// Director or Completer-source change, so `attached()` can re-run without a
-/// webview reload. An event rather than a second command, because the window
-/// is already listening. #473.
+/// Full opening to an already-open Chat surface, so `attached()` can re-run
+/// without a webview reload. An event rather than a second command, because
+/// the window is already listening.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// The event telling one Chat surface that the session behind it was replaced,
@@ -134,48 +119,34 @@ const CHAT_OPENING_EVENT: &str = "chat-opening";
 /// does with it, and why. #476.
 const CHAT_SESSION_EVENT: &str = "chat-session";
 
-/// The event carrying a forwarded `session/request_permission` to every open
-/// Chat surface. Every one, because the session is shared and the Shell does
-/// not know which window the user is looking at; the first answer wins and
-/// the rest are dropped by `Link::answer_ask`. Never answered here (ADR-0010).
+/// Forwarded `session/request_permission` to every open Chat surface. The
+/// session is shared and the Shell does not know which window the user is
+/// looking at; first answer wins, never answered here (ADR-0010).
 const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
-/// The event carrying the Harness's latest thought to every open Chat surface,
-/// for the strip above the composer. Transient: it is drawn where nothing is
-/// kept, and each one replaces the last. An empty line is the turn saying it
-/// has stopped thinking, which is what takes the strip away (ADR-0025).
+/// The Harness's latest thought, for the strip above the composer. Each one
+/// replaces the last; an empty line is the turn saying it has stopped
+/// thinking, which takes the strip away (ADR-0025).
 const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 
 /// The event carrying the agent's plan to every open Chat surface. Each one
 /// replaces the whole list, and an empty one is the turn taking it away (#697).
 const CHAT_PLAN_EVENT: &str = "chat-plan";
 
-/// The event retiring one forwarded request in every open Chat surface, by
-/// request id. The ask went to all of them and one took the click; the rest
-/// would otherwise keep offering buttons on a question already answered,
-/// cancelled, or dead with its turn. #437.
+/// Retires one forwarded request in every open Chat surface, by request id.
+/// The ask went to all of them and one took the click; the rest would
+/// otherwise keep offering buttons on a question already answered.
 const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
 
-/// The forwarded asks that have not settled yet.
-///
-/// An ask reaches a webview as an event, and an event reaches only the windows
-/// that were open when it went out — including none at all. Held here so
-/// `chat_ready` can hand them to a surface that opens afterwards, which is the
-/// surface a permission request now opens for itself. Permission asks remain
-/// the exception that *opens* a surface; Speech of the current session is also
-/// held (`session_log`) so a surface that opens later can read the same
-/// conversation (ADR-0010's log widening).
-///
-/// One lock over both fields and over the emits that read them: a settlement
-/// landing between a replay's read and its emit would draw a live row nothing
-/// is ever going to retire.
+/// Unsettled forwarded asks, held so `chat_ready` can replay them to a
+/// surface that opens later. One lock over both fields and the emits that
+/// read them: a settlement between replay and emit would draw a live row that is never retired.
 #[derive(Default)]
 struct Pending {
     asks: Vec<harness::PermissionAsk>,
-    /// Whether a surface has already been asked for. Opening posts to the main
-    /// thread, so a second ask arriving before that lands would queue a second
-    /// focus grab. Cleared when the last ask settles, which is when a surface
-    /// would have to be found again.
+    /// Whether a surface has already been asked for. Opening posts to the
+    /// main thread, so a second ask before that lands would queue a second
+    /// focus grab. Cleared when the last ask settles.
     opened: bool,
 }
 
@@ -185,10 +156,9 @@ struct PendingAsks(Mutex<Pending>);
 #[derive(Clone, Serialize)]
 struct Settled {
     request: String,
-    /// The option that won, `None` when nothing was picked. Every window draws
-    /// this rather than its own click: two can draw one request, and the wire
-    /// drops every answer after the first, so the loser would otherwise show
-    /// its user a decision that never happened.
+    /// The option that won; `None` when nothing was picked. Every window
+    /// draws this rather than its own click: two can draw one request, and
+    /// the wire drops every answer after the first.
     option: Option<String>,
 }
 
@@ -199,10 +169,9 @@ struct DirectorRun {
     inspect: Arc<Mutex<model::DirectorInspect>>,
 }
 
-/// Where the sprite was last drawn, and what it was drawn as.
-///
-/// Kept for one tick so the hit-test can ask about the sprite the user is
-/// looking at rather than the one this tick is about to produce.
+/// Where the sprite was last drawn, and what it was drawn as. Kept for one
+/// tick so the hit-test asks about the sprite the user is looking at rather
+/// than the one this tick is about to produce.
 struct Drawn {
     rect: SpriteRect,
     animation: &'static str,
@@ -216,13 +185,9 @@ struct Drawn {
     facing: f64,
 }
 
-/// What the last `engine:` line said about an Instance.
-///
-/// The frame loop runs at display rate, and what the Engine is playing changes
-/// a handful of times a minute, so the trace prints on change and this is what
-/// "changed" is measured against. Everything the line carries is in here: a
-/// field the line prints and this does not would stop appearing after the
-/// first tick that moved only it.
+/// What the last `engine:` line said about an Instance. Trace prints on
+/// change; everything the line carries is in here, or a field that moved
+/// alone would stop appearing after the first tick that moved only it.
 #[derive(PartialEq)]
 struct Traced {
     behavior: Option<String>,
@@ -231,20 +196,10 @@ struct Traced {
     state: State,
 }
 
-/// Everything one Instance keeps between ticks that belongs to the Shell rather
-/// than to its Engine.
-///
-/// The Roster owns the Engines, which is the whole of what an Instance is in the
-/// pure core. None of this can live there: a Director that posts over the
-/// network, a pointer gesture measured against art, and the last rectangle the
-/// hit-test used are all things the core has no window server for.
-///
-/// Every field is here because sharing it between Instances would be visible.
-/// One Director for two buddies would have them move in lockstep; one `Pointer`
-/// would have a double-click on one count towards a Summon on the other; one
-/// `Drawn` would hit-test both against whichever drew last.
+/// Shell state one Instance keeps between ticks. Sharing any of it would be
+/// visible: one Director would lockstep two buddies; one `Pointer` would
+/// count a double-click on one toward a Summon on the other.
 struct InstanceState {
-    /// Which Instance in the Roster this belongs to.
     id: InstanceId,
     /// The Character this Instance runs, shared with every other Instance
     /// running the same one.
@@ -296,21 +251,16 @@ struct InstanceState {
 
 /// One open menu, from the frame loop's side.
 struct MenuHold {
-    /// What the rows of the menu on screen mean.
-    ///
-    /// Kept rather than looked up again when the click arrives, because the menu
-    /// on screen is the menu that was described: a package installed while it is
-    /// open must not change what its rows do.
+    /// What the rows of the menu on screen mean. Kept rather than looked up
+    /// again when the click arrives: a package installed while it is open
+    /// must not change what its rows do.
     actions: HashMap<String, menu::MenuAction>,
-    /// How long it has been open, against `MENU_HOLD_TIMEOUT`.
     elapsed: Duration,
 }
 
-/// What the main thread tells the frame loop about the menu it was asked to pop.
-///
-/// Two messages rather than one because a menu can close without choosing
-/// anything, and that has to end the hold too. Nothing arrives on the event
-/// channel when the user presses Escape.
+/// What the main thread tells the frame loop about the menu it was asked to
+/// pop. Two messages rather than one because a menu can close without
+/// choosing, and nothing arrives on the event channel when the user presses Escape.
 enum MenuSignal {
     /// A row was chosen, by the id the description gave it.
     Chose(String),
@@ -318,11 +268,9 @@ enum MenuSignal {
     Closed,
 }
 
-/// Both ends of the menu's channel, handed to the frame loop together.
-///
-/// The sender goes to the main thread with each popup and the receiver is
-/// drained every tick. They travel as a pair because the app's menu event hook
-/// is registered before the frame loop starts and needs a sender of its own.
+/// Both ends of the menu's channel. They travel as a pair because the app's
+/// menu event hook is registered before the frame loop starts and needs a
+/// sender of its own.
 struct MenuChannel {
     sender: mpsc::Sender<MenuSignal>,
     receiver: mpsc::Receiver<MenuSignal>,
@@ -346,12 +294,9 @@ struct SettingsState {
     secrets: Arc<dyn SecretStore>,
 }
 
-/// How long a hold survives without hearing anything before it is dropped.
-///
-/// A backstop, not a mechanism. `Closed` ends the hold; this only matters if it
-/// never comes, and the failure it prevents is the one that cannot be
-/// recovered from — an Instance frozen under a menu that is no longer there,
-/// for as long as the app runs.
+/// How long a hold survives without hearing anything. A backstop: `Closed`
+/// ends the hold; this only matters if it never comes, or an Instance stays
+/// frozen under a menu that is no longer there for as long as the app runs.
 const MENU_HOLD_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Where one Instance is to be drawn in one overlay, in logical points from
@@ -374,11 +319,9 @@ struct SpritePlacement<'a> {
     /// the name the Engine asked with.
     animation: &'a str,
     frame_index: usize,
-    /// -1 to mirror the art, 1 to draw it as authored. `Character::draw`'s
-    /// own answer and not the heading (#345): a Character with a left strip
-    /// heads left in art already facing that way, and mirroring it would turn
-    /// it back round. The hit-test mask is taken from the same answer, so the
-    /// clickable region is the art the user sees.
+    /// -1 to mirror, 1 as authored. `Character::draw`'s answer, not the
+    /// heading (#345): a left-strip Character already faces that way, and
+    /// mirroring would turn it back round. Hit-test uses the same answer.
     mirror: i8,
     /// A line to speak on this tick only. Dialogue is an event, not a state.
     /// #119: the webview latches it and owns display duration.
@@ -389,37 +332,21 @@ struct SpritePlacement<'a> {
     thinking: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     bubble: bool,
-    /// The cue to play on this tick only, by the name the webview keys its
-    /// visual and its sound by. A pulse like `dialogue`, and like `dialogue`
-    /// only the bubble owner acts on it (`forOverlay`): every overlay draws the
-    /// art, so a cue played by all of them is one sound per display. #277.
+    /// Cue to play this tick only, by the name the webview keys visual and
+    /// sound by. Only the bubble owner acts (`forOverlay`): every overlay
+    /// draws the art, so a cue from all of them is one sound per display. #277
     cue: Option<&'static str>,
 }
 
-/// One tick's instruction to the renderer: every Instance's sprite, and whether
-/// the Character is on screen at all.
-///
-/// Pushed rather than fetched, so the webview holds no authoritative state —
-/// it draws what it was last told and remembers nothing.
-///
-/// One message carrying every sprite rather than one per Instance, because the
-/// list is also the answer to which Instances still exist. Sent separately, a
-/// dismissed Instance would simply stop being mentioned, and nothing would say
-/// whether its last message was the end or the next one was merely late.
+/// One tick's instruction to the renderer. Pushed so the webview holds no
+/// state. One message for every sprite, because the list is also which
+/// Instances still exist; sent separately, a dismiss would look like a late frame.
 #[derive(Clone, Serialize)]
 struct Placement<'a> {
     sprites: Vec<SpritePlacement<'a>>,
-    /// Whether the hide rules have the Character on screen, and how long the
-    /// change that decided it was given. One answer for every Instance: the
-    /// rules are about the desktop, not about a sprite.
-    ///
-    /// Carried on every frame rather than announced on the tick it changes.
-    /// The first tick fires 16ms into setup, before the webview has fetched
-    /// its art and begun listening, and Tauri buffers nothing for a listener
-    /// that is not there yet — so a Character hidden at launch would be told
-    /// to go once, to nobody, and stay on top of the fullscreen application
-    /// all session. A repeated frame is not sent (#741), so what keeps that
-    /// promise is `FRAME_RESEND` rather than the tick.
+    /// Hide-rules visibility, on every frame: the first tick fires before the
+    /// webview is listening, and a repeated frame is not sent (#741), so
+    /// `FRAME_RESEND` is what keeps a hidden-at-launch Character from staying on top.
     visible: bool,
     fade_ms: u32,
     /// Whether a cue this frame may be heard as well as seen. Decided in
@@ -428,7 +355,6 @@ struct Placement<'a> {
     sound: bool,
 }
 
-/// A spoken line, when, and the overlay that was showing it.
 struct Spoken {
     line: String,
     at: Instant,
@@ -440,15 +366,9 @@ struct Spoken {
 /// so it is never carried.
 const CARRY_WINDOW: Duration = Duration::from_secs(8);
 
-/// The dialogue this tick's placement carries: the line the Engine just said,
-/// or the last one re-pulsed to a new owner.
-///
-/// Dialogue is a one-tick pulse, and only the overlay that owns the bubble on
-/// that tick latches it. A sprite that crosses a seam mid-line would otherwise
-/// lose the line: the old owner hides on the change, and the new one never saw
-/// the pulse (#178). So an owner change within the reading window says the
-/// line again to the new owner. Its reading time restarts there, which is
-/// the cheaper of the two honest answers — the renderer owns that clock.
+/// Dialogue this tick: the Engine's new line, or the last one re-pulsed to a
+/// new owner. Only the overlay that owns the bubble latches the one-tick
+/// pulse, so a seam crossing mid-line would otherwise lose it (#178).
 fn carry_line(
     spoken: &mut Option<Spoken>,
     said: Option<&str>,
@@ -471,13 +391,9 @@ fn carry_line(
     Some(carried.line.clone())
 }
 
-/// What one Instance's tick decided to draw, in the space every display shares.
-///
-/// The step between ticking the Instances and telling the overlays. Every
-/// overlay is told about every Instance in its own coordinates, so the
-/// placement is worked out once here and turned into each overlay's rectangle
-/// in `frame_loop`. The art names are owned rather than borrowed, so that this
-/// outlives the borrow of the Character it came from.
+/// What one Instance's tick decided to draw, in the space every display
+/// shares. Worked out once, then turned into each overlay's rectangle.
+/// Art names are owned so this outlives the Character borrow.
 struct Placed {
     id: InstanceId,
     character: String,
@@ -497,19 +413,9 @@ struct Placed {
     mask: ai_buddy_core::overlay::AlphaMask,
 }
 
-/// Every Animation's frames as `data:` URLs, in play order, keyed by the
-/// Animation's name.
-///
-/// URLs rather than file paths because a Character Package lives outside the
-/// front end's own directory — in the user's Application Support, or wherever
-/// they put it — so there is no URL the webview could fetch a frame from.
-/// Handing over the bytes avoids granting the webview a filesystem scope for
-/// the sake of drawing a sprite.
-///
-/// The webview picks a frame out of each list by the index the frame loop
-/// sends, so the order here has to be the play order `Character::draw` indexes
-/// — both walk `Animation::frames` as declared. Indexing `art` cannot miss: a
-/// validated Character carries art for every frame its Animations name.
+/// Every Animation's frames as `data:` URLs, in play order. Paths would need
+/// a filesystem scope for packages outside the front end; the webview indexes
+/// this list the same way `Character::draw` walks `Animation::frames`.
 fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
     // A frame two Animations share is encoded once and named twice.
     let urls: BTreeMap<&String, String> = character
@@ -539,39 +445,25 @@ struct CharacterArt {
     smooth: bool,
 }
 
-/// Every Character on screen, by name, as Tauri managed state.
-///
-/// Keyed by Character rather than by Instance, which is what keeps the art one
-/// copy: two Instances of one Character are the common case #13 exists for, and
-/// encoding a sprite sheet twice to draw the same pet twice would double the
-/// heaviest thing the app holds.
-///
-/// A struct rather than a bare map so managed state, keyed by type, cannot
-/// collide with another map of the same shape.
+/// Every Character on screen, keyed by Character rather than Instance so two
+/// Instances of one Character share one encoded sheet. A struct rather than
+/// a bare map so managed state, keyed by type, cannot collide.
 #[derive(Clone, serde::Serialize)]
 struct ArtUrls {
     characters: BTreeMap<String, CharacterArt>,
 }
 
-/// The art of every Character on screen, fetched once by the webview when it
-/// loads.
-///
-/// A command rather than an event: an event emitted during setup would race the
-/// webview's own listener, and the art does not change while the app runs —
-/// which is also why the Instances that may run are settled at launch. Spawning
-/// one afterwards is #18's, and it will have to hand the webview art this
-/// command has already answered without.
+/// The art of every Character on screen, fetched once when the webview
+/// loads. A command rather than an event: setup would race the listener, and
+/// the art does not change while the app runs.
 #[tauri::command]
 fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-/// The Settings window's own handle on the running app.
-///
-/// Not the window's alone: `SettingsSession::apply` is the one path that
-/// persists a setting *and* acts on it — the Harness retarget, the Director
-/// rebuild, the opening pushed to every open Chat surface. A command that
-/// writes Settings from anywhere else takes this rather than the file (#654).
+/// The Settings window's handle on the running app. `SettingsSession::apply`
+/// is the one path that persists a setting and acts on it; any other writer
+/// takes this rather than the file (#654).
 fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSession {
     SettingsSession {
         settings: Arc::clone(&state.settings),
@@ -589,12 +481,9 @@ fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSe
     }
 }
 
-/// The Settings form and the values in force, in one reply.
-///
-/// The shape and the values travel together because a row is only renderable
-/// with both: the description says a checkbox writes `DirectorEnabled`, and
-/// the view says whether it is on. Committed fixtures pin the shape; the
-/// values are this machine's and pin nothing (#706).
+/// The Settings form and the values in force, together: a row is only
+/// renderable with both. Committed fixtures pin the shape; the values are
+/// this machine's and pin nothing.
 #[derive(serde::Serialize)]
 struct SettingsSnapshot {
     form: settings::form::FormDescription,
@@ -882,13 +771,9 @@ fn settings_event(
     }
 }
 
-/// Open the Settings window.
-///
-/// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
-/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
-/// this is opened on the toolkit main thread where the native objects live.
-/// When `AI_BUDDY_SETTINGS_WEBVIEW=1`, opens the webview Settings instead;
-/// native remains the default.
+/// Open the Settings window. Native Shell furniture, so this runs on the
+/// toolkit main thread. `AI_BUDDY_SETTINGS_WEBVIEW=1` opens the webview
+/// instead; native remains the default.
 #[tauri::command]
 fn show_settings(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
@@ -924,13 +809,11 @@ fn show_settings(app: tauri::AppHandle) {
         return;
     }
 
-    // Native path: existing platform-specific renderers.
     let session = settings_session(&app, &state);
 
-    // On Linux, if the MainContext is already owned (menu/tray callback runs
-    // on the GTK main thread), use idle_add_local_once to defer window creation
-    // until after the current event completes. A sync wait or inline create
-    // deadlocks. If not the owner, invoke posts without waiting.
+    // On Linux, if MainContext is already owned (menu/tray on the GTK main
+    // thread), idle_add_local_once defers create until after this event.
+    // A sync wait or inline create deadlocks.
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let ctx = gtk::glib::MainContext::default();
@@ -957,13 +840,9 @@ fn persist_settings(settings: &Settings, path: &std::path::Path) {
     }
 }
 
-/// Write the roster to settings: which Character each Instance runs, what it is
-/// called, the id it is running under, and the Instance Prompt written against
-/// that id.
-///
-/// The id is persisted because the prompt hangs off it. Without it the next
-/// launch mints a fresh uuid and the user's own words are keyed to an Instance
-/// that no longer exists (ADR-0012).
+/// Write the roster to settings, including the Instance id: the prompt hangs
+/// off it, and without it the next launch mints a fresh uuid and loses the
+/// user's words (ADR-0012).
 fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &std::path::Path) {
     if let Ok(mut settings) = settings.lock() {
         settings.instances = roster_specs(roster);
@@ -971,11 +850,9 @@ fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &s
     }
 }
 
-/// The roster as settings stores it.
-///
-/// One mapping for both the startup persist and every later one, because the id
-/// is what the Instance Prompt hangs off: a path that dropped it would mint a
-/// fresh uuid on the next launch and lose the user's own words (ADR-0012).
+/// The roster as settings stores it. One mapping for startup and later
+/// persists, so a path that dropped the id cannot mint a fresh uuid and
+/// lose the user's words (ADR-0012).
 fn roster_specs(roster: &Roster) -> Vec<InstanceSpec> {
     roster
         .list()
@@ -1010,58 +887,34 @@ fn overlay_secondary(down: bool) {
     platform::set_overlay_secondary(down);
 }
 
-/// Where this overlay wants a click besides the art (#547).
-///
-/// The frame loop decides click-through from the sprite's alpha mask, and the
-/// speech bubble's "Open chat" control sits above the head, outside it. The
-/// renderer is the only side that knows where the control is — the bubble is
-/// sized by text it measures — so it says, in its own coordinates, and the
-/// frame loop converts.
-/// Whether reporting a rectangle would actually win the click (#547).
-///
-/// Asked once at startup, because the answer is a property of the lane the
-/// Shell was built for, not of any window. The renderer draws the control only
-/// where this is true. It replaces a user-agent sniff, which said "macOS" when
-/// the question is "does this lane hit-test off-art rectangles" — two facts
-/// that agree today and would part the moment X11 or Windows unions them into
-/// its input region.
+/// Whether reporting an off-art rectangle would actually win the click (#547).
+/// Replaces a UA sniff that said "macOS" when the question is hotspot hit-testing.
+/// Those agree today and would part the moment X11 or Windows unions off-art rects into its input region.
 #[tauri::command]
 fn overlay_hit_tests_hotspots() -> bool {
     platform::hotspots_hit_tested()
 }
 
+/// Where this overlay wants a click besides the art. The bubble's "Open chat"
+/// control sits above the head, outside the alpha mask; the renderer says
+/// where in its own coordinates and the frame loop converts.
 #[tauri::command]
 fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
     platform::set_overlay_hotspots(window.label(), rects);
 }
 
-/// The Chat window's title for an Instance: its name, or the id when the
-/// roster holds no row for it.
-///
-/// The id is a real fallback, not a defensive one: a Character switch can drop
-/// the row between the click that opens Chat and this lookup, and a window that
-/// opens titled by its id is better than one that does not open. #588.
+/// Chat window title: Instance name, or the id when the roster holds no row.
+/// The id is a real fallback: a Character switch can drop the row between
+/// the click and this lookup, and a window titled by id is better than none.
 fn instance_title(rows: &[InstanceRow], id: &str) -> String {
     rows.iter()
         .find(|row| row.id == id)
         .map_or_else(|| id.to_string(), |row| row.name.clone())
 }
 
-/// Open one Instance's Chat surface from the bubble's control.
-///
-/// The same call a Summon makes, and deliberately not a Summon: the user
-/// clicked a control, not the Character, so the Engine hears nothing and the
-/// buddy does not react. Nothing else opens a Chat surface on its own — a turn
-/// that does not fit the bubble still waits to be asked for.
-///
-/// `async` is load-bearing on Windows, not a style choice (#588). A synchronous
-/// command runs on the thread that pumps WebView2's messages, and building a
-/// second webview there is the case Tauri's own docs name as a deadlock: the
-/// new WebView2 controller spins a nested message loop that re-enters the
-/// overlay's in-flight IPC turn, and the Chat surface comes up a frozen white
-/// HWND. An `async` command is dispatched on the async runtime instead, off
-/// that pump, the same off-main origin the frame-loop thread's `open_chat`
-/// has.
+/// Open Chat from the bubble control, not as a Summon: the Engine hears
+/// nothing. `async` is load-bearing on Windows (#588): a sync command runs on
+/// WebView2's pump thread and building a second webview there deadlocks.
 #[tauri::command]
 async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     let title = app
@@ -1077,24 +930,17 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     open_chat(&app, &id, title);
 }
 
-/// Put the overlay over one display, covering it exactly.
-///
-/// Sized before it is moved. Growing a window anchors its bottom-left corner,
-/// so a window resized after it is placed pushes its own top edge off the
+/// Put the overlay over one display. Size before move: growing a window
+/// anchors bottom-left, so resize-after-place pushes the top edge off the
 /// display it was just put on.
 fn cover_display(window: &tauri::WebviewWindow, display: Rect) -> Result<(), tauri::Error> {
     window.set_size(LogicalSize::new(display.width, display.height))?;
     window.set_position(LogicalPosition::new(display.x, display.y))
 }
 
-/// Build one overlay, configure it, and put it over its display.
-///
-/// The only place an overlay is made. Click-through, window level, Spaces
-/// membership and hide rules have to be identical on every overlay, and a
-/// second window is a second place for them to disagree; one function called
-/// once per display is what keeps them one set of rules instead of two.
-///
-/// Main thread only: it builds a window and calls AppKit.
+/// Build one overlay, configure it, and put it over its display. The only
+/// place an overlay is made, so click-through, window level, Spaces and hide
+/// rules stay one set. Main thread only: it builds a window and calls AppKit.
 fn build_overlay(
     app: &tauri::AppHandle,
     label: &str,
@@ -1114,11 +960,9 @@ fn build_overlay(
         .visible(false)
         .build()?;
 
-    // On Linux/GTK, set_ignore_cursor_events queues a tao WindowRequest that
-    // unwraps the GdkWindow, which is None until the widget is realized (needs
-    // the event loop, not just show()). The frame loop sets ignore-cursor on
-    // the first frame once the window exists. On macOS, NSWindow exists while
-    // hidden, so the call is safe and establishes the initial state.
+    // On Linux/GTK, set_ignore_cursor_events unwraps a GdkWindow that is
+    // None until realize. The frame loop sets ignore-cursor on the first
+    // frame. On macOS, NSWindow exists while hidden, so the call is safe here.
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     window.set_ignore_cursor_events(true)?;
 
@@ -1147,15 +991,9 @@ fn build_overlay(
     Ok(())
 }
 
-/// Build one Instance's Chat surface.
-///
-/// None of `build_overlay`'s flags: click-through would swallow the click that
-/// puts the caret in the field, always-on-top and visible-on-all-workspaces
-/// would follow the user out of the app, and `configure_overlay`'s window level
-/// would sit a text field above their editor. Absent rather than set to false,
-/// because a plain window is what Tauri builds when nothing asks otherwise.
-///
-/// Main thread only: it builds a window.
+/// Build one Instance's Chat surface. None of `build_overlay`'s flags:
+/// click-through would swallow the caret click; always-on-top and overlay
+/// window level would follow the user out of the app. Absent, not set false.
 fn build_chat(
     app: &tauri::AppHandle,
     label: &str,
@@ -1169,10 +1007,8 @@ fn build_chat(
         .build()
 }
 
-/// Build the Settings webview window.
-///
-/// Mirrors `build_chat`. Opens behind `AI_BUDDY_SETTINGS_WEBVIEW=1`; native
-/// remains the default.
+/// Build the Settings webview window. Opens behind
+/// `AI_BUDDY_SETTINGS_WEBVIEW=1`; native remains the default.
 fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")
@@ -1183,13 +1019,8 @@ fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri:
 }
 
 /// Open this Instance's Chat surface, or raise the one it already has.
-///
-/// Called from the frame loop, so the whole of it is posted to the main
-/// thread: building a webview and focusing one both reach the window server.
-/// The lookup goes over with it, because `run_on_main_thread` returning `Ok`
-/// means queued and not built — deciding on this side would have two Summons a
-/// tick apart each post a build, and one session (ADR-0008) would have two
-/// windows on it.
+/// Posted whole to the main thread; the lookup goes too, because Ok from
+/// `run_on_main_thread` means queued, so two Summons a tick apart would each post a build.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     let label = chat_label(id);
     let handle = app.clone();
@@ -1212,14 +1043,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
                 }
             },
         };
-        // Both paths, because building is not raising. The builder's
-        // `focused(true)` only orders the window to the front of *this*
-        // application, and a Summon arrives while another one is active: the
-        // surface is then key inside ai-buddy and behind the editor the user
-        // was looking at. `set_focus` is the call that activates the process
-        // as well, which is what a deliberate act has to do — and doing it
-        // here rather than in the frame loop keeps the overlay's own window
-        // where it is, still taking no focus from anyone.
+        // Both paths: `focused(true)` only orders the window to the front of
+        // this application. `set_focus` activates the process, which a Summon
+        // has to do, and doing it here keeps the overlay from taking focus.
         if let Err(why) = window.set_focus() {
             eprintln!("chat: {label} could not be raised: {why}");
         }
@@ -1228,13 +1054,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     }
 }
 
-/// Shut the Chat surface belonging to `id`, if it has one.
-///
-/// Nothing else closes a `chat-*`: they sit outside the `overlay-` namespace
-/// `place_overlays` sweeps, so a dismissed Instance would leave a window open
-/// on a conversation with nobody at the other end.
-///
-/// Main thread only, for `open_chat`'s reason.
+/// Shut the Chat surface belonging to `id`, if it has one. Nothing else
+/// closes a `chat-*`: they sit outside the `overlay-` namespace
+/// `place_overlays` sweeps. Main thread only, for `open_chat`'s reason.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
@@ -1249,16 +1071,9 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     }
 }
 
-/// Draw one forwarded permission request on every Chat surface, and make sure
-/// one of them is a surface the user can actually see.
-///
-/// A window rather than a Speech line, because the options are the only answer
-/// there will ever be (ADR-0010 forbids ai-buddy choosing one) and ADR-0013
-/// leaves exactly one surface that can draw them: a bubble line could only
-/// point at a window that is not open, and the turn would still die by timeout
-/// while the user looked for it. Visible and unminimized, not merely open — a
-/// minimized window is a request nobody sees, which is the case this exists to
-/// fix.
+/// Draw one forwarded permission request on every Chat surface, visible and
+/// unminimized. ADR-0010 forbids choosing an option. ADR-0013: only a Chat
+/// surface can draw the options; a bubble can only point at a window that is not open.
 fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;
@@ -1292,11 +1107,9 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
         "harness: permission asked for `{}`; no Chat surface is on screen",
         ask.title.as_deref().unwrap_or("—")
     );
-    // Do Not Disturb wins even over a question with a deadline: it is a promise
-    // that the app takes no attention until it is switched off, and opening
-    // this window activates ai-buddy over whatever the user is doing. The turn
-    // then times out, which is what happened before any of this — and never an
-    // answer of ours either way (ADR-0010).
+    // Do Not Disturb wins even over a question with a deadline: opening this
+    // window activates ai-buddy. The turn then times out, and never an
+    // answer of ours (ADR-0010).
     if do_not_disturb(app) {
         return;
     }
@@ -1306,13 +1119,8 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
 }
 
 /// Show the latest thought in every open Chat surface, from whichever
-/// Completer is on the wire — an attached Harness, or the HTTP lane's marked
-/// reasoning deltas (#611).
-///
-/// Every one, for the reason `forward_ask` gives: the session is shared and
-/// the wire does not say whose turn is on it, so the Shell cannot address the
-/// Instance that asked. Nothing is held for a surface that opens later —
-/// a thought is only worth reading while it is being thought.
+/// Completer is on the wire — Harness, or HTTP marked reasoning (#611).
+/// Every one: the session is shared and the wire does not say whose turn is on it.
 fn show_thought(app: &tauri::AppHandle, line: String) {
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
@@ -1357,13 +1165,9 @@ fn do_not_disturb(app: &tauri::AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// Put a Chat surface in front of the user for a request that has nowhere to be
-/// drawn: the one it was already sent to and cannot be seen, else the roster's
-/// first Instance. `open_chat` unminimizes and raises whichever it is.
-///
-/// One session serves every Instance (ADR-0008), so any surface can answer it;
-/// the roster's first is the one the Shell can name without threading the
-/// asking Instance down the wire and back.
+/// Put a Chat surface in front of the user for a request with nowhere to be
+/// drawn. One session serves every Instance (ADR-0008), so the roster's first
+/// is the one the Shell can name without threading the asking Instance down the wire.
 fn show_chat_for_ask(app: &tauri::AppHandle, shut: Option<String>) {
     let rows = app
         .try_state::<SettingsState>()
@@ -1382,12 +1186,9 @@ fn show_chat_for_ask(app: &tauri::AppHandle, shut: Option<String>) {
     open_chat(app, &id, title);
 }
 
-/// Record what just happened to an Instance, unless a typed line is still
-/// waiting to be asked.
-///
-/// `happened` is one slot, and a Poke landing between a line arriving and the
-/// wake starting would replace the question — leaving the Director to answer
-/// one nobody asked.
+/// Record what just happened, unless a typed line is still waiting.
+/// `happened` is one slot: a Poke between a line arriving and the wake
+/// would replace the question and answer one nobody asked.
 fn note_happened(happened: &mut Happened, what: Happened) {
     if !matches!(happened, Happened::Chat(_)) {
         *happened = what;
@@ -1417,10 +1218,9 @@ struct ChatOpening {
     /// Which Harness is attached, when one is. Used to name it in the fourth
     /// empty state (needs authentication).
     harness_name: Option<String>,
-    /// The Character's own Personality Prompt, frozen: the Prompt tab shows it
-    /// for reference above the layer the user may write (ADR-0012). Empty when
-    /// the package shipped none, and empty under Blank AI — the flag empties
-    /// the built-in layer rather than hiding the tab (#680).
+    /// The Character's frozen Personality Prompt, for the Prompt tab
+    /// (ADR-0012). Empty when the package shipped none, and empty under
+    /// Blank AI: the flag empties the layer rather than hiding the tab (#680).
     personality: String,
     /// This Instance's own layer, as it stands. Empty by default. Still sent
     /// under Blank AI, so a control run can iterate a prompt (#680).
@@ -1485,11 +1285,9 @@ fn chat_opening_from(
     }
 }
 
-/// The Personality Prompt of the Character `instance` is running.
-///
-/// Read off the loaded packages rather than held on the Instance: it is the
-/// author's layer and changes only when the Character does, and the Prompt tab
-/// shows it frozen (ADR-0012).
+/// Personality Prompt of the Character `instance` is running. Read off the
+/// loaded packages rather than held on the Instance: it is the author's
+/// layer and the Prompt tab shows it frozen (ADR-0012).
 fn personality_of(
     characters: &BTreeMap<String, Arc<Character>>,
     instance: &roster::Instance,
@@ -1500,12 +1298,9 @@ fn personality_of(
         .unwrap_or_default()
 }
 
-/// The Chat surface asking who it belongs to, and whether anything can answer.
-///
-/// A command rather than an event, for `character`'s reason: Tauri buffers
-/// nothing for a listener that is not there yet. Read out of the same
-/// `DirectorInspect` the Settings window renders, so the two cannot disagree
-/// about whether a session Director is attached.
+/// Who this Chat surface belongs to, and whether anything can answer. A
+/// command rather than an event: Tauri buffers nothing for a listener that
+/// is not there yet. Same `DirectorInspect` the Settings window renders.
 #[tauri::command]
 fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> ChatOpening {
     let (name, character, instance_prompt) = state
@@ -1560,12 +1355,9 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
     }
 }
 
-/// A new Instance Prompt for one Instance, from its own Chat surface.
-///
-/// Refused here rather than cut, so the words the user can still see in the box
-/// are the words that were not saved. Everything else — persisting the text,
-/// reopening the session, the Action Log line — happens on the frame-loop
-/// thread, where the roster and the Director slots live (ADR-0012).
+/// A new Instance Prompt from its Chat surface. Refused rather than cut, so
+/// the words still in the box are the words that were not saved. Persist and
+/// reopen happen on the frame-loop thread (ADR-0012).
 #[tauri::command]
 fn chat_prompt(
     instance: String,
@@ -1590,34 +1382,17 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
-/// Open a link the user clicked in a reply, in their own browser.
-///
-/// The webview cannot do this itself. There is no opener plugin, and nothing
-/// intercepts navigation, so an `<a href>` would take the chat window to the
-/// page and the conversation with it — `default-src 'self'` does not stop a
-/// top-level navigation, and neither `target="_blank"` nor `window.open`
-/// reaches the system browser from here. Handing the URL to the OS is the
-/// native side's to do.
-///
-/// Which schemes may be handed over is `platform::open_url`'s decision, not
-/// this function's: the gate belongs at the last edge before the OS, where no
-/// caller can route around it. What arrives here is untrusted — a link target
-/// is model output, and an MCP server's content can steer it.
+/// Open a clicked reply link in the user's browser. The webview has no
+/// opener; an `<a href>` would navigate the chat window itself. Scheme
+/// gating is `platform::open_url`'s, at the last edge; the URL is untrusted.
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     platform::open_url(&url)
 }
 
-/// Connect a named Harness from Chat, answering with the command that signs
-/// it in.
-///
-/// Through `SettingsSession::apply` rather than the file, because the pick has
-/// to move the attachment now rather than at the next launch, and the
-/// `ReloadChat` that apply sends is what carries the new state back to the
-/// window that asked.
-///
-/// The answer is a line to read, not a process to run: ai-buddy never spawns
-/// the login. `harness::login_hint` owns that constraint and why. #654.
+/// Connect a named Harness from Chat. Through `SettingsSession::apply`, so
+/// the attachment moves now and `ReloadChat` carries state back. The answer
+/// is a line to read, not a process to spawn; `harness::login_hint` owns why.
 #[tauri::command]
 fn select_harness(
     harness: String,
@@ -1635,10 +1410,9 @@ fn select_harness(
     Ok(harness::login_hint(&harness))
 }
 
-/// Push a full opening to an already-open Chat surface, without creating one.
-/// Always after a switch: a chosen Instance name stays, but the Character line
-/// still has to move. Configured/enabled/login too, because the window asked
-/// once at start and a Director change has to re-run `attached()`. #473.
+/// Push a full opening to an already-open Chat surface, without creating
+/// one. After a switch the Character line still has to move; configured and
+/// login too, because the window asked once at start.
 fn push_chat_opening(
     app: &tauri::AppHandle,
     roster: &Roster,
@@ -1695,31 +1469,23 @@ enum ChatMsg {
     Listening(InstanceId),
 }
 
-/// The sender every Chat surface posts on.
-///
-/// Not another `SettingsOp`: every op drained from that one rewrites
-/// settings.json and redraws the Settings window. A struct rather than a bare
-/// `Sender`, because managed state is keyed by type.
+/// The sender every Chat surface posts on. Not another `SettingsOp`: every
+/// op drained from that one rewrites settings.json. A struct rather than a
+/// bare `Sender`, because managed state is keyed by type.
 struct ChatChannel(mpsc::Sender<ChatMsg>);
 
 /// What the Shell tells one Chat surface when a turn of its own is over.
 #[derive(Clone, Serialize)]
 struct ChatReply {
-    /// What the Instance said, and `None` when the turn produced no line — a
-    /// failed call falling back to the silent `StaticDirector`, or Do Not
-    /// Disturb. Sent anyway, so no caret waits forever on a line that is
-    /// not coming.
+    /// What the Instance said; `None` when the turn produced no line. Sent
+    /// anyway, so no caret waits forever on a line that is not coming.
     said: Option<String>,
     /// The line was refused because one typed before it has not been asked
     /// yet. `said` is `None`; see the drain in `frame_loop`.
     busy: bool,
-    /// What the Director was reacting to when it said this, as the surface
-    /// labels the row. `None` on an answer to a typed line, which sits under
-    /// the user's own turn — and its presence is what tells the surface not to
-    /// hand this line to a caret waiting on a question it did not answer.
-    ///
-    /// A label rather than a bare flag because a double-click is a prompt: the
-    /// user asked, they just did not type.
+    /// What the Director was reacting to. `None` on a typed-line answer
+    /// (that sits under the user's turn). A label rather than a flag: a
+    /// double-click is a prompt, the user just did not type.
     reacting_to: Option<String>,
     /// A replayed line the user typed. The live send path draws that row in
     /// the webview itself, so a true here on that path would duplicate it.
@@ -1729,11 +1495,9 @@ struct ChatReply {
     /// emit so the surface stamps wall-clock now; replay fills this from
     /// `Turn.at` so a line said before Chat opened keeps that moment.
     at: Option<u64>,
-    /// What the Harness answered the turn with, when it answered with an
-    /// error. `said` is `None` beside it, because static weights took the
-    /// turn — but "no answer came back" is the wrong report when one did and
-    /// it named a version this CLI will not serve (#514). Not replayed: the
-    /// session log keeps the line said, and there was none.
+    /// What the Harness answered with when it answered with an error. `said`
+    /// is `None` because static weights took the turn, but "no answer" is
+    /// wrong when one named a version this CLI will not serve (#514).
     error: Option<String>,
     /// The Shell cancelled this caret because a newer wake started (ADR-0016).
     /// `said` is `None`; this is not a turn that produced no Speech (#681).
@@ -1741,11 +1505,7 @@ struct ChatReply {
     superseded: bool,
 }
 
-/// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
-///
-/// The `engine:` trace's quartet — the ADR-0002 ladder and the State it plays
-/// under — plus which way the sprite faces and what the Director is doing.
-///
+/// Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
 /// Compared field by field to decide whether to push, so nothing in here
 /// changes on a tick where the bar would not.
 #[derive(Clone, PartialEq, Serialize)]
@@ -1766,23 +1526,19 @@ struct ChatStatus {
     asking: bool,
 }
 
-/// One push of the status bar.
 #[derive(Clone, Serialize)]
 struct ChatStatusPush<'a> {
     #[serde(flatten)]
     status: &'a ChatStatus,
-    /// Milliseconds until the next ambient wake, and `None` when none is coming
-    /// — no Completer, the Director off, ambient wakes not allowed, Do Not
-    /// Disturb, or the displays asleep. A deadline pushed once rather than a
-    /// number pushed every second: the window counts it down itself.
+    /// Milliseconds until the next ambient wake, or `None` when none is
+    /// coming. A deadline pushed once rather than a number every second: the
+    /// window counts it down itself.
     wake_ms: Option<u64>,
 }
 
-/// A line the user typed, on its way in.
-///
-/// Bounded here because this is where webview text enters the process, and at
-/// `CHAT_LIMIT` rather than a second number: the session keeps the line, so
-/// cutting it later would still have paid for the whole paste on the way in.
+/// A line the user typed, on its way in. Bounded here, at `CHAT_LIMIT`:
+/// this is where webview text enters, and the session keeps the line, so
+/// cutting it later would still have paid for the whole paste.
 #[tauri::command]
 fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>) {
     let text: String = text
@@ -1796,11 +1552,9 @@ fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>
     let _ = chat.0.send(ChatMsg::Said(ChatLine { instance, text }));
 }
 
-/// A Chat surface reporting that it is listening.
-///
-/// Events only reach windows that existed, so this session's turns wait here
-/// too — Speech as well as permission asks that arrived before this window
-/// existed. This window may also be the one a permission request opened.
+/// A Chat surface reporting that it is listening. Events only reach windows
+/// that existed, so this session's turns wait here too, Speech as well as
+/// permission asks that arrived before this window existed.
 #[tauri::command]
 fn chat_ready(
     instance: String,
@@ -1836,24 +1590,9 @@ fn chat_ready(
     let _ = chat.0.send(ChatMsg::Listening(instance));
 }
 
-/// One overlay per display, each covering that display.
-///
-/// This is what keeps a Character on a seam whole: both overlays draw it, each
-/// clipping its own half, and the halves meet. One window cannot do it, because
-/// macOS gives each display its own Space and draws a window spanning two of
-/// them on only one — a window sized to the display union is invisible
-/// everywhere but the display it happens to belong to.
-///
-/// Idempotent, because the desktop changes while the app runs: a display that
-/// already has its overlay keeps it and is only re-covered, which is what a
-/// display that moved or changed resolution needs. Overlays past the end of the
-/// list belong to displays that have been unplugged.
-///
-/// Every display is attempted even after one fails, and the failures are
-/// returned together. Stopping at the first would leave every display after it
-/// without an overlay, which is a worse desktop than the one bad display.
-///
-/// Main thread only; see `build_overlay`.
+/// One overlay per display. A spanning window is invisible off its Space, so
+/// a seam needs both overlays. Idempotent as displays move; every display is
+/// attempted even after one fails, or the rest of the desktop would go blank.
 fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), String> {
     let mut failed = Vec::new();
 
@@ -1887,15 +1626,9 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
     }
 }
 
-/// Register the hotkey that hides and shows the Character.
-///
-/// Three modifiers, because a global shortcut is taken from every application
-/// on the machine and B alone belongs to most of them. The binding is the
-/// settings string, rebound when that string changes.
-///
-/// A hotkey another application already holds is reported and let go. Losing it
-/// costs the user one way to hide the Character, which is not worth losing the
-/// Character over.
+/// The hide-hotkey Shortcut. Three modifiers, because a global shortcut is
+/// taken from every application on the machine and B alone belongs to most
+/// of them.
 fn shortcut_from_spec(spec: &str) -> Option<Shortcut> {
     let parsed = settings::parse_hotkey(spec)
         .or_else(|| settings::parse_hotkey(settings::DEFAULT_HIDE_HOTKEY))?;
@@ -1943,6 +1676,9 @@ fn install_hide_hotkey(
     }
 }
 
+/// Bind the hide hotkey. A hotkey another application already holds is
+/// reported and let go: losing it costs one way to hide the Character, which
+/// is not worth losing the Character over.
 fn bind_hide_hotkey(app: &tauri::AppHandle, spec: &str) {
     if app
         .try_state::<tauri_plugin_global_shortcut::GlobalShortcut<tauri::Wry>>()
@@ -2117,13 +1853,9 @@ fn apply_menu_action(
     }
 }
 
-/// Leave without AppKit's `terminate:`.
-///
-/// `PredefinedMenuItem::quit` calls `[NSApp terminate:]` from inside the tray
-/// menu's tracking run loop. That teardown deadlocks against the overlay
-/// webviews the frame loop is still drawing into, and a hung full-display
-/// overlay is a desktop the user cannot click. `process::exit` skips that path;
-/// the window server drops the overlays with the process.
+/// Leave without AppKit's `terminate:`. `PredefinedMenuItem::quit` deadlocks
+/// overlay webviews from inside the tray tracking run loop; `process::exit`
+/// skips that path and the window server drops the overlays with the process.
 fn quit_now() -> ! {
     eprintln!("quit");
     harness::shutdown();
@@ -2131,9 +1863,8 @@ fn quit_now() -> ! {
 }
 
 /// Ctrl+C is not `RunEvent::Exit`. The Harness child is in its own process
-/// group so that signal does not dump inside Node; this is what then kills it.
-/// Isolation waits until the handler is installed: a failed catch would
-/// otherwise leave a tree Ctrl+C can no longer reap.
+/// group so that signal does not dump inside Node; this then kills it.
+/// Isolation waits until the handler is installed, or a failed catch leaves a tree Ctrl+C cannot reap.
 fn quit_harness_on_interrupt() {
     match ctrlc::set_handler(|| {
         if crate::harness::interrupt_already_quitting() {
@@ -2150,12 +1881,9 @@ fn quit_harness_on_interrupt() {
     }
 }
 
-/// One Instance's wake clock: where the config says to start, grown at the
-/// Character's own rate.
-///
-/// The two halves come from different places every time — the interval is the
-/// user's and the growth is the Character's — so the pairing is written once
-/// rather than at each of the four sites that builds a `Pace`.
+/// One Instance's wake clock: config interval grown at the Character's rate.
+/// The two halves come from different places every time, so the pairing is
+/// written once rather than at each of the four sites that builds a `Pace`.
 pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pace {
     Pace::with_growth(
         config.ambient_first,
@@ -2332,19 +2060,14 @@ fn describe_menu(
     })
 }
 
-/// The environment variable naming the Instances to run.
-///
-/// An environment variable rather than a flag because it is how ai-buddy is
-/// already configured — `AI_BUDDY_CHARACTER` picks the Character, and the trace
-/// flags turn the logs on — and a second mechanism for the same kind of answer
-/// is a second place to look it up.
+/// The environment variable naming the Instances to run. An env var rather
+/// than a flag because that is how ai-buddy is already configured, and a
+/// second mechanism for the same kind of answer is a second place to look it up.
 const INSTANCES_VAR: &str = "AI_BUDDY_INSTANCES";
 
-/// Which Instances the launch configuration asks for.
-///
-/// The environment wins when a developer set it. Otherwise settings. Empty is
-/// still first-run: `load_instances` turns it into the one buddy the app has
-/// always run.
+/// Which Instances the launch configuration asks for. The environment wins
+/// when a developer set it; otherwise settings. Empty is still first-run:
+/// `load_instances` turns it into the one buddy the app has always run.
 fn requested_instances(settings: &Settings) -> Result<Vec<InstanceSpec>, String> {
     match std::env::var(INSTANCES_VAR) {
         Ok(raw) => roster::parse_specs(&raw),
@@ -2353,17 +2076,6 @@ fn requested_instances(settings: &Settings) -> Result<Vec<InstanceSpec>, String>
     }
 }
 
-/// Load the Character each requested Instance names, sharing one load between
-/// Instances that name the same one.
-///
-/// Asking for no Instances runs the one ai-buddy has always run: the Character
-/// `AI_BUDDY_CHARACTER` names, or the default, called after itself. That has to
-/// keep working, or every existing way of starting the app would start something
-/// different.
-///
-/// The Character comes back beside the spec that asked for it, and an Instance
-/// with no name of its own takes the Character's — which is what `bmo` alone
-/// means.
 fn load_all_characters(
     app: &tauri::AppHandle,
 ) -> (
@@ -2397,6 +2109,9 @@ fn load_all_characters(
     (art, cache)
 }
 
+/// Load the Character each requested Instance names, sharing one load
+/// among namesakes. None asked still runs the one buddy the app has always
+/// run; an Instance with no name of its own takes the Character's.
 fn load_instances(
     app: &tauri::AppHandle,
     wanted: &[InstanceSpec],
@@ -2451,10 +2166,9 @@ fn load_instances(
     Ok(instances)
 }
 
-/// A lone leftover default — `{ character: "Timber Wolf", name: "bmo" }` —
-/// takes this Character's name before the overlay log prints it and before
-/// spawn persists it. Several Instances keep the names that tell them apart.
-/// #375.
+/// A lone leftover default `{ character: "Timber Wolf", name: "bmo" }` takes
+/// this Character's name before the overlay log prints it and before spawn
+/// persists it. Several Instances keep the names that tell them apart.
 fn follow_lone_default(
     loaded: &mut [(InstanceSpec, Arc<Character>)],
     known: &BTreeMap<String, Arc<Character>>,
@@ -2467,12 +2181,9 @@ fn follow_lone_default(
     spec.name = roster::adopted_name(&spec.name, &character.name, names);
 }
 
-/// Spawn every requested Instance into a Roster, and build the Shell state each
-/// one keeps beside its Engine.
-///
-/// Memory is one file for every Instance, which is what makes a second buddy
-/// already know the user: `Roster` holds it behind an `Arc` and hands the same
-/// one to each.
+/// Spawn every requested Instance into a Roster, and build the Shell state
+/// each keeps beside its Engine. Memory is one file for every Instance:
+/// `Roster` holds it behind an `Arc` so a second buddy already knows the user.
 fn spawn_instances(
     loaded: &[(InstanceSpec, Arc<Character>)],
     start: Point,
@@ -2484,19 +2195,16 @@ fn spawn_instances(
     roster.set_known_names(known_names);
     let mut lives = Vec::with_capacity(loaded.len());
 
-    // The wall clock, so that two runs are not the same afternoon — the one
-    // thing the Engine's own purity forbids it to do. Mixed with the Instance's
-    // place in the list below, because Instances built in the same nanosecond
-    // would otherwise share a seed and make the same choices for as long as they
-    // both lived, which is the lockstep #13 asks not to have.
+    // The wall clock, so two runs are not the same afternoon, the one thing
+    // the Engine's purity forbids. Mixed with the Instance's place in the
+    // list: same-nanosecond Instances would otherwise share a seed and lockstep.
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_nanos() as u64);
 
-    // Where each Instance's wake clock starts. Drawn from the same launch seed
-    // rather than from the clock again: `as_nanos` read three times in a row
-    // differs in its low bits only, and a phase taken from that would put every
-    // buddy within a millisecond of the others.
+    // Where each Instance's wake clock starts. Drawn from the same launch
+    // seed rather than the clock again: `as_nanos` three times in a row
+    // differs in low bits only, and would put every buddy within a millisecond.
     let mut phases = Seeded::new(seed);
 
     let widths: Vec<f64> = loaded
@@ -2518,9 +2226,6 @@ fn spawn_instances(
             id: id.clone(),
             character: Arc::clone(character),
             director: StaticDirector::new(character.behaviors.clone(), seed ^ index as u64),
-            // One per Instance, because each buddy wakes on its own clock and
-            // carries its own conversation.
-            //
             // ponytail: N Instances with a key make N times the model calls, on
             // N independent `Pace` clocks and against no shared budget. Fine for
             // the handful a desktop holds; the cap belongs in `Slots`, which is
@@ -2538,10 +2243,8 @@ fn spawn_instances(
             recent: Vec::new(),
             pace: paced(config, character),
             // Started somewhere inside the interval rather than at nothing, so
-            // that N buddies do not all decide on the same tick. What each
-            // decides already differs — every Instance has its own seed — but
-            // deciding together still reads as coordinated, and it puts N model
-            // calls in one instant instead of spreading them.
+            // N buddies do not all decide on the same tick. Deciding together
+            // still reads as coordinated and puts N model calls in one instant.
             since_wake: phase_of(config.wake_every, phases.draw()),
             since_state: Duration::ZERO,
             since_ambient: Duration::ZERO,
@@ -2565,18 +2268,9 @@ fn spawn_instances(
     (roster, lives)
 }
 
-/// How far through the wake interval an Instance's clock starts, from one draw
-/// of randomness.
-///
-/// Somewhere in the interval rather than a share of it apiece. An even spread
-/// keeps buddies exactly out of phase, which is its own kind of mechanical: the
-/// same three buddies wake in the same order at the same spacing for the whole
-/// session, and two of them are always the same distance apart. A draw each
-/// makes the spacing uneven and different every launch.
-///
-/// Never the whole interval, so nobody starts already due and wakes on the
-/// first tick. The randomness is injected rather than drawn here so that the
-/// arithmetic is testable — `docs/SPEC.md`, and the reason `Seeded` exists.
+/// How far through the wake interval an Instance's clock starts. A draw
+/// each, never an even spread (that is its own mechanical lockstep), and
+/// never the whole interval. Randomness is injected so the arithmetic is testable.
 fn phase_of(interval: Duration, draw: u64) -> Duration {
     let millis = u64::try_from(interval.as_millis()).unwrap_or(u64::MAX);
     if millis == 0 {
@@ -2585,11 +2279,9 @@ fn phase_of(interval: Duration, draw: u64) -> Duration {
     Duration::from_millis(draw % millis)
 }
 
-/// How wide a Character's sprite usually is, in points.
-///
-/// The idle Animation's frame, blown up by the Character's scale. Animations may
-/// declare different frame sizes, so this is what the Character is usually drawn
-/// at rather than what it is always drawn at.
+/// How wide a Character's sprite usually is, in points. The idle Animation's
+/// frame, blown up by scale. Animations may declare different frame sizes,
+/// so this is usual rather than always.
 fn sprite_width(character: &Character) -> f64 {
     character
         .draw("idle", 0, 0, 1.0)
@@ -2597,19 +2289,9 @@ fn sprite_width(character: &Character) -> f64 {
         * f64::from(character.scale)
 }
 
-/// Where each Instance comes into the world, given one starting point and each
-/// sprite's width.
-///
-/// `starting_position` returns a single point, and several buddies dropped on it
-/// would fall as one body and land in a stack. Each is placed a sprite's width
-/// past the one before it — cumulatively, so the gap is the width of the sprite
-/// actually standing there rather than the width of the newest: stepping by the
-/// current Character's width puts a narrow one on top of the wide one it
-/// follows.
-///
-/// Nothing clamps the run to the display. Far enough out and the Engine's walls
-/// stop them, which is a better answer than arithmetic here pretending to know
-/// how many will fit.
+/// Where each Instance comes into the world. Several dropped on one point
+/// would land in a stack; each is placed the previous sprite's width past
+/// it. Nothing clamps here; far enough out, the Engine's walls stop them.
 fn starting_positions(start: Point, widths: &[f64]) -> Vec<Point> {
     let mut x = start.x;
     widths
@@ -2627,19 +2309,9 @@ fn names_the_package(path: &Path, character_name: &str, wanted: &OsStr) -> bool 
     path.file_stem() == Some(wanted) || OsStr::new(character_name) == wanted
 }
 
-/// The Character an Instance asked for: the first package that loads out of
-/// every place ai-buddy looks. Naming none takes the default.
-///
-/// Every rejection is reported before moving on, because a package that was
-/// meant to load and did not is exactly what its author needs to hear about. A
-/// location that was never a package is not worth a line.
-///
-/// Finding none stops startup, so the failure names every directory that was
-/// searched: that list is the whole of what the reader has to go on.
-///
-/// Takes the name rather than reading the environment itself because an Instance
-/// names its own Character. Several Instances mean several loads, and the
-/// search, the reporting and the failure are the same for each.
+/// The Character an Instance asked for: the first package that loads.
+/// Every rejection is reported; finding none stops startup and names every
+/// directory searched. Takes the name rather than reading the env itself.
 fn load_named(
     app: &tauri::AppHandle,
     wanted: Option<std::ffi::OsString>,
@@ -2716,14 +2388,9 @@ fn load_named(
     })
 }
 
-/// Build the anchor window that appears in the taskbar/panel on Windows and Linux.
-///
-/// A small, invisible window that gives the running app a taskbar presence
-/// matching the macOS Dock. On Linux, clicking it opens Settings. On Windows,
-/// user-initiated activate (taskbar click) opens Settings via WM_ACTIVATE
-/// filtering. The tray remains the alternate path.
-///
-/// Main thread only: builds a window and registers event handlers.
+/// The taskbar/panel anchor on Windows and Linux, matching the macOS Dock.
+/// Clicking it opens Settings. Main thread only: builds a window and
+/// registers event handlers.
 #[cfg(not(target_os = "macos"))]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
@@ -2850,13 +2517,9 @@ fn main() {
             settings_event
         ])
         .setup(|app| {
-            // A companion with no Character has nothing to be, so no Character
-            // means no overlay. Reported and exited rather than returned as a
-            // setup error: Tauri turns that into a panic the event loop cannot
-            // unwind, which buries the one line worth reading under a
-            // backtrace. The same goes for a list of Instances that cannot be
-            // read: starting with a different set of buddies from the one the
-            // user asked for would be worse than saying so.
+            // No Character means no overlay. Reported and exited rather than
+            // returned as a setup error: Tauri turns that into a panic the
+            // event loop cannot unwind, burying the one line under a backtrace.
             let settings_file = settings::settings_path(&memory::data_dir());
             let mut settings = Settings::load(&settings_file);
             // Before anything reads a development switch: the frame loop and
@@ -2913,9 +2576,7 @@ fn main() {
             let (source, displays) = platform::window_source(app.handle().clone());
             let start = starting_position(&source.snapshot());
 
-            // Which Dock the physics got: the true rectangle over the SPI,
-            // the true rectangle over Accessibility, or the full-width strip
-            // the work area reserves. Printed because the difference is
+            // Which Dock the physics got. Printed because the difference is
             // invisible until a sprite walks past the Dock's real end.
             if cfg!(target_os = "macos") {
                 match displays.read().dock {
@@ -2940,11 +2601,9 @@ fn main() {
             }
             place_overlays(app.handle(), &covered)?;
 
-            // The sprite size is the first Instance's idle Animation, blown up.
-            // Animations may declare different frame sizes, so this is what the
-            // Character is usually drawn at rather than what it is always drawn
-            // at. It is here because scripts/verify-overlay.sh crops a
-            // screenshot to it, and that script runs one Instance.
+            // The sprite size is the first Instance's idle Animation, blown
+            // up. Here because scripts/verify-overlay.sh crops a screenshot
+            // to it, and that script runs one Instance.
             let (sprite_width, sprite_height) = loaded
                 .first()
                 .and_then(|(_, character)| {
@@ -3060,10 +2719,9 @@ fn main() {
                     settings.character = character.name.clone();
                 }
             }
-            // Startup used to persist the specs it loaded, so a leftover
-            // `{ character: "Timber Wolf", name: "bmo" }` wrote itself back
-            // after spawn had already adopted. The roster is the name that
-            // will show. #375.
+            // Persist the roster's names, not the specs spawn loaded: a leftover
+            // `{ character: "Timber Wolf", name: "bmo" }` would write itself
+            // back after spawn had already adopted the Character's name.
             if !settings.instances.is_empty() {
                 settings.instances = roster_specs(&roster);
             }
@@ -3151,10 +2809,8 @@ fn main() {
             };
 
             // Selections do not come back from the popup: it returns once the
-            // menu is on screen, and the click arrives here, later, on the app's
-            // own channel. The hook forwards ids to the frame loop, which is the
-            // only place that knows which Instance's menu is open and what its
-            // rows meant.
+            // menu is on screen, and the click arrives later on this channel.
+            // The hook forwards ids to the frame loop, which knows the open menu.
             let (menu_sender, menu_receiver) = mpsc::channel();
             let hook_sender = menu_sender.clone();
             let quit_generation = Arc::new(AtomicU64::new(0));
@@ -3415,11 +3071,8 @@ mod tests {
     }
 
     /// ADR-0012: the Prompt tab draws the two authored layers, so the opening
-    /// has to carry both — the Character's frozen and this Instance's own,
-    /// empty by default — and the bound the box has to stay inside.
-    ///
-    /// Production change that would fail this: sending the assembled Character
-    /// Prompt instead, or the Character's personality in place of the user's.
+    /// has to carry both, the Character's frozen and this Instance's own,
+    /// and the bound the box has to stay inside. Sending the assembled Prompt would fail this.
     #[test]
     fn chat_opening_carries_both_authored_layers_and_the_bound() {
         let mut roster = Roster::new();
@@ -3576,15 +3229,13 @@ mod tests {
         ai_buddy_core::character::load(&files).expect("the package is valid")
     }
 
-    /// The `data:` URL the art should carry for a frame of these bytes.
     fn url(bytes: &[u8]) -> String {
         format!("data:image/png;base64,{}", STANDARD.encode(bytes))
     }
 
     /// The invariant `art_urls` exists to hold: the webview indexes this list
     /// by the index the frame loop computed over `Animation::frames`, so a
-    /// dropped or reordered URL would put a different frame on screen from the
-    /// one the hit-test measured.
+    /// dropped or reordered URL would put a different frame on screen.
     #[test]
     fn an_animations_urls_stand_in_the_order_its_frames_do() {
         let character = character_declaring(&[(
@@ -3612,10 +3263,9 @@ mod tests {
         assert_eq!(art["sit"], vec![url(SOLID), url(PATCHY)]);
     }
 
-    /// Every way of starting ai-buddy that existed before Instances did asks for
-    /// no Instances, which `load_instances` turns into the one buddy it has
-    /// always run. One test rather than three because they read the same
-    /// environment variable and separate tests would race each other for it.
+    /// Every pre-Instances start path asks for no Instances, which
+    /// `load_instances` turns into the one buddy it has always run. One test
+    /// rather than three: they share an environment variable and would race.
     #[test]
     fn naming_no_instances_asks_for_none_and_a_list_is_read_in_full() {
         std::env::remove_var(INSTANCES_VAR);
@@ -3838,12 +3488,9 @@ mod tests {
         );
     }
 
-    /// `overlay_open_chat` builds the Chat webview, and on Windows a synchronous
-    /// command does that on the thread pumping WebView2 — the deadlock Tauri's
-    /// docs warn of, which came up as a frozen white Chat HWND (#588). An
-    /// `async` command is dispatched off that thread instead. This pins the
-    /// signature so a refactor cannot quietly drop `async` and revive the blank;
-    /// it is a compile-time witness, so its body only has to type-check.
+    /// Pins `overlay_open_chat` as `async`. On Windows a sync command builds
+    /// the Chat webview on WebView2's pump thread and deadlocks (#588). A
+    /// compile-time witness; the body only has to type-check.
     #[test]
     fn overlay_open_chat_is_async_so_windows_keeps_chat_off_the_webview_pump() {
         fn takes_async<F, Fut>(_f: F)
