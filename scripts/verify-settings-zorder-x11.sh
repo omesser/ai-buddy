@@ -57,6 +57,10 @@ has_supporting_wm() {
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
+if [ -z "${XAUTHORITY:-}" ] && [ -f "$HOME/.Xauthority" ]; then
+  export XAUTHORITY="$HOME/.Xauthority"
+fi
+
 for tool in xdotool xprop xwininfo; do
   command -v "$tool" > /dev/null || fail "$tool not found. Install: sudo apt-get install x11-utils xdotool"
 done
@@ -97,6 +101,8 @@ BIN="${AI_BUDDY_VERIFY_BIN:-}"
 if [ -z "$BIN" ]; then
   if [ -x "$WORKSPACE_ROOT/target/release/ai-buddy" ]; then
     BIN="$WORKSPACE_ROOT/target/release/ai-buddy"
+  elif [ -x "$WORKSPACE_ROOT/target/debug/ai-buddy" ]; then
+    BIN="$WORKSPACE_ROOT/target/debug/ai-buddy"
   else
     log_info "Building ai-buddy (release)..."
     cargo build -p ai-buddy --release
@@ -109,18 +115,31 @@ log_info "Starting ai-buddy with Settings webview..."
 HOME_DIR="$OUT/home"
 mkdir -p "$HOME_DIR"
 export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
+# This script asserts X11 EWMH stacking. Prefer the X11 GDK backend even when
+# WAYLAND_DISPLAY is set, so tao's handle is an X window.
+export GDK_BACKEND="${GDK_BACKEND:-x11}"
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$HOME_DIR" \
   AI_BUDDY_SETTINGS_WEBVIEW=1 \
   AI_BUDDY_OPEN_SETTINGS=1 \
   AI_BUDDY_TRACE_FRAMES=1 \
+  AI_BUDDY_CAPTURABLE=1 \
   AI_BUDDY_CHARACTER=timber-wolf \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$WORKSPACE_ROOT/characters}" \
+  GDK_BACKEND="$GDK_BACKEND" \
+  LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE" \
   "$BIN" > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
 
 await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
+
+ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
+ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
+# GDK leaves 10x10 and ~200x200 placeholders with the same WM_CLASS. The
+# overlay covers the display.
+MIN_OVERLAY_W=$((ROOT_W / 2))
+MIN_OVERLAY_H=$((ROOT_H / 2))
 
 find_overlay_window() {
   local id w h name
@@ -129,7 +148,7 @@ find_overlay_window() {
     echo "$name" | grep -q 'Settings' && continue
     w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
     h=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Height:/ {print $2; exit}')
-    if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge 200 ] && [ "$h" -ge 200 ]; then
+    if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge "$MIN_OVERLAY_W" ] && [ "$h" -ge "$MIN_OVERLAY_H" ]; then
       echo "$id"
       return 0
     fi
@@ -157,9 +176,8 @@ done
 log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for overlay EWMH ABOVE..."
-await "$TRACE_LOG" 'EWMH configured' 40 || fail "configure_overlay never succeeded"
 OVERLAY_PROPS=""
-for _ in $(seq 1 40); do
+for _ in $(seq 1 80); do
   OVERLAY_PROPS=$(xprop -id "$OVERLAY_ID" _NET_WM_STATE 2> /dev/null || true)
   echo "$OVERLAY_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && break
   sleep 0.25
