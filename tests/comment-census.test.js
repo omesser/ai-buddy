@@ -172,6 +172,24 @@ Get-Date`,
   assert.equal(field(result.stdout, "Blocks"), 2);
 });
 
+test("census keeps a PowerShell <# #> block together across a blank line", () => {
+  const result = runCensusFile(
+    "help.ps1",
+    `<#
+.SYNOPSIS
+note
+
+more
+#>
+Get-Date`,
+  );
+
+  assert.equal(result.status, 0);
+  assert.equal(field(result.stdout, "Comment lines"), 6);
+  assert.equal(field(result.stdout, "Code lines"), 1);
+  assert.equal(field(result.stdout, "Blocks"), 1);
+});
+
 test("census counts .cjs C-style comment blocks", () => {
   const result = runCensusFile(
     "sample.cjs",

@@ -64,7 +64,7 @@ class CommentSyntax:
 
 
 # One table so a language cannot be counted in is_comment_line and skipped by
-# the directory glob. .swift / .ps1 / .cjs were the #811 miss.
+# the directory glob. #811.
 _C_STYLE = CommentSyntax(("//", "/*", "*"), "/*", "*/")
 _HASH = CommentSyntax(("#",))
 _POWERSHELL = CommentSyntax(("#", "<#"), "<#", "#>")
@@ -115,10 +115,13 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
         stripped = line.strip()
 
         if not stripped:
+            if in_multiline:
+                current_block_lines.append(line)
+                comment_lines += 1
+                continue
             if current_block_lines:
                 blocks.append(analyze_block(current_block_lines))
                 current_block_lines = []
-                in_multiline = False
             continue
 
         is_comment = is_comment_line(line, ext)
