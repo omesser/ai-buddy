@@ -1,0 +1,404 @@
+---
+# Every rule rejects a block one line over the ceiling. That is the assertion
+# that matters: #804's hook passed every Swift file because it could not see a
+# comment at all, and a linter that cannot go red is worse than none.
+#
+# The chain and the newline regex come from one shape each, so the off-by-one
+# only needs proving once per shape. `rust` carries it for a run of line
+# comments (and for the `//!` exemption) and `css` for a single block node.
+# `swift` carries its own because #806 asserted it before this replaced that
+# hook, and a language nothing else covers should not lose the guarantee.
+id: comment-block-ceiling-rust
+valid:
+  - |
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    fn f() {}
+  - |
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    //!
+    fn f() {}
+invalid:
+  - |
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    fn f() {}
+---
+id: comment-block-ceiling-javascript
+invalid:
+  - |
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    const f = 1;
+---
+id: comment-block-ceiling-typescript
+invalid:
+  - |
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    const f: number = 1;
+---
+id: comment-block-ceiling-python
+invalid:
+  - |
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    f = 1
+---
+id: comment-block-ceiling-bash
+invalid:
+  - |
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    echo hi
+---
+id: comment-block-ceiling-swift
+valid:
+  - |
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    let f = 1
+invalid:
+  - |
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    //
+    let f = 1
+---
+id: comment-block-ceiling-yaml
+invalid:
+  - |
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    key: value
+---
+id: comment-block-ceiling-css
+valid:
+  - |
+    /*
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x */
+    a { color: red; }
+invalid:
+  - |
+    /*
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x */
+    a { color: red; }
+---
+id: comment-block-ceiling-html
+invalid:
+  - |
+    <!--
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x
+    x -->
+    <p>hi</p>

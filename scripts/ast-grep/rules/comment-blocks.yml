@@ -1,0 +1,342 @@
+---
+# Comment blocks stay at or under 25 lines. #804, #744.
+#
+# Two shapes, because a comment block is two different trees. A `/* */` or
+# `<!-- -->` block is one node, so the ceiling is a newline count over its
+# text. A run of `//` or `#` lines is N sibling nodes, so the ceiling is a
+# chain of `follows` relations that matches the 26th line in a run. The
+# `line-N` utils below are that chain, one rung per line; ast-grep's rule
+# language has no repetition operator, so the rungs are written out.
+#
+# Rust `//!` module documentation is exempt. It documents the module rather
+# than a line of code, #744's slices review it file by file, and #807 left
+# `crates/core/src/character.rs` at 65 lines on purpose. `///` item docs are
+# not exempt.
+#
+# 25 is deliberately loose: it is what the tree passes today. Tightening is
+# its own pull request.
+#
+# TOML and PowerShell are absent because ast-grep does not parse them.
+id: comment-block-ceiling-rust
+language: rust
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: line_comment, not: {regex: '^//!'}}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: block_comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-javascript
+language: javascript
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-typescript
+language: typescript
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-python
+language: python
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-bash
+language: bash
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-swift
+language: swift
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: multiline_comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-css
+language: css
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-yaml
+language: yaml
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}
+---
+id: comment-block-ceiling-html
+language: html
+severity: error
+message: Comment block over 25 lines. Compact it, per docs/agents/comments.md.
+utils:
+  line-1: {kind: comment}
+  line-2: {matches: line-1, follows: {matches: line-1, stopBy: neighbor}}
+  line-3: {matches: line-1, follows: {matches: line-2, stopBy: neighbor}}
+  line-4: {matches: line-1, follows: {matches: line-3, stopBy: neighbor}}
+  line-5: {matches: line-1, follows: {matches: line-4, stopBy: neighbor}}
+  line-6: {matches: line-1, follows: {matches: line-5, stopBy: neighbor}}
+  line-7: {matches: line-1, follows: {matches: line-6, stopBy: neighbor}}
+  line-8: {matches: line-1, follows: {matches: line-7, stopBy: neighbor}}
+  line-9: {matches: line-1, follows: {matches: line-8, stopBy: neighbor}}
+  line-10: {matches: line-1, follows: {matches: line-9, stopBy: neighbor}}
+  line-11: {matches: line-1, follows: {matches: line-10, stopBy: neighbor}}
+  line-12: {matches: line-1, follows: {matches: line-11, stopBy: neighbor}}
+  line-13: {matches: line-1, follows: {matches: line-12, stopBy: neighbor}}
+  line-14: {matches: line-1, follows: {matches: line-13, stopBy: neighbor}}
+  line-15: {matches: line-1, follows: {matches: line-14, stopBy: neighbor}}
+  line-16: {matches: line-1, follows: {matches: line-15, stopBy: neighbor}}
+  line-17: {matches: line-1, follows: {matches: line-16, stopBy: neighbor}}
+  line-18: {matches: line-1, follows: {matches: line-17, stopBy: neighbor}}
+  line-19: {matches: line-1, follows: {matches: line-18, stopBy: neighbor}}
+  line-20: {matches: line-1, follows: {matches: line-19, stopBy: neighbor}}
+  line-21: {matches: line-1, follows: {matches: line-20, stopBy: neighbor}}
+  line-22: {matches: line-1, follows: {matches: line-21, stopBy: neighbor}}
+  line-23: {matches: line-1, follows: {matches: line-22, stopBy: neighbor}}
+  line-24: {matches: line-1, follows: {matches: line-23, stopBy: neighbor}}
+  line-25: {matches: line-1, follows: {matches: line-24, stopBy: neighbor}}
+  line-26: {matches: line-1, follows: {matches: line-25, stopBy: neighbor}}
+rule:
+  any:
+    - {kind: comment, regex: '(?s)(\n[^\n]*){25}'}
+    - {matches: line-26}

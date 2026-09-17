@@ -36,7 +36,11 @@ repos:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored
+      # ast-grep takes one rule per YAML document, so its rule and test files
+      # are `---`-separated streams. The flag only stops the count being
+      # policed; every document is still parsed.
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: check-json
       - id: check-toml
         exclude: (^|/)Cargo\.lock$
@@ -76,6 +80,22 @@ repos:
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
         args: ["--ignore-words-list=crate,crates,static,statics"]
         exclude: *vendored
+
+  # Comment block ceiling, from `scripts/ast-grep/rules/`. tree-sitter reads
+  # each language's real grammar, so Swift and the next language to arrive are
+  # understood rather than falling through a prefix table the way #804's
+  # hand-rolled hook did. `ast-grep-rule-tests` is what keeps the rules from
+  # going quietly vacuous: every rule carries a snippet it must reject.
+  #
+  # `--skip-snapshot-tests` because a 26-line block's snapshot is 26 labels of
+  # noise; the valid/invalid verdict is the whole assertion.
+  - repo: https://github.com/boidolr/ast-grep-pre-commit
+    rev: 0.45.3
+    hooks:
+      - id: ast-grep
+        exclude: *vendored
+      - id: ast-grep-rule-tests
+        args: [--skip-snapshot-tests]
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
@@ -125,16 +145,6 @@ repos:
         entry: '[^\x00-\x7F]'
         # Case-insensitive: Windows does not distinguish `.PS1`.
         files: (?i)\.ps1$
-
-      # Comment block ceiling: newly added blocks over 3 lines in changed files.
-      # Fires only on additions, never the existing tree, so it guards the gains
-      # without blocking work that legitimately touches long existing blocks.
-      - id: check-comment-blocks
-        name: Comment blocks ≤3 lines (new blocks only)
-        entry: scripts/hooks/check-comment-blocks.py
-        language: system
-        types: [text]
-        exclude: *vendored
 
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
