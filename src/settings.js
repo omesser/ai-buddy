@@ -322,10 +322,15 @@ async function invokeSettingsEvent(payload) {
   return await window.__TAURI_INTERNALS__.invoke("settings_event", { payload });
 }
 
+// What keeps a press instead of moving the window. `label` and `textarea` are
+// here because this page renders both: a checkbox row is a <label> wrapping its
+// input, and a Multiline row is a <textarea> whose drag has to select text.
+export const CONTROL_SELECTOR = "input, textarea, select, button, summary, pre, label";
+
 // Alt-drag gate predicate: drag begins only when modifier is held AND target is background.
 export function shouldBeginDrag(event) {
   if (!event.altKey) return false;
-  const isControl = event.target.closest("input, select, button, summary, pre");
+  const isControl = event.target.closest(CONTROL_SELECTOR);
   return !isControl;
 }
 
