@@ -126,6 +126,10 @@ const CHAT_SESSION_EVENT: &str = "chat-session";
 /// looking at; first answer wins, never answered here (ADR-0010).
 const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
+/// A forwarded `elicitation/create` form. Same fan-out as a permission ask:
+/// every open Chat surface draws it, the first answer wins.
+const CHAT_ELICITATION_EVENT: &str = "chat-elicitation";
+
 /// The Harness's latest thought, for the strip above the composer. Each one
 /// replaces the last; an empty line is the turn saying it has stopped
 /// thinking, which takes the strip away (ADR-0025).
@@ -146,6 +150,7 @@ const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
 #[derive(Default)]
 struct Pending {
     asks: Vec<harness::PermissionAsk>,
+    forms: Vec<harness::ElicitationForm>,
     /// Whether a surface has already been asked for. Opening posts to the
     /// main thread, so a second ask before that lands would queue a second
     /// focus grab. Cleared when the last ask settles.
@@ -1124,6 +1129,47 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     }
 }
 
+fn forward_form(app: &tauri::AppHandle, form: harness::ElicitationForm) {
+    let Some(state) = app.try_state::<PendingAsks>() else {
+        return;
+    };
+    let Ok(mut pending) = state.0.lock() else {
+        return;
+    };
+    pending.forms.push(form.clone());
+
+    let mut on_screen = false;
+    let mut shut = None;
+    for (label, window) in app.webview_windows() {
+        if !label.starts_with("chat-") {
+            continue;
+        }
+        let _ = app.emit_to(&label, CHAT_ELICITATION_EVENT, &form);
+        if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true) {
+            on_screen = true;
+        } else {
+            shut = Some(label);
+        }
+    }
+    if on_screen {
+        eprintln!(
+            "harness: elicitation `{}`; answer it in the Chat window",
+            form.message
+        );
+        return;
+    }
+    eprintln!(
+        "harness: elicitation `{}`; no Chat surface is on screen",
+        form.message
+    );
+    if do_not_disturb(app) {
+        return;
+    }
+    if !std::mem::replace(&mut pending.opened, true) {
+        show_chat_for_ask(app, shut);
+    }
+}
+
 /// Show the latest thought in every open Chat surface, from whichever
 /// Completer is on the wire — Harness, or HTTP marked reasoning (#611).
 /// Every one: the session is shared and the wire does not say whose turn is on it.
@@ -1156,7 +1202,8 @@ fn settle_ask(app: &tauri::AppHandle, settled: Settled) {
         return;
     };
     pending.asks.retain(|ask| ask.request != settled.request);
-    pending.opened &= !pending.asks.is_empty();
+    pending.forms.retain(|form| form.request != settled.request);
+    pending.opened &= !pending.asks.is_empty() || !pending.forms.is_empty();
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
             let _ = app.emit_to(label, CHAT_PERMISSION_SETTLED_EVENT, &settled);
@@ -1423,6 +1470,19 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
+/// The user's pick on a forwarded elicitation form. `value` is the chosen
+/// option; omitted is Decline, which is a valid answer.
+#[tauri::command]
+fn elicitation_answer(request: String, value: Option<String>) {
+    if let Some(session) = harness::attached() {
+        let answer = match value {
+            Some(value) if !value.is_empty() => harness::ElicitationAnswer::Accept(value),
+            _ => harness::ElicitationAnswer::Decline,
+        };
+        session.answer_elicitation(&request, answer);
+    }
+}
+
 /// Open a clicked reply link in the user's browser. The webview has no
 /// opener; an `<a href>` would navigate the chat window itself. Scheme
 /// gating is `platform::open_url`'s, at the last edge; the URL is untrusted.
@@ -1631,6 +1691,9 @@ fn chat_ready(
         }
         for ask in &pending.asks {
             let _ = app.emit_to(chat_label(&instance), CHAT_PERMISSION_EVENT, ask);
+        }
+        for form in &pending.forms {
+            let _ = app.emit_to(chat_label(&instance), CHAT_ELICITATION_EVENT, form);
         }
     }
     let _ = chat.0.send(ChatMsg::Listening(instance));
@@ -2556,6 +2619,7 @@ fn main() {
             chat_prompt,
             chat_ready,
             permission_answer,
+            elicitation_answer,
             open_link,
             select_harness,
             show_settings,
@@ -2712,6 +2776,7 @@ fn main() {
                 settings.harness_source(),
                 Box::new(move |forwarded| match forwarded {
                     harness::Forwarded::Ask(ask) => forward_ask(&forward_to, ask),
+                    harness::Forwarded::Form(form) => forward_form(&forward_to, form),
                     harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
                     }

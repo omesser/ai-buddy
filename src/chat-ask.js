@@ -95,3 +95,10 @@ export function askSays(ask) {
   }
   return clamp([body, about].filter(Boolean).join("\n"), DETAIL_LIMIT);
 }
+
+// An elicitation form's question. Same flattening as a permission ask: the
+// Harness wrote `message`, and a newline inside it must not forge a line.
+export function elicitSays(form) {
+  const message = clamp(flat(form?.message ?? ""), DETAIL_LIMIT);
+  return message || "The Harness asked a question without saying what for.";
+}

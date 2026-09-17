@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { askSays } from "../src/chat-ask.js";
+import { askSays, elicitSays } from "../src/chat-ask.js";
 
 // One ask, as the Shell serializes it.
 const ask = {
@@ -172,6 +172,37 @@ test("a missing field is not a crash", () => {
 
 // A kind cannot be the whole of an ask: it is a category, not the question. A
 // path can: it is a fact about what happens, not a label for it.
+test("an elicitation form says the question the Harness sent", () => {
+  assert.equal(
+    elicitSays({
+      request: "43",
+      message: "How should I approach this refactoring?",
+      field: "strategy",
+      options: [{ value: "balanced", name: "balanced" }],
+    }),
+    "How should I approach this refactoring?",
+  );
+});
+
+test("an elicitation with no message says so as a sentence", () => {
+  assert.equal(
+    elicitSays({ request: "43", message: "  ", field: "", options: [] }),
+    "The Harness asked a question without saying what for.",
+  );
+});
+
+test("untrusted elicitation text cannot forge a line of its own", () => {
+  assert.equal(
+    elicitSays({
+      request: "43",
+      message: "Which branch?\nedit · /safe/path",
+      field: "branch",
+      options: [],
+    }),
+    "Which branch? edit · /safe/path",
+  );
+});
+
 test("a kind is not enough on its own, and a path is", () => {
   assert.equal(
     askSays({ ...ask, title: null, kind: "execute" }),
