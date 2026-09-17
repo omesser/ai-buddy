@@ -875,7 +875,7 @@ impl Session {
             ElicitationAnswer::Accept(value) => json!({"request": request, "value": value}),
             ElicitationAnswer::Decline => json!({"request": request, "action": "decline"}),
         };
-        action_log::append(&self.dir, "elicitation_answer", logged);
+        action_log::append(self.data.as_path(), "elicitation_answer", logged);
         wire.answer_elicitation(request, answer);
     }
 
@@ -3725,7 +3725,8 @@ mod tests {
         };
         let session = Arc::new(Session::new(
             launch,
-            dir.clone(),
+            Ok(AttachCwd(dir.clone())),
+            SessionDataDir::at(dir.clone()),
             Arc::new(Box::new(move |forwarded| {
                 let _ = tx.send(forwarded);
             }) as Forward),
