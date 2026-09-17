@@ -889,7 +889,7 @@ fn overlay_secondary(down: bool) {
 
 /// Whether reporting an off-art rectangle would actually win the click (#547).
 /// Asked once at startup: a lane property, not a window. Replaces a UA sniff
-/// that agrees today and parts when X11 or Windows unions off-art rects.
+/// that said "macOS" when the question is hotspot hit-testing — two facts that agree today and would part the moment X11 or Windows unions off-art rects into its input region.
 #[tauri::command]
 fn overlay_hit_tests_hotspots() -> bool {
     platform::hotspots_hit_tested()
