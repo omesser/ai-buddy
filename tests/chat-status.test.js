@@ -148,6 +148,45 @@ test("a Harness that never came up says so rather than claiming the turn", () =>
   assert.equal(mindLine(opening), "hermes · not running");
 });
 
+// #726: a missing launcher is not a child that died. Settings already names
+// the binary (`harness_state`); the header used to say only `not running`.
+test("a missing launcher names the binary rather than a dead child", () => {
+  for (const name of ["claude", "codex", "pi"]) {
+    const opening = {
+      ...http,
+      harness: {
+        name,
+        session: null,
+        alive: false,
+        login: null,
+        missing: "npx",
+      },
+    };
+    assert.equal(
+      mindLine(opening),
+      `${name} · \`npx\` is not installed`,
+      `${name} is an npx adapter, so the header has to name npx`,
+    );
+  }
+});
+
+test("a missing first-party CLI names that binary, not npx", () => {
+  const opening = {
+    ...http,
+    harness: {
+      name: "cursor-agent",
+      session: null,
+      alive: false,
+      login: null,
+      missing: "cursor-agent",
+    },
+  };
+  assert.equal(
+    mindLine(opening),
+    "cursor-agent · `cursor-agent` is not installed",
+  );
+});
+
 test("not signed in outranks the session, and names the login command", () => {
   const opening = {
     ...http,

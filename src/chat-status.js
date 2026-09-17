@@ -149,8 +149,10 @@ function cleanName(raw) {
 }
 
 // Which mind answers this window, for the header beside who you are talking
-// to. A statement and never a control. The branches are
-// `settings::harness_state`'s, in its order, so the two windows cannot disagree.
+// to. A statement and never a control. The branches follow
+// `settings::harness_state`'s order, including the missing-CLI state #659
+// added there. Chat used to drop `missing` and say `not running` for an
+// install the user could still make (#726).
 export function mindLine(opening) {
   if (!opening) {
     return "";
@@ -167,6 +169,9 @@ export function mindLine(opening) {
   }
   if (harness.login) {
     return `${harness.name} · not signed in — \`${harness.login}\``;
+  }
+  if (harness.missing) {
+    return `${harness.name} · \`${harness.missing}\` is not installed`;
   }
   if (!harness.alive) {
     return `${harness.name} · not running`;

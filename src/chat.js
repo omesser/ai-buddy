@@ -3,6 +3,7 @@
 // holds no authoritative state; the Shell owns the session behind it.
 
 import { askSays, elicitSays } from "./chat-ask.js";
+import { canAnswer, landingCopy } from "./chat-connect.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
@@ -289,12 +290,12 @@ function elicited(form) {
   return add(row);
 }
 
-// Whether anything can answer, and what to say when nothing can. Four reasons
-// need different messages: never configured, switched off, not signed in, and
-// ready. The composer is disabled rather than hidden, so it reads as waiting.
+// Whether anything can answer, and what to say when nothing can. Ready is
+// `canAnswer`: configured is not enough when the launcher is missing or the
+// child never came up (#726). The composer is disabled rather than hidden,
+// so it reads as waiting.
 function attached(opening) {
-  const ready = opening.configured && opening.enabled && !opening.login;
-  const needsAuth = opening.configured && opening.enabled && opening.login;
+  const ready = canAnswer(opening);
   const isHttpMode = opening.configured && !opening.harness_name;
 
   empty.hidden = ready;
@@ -327,32 +328,16 @@ function attached(opening) {
     const lede = document.getElementById("landing-lede");
     const command = document.getElementById("landing-command");
     const hint = document.getElementById("landing-hint");
+    const copy = landingCopy(opening);
 
-    if (needsAuth) {
-      const displayNames = {
-        claude: "Claude Code",
-        codex: "Codex",
-        "cursor-agent": "Cursor",
-        grok: "Grok",
-        opencode: "OpenCode",
-        hermes: "Hermes",
-        pi: "Pi",
-      };
-      const harnessName = displayNames[opening.harness_name] || opening.harness_name || "The Harness";
-      title.textContent = `${harnessName} needs login`;
-      lede.textContent = `${harnessName} needs login, or you can switch to a different Harness:`;
-      command.textContent = opening.login;
+    title.textContent = copy.title;
+    lede.textContent = copy.lede;
+    if (copy.command) {
+      command.textContent = copy.command;
       command.hidden = false;
-      hint.textContent = "Or run this in your terminal:";
+      hint.textContent = copy.hint;
       hint.hidden = false;
-    } else if (!opening.configured) {
-      title.textContent = "Connect a Harness to get started";
-      lede.textContent = "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.";
-      command.hidden = true;
-      hint.hidden = true;
     } else {
-      title.textContent = "Chat is switched off";
-      lede.textContent = "Turn AI back on in Settings, or connect a Harness below.";
       command.hidden = true;
       hint.hidden = true;
     }
@@ -361,9 +346,10 @@ function attached(opening) {
   return ready;
 }
 
-// Connect button: make that Harness the Completer source and say how to sign
-// it in. The click never starts the sign-in: the Harness authenticates itself
-// in the user's own terminal, and ai-buddy holds no credential.
+// Connect button: make that Harness the Completer source. The landing
+// and header paint from the opening `ReloadChat` pushes. The click never
+// starts the sign-in: the Harness authenticates itself in the user's own
+// terminal, and ai-buddy holds no credential.
 for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
@@ -372,16 +358,10 @@ for (const btn of document.querySelectorAll(".connect-btn")) {
     // Nothing is repainted here: the pick goes through `SettingsSession::apply`,
     // whose `ReloadChat` pushes a full opening to the `chat-opening` listener.
     // A second read from this side would race that push.
-    invoke("select_harness", { harness })
-      .then((login) => {
-        note(
-          `${label} is the AI brain now. Run \`${login}\` in a terminal to sign in — ai-buddy never asks for it.`,
-        );
-      })
-      .catch((why) => {
-        console.error(`connect failed:`, why);
-        note(`Could not connect to ${label}: ${why}.`);
-      });
+    invoke("select_harness", { harness }).catch((why) => {
+      console.error(`connect failed:`, why);
+      note(`Could not connect to ${label}: ${why}.`);
+    });
   });
 }
 

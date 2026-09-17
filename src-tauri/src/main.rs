@@ -1300,6 +1300,10 @@ struct ChatHarness {
     /// than a missing label.
     alive: bool,
     session: Option<String>,
+    /// The binary `PATH` has not got, when that is why nothing is running.
+    /// Settings already names it (#659). Chat used to drop it and say
+    /// `not running` (#726).
+    missing: Option<String>,
 }
 
 fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
@@ -1308,6 +1312,7 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
         login: attached.login.clone(),
         alive: attached.alive,
         session: attached.session_id.clone(),
+        missing: attached.missing.clone(),
     })
 }
 
@@ -2782,6 +2787,11 @@ fn main() {
                     }
                     harness::Forwarded::Thought(line) => show_thought(&forward_to, line),
                     harness::Forwarded::Plan(steps) => show_plan(&forward_to, &steps),
+                    harness::Forwarded::AttachSettled => {
+                        if let Some(state) = forward_to.try_state::<SettingsState>() {
+                            let _ = state.ops.send(SettingsOp::ReloadChat);
+                        }
+                    }
                 }),
             );
             // The other lane's thoughts, through the same door. Only one lane
@@ -3169,6 +3179,33 @@ mod tests {
         assert_eq!(harness.session.as_deref(), Some("sess-7"));
         assert!(!harness.alive, "a handle that never answered is not alive");
         assert_eq!(harness.login, None);
+        assert_eq!(harness.missing, None);
+    }
+
+    /// #726: Settings already names a missing launcher. Chat has to carry
+    /// the same fact or the header can only say `not running`.
+    #[test]
+    fn chat_opening_carries_a_missing_launcher() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let inspect = model::DirectorInspect {
+            harness: Some(crate::harness::HarnessInspect {
+                name: "codex".to_string(),
+                missing: Some("npx".to_string()),
+                alive: false,
+                ..Default::default()
+            }),
+            ..stub_inspect()
+        };
+
+        let harness = chat_opening_from(instance, &inspect, "")
+            .harness
+            .expect("the opening carries the attachment");
+        assert_eq!(harness.name, "codex");
+        assert_eq!(harness.missing.as_deref(), Some("npx"));
+        assert!(!harness.alive);
     }
 
     /// The HTTP half, and the rule that guards it: ADR-0010 forbids drawing a

@@ -255,7 +255,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             None if !attached.alive => match &attached.missing {
                 Some(command) => format!(
                     "`{command}` is not installed, so {} is not running and the AI runs on \
-                     static weights. ai-buddy does not bundle a Harness - install it, or Model \
+                     static weights. ai-buddy does not bundle `{command}` - install it, or Model \
                      API above hands the HTTP endpoint back.",
                     attached.name
                 ),
@@ -4036,7 +4036,11 @@ mod tests {
         let line = harness_state(Some(&missing));
         assert!(line.contains("not installed"), "got {line:?}");
         assert!(line.contains("`npx`"), "got {line:?}");
-        assert!(line.contains("does not bundle"), "got {line:?}");
+        assert!(line.contains("does not bundle `npx`"), "got {line:?}");
+        assert!(
+            !line.contains("bundle a Harness"),
+            "should name the command, not 'a Harness', got {line:?}"
+        );
         assert!(
             !line.contains("os error") && !line.to_lowercase().contains("no such file"),
             "an errno is not a sentence, got {line:?}"
@@ -4044,6 +4048,32 @@ mod tests {
         assert!(
             line.contains("Model API above"),
             "the line has to name the way back, got {line:?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_first_party_cli_names_that_binary_not_npx() {
+        let missing = crate::harness::HarnessInspect {
+            name: "cursor-agent".to_string(),
+            command: "cursor-agent".to_string(),
+            missing: Some("cursor-agent".to_string()),
+            alive: false,
+            ..Default::default()
+        };
+        let line = harness_state(Some(&missing));
+        assert!(line.contains("not installed"), "got {line:?}");
+        assert!(line.contains("`cursor-agent`"), "got {line:?}");
+        assert!(
+            line.contains("does not bundle `cursor-agent`"),
+            "got {line:?}"
+        );
+        assert!(
+            !line.contains("`npx`"),
+            "should not mention npx, got {line:?}"
+        );
+        assert!(
+            !line.contains("bundle a Harness"),
+            "should name the command, not 'a Harness', got {line:?}"
         );
     }
 
