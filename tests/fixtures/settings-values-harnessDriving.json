@@ -33,6 +33,7 @@
   "instances": "BMO (bmo)\nBoo (ghost)",
   "launch": false,
   "mcp_bin": "",
+  "harness_cwd": "",
   "memory_path": "/Users/fixture/Library/Application Support/ai-buddy/memory",
   "new_character": "",
   "new_name": "",

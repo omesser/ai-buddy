@@ -177,6 +177,10 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
             form::MCP_BIN_ID.to_string(),
             model::env_or_file(crate::harness::MCP_BIN, &settings.mcp_bin),
         ),
+        (
+            form::HARNESS_CWD_ID.to_string(),
+            model::env_or_file(crate::harness::CWD, &settings.harness_cwd),
+        ),
     ])
 }
 
@@ -758,19 +762,28 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 
 /// Whether the Harness this process would spawn is not the one it has. #500.
 ///
+/// Identity is `Target` (Launch plus resolved cwd), not Launch alone (#782).
 /// The saved row alone cannot answer it: `AI_BUDDY_HARNESS` owns the row, so
 /// clearing the file under an export changes the setting and nothing else. And
 /// two rows can name one Harness — the `hermes` preset and a custom
 /// `hermes acp` join to the same `Launch` — which is a pick that must not kill
 /// a child and open it again.
 fn harness_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
-    if !harness_source_changed(settings, patch) {
+    let source_changed = harness_source_changed(settings, patch);
+    let cwd_raw_changed = patch
+        .harness_cwd
+        .as_ref()
+        .is_some_and(|cwd| cwd != &settings.harness_cwd);
+    if !source_changed && !cwd_raw_changed {
         return false;
     }
     let mut next = settings.clone();
     next.apply(patch.clone());
-    crate::harness::from_settings(next.harness_source().as_deref())
-        != crate::harness::from_settings(settings.harness_source().as_deref())
+    crate::harness::Target::from_settings(next.harness_source().as_deref(), &next.harness_cwd)
+        != crate::harness::Target::from_settings(
+            settings.harness_source().as_deref(),
+            &settings.harness_cwd,
+        )
 }
 
 /// Whether an already-open Chat surface must hear a new opening.
@@ -1040,7 +1053,10 @@ impl SettingsSession {
         let mut dropped_harness = false;
         if move_harness {
             crate::harness::retarget(
-                snapshot.harness_source().as_deref(),
+                crate::harness::Target::from_settings(
+                    snapshot.harness_source().as_deref(),
+                    &snapshot.harness_cwd,
+                ),
                 model::director_in_force(snapshot.director_enabled),
             );
             dropped_harness = crate::harness::attached().is_none();
@@ -1160,6 +1176,7 @@ pub struct SettingsPatch {
     pub harness_turn_timeout_secs: Option<String>,
     pub byo_harness: Option<String>,
     pub mcp_bin: Option<String>,
+    pub harness_cwd: Option<String>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
@@ -1237,6 +1254,7 @@ pub enum TextField {
     /// and nothing else: no launch reads it (#577).
     ByoHarness,
     McpBin,
+    HarnessCwd,
     ExcludedApplications,
 }
 
@@ -1302,6 +1320,7 @@ impl SettingsPatch {
             // terminal carries the space that follows it.
             TextField::ByoHarness => self.byo_harness = Some(value.trim().to_string()),
             TextField::McpBin => self.mcp_bin = Some(value.trim().to_string()),
+            TextField::HarnessCwd => self.harness_cwd = Some(value.trim().to_string()),
             TextField::DirectorApiKey if key_was_typed(value) => {
                 self.director_api_key = Some(value.to_string())
             }
@@ -1344,6 +1363,7 @@ impl fmt::Debug for SettingsPatch {
             .field("harness_turn_timeout_secs", &self.harness_turn_timeout_secs)
             .field("byo_harness", &self.byo_harness)
             .field("mcp_bin", &self.mcp_bin)
+            .field("harness_cwd", &self.harness_cwd)
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
@@ -1459,6 +1479,9 @@ impl Settings {
         }
         if let Some(value) = patch.mcp_bin {
             self.mcp_bin = value;
+        }
+        if let Some(value) = patch.harness_cwd {
+            self.harness_cwd = value;
         }
         if let Some(value) = patch.trace_frames {
             self.trace_frames = value;
@@ -1597,6 +1620,9 @@ pub struct Settings {
     /// the app binary's own `--mcp-stdio` (#166). For power users and CI,
     /// which is why it is a Development row and not a Director one.
     pub mcp_bin: String,
+    /// ACP cwd / spawn dir. Empty is `$HOME`. Session file and Action Log stay
+    /// in the data folder (#782).
+    pub harness_cwd: String,
     /// Development switches. Off is the shipped answer for all of them; see
     /// `dev_flags`, which holds the live value each read site loads.
     pub trace_frames: bool,
@@ -1646,6 +1672,7 @@ impl Default for Settings {
             harness_turn_timeout_secs: String::new(),
             byo_harness: String::new(),
             mcp_bin: String::new(),
+            harness_cwd: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -1899,6 +1926,7 @@ mod tests {
             harness_turn_timeout_secs: "90".into(),
             byo_harness: "hermes".into(),
             mcp_bin: "/opt/ai-buddy-mcp".into(),
+            harness_cwd: String::new(),
             trace_frames: true,
             trace_hittest: true,
             trace_director: true,
@@ -2106,6 +2134,10 @@ mod tests {
             "a file from before the setting stays audible"
         );
         assert!(settings.hide_in_fullscreen);
+        assert!(
+            settings.harness_cwd.is_empty(),
+            "a file from before the row is empty, which is $HOME"
+        );
         let _ = fs::remove_file(&path);
     }
 
@@ -2203,6 +2235,7 @@ mod tests {
             harness_turn_timeout_secs: String::new(),
             byo_harness: String::new(),
             mcp_bin: String::new(),
+            harness_cwd: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -3403,12 +3436,14 @@ mod tests {
         assert!(patch.set_text(TextField::HarnessTurnTimeoutSecs, "90"));
         assert!(patch.set_text(TextField::HarnessAuthRetrySecs, "5"));
         assert!(patch.set_text(TextField::McpBin, "  /tmp/ai-buddy-mcp  "));
+        assert!(patch.set_text(TextField::HarnessCwd, "  /tmp/project  "));
 
         let mut settings = Settings::default();
         settings.apply(patch);
         assert_eq!(settings.harness_turn_timeout_secs, "90");
         assert_eq!(settings.harness_auth_retry_secs, "5");
         assert_eq!(settings.mcp_bin, "/tmp/ai-buddy-mcp");
+        assert_eq!(settings.harness_cwd, "/tmp/project");
     }
 
     /// The row is the Director tab's, and the window fills it from the same
@@ -3428,6 +3463,29 @@ mod tests {
             let view = endpoint_view(&file);
             assert_eq!(view.development_texts[form::DIRECTOR_WAKE_SECS_ID], "30");
             std::env::remove_var(model::WAKE_SECS);
+        });
+    }
+
+    #[test]
+    fn the_view_shows_the_working_directory_the_env_imposes() {
+        model::tests::with_env(None, None, None, || {
+            let file = Settings {
+                harness_cwd: "/tmp/from-the-file".into(),
+                ..Settings::default()
+            };
+            let view = endpoint_view(&file);
+            assert_eq!(
+                view.development_texts[form::HARNESS_CWD_ID],
+                "/tmp/from-the-file"
+            );
+
+            std::env::set_var(crate::harness::CWD, "/tmp/from-the-env");
+            let view = endpoint_view(&file);
+            assert_eq!(
+                view.development_texts[form::HARNESS_CWD_ID],
+                "/tmp/from-the-env"
+            );
+            std::env::remove_var(crate::harness::CWD);
         });
     }
 
@@ -3831,6 +3889,34 @@ mod tests {
             assert!(
                 !harness_retargets(&settings, &patch),
                 "the Harness behind it did not"
+            );
+        });
+    }
+
+    #[test]
+    fn a_cwd_that_resolves_differently_retargets_and_empty_vs_home_stands() {
+        crate::model::tests::with_harness(None, || {
+            let settings = Settings {
+                harness: "hermes".into(),
+                ..Settings::default()
+            };
+            let mut other = SettingsPatch::default();
+            other.set_text(TextField::HarnessCwd, "/tmp/other-project");
+            assert!(harness_retargets(&settings, &other));
+
+            let mut same_empty = SettingsPatch::default();
+            same_empty.set_text(TextField::HarnessCwd, "");
+            assert!(
+                !harness_retargets(&settings, &same_empty),
+                "the raw row did not move"
+            );
+
+            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            let mut home_patch = SettingsPatch::default();
+            home_patch.set_text(TextField::HarnessCwd, &home.to_string_lossy());
+            assert!(
+                !harness_retargets(&settings, &home_patch),
+                "empty and an explicit home path resolve equal"
             );
         });
     }

@@ -38,6 +38,12 @@ pub fn data_dir() -> PathBuf {
         .join("ai-buddy")
 }
 
+/// `$HOME` is where `claude mcp add` lands outside a project. `None` must not
+/// fall through to `data_dir` (#782).
+pub fn home_dir() -> Option<PathBuf> {
+    dirs::home_dir()
+}
+
 /// The one file every Instance and every Harness shares, named here rather than
 /// by each caller so it cannot quietly become two paths, which would look like
 /// a buddy that forgot. `AI_BUDDY_MEMORY` overrides it for tests and the probe.
@@ -296,6 +302,18 @@ mod tests {
         assert_eq!(
             data_dir().join("memory.md").file_name().unwrap(),
             "memory.md"
+        );
+    }
+
+    #[test]
+    fn home_dir_is_not_the_data_folder() {
+        let Some(home) = home_dir() else {
+            return;
+        };
+        assert_ne!(
+            home,
+            data_dir(),
+            "missing HOME must not fall through to data_dir (#782)"
         );
     }
 

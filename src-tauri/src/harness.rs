@@ -3,6 +3,7 @@
 //! (ADR-0008, ADR-0010). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,6 +26,8 @@ pub use crate::acp_wire::{PermissionAsk, PlanStep};
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
 pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
+/// Spawn `current_dir` and ACP session cwd. Empty is `$HOME` (#782).
+pub(crate) const CWD: &str = "AI_BUDDY_HARNESS_CWD";
 /// How long an unauthenticated Harness is left alone, in seconds. Named here
 /// so the Development row it owns can print it.
 pub(crate) const AUTH_RETRY_SECS: &str = "AI_BUDDY_HARNESS_AUTH_RETRY_SECS";
@@ -144,15 +147,117 @@ impl Launch {
     /// The child, inheriting our environment untouched. ADR-0010. No provider
     /// key, no `CLAUDE_CONFIG_DIR`, no `--bare`. Own process group once
     /// `own_interrupt` has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
-    fn command(&self, cwd: &Path) -> Command {
+    fn command(&self, cwd: &AttachCwd) -> Command {
         let mut command = Command::new(&self.argv[0]);
-        command.args(&self.argv[1..]).current_dir(cwd);
+        command.args(&self.argv[1..]).current_dir(cwd.as_path());
         isolate_from_interrupt(&mut command);
         command
     }
 
     fn line(&self) -> String {
         self.argv.join(" ")
+    }
+}
+
+/// Spawn `current_dir` and ACP session cwd. User-owned. Never `create_dir_all`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AttachCwd(PathBuf);
+
+/// Directory we own. `create_dir_all` OK. Session file and Action Log.
+struct SessionDataDir(PathBuf);
+
+/// Retarget identity. Launch alone would Stand on a cwd-only edit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Target {
+    launch: Launch,
+    cwd: Result<AttachCwd, CwdError>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CwdError {
+    NoHome,
+    Relative(PathBuf),
+}
+
+impl fmt::Display for CwdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CwdError::NoHome => write!(f, "home directory is unset"),
+            CwdError::Relative(path) => write!(f, "{}", path.display()),
+        }
+    }
+}
+
+fn attach_cwd_display(cwd: &Result<AttachCwd, CwdError>) -> String {
+    match cwd {
+        Ok(cwd) => cwd.as_path().display().to_string(),
+        Err(error) => error.to_string(),
+    }
+}
+
+impl AttachCwd {
+    fn resolve(raw: &str) -> Result<Self, CwdError> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return ai_buddy_core::memory::home_dir()
+                .map(Self)
+                .ok_or(CwdError::NoHome);
+        }
+        let path = PathBuf::from(trimmed);
+        if !path.is_absolute() {
+            return Err(CwdError::Relative(path));
+        }
+        Ok(Self(path))
+    }
+
+    fn as_path(&self) -> &Path {
+        &self.0
+    }
+
+    /// Existing directory, else spawn names this path. Do not create it.
+    fn checked(&self) -> Result<(), SpawnError> {
+        if self.0.is_dir() {
+            Ok(())
+        } else {
+            Err(SpawnError::Failed(self.0.display().to_string()))
+        }
+    }
+}
+
+impl SessionDataDir {
+    fn app() -> Self {
+        Self(ai_buddy_core::memory::data_dir())
+    }
+
+    fn probe() -> Self {
+        Self(ai_buddy_core::memory::data_dir().join("probe"))
+    }
+
+    #[cfg(test)]
+    fn at(path: PathBuf) -> Self {
+        Self(path)
+    }
+
+    fn ensure(&self) -> Result<(), SpawnError> {
+        std::fs::create_dir_all(&self.0)
+            .map_err(|why| SpawnError::Failed(format!("{}: {why}", self.0.display())))
+    }
+
+    fn as_path(&self) -> &Path {
+        &self.0
+    }
+
+    fn join(&self, name: &str) -> PathBuf {
+        self.0.join(name)
+    }
+}
+
+impl Target {
+    pub fn from_settings(source: Option<&str>, cwd_row: &str) -> Option<Self> {
+        from_settings(source).map(|launch| Self {
+            launch,
+            cwd: AttachCwd::resolve(&crate::model::env_or_file(CWD, cwd_row)),
+        })
     }
 }
 
@@ -308,7 +413,8 @@ type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
 /// per Character Instance identity.
 pub struct Session {
     launch: Launch,
-    dir: PathBuf,
+    cwd: Result<AttachCwd, CwdError>,
+    data: SessionDataDir,
     forward: Arc<Forward>,
     timeout: Duration,
     auth_retry: Duration,
@@ -394,7 +500,12 @@ impl Drop for Serving<'_> {
 }
 
 impl Session {
-    pub fn new(launch: Launch, dir: PathBuf, forward: Arc<Forward>) -> Self {
+    fn new(
+        launch: Launch,
+        cwd: Result<AttachCwd, CwdError>,
+        data: SessionDataDir,
+        forward: Arc<Forward>,
+    ) -> Self {
         let inspect = HarnessInspect {
             name: launch.name.clone(),
             command: launch.line(),
@@ -402,7 +513,8 @@ impl Session {
         };
         Self {
             launch,
-            dir,
+            cwd,
+            data,
             forward,
             timeout: turn_timeout(),
             auth_retry: crate::dev_flags::harness_auth_retry_secs()
@@ -436,6 +548,13 @@ impl Session {
     pub fn with_backoff(mut self, first: Duration) -> Self {
         self.backoff_first = first;
         self
+    }
+
+    fn target(&self) -> Target {
+        Target {
+            launch: self.launch.clone(),
+            cwd: self.cwd.clone(),
+        }
     }
 
     fn backoff(&self, failures: u32) -> Duration {
@@ -569,7 +688,7 @@ impl Session {
                 // A cap-ended turn is logged as what was shown and why there
                 // was no more of it, the same pair the HTTP lane writes.
                 action_log::append(
-                    &self.dir,
+                    self.data.as_path(),
                     "turn",
                     match reply.truncated {
                         true => json!({"text": reply.text, "stop": "max_tokens"}),
@@ -580,7 +699,11 @@ impl Session {
             }
             Err(TurnError::Lost) => Err(LOST.to_string()),
             Err(TurnError::Timeout) => {
-                action_log::append(&self.dir, "timeout", json!({"session_id": session_id}));
+                action_log::append(
+                    self.data.as_path(),
+                    "timeout",
+                    json!({"session_id": session_id}),
+                );
                 Err(format!(
                     "harness turn exceeded {}s; cancelled",
                     self.timeout.as_secs()
@@ -593,7 +716,7 @@ impl Session {
                 let withdrawn_for = self.claim_withdrawn_turn(&request.instance, &reason);
                 withdrawn = withdrawn_for.is_some();
                 action_log::append(
-                    &self.dir,
+                    self.data.as_path(),
                     "turn",
                     json!({"stop": reason, "withdrawn_for": withdrawn_for}),
                 );
@@ -601,7 +724,7 @@ impl Session {
             }
             Err(TurnError::Busy) => Err("harness busy".to_string()),
             Err(TurnError::Failed(why)) => {
-                action_log::append(&self.dir, "turn", json!({"error": why}));
+                action_log::append(self.data.as_path(), "turn", json!({"error": why}));
                 Err(format!("harness: {why}"))
             }
         };
@@ -627,7 +750,7 @@ impl Session {
         // from anything here. One child serves every buddy, so the process is
         // not whose wake this is.
         action_log::append(
-            &self.dir,
+            self.data.as_path(),
             "prompt",
             json!({
                 "session_id": session_id,
@@ -685,7 +808,7 @@ impl Session {
     /// A `parsed` with no line of its own would join the last logged wake.
     fn refused(&self, request: &WakeRequest, why: &str) -> String {
         action_log::append(
-            &self.dir,
+            self.data.as_path(),
             "refused",
             json!({
                 "instance": request.instance,
@@ -726,7 +849,7 @@ impl Session {
             return;
         };
         action_log::append(
-            &self.dir,
+            self.data.as_path(),
             "permission_answer",
             json!({"request": request, "option": option}),
         );
@@ -807,14 +930,20 @@ impl Session {
     }
 
     fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Wire>, SpawnError> {
-        std::fs::create_dir_all(&self.dir)
-            .map_err(|why| SpawnError::Failed(format!("{}: {why}", self.dir.display())))?;
-        let dir = self.dir.clone();
+        let cwd = match &self.cwd {
+            Ok(cwd) => {
+                cwd.checked()?;
+                cwd
+            }
+            Err(error) => return Err(SpawnError::Failed(error.to_string())),
+        };
+        self.data.ensure()?;
+        let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
         let spawned = Wire::spawn(
-            self.launch.command(&self.dir),
+            self.launch.command(cwd),
             self.attach_timeout(),
-            Box::new(move |event| note_event(&dir, &forward, event)),
+            Box::new(move |event| note_event(&data, &forward, event)),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -867,7 +996,12 @@ impl Session {
             .then(|| self.saved_id(key))
             .flatten();
         let mcp = mcp_server(&state.handshake);
-        let id = match wire.open(saved.clone(), &self.dir, mcp.clone(), self.attach_timeout()) {
+        let cwd = self
+            .cwd
+            .as_ref()
+            .map_err(|error| error.to_string())?
+            .as_path();
+        let id = match wire.open(saved.clone(), cwd, mcp.clone(), self.attach_timeout()) {
             Ok(id) => id,
             Err(OpenError::Lost) => {
                 self.lost(wire, state);
@@ -896,7 +1030,7 @@ impl Session {
         });
         self.save_session(key, &id);
         action_log::append(
-            &self.dir,
+            self.data.as_path(),
             "attach",
             // The label, never the choice. An `McpChoice::Http` carries the
             // loopback token and the Action Log is a file on disk.
@@ -910,7 +1044,7 @@ impl Session {
     }
 
     fn read_saved(&self) -> Option<SavedSession> {
-        let text = std::fs::read_to_string(self.dir.join(SESSION_FILE)).ok()?;
+        let text = std::fs::read_to_string(self.data.join(SESSION_FILE)).ok()?;
         serde_json::from_str(&text).ok()
     }
 
@@ -979,7 +1113,7 @@ impl Session {
         };
         record.sessions.retain(|slot| slot.instance != instance);
         if let Ok(text) = serde_json::to_string(&record) {
-            let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
+            let _ = std::fs::write(self.data.join(SESSION_FILE), format!("{text}\n"));
         }
     }
 
@@ -989,7 +1123,7 @@ impl Session {
         };
         record.sessions.retain(|slot| slot.key() != *key);
         if let Ok(text) = serde_json::to_string(&record) {
-            let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
+            let _ = std::fs::write(self.data.join(SESSION_FILE), format!("{text}\n"));
         }
     }
 
@@ -1013,7 +1147,7 @@ impl Session {
             }),
         }
         if let Ok(text) = serde_json::to_string(&record) {
-            let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
+            let _ = std::fs::write(self.data.join(SESSION_FILE), format!("{text}\n"));
         }
     }
 }
@@ -1055,16 +1189,17 @@ pub fn run_probe() -> i32 {
     crate::dev_flags::seed(&crate::settings::Settings::default());
     // The probe loads no settings file, so the exported variable is the only
     // source it has.
-    let Some(launch) = from_settings(None) else {
+    let Some(target) = Target::from_settings(None, "") else {
         eprintln!("probe-harness: {VAR} is unset, so there is no Harness to attach");
         return 2;
     };
     let session = Arc::new(Session::new(
-        launch,
+        target.launch,
+        target.cwd,
         // The probe's own folder keeps the session file and Action Log out of a
         // real install. Memory cannot be isolated. The MCP server resolves it
         // from the data folder, so a probe `remember` writes the real `memory.md`.
-        ai_buddy_core::memory::data_dir().join("probe"),
+        SessionDataDir::probe(),
         // Named, never answered. Only a click on the Chat surface may answer a
         // permission request (ADR-0017), and the probe has no surface. The ask
         // times out with the turn, which is itself the report.
@@ -1102,7 +1237,8 @@ fn probe(session: &Session) -> i32 {
     println!("probe-harness");
     println!("  harness      {}", session.launch.name);
     println!("  command      {}", session.launch.line());
-    println!("  dir          {}", session.dir.display());
+    println!("  cwd          {}", attach_cwd_display(&session.cwd));
+    println!("  data         {}", session.data.as_path().display());
     println!(
         "  timeout      turn {}s, attach {}s",
         session.timeout.as_secs(),
@@ -1255,7 +1391,7 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
     let session = attached();
     let dir = session
         .as_ref()
-        .map(|session| session.dir.clone())
+        .map(|session| session.data.as_path().to_path_buf())
         .unwrap_or_else(ai_buddy_core::memory::data_dir);
     // Asked here rather than carried through `crates/core`. The caller has the
     // wake and not the words, and this already holds the session that knows
@@ -1472,22 +1608,23 @@ fn attachment() -> MutexGuard<'static, Attachment> {
 /// Read the source, the variable, else `saved` from Settings, and hold the
 /// Session until the row moves it or the process exits. Process-global because
 /// the session is one per app (ADR-0008) and a Retarget rebuilds `DirectorSettings`.
-pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
+pub fn attach(target: Option<Target>, forward: Forward) -> Option<Arc<Session>> {
     let mut slot = attachment();
     if slot.forward.is_some() {
         return slot.session.clone();
     }
     let forward = Arc::new(forward);
     slot.forward = Some(Arc::clone(&forward));
-    slot.session = open(from_settings(saved.as_deref()), forward);
+    slot.session = open(target, forward);
     slot.session.clone()
 }
 
-fn open(launch: Option<Launch>, forward: Arc<Forward>) -> Option<Arc<Session>> {
-    launch.map(|launch| {
+fn open(target: Option<Target>, forward: Arc<Forward>) -> Option<Arc<Session>> {
+    target.map(|target| {
         Arc::new(Session::new(
-            launch,
-            ai_buddy_core::memory::data_dir(),
+            target.launch,
+            target.cwd,
+            SessionDataDir::app(),
             forward,
         ))
     })
@@ -1503,34 +1640,33 @@ enum Reattach {
     /// one earned and respawn on every Apply.
     Stand,
     Drop,
-    Open(Launch),
+    Open(Target),
 }
 
-fn reattach(attached: Option<&Launch>, wanted: Option<Launch>) -> Reattach {
+fn reattach(attached: Option<&Target>, wanted: Option<Target>) -> Reattach {
     match wanted {
         None if attached.is_none() => Reattach::Stand,
         None => Reattach::Drop,
-        Some(launch) if attached == Some(&launch) => Reattach::Stand,
-        Some(launch) => Reattach::Open(launch),
+        Some(target) if attached == Some(&target) => Reattach::Stand,
+        Some(target) => Reattach::Open(target),
     }
 }
 
 /// Re-open the attachment for the Completer source now in force.
 /// A wire that dies is the Session's own business. `spawning` is the
 /// Director's switch, so a session no wake will reach is not opened.
-pub fn retarget(saved: Option<&str>, spawning: bool) {
-    let wanted = from_settings(saved);
+pub fn retarget(wanted: Option<Target>, spawning: bool) {
     let mut slot = attachment();
     // The probe and the tests never call `attach`, so there is no forward to
     // rebuild a Session with and nothing of theirs to move.
     let Some(forward) = slot.forward.clone() else {
         return;
     };
-    let attached = slot.session.as_ref().map(|session| session.launch.clone());
+    let attached = slot.session.as_ref().map(|session| session.target());
     let opened = match reattach(attached.as_ref(), wanted) {
         Reattach::Stand => return,
         Reattach::Drop => None,
-        Reattach::Open(launch) => open(Some(launch), forward),
+        Reattach::Open(target) => open(Some(target), forward),
     };
     // Swapped under the one lock `attached` reads. A gap here is a wake landing
     // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
@@ -1693,6 +1829,19 @@ mod tests {
         }
     }
 
+    fn record_open(count: Option<&Path>, message: &Value) {
+        if let Some(cwd) = message.pointer("/params/cwd").and_then(Value::as_str) {
+            record(count, &format!("cwd={cwd}"));
+        }
+        if message
+            .pointer("/params/mcpServers")
+            .and_then(Value::as_array)
+            .is_some_and(|servers| !servers.is_empty())
+        {
+            record(count, "mcp");
+        }
+    }
+
     fn recorded(count: Option<&Path>, what: &str) -> usize {
         count
             .and_then(|path| std::fs::read_to_string(path).ok())
@@ -1743,6 +1892,7 @@ mod tests {
                 }})),
                 Some("session/new") => {
                     record(count, "new");
+                    record_open(count, &message);
                     if script == "die-opening" {
                         std::process::exit(3);
                     }
@@ -1765,6 +1915,7 @@ mod tests {
                 }
                 Some("session/load") => {
                     record(count, "load");
+                    record_open(count, &message);
                     if message.pointer("/params/sessionId").and_then(Value::as_str) == Some("stale")
                     {
                         say(
@@ -1855,15 +2006,32 @@ mod tests {
 
     struct Fixture {
         dir: PathBuf,
+        cwd: PathBuf,
         count: PathBuf,
         forwarded: Receiver<Forwarded>,
     }
 
     impl Fixture {
         fn new(script: &str) -> (Self, Session) {
+            Self::build(script, false)
+        }
+
+        fn split(script: &str) -> (Self, Session) {
+            Self::build(script, true)
+        }
+
+        fn build(script: &str, split: bool) -> (Self, Session) {
             let dir =
                 std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&dir).unwrap();
+            let cwd = if split {
+                let cwd = std::env::temp_dir()
+                    .join(format!("ai-buddy-harness-cwd-{}", uuid::Uuid::new_v4()));
+                std::fs::create_dir_all(&cwd).unwrap();
+                cwd
+            } else {
+                dir.clone()
+            };
             let count = dir.join("count.txt");
             let exe = std::env::current_exe().unwrap();
             let test = module_path!()
@@ -1886,7 +2054,8 @@ mod tests {
             let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
                 launch,
-                dir.clone(),
+                Ok(AttachCwd(cwd.clone())),
+                SessionDataDir::at(dir.clone()),
                 Arc::new(Box::new(move |forwarded| {
                     let _ = tx.send(forwarded);
                 }) as Forward),
@@ -1895,6 +2064,7 @@ mod tests {
             (
                 Self {
                     dir,
+                    cwd,
                     count,
                     forwarded,
                 },
@@ -1976,7 +2146,30 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
+            if self.cwd != self.dir {
+                let _ = std::fs::remove_dir_all(&self.cwd);
+            }
         }
+    }
+
+    fn isolated_session(launch: Launch, dir: PathBuf, forward: Arc<Forward>) -> Session {
+        Session::new(
+            launch,
+            Ok(AttachCwd(dir.clone())),
+            SessionDataDir::at(dir),
+            forward,
+        )
+    }
+
+    fn launched(source: &str) -> Target {
+        Target {
+            launch: launch(Some(source)).unwrap(),
+            cwd: Ok(AttachCwd::resolve("").expect("the test user has a home")),
+        }
+    }
+
+    fn tmp_attach() -> AttachCwd {
+        AttachCwd(PathBuf::from("/tmp"))
     }
 
     #[test]
@@ -2094,8 +2287,8 @@ mod tests {
     /// silent (ADR-0008). Only Off reaches `Drop`.
     #[test]
     fn only_the_source_row_moves_the_attachment_and_only_off_drops_it() {
-        let hermes = launch(Some("hermes")).unwrap();
-        let opencode = launch(Some("opencode")).unwrap();
+        let hermes = launched("hermes");
+        let opencode = launched("opencode");
 
         assert_eq!(reattach(None, None), Reattach::Stand);
         assert_eq!(
@@ -2106,7 +2299,7 @@ mod tests {
         // The preset and the command line it joins to are one Harness, so
         // re-picking the same one another way keeps the session it has.
         assert_eq!(
-            reattach(Some(&hermes), launch(Some("hermes acp"))),
+            reattach(Some(&hermes), Some(launched("hermes acp"))),
             Reattach::Stand
         );
         assert_eq!(
@@ -2118,6 +2311,153 @@ mod tests {
             Reattach::Open(opencode)
         );
         assert_eq!(reattach(Some(&hermes), None), Reattach::Drop);
+    }
+
+    #[test]
+    fn reattach_stands_on_the_same_resolved_cwd_and_opens_on_a_different_one() {
+        crate::model::tests::with_env(None, None, None, || {
+            let hermes = launched("hermes");
+            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            let home_row = home.to_string_lossy().into_owned();
+            let same_home = Target::from_settings(Some("hermes"), &home_row).unwrap();
+            assert_eq!(
+                reattach(Some(&hermes), Some(same_home)),
+                Reattach::Stand,
+                "empty and an explicit home path resolve equal"
+            );
+
+            let other = Target {
+                launch: hermes.launch.clone(),
+                cwd: AttachCwd::resolve("/tmp"),
+            };
+            assert!(
+                matches!(
+                    reattach(Some(&hermes), Some(other.clone())),
+                    Reattach::Open(_)
+                ),
+                "same Launch plus a different cwd must rebuild"
+            );
+            assert_eq!(reattach(Some(&other), Some(other.clone())), Reattach::Stand);
+        });
+    }
+
+    #[test]
+    fn attach_cwd_resolve_empty_is_home_absolute_kept_relative_refused() {
+        crate::model::tests::with_env(None, None, None, || {
+            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            assert_eq!(AttachCwd::resolve("").unwrap().as_path(), home.as_path());
+            assert_eq!(AttachCwd::resolve("   ").unwrap().as_path(), home.as_path());
+            assert_eq!(
+                AttachCwd::resolve("/tmp/kept").unwrap().as_path(),
+                Path::new("/tmp/kept")
+            );
+            assert_eq!(
+                AttachCwd::resolve("relative/project"),
+                Err(CwdError::Relative(PathBuf::from("relative/project")))
+            );
+
+            std::env::set_var(CWD, "/tmp/from-env");
+            let target = Target::from_settings(Some("hermes"), "/tmp/from-file").unwrap();
+            assert_eq!(
+                target.cwd.unwrap().as_path(),
+                Path::new("/tmp/from-env"),
+                "env outranks the file row"
+            );
+            std::env::remove_var(CWD);
+        });
+    }
+
+    #[test]
+    fn session_new_cwd_is_the_attach_dir_and_durable_files_live_in_the_store() {
+        let (fx, session) = Fixture::split("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            fx.count(&format!("cwd={}", fx.cwd.display())),
+            1,
+            "session/new cwd was not the attach dir"
+        );
+        assert_eq!(
+            fx.count(&format!("cwd={}", fx.dir.display())),
+            0,
+            "session/new cwd was the store"
+        );
+        assert!(fx.dir.join(SESSION_FILE).is_file());
+        assert!(fx.dir.join(action_log::FILE).is_file());
+        assert!(!fx.cwd.join(SESSION_FILE).exists());
+        assert!(!fx.cwd.join(action_log::FILE).exists());
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_relative_cwd_fails_spawn_and_does_not_create_the_path() {
+        let relative = PathBuf::from(format!("ai-buddy-rel-cwd-{}", uuid::Uuid::new_v4()));
+        let data = std::env::temp_dir().join(format!("ai-buddy-rel-data-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data).unwrap();
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+        };
+        let session = Session::new(
+            launch,
+            Err(CwdError::Relative(relative.clone())),
+            SessionDataDir::at(data.clone()),
+            silent(),
+        );
+        let err = session.complete(&asking("hi")).unwrap_err();
+        assert!(
+            err.contains(&relative.display().to_string()),
+            "spawn named the relative path, got {err}"
+        );
+        assert!(!relative.exists(), "spawn must not create a relative cwd");
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn a_missing_cwd_fails_spawn_and_does_not_create_the_path() {
+        let missing =
+            std::env::temp_dir().join(format!("ai-buddy-missing-cwd-{}", uuid::Uuid::new_v4()));
+        assert!(!missing.exists());
+        let data =
+            std::env::temp_dir().join(format!("ai-buddy-missing-data-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data).unwrap();
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+        };
+        let session = Session::new(
+            launch,
+            AttachCwd::resolve(&missing.to_string_lossy()),
+            SessionDataDir::at(data.clone()),
+            silent(),
+        );
+        let err = session.complete(&asking("hi")).unwrap_err();
+        assert!(
+            err.contains(&missing.display().to_string()),
+            "spawn named the missing path, got {err}"
+        );
+        assert!(!missing.exists(), "spawn must not create a missing cwd");
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn probe_layout_isolates_the_store_and_keeps_production_cwd() {
+        crate::model::tests::with_env(None, None, None, || {
+            let target = Target::from_settings(Some("hermes"), "").unwrap();
+            let session =
+                Session::new(target.launch, target.cwd, SessionDataDir::probe(), silent());
+            assert!(
+                session.data.as_path().ends_with("probe"),
+                "got {}",
+                session.data.as_path().display()
+            );
+            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            assert_eq!(
+                session.cwd.as_ref().unwrap().as_path(),
+                home.as_path(),
+                "probe cwd must be production resolve, not the probe folder"
+            );
+            assert_ne!(session.data.as_path(), home.as_path());
+        });
     }
 
     /// ADR-0010 rules 4 and 5, as code. The child gets our environment as
@@ -2134,7 +2474,7 @@ mod tests {
             "pi",
         ] {
             let launch = launch(Some(name)).unwrap();
-            let command = launch.command(Path::new("/tmp"));
+            let command = launch.command(&tmp_attach());
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");
             assert_eq!(command.get_current_dir(), Some(Path::new("/tmp")));
             assert!(
@@ -2158,7 +2498,7 @@ mod tests {
             name: "sleep".into(),
             argv: vec!["/bin/sleep".into(), "8".into()],
         };
-        let mut command = launch.command(Path::new("/tmp"));
+        let mut command = launch.command(&tmp_attach());
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sleep");
@@ -2242,7 +2582,7 @@ mod tests {
                 r#"trap "" HUP; sleep 30 & wait"#.into(),
             ],
         };
-        let mut command = launch.command(Path::new("/tmp"));
+        let mut command = launch.command(&tmp_attach());
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sh");
@@ -3126,7 +3466,8 @@ mod tests {
             name: "nope".into(),
             argv: vec![NOPE.into()],
         };
-        let session = Session::new(launch, dir.clone(), silent());
+        std::fs::create_dir_all(&dir).unwrap();
+        let session = isolated_session(launch, dir.clone(), silent());
         assert_eq!(
             session.complete(&asking("hi")),
             Err(not_installed(NOPE)),
@@ -3181,7 +3522,7 @@ mod tests {
         let launch = launch(Some("codex")).unwrap();
         assert_eq!(launch.argv[0], "npx", "the codex preset stopped using npx");
         let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
-        let session = Session::new(launch, dir, silent());
+        let session = isolated_session(launch, dir, silent());
         assert_eq!(session.note_missing(), not_installed("npx"));
         assert_eq!(session.inspect().missing.as_deref(), Some("npx"));
     }
@@ -3244,9 +3585,9 @@ mod tests {
             slot.session = Some(Arc::clone(&session));
         }
         let start = Instant::now();
-        // `""` is Off, which `reattach` reads as `Drop`. The session goes and
+        // Off is `None`, which `reattach` reads as `Drop`. The session goes and
         // nothing replaces it.
-        retarget(Some(""), false);
+        retarget(None, false);
         let waited = start.elapsed();
         // The session is process-global; leave the slot as the other tests
         // expect to find it.
@@ -3400,7 +3741,8 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        let session = Session::new(launch, dir.clone(), silent());
+        std::fs::create_dir_all(&dir).unwrap();
+        let session = isolated_session(launch, dir.clone(), silent());
 
         session.note_withdrawal(Some("buddy-2".to_string()));
         assert_eq!(
@@ -3484,11 +3826,12 @@ mod tests {
         session.shutdown();
 
         let dir = std::env::temp_dir().join(format!("ai-buddy-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
         let launch = Launch {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        assert_eq!(probe(&Session::new(launch, dir.clone(), silent())), 2);
+        assert_eq!(probe(&isolated_session(launch, dir.clone(), silent())), 2);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -3004,7 +3004,10 @@ fn main() {
             let forward_to = app.handle().clone();
             quit_harness_on_interrupt();
             harness::attach(
-                settings.harness_source(),
+                harness::Target::from_settings(
+                    settings.harness_source().as_deref(),
+                    &settings.harness_cwd,
+                ),
                 Box::new(move |forwarded| match forwarded {
                     harness::Forwarded::Ask(ask) => forward_ask(&forward_to, ask),
                     harness::Forwarded::Settled { request, option } => {
