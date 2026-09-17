@@ -82,3 +82,14 @@ ceiling and the upgrade path, and that is worth the words. From
 
 The ceiling, what it costs, and the condition under which it changes. Without
 all three it is a shortcut nobody can price.
+
+## The ceiling
+
+`pre-commit` runs [ast-grep](https://ast-grep.github.io/) over every language it
+parses and rejects a comment block over 25 lines
+(`scripts/ast-grep/rules/comment-blocks.yml`). tree-sitter finds the comments,
+so a language this repository adds is understood on arrival.
+
+The 25 is what the tree passes today, not the bar this page argues for. It comes
+down as #744's compaction lands. A Rust `//!` module header is exempt — it
+documents the module rather than a line of code — and `///` item docs are not.

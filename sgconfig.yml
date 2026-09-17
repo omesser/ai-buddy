@@ -1,0 +1,6 @@
+# ast-grep runs from the `ast-grep` pre-commit hook; `scan` reads this file to
+# find the rules.
+ruleDirs:
+  - scripts/ast-grep/rules
+testConfigs:
+  - testDir: scripts/ast-grep/tests
