@@ -14,7 +14,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -54,22 +54,56 @@ ISSUE_PATTERN = re.compile(r'#\d+')
 ADR_PATTERN = re.compile(r'ADR-\d{4}')
 
 
+@dataclass(frozen=True)
+class CommentSyntax:
+    prefixes: Tuple[str, ...]
+    block_open: Optional[str] = None
+    block_close: Optional[str] = None
+    # HTML markers can sit anywhere on the line, not only at the start.
+    infix: bool = False
+
+
+# One table so a language cannot be counted in is_comment_line and skipped by
+# the directory glob. .swift / .ps1 / .cjs were the #811 miss.
+_C_STYLE = CommentSyntax(("//", "/*", "*"), "/*", "*/")
+_HASH = CommentSyntax(("#",))
+_POWERSHELL = CommentSyntax(("#", "<#"), "<#", "#>")
+_HTML = CommentSyntax(("<!--", "-->"), infix=True)
+
+SYNTAX_BY_EXT: Dict[str, CommentSyntax] = {
+    ".rs": _C_STYLE,
+    ".js": _C_STYLE,
+    ".ts": _C_STYLE,
+    ".cjs": _C_STYLE,
+    ".css": _C_STYLE,
+    ".c": _C_STYLE,
+    ".cpp": _C_STYLE,
+    ".h": _C_STYLE,
+    ".swift": _C_STYLE,
+    ".py": _HASH,
+    ".sh": _HASH,
+    ".yaml": _HASH,
+    ".yml": _HASH,
+    ".toml": _HASH,
+    ".ps1": _POWERSHELL,
+    ".html": _HTML,
+}
+
+
 def is_comment_line(line: str, ext: str) -> bool:
     """Check if a line is a comment (handling various language syntaxes)."""
+    syntax = SYNTAX_BY_EXT.get(ext)
+    if syntax is None:
+        return False
     stripped = line.lstrip()
-
-    if ext in ['.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h']:
-        return stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*')
-    elif ext in ['.py', '.sh', '.yaml', '.yml', '.toml']:
-        return stripped.startswith('#')
-    elif ext in ['.html']:
-        return '<!--' in stripped or '-->' in stripped
-
-    return False
+    if syntax.infix:
+        return any(marker in stripped for marker in syntax.prefixes)
+    return any(stripped.startswith(prefix) for prefix in syntax.prefixes)
 
 
 def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBlock]]:
     """Extract comment blocks and count code/comment lines."""
+    syntax = SYNTAX_BY_EXT.get(ext)
     code_lines = 0
     comment_lines = 0
     blocks = []
@@ -89,10 +123,10 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
 
         is_comment = is_comment_line(line, ext)
 
-        if ext in ['.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h']:
-            if '/*' in stripped:
+        if syntax is not None and syntax.block_open and syntax.block_close:
+            if syntax.block_open in stripped:
                 in_multiline = True
-            if '*/' in stripped:
+            if syntax.block_close in stripped:
                 is_comment = True
                 current_block_lines.append(line)
                 comment_lines += 1
@@ -147,11 +181,9 @@ def scan_file(path: Path) -> FileStats:
 
 def scan_directory(root: Path) -> List[FileStats]:
     """Recursively scan a directory for source files."""
-    patterns = ['*.rs', '*.js', '*.ts', '*.py', '*.css', '*.sh', '*.html', '*.toml', '*.yaml', '*.yml']
-
     stats = []
-    for pattern in patterns:
-        for path in root.rglob(pattern):
+    for ext in SYNTAX_BY_EXT:
+        for path in root.rglob(f"*{ext}"):
             if any(part.startswith('.') for part in path.parts):
                 continue
             if 'target' in path.parts or 'node_modules' in path.parts:
