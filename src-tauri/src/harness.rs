@@ -26,7 +26,8 @@ pub use crate::acp_wire::{PermissionAsk, PlanStep};
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
 pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
-/// Spawn `current_dir` and ACP session cwd. Empty is `$HOME` (#782).
+/// Spawn `current_dir` and ACP session cwd. Empty is the data folder, not
+/// `$HOME`: bare home mixes app files with harness project configs (#782).
 pub(crate) const CWD: &str = "AI_BUDDY_HARNESS_CWD";
 /// How long an unauthenticated Harness is left alone, in seconds. Named here
 /// so the Development row it owns can print it.
@@ -175,14 +176,12 @@ pub(crate) struct Target {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum CwdError {
-    NoHome,
     Relative(PathBuf),
 }
 
 impl fmt::Display for CwdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CwdError::NoHome => write!(f, "home directory is unset"),
             CwdError::Relative(path) => {
                 write!(f, "relative path {} is not a project", path.display())
             }
@@ -201,9 +200,7 @@ impl AttachCwd {
     fn resolve(raw: &str) -> Result<Self, CwdError> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
-            return ai_buddy_core::memory::home_dir()
-                .map(Self)
-                .ok_or(CwdError::NoHome);
+            return Ok(Self(ai_buddy_core::memory::data_dir()));
         }
         let path = PathBuf::from(trimmed);
         if !path.is_absolute() {
@@ -932,6 +929,10 @@ impl Session {
     }
 
     fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Wire>, SpawnError> {
+        // The store first. Empty cwd is `data_dir`, which we own; `checked`
+        // would refuse a first-run folder that does not exist yet. A user
+        // path still goes through `checked` with no `create_dir_all` (#782).
+        self.data.ensure()?;
         let cwd = match &self.cwd {
             Ok(cwd) => {
                 cwd.checked()?;
@@ -939,7 +940,6 @@ impl Session {
             }
             Err(error) => return Err(SpawnError::Failed(error.to_string())),
         };
-        self.data.ensure()?;
         let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
         let spawned = Wire::spawn(
@@ -2166,7 +2166,7 @@ mod tests {
     fn launched(source: &str) -> Target {
         Target {
             launch: launch(Some(source)).unwrap(),
-            cwd: Ok(AttachCwd::resolve("").expect("the test user has a home")),
+            cwd: Ok(AttachCwd::resolve("").expect("data_dir is always a path")),
         }
     }
 
@@ -2319,13 +2319,21 @@ mod tests {
     fn reattach_stands_on_the_same_resolved_cwd_and_opens_on_a_different_one() {
         crate::model::tests::with_env(None, None, None, || {
             let hermes = launched("hermes");
+            let data = ai_buddy_core::memory::data_dir();
+            let data_row = data.to_string_lossy().into_owned();
+            let same_data = Target::from_settings(Some("hermes"), &data_row).unwrap();
+            assert_eq!(
+                reattach(Some(&hermes), Some(same_data)),
+                Reattach::Stand,
+                "empty and an explicit data_dir resolve equal"
+            );
+
             let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
             let home_row = home.to_string_lossy().into_owned();
-            let same_home = Target::from_settings(Some("hermes"), &home_row).unwrap();
-            assert_eq!(
-                reattach(Some(&hermes), Some(same_home)),
-                Reattach::Stand,
-                "empty and an explicit home path resolve equal"
+            let named_home = Target::from_settings(Some("hermes"), &home_row).unwrap();
+            assert!(
+                matches!(reattach(Some(&hermes), Some(named_home)), Reattach::Open(_)),
+                "explicit home is a different project from empty"
             );
 
             let other_dir = std::env::temp_dir();
@@ -2345,11 +2353,11 @@ mod tests {
     }
 
     #[test]
-    fn attach_cwd_resolve_empty_is_home_absolute_kept_relative_refused() {
+    fn attach_cwd_resolve_empty_is_data_dir_absolute_kept_relative_refused() {
         crate::model::tests::with_env(None, None, None, || {
-            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
-            assert_eq!(AttachCwd::resolve("").unwrap().as_path(), home.as_path());
-            assert_eq!(AttachCwd::resolve("   ").unwrap().as_path(), home.as_path());
+            let data = ai_buddy_core::memory::data_dir();
+            assert_eq!(AttachCwd::resolve("").unwrap().as_path(), data.as_path());
+            assert_eq!(AttachCwd::resolve("   ").unwrap().as_path(), data.as_path());
             // `/tmp/...` is relative on Windows (`Path::is_absolute` wants a drive).
             let kept = std::env::temp_dir().join("kept");
             assert_eq!(
@@ -2477,6 +2485,29 @@ mod tests {
     }
 
     #[test]
+    fn spawn_creates_the_data_dir_we_own_before_checking_cwd() {
+        let dir =
+            std::env::temp_dir().join(format!("ai-buddy-default-cwd-{}", uuid::Uuid::new_v4()));
+        assert!(!dir.exists());
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+        };
+        let session = Session::new(
+            launch,
+            Ok(AttachCwd(dir.clone())),
+            SessionDataDir::at(dir.clone()),
+            silent(),
+        );
+        let _ = session.complete(&asking("hi"));
+        assert!(
+            dir.is_dir(),
+            "empty default is a folder we own; spawn must create it"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn probe_layout_isolates_the_store_and_keeps_production_cwd() {
         crate::model::tests::with_env(None, None, None, || {
             let target = Target::from_settings(Some("hermes"), "").unwrap();
@@ -2487,13 +2518,13 @@ mod tests {
                 "got {}",
                 session.data.as_path().display()
             );
-            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            let data = ai_buddy_core::memory::data_dir();
             assert_eq!(
                 session.cwd.as_ref().unwrap().as_path(),
-                home.as_path(),
+                data.as_path(),
                 "probe cwd must be production resolve, not the probe folder"
             );
-            assert_ne!(session.data.as_path(), home.as_path());
+            assert_ne!(session.data.as_path(), data.as_path());
         });
     }
 

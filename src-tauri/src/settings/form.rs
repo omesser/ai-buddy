@@ -1476,7 +1476,7 @@ fn development_sections() -> Vec<FormSection> {
             heading: "Harness attachment".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project. Empty is $HOME. Session file and Action Log stay in the data folder.",
+                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project. Empty is the data folder. Session file and Action Log stay in the data folder.",
                 crate::harness::TURN_TIMEOUT.as_secs()
             )),
             status: None,
@@ -1517,11 +1517,11 @@ fn development_sections() -> Vec<FormSection> {
                 FormRow::TextField {
                     id: HARNESS_CWD_ID.to_string(),
                     label: Some(harness_cwd_label),
-                    placeholder: "$HOME".to_string(),
+                    placeholder: "the data folder".to_string(),
                     writes: TextField::HarnessCwd,
                     frozen: harness_cwd_frozen,
                     batched: false,
-                    help: Some("The directory the Harness treats as the project. Empty is home. Session file and Action Log stay in the data folder.".to_string()),
+                    help: Some("The directory the Harness treats as the project. Empty is the data folder. Session file and Action Log stay in the data folder.".to_string()),
                     disclosure: None,
                     status: harness_cwd_status,
                 },

@@ -1620,8 +1620,8 @@ pub struct Settings {
     /// the app binary's own `--mcp-stdio` (#166). For power users and CI,
     /// which is why it is a Development row and not a Director one.
     pub mcp_bin: String,
-    /// ACP cwd / spawn dir. Empty is `$HOME`. Session file and Action Log stay
-    /// in the data folder (#782).
+    /// ACP cwd / spawn dir. Empty is the data folder. Session file and Action
+    /// Log stay in the data folder (#782).
     pub harness_cwd: String,
     /// Development switches. Off is the shipped answer for all of them; see
     /// `dev_flags`, which holds the live value each read site loads.
@@ -2136,7 +2136,7 @@ mod tests {
         assert!(settings.hide_in_fullscreen);
         assert!(
             settings.harness_cwd.is_empty(),
-            "a file from before the row is empty, which is $HOME"
+            "a file from before the row is empty, which is the data folder"
         );
         let _ = fs::remove_file(&path);
     }
@@ -3894,7 +3894,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cwd_that_resolves_differently_retargets_and_empty_vs_home_stands() {
+    fn a_cwd_that_resolves_differently_retargets_and_empty_vs_data_dir_stands() {
         crate::model::tests::with_harness(None, || {
             let settings = Settings {
                 harness: "hermes".into(),
@@ -3912,12 +3912,20 @@ mod tests {
                 "the raw row did not move"
             );
 
+            let data = ai_buddy_core::memory::data_dir();
+            let mut data_patch = SettingsPatch::default();
+            data_patch.set_text(TextField::HarnessCwd, &data.to_string_lossy());
+            assert!(
+                !harness_retargets(&settings, &data_patch),
+                "empty and an explicit data_dir resolve equal"
+            );
+
             let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
             let mut home_patch = SettingsPatch::default();
             home_patch.set_text(TextField::HarnessCwd, &home.to_string_lossy());
             assert!(
-                !harness_retargets(&settings, &home_patch),
-                "empty and an explicit home path resolve equal"
+                harness_retargets(&settings, &home_patch),
+                "explicit home is a different project from empty"
             );
         });
     }
