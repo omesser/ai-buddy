@@ -802,10 +802,15 @@ impl Endpoint {
                 // that will not stream sends them.
                 let said = content_from_body(&text);
                 match (said, truncated_body(&text)) {
-                    (Ok(said), true) if !said.trim().is_empty() => Ok(Reply::truncated(said)),
                     (Ok(said), false) => Ok(Reply::whole(said)),
-                    (_, true) => Err(Unsent::Truncated(self.out_of_budget(url, true))),
                     (Err(error), false) => Err(Unsent::Failed(format!("{url}: {error}"))),
+                    (said, true) => self.reply_from(
+                        url,
+                        Streamed::Truncated(classify_truncation(
+                            &said.unwrap_or_default(),
+                            thought_in_body(&text),
+                        )),
+                    ),
                 }
             }
             Wire::Stream => {
@@ -833,13 +838,15 @@ impl Endpoint {
             Streamed::Complete(_) => Err(Unsent::Failed(format!(
                 "{url}: streamed reply had no text content"
             ))),
-            // We cut it off, so whatever arrived is shown as truncated.
-            // It is still a wire failure, never retried, and the Action Log
-            // names the cap.
-            Streamed::Truncated(content) if !content.trim().is_empty() => {
-                Ok(Reply::truncated(content))
+            Streamed::Truncated(what) => {
+                // Parseable is the one #606 row that is still Speech: a full
+                // Behavior / sayable line, marked. The other three are Unsent.
+                if let Truncation::Parseable(content) = what {
+                    Ok(Reply::truncated(content))
+                } else {
+                    Err(Unsent::Truncated(self.out_of_budget(url, &what)))
+                }
             }
-            Streamed::Truncated(_) => Err(Unsent::Truncated(self.out_of_budget(url, true))),
             Streamed::Cut => Err(Unsent::Cut(format!("{url}: the stream ended mid-reply"))),
             Streamed::NotEventStream => Err(Unsent::Refused(
                 Field::Stream,
@@ -850,17 +857,22 @@ impl Endpoint {
     }
 
     /// Action Log copy for a capped turn. Names the model, the cap, and the
-    /// setting that moves it. Thinking the budget away and a mid-sentence cut
-    /// call for different settings.
-    fn out_of_budget(&self, url: &str, silent: bool) -> String {
+    /// setting that moves it. The four #606 rows call for different settings.
+    fn out_of_budget(&self, url: &str, what: &Truncation) -> String {
         let cap = self.max_tokens;
-        let what = if silent {
-            format!("spent all {cap} tokens thinking and wrote no reply")
-        } else {
-            format!("was cut off mid-reply by the {cap}-token cap")
+        let happened = match what {
+            Truncation::ThinkingOnly => {
+                format!("spent all {cap} tokens thinking and wrote no reply")
+            }
+            Truncation::Parseable(_) | Truncation::MidSentence(_) => {
+                format!("was cut off mid-reply by the {cap}-token cap")
+            }
+            Truncation::Unmarked(_) => {
+                format!("hit the {cap}-token cap with unmarked content; not spoken")
+            }
         };
         format!(
-            "{url}: {} {what}; raise {MAX_TOKENS} or lower the model's reasoning effort",
+            "{url}: {} {happened}; raise {MAX_TOKENS} or lower the model's reasoning effort",
             self.model
         )
     }
@@ -972,7 +984,7 @@ impl Completer for Endpoint {
             &ai_buddy_core::memory::data_dir(),
             request,
             noted,
-            &self.out_of_budget(&self.url, false),
+            &self.out_of_budget(&self.url, &Truncation::Parseable(String::new())),
         );
         result
     }
@@ -1350,7 +1362,7 @@ enum Unsent {
     Cut(String),
     /// The model reached the token cap. Never worth a retry, because the same
     /// question at the same cap gets the same nothing. The text names the cap,
-    /// the model, and whether the budget went on thinking or writing.
+    /// the model, and which #606 row it was.
     Truncated(String),
     /// Superseded while the tokens were arriving. Nobody is waiting for this
     /// answer, so there is no error worth composing.
@@ -1387,6 +1399,23 @@ impl Unsent {
     }
 }
 
+/// What arrived when the Completer hit the token cap. One variant per #606
+/// table row, so Speech policy is a match, not a pile of emptiness checks.
+/// Marked reasoning is routed later; nothing here dumps thinking into Speech.
+#[derive(Debug, PartialEq, Eq)]
+enum Truncation {
+    /// Marked reasoning, no answer text. Action Log only. Never Speech.
+    ThinkingOnly,
+    /// Answer text that still parses to a Behavior / sayable line. Spoken
+    /// and marked. The other three rows are refused.
+    Parseable(String),
+    /// Answer started but will not parse. #302: do not speak or half-parse.
+    MidSentence(String),
+    /// Bytes in `content` with no reasoning mark. Not Speech. No v1
+    /// heuristic onto the thought strip.
+    Unmarked(String),
+}
+
 /// How a streamed reply ended.
 #[derive(Debug, PartialEq, Eq)]
 enum Streamed {
@@ -1394,9 +1423,9 @@ enum Streamed {
     /// budget without writing anything.
     Complete(String),
     /// The server marked the end and named the token cap as the reason,
-    /// `finish_reason: "length"` or `response.incomplete`. Text is kept.
-    /// Empty means the budget went on thinking. A half sentence is the reply.
-    Truncated(String),
+    /// `finish_reason: "length"`, `response.incomplete`, or Anthropic
+    /// `stop_reason: "max_tokens"`.
+    Truncated(Truncation),
     /// The body ended with the server never saying it was finished, so
     /// whatever arrived is half a sentence.
     ///
@@ -1454,9 +1483,9 @@ fn read_frames(
     let mut framed = false;
     let mut finished = false;
     let mut truncated = false;
-    let ended = |content: String, truncated: bool| {
+    let ended = |content: String, truncated: bool, thought: &str| {
         if truncated {
-            Streamed::Truncated(content)
+            Streamed::Truncated(classify_truncation(&content, !thought.trim().is_empty()))
         } else {
             Streamed::Complete(content)
         }
@@ -1475,7 +1504,7 @@ fn read_frames(
         {
             return Ok(match (framed, finished) {
                 (false, _) => Streamed::NotEventStream,
-                (true, true) => ended(content, truncated),
+                (true, true) => ended(content, truncated, thinking),
                 (true, false) => Streamed::Cut,
             });
         }
@@ -1487,7 +1516,7 @@ fn read_frames(
         framed = true;
         let payload = payload.trim();
         if payload == "[DONE]" {
-            return Ok(ended(content, truncated));
+            return Ok(ended(content, truncated, thinking));
         }
         let event = read_event(payload);
         finished |= event.finished;
@@ -1533,7 +1562,8 @@ struct Event {
 
 /// Read one event in either chat-completions or Responses shape.
 /// Markers distinguish a finished reply from a cut, because `/v1/responses`
-/// sends no `[DONE]`. `length` and `response.incomplete` mean the token cap.
+/// sends no `[DONE]`. `length`, `response.incomplete`, and Anthropic
+/// `stop_reason: "max_tokens"` mean the token cap.
 fn read_event(payload: &str) -> Event {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
         return Event::default();
@@ -1542,6 +1572,9 @@ fn read_event(payload: &str) -> Event {
     let chunk = &choice["delta"];
     let kind = value["type"].as_str();
     let finish = choice["finish_reason"].as_str();
+    let stop = value["stop_reason"]
+        .as_str()
+        .or_else(|| value["delta"]["stop_reason"].as_str());
     // A Responses event's `delta` *is* the text, so its `type` is the only
     // thing that says which text it is.
     let typed = |name| {
@@ -1555,23 +1588,33 @@ fn read_event(payload: &str) -> Event {
         delta: chunk["content"]
             .as_str()
             .or_else(|| typed("response.output_text.delta"))
+            .or_else(|| {
+                (value["delta"]["type"] == "text_delta")
+                    .then(|| value["delta"]["text"].as_str())
+                    .flatten()
+            })
             .map(str::to_string),
         // Two names for one field. `reasoning_content` (llama.cpp, oMLX,
         // SGLang, LM Studio for R1) and `reasoning` (vLLM, Ollama, gpt-oss).
         // Responses types reasoning apart. Read the summary, not both streams.
+        // Anthropic `thinking_delta` is marked reasoning for a later PR.
         thought: chunk["reasoning_content"]
             .as_str()
             .or_else(|| chunk["reasoning"].as_str())
             .or_else(|| typed("response.reasoning_summary_text.delta"))
             .map(str::to_string),
         // Responses ends a capped reply with `response.incomplete` and no
-        // `[DONE]`. Without that name the body looks cut.
+        // `[DONE]`. Without that name the body looks cut. Anthropic names
+        // the same fact `stop_reason`.
         finished: finish.is_some()
+            || stop.is_some()
             || matches!(kind, Some("response.completed" | "response.incomplete")),
-        // `length` is the only reason the spec gives for a cap. Every other
-        // value (`stop`, `tool_calls`, `content_filter`) is a reply the
-        // server chose to end, and is left alone.
-        truncated: finish == Some("length") || kind == Some("response.incomplete"),
+        // `length` is the chat-completions cap. Every other finish_reason
+        // (`stop`, `tool_calls`, `content_filter`) is a reply the server
+        // chose to end, and is left alone.
+        truncated: finish == Some("length")
+            || kind == Some("response.incomplete")
+            || stop == Some("max_tokens"),
     }
 }
 
@@ -1597,18 +1640,77 @@ fn content_from_body(body: &str) -> Result<String, String> {
             }
         }
     }
+    // Anthropic `/v1/messages`. `thinking` blocks are marked reasoning, not
+    // the answer; a later PR routes them. Text blocks are the reply.
+    if let Some(blocks) = value["content"].as_array() {
+        let mut text = String::new();
+        for block in blocks {
+            if block["type"] == "text" {
+                if let Some(part) = block["text"].as_str() {
+                    text.push_str(part);
+                }
+            }
+        }
+        if !text.is_empty() {
+            return Ok(text);
+        }
+    }
     Err("model reply had no text content".to_string())
 }
 
 /// Whether a whole body ended at the token cap.
 /// `finish_reason` on chat-completions, `incomplete_details.reason` on
-/// Responses. An empty cap is named as the cap, not as missing text.
+/// Responses, `stop_reason` on Anthropic. An empty cap is named as the
+/// cap, not as missing text.
 fn truncated_body(body: &str) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
         return false;
     };
     value["choices"][0]["finish_reason"] == "length"
         || value["incomplete_details"]["reason"] == "max_output_tokens"
+        || value["stop_reason"] == "max_tokens"
+}
+
+/// Whether the body marked reasoning apart from the answer. Used only to
+/// pick a #606 row: marked + no text is ThinkingOnly, unmarked prose is
+/// Unmarked. Not a thought-strip route.
+fn thought_in_body(body: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    let nonempty =
+        |value: &serde_json::Value| value.as_str().is_some_and(|text| !text.trim().is_empty());
+    let message = &value["choices"][0]["message"];
+    if nonempty(&message["reasoning_content"]) || nonempty(&message["reasoning"]) {
+        return true;
+    }
+    if let Some(blocks) = value["content"].as_array() {
+        if blocks.iter().any(|block| block["type"] == "thinking") {
+            return true;
+        }
+    }
+    if let Some(items) = value["output"].as_array() {
+        if items.iter().any(|item| item["type"] == "reasoning") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Pick the #606 table row from what the cap-ended turn actually held.
+/// `parse_proposal` is the contract, not a thought heuristic: a first word
+/// like `Okay` still parses, and v1 does not second-guess that.
+fn classify_truncation(content: &str, marked_thought: bool) -> Truncation {
+    if content.trim().is_empty() {
+        return Truncation::ThinkingOnly;
+    }
+    if director::parse_proposal(content).is_ok() {
+        Truncation::Parseable(content.to_string())
+    } else if marked_thought {
+        Truncation::MidSentence(content.to_string())
+    } else {
+        Truncation::Unmarked(content.to_string())
+    }
 }
 
 thread_local! {
@@ -2199,10 +2301,17 @@ pub(crate) mod tests {
             "finish_reason":"length"}]}"#;
         assert!(content_from_body(spent).is_err());
         assert!(truncated_body(spent));
+        assert!(thought_in_body(spent));
 
         let incomplete = r#"{"status":"incomplete",
             "incomplete_details":{"reason":"max_output_tokens"},"output":[]}"#;
         assert!(truncated_body(incomplete));
+
+        let anthropic = r#"{"content":[{"type":"thinking","thinking":"hmm"}],
+            "stop_reason":"max_tokens"}"#;
+        assert!(truncated_body(anthropic));
+        assert!(thought_in_body(anthropic));
+        assert!(content_from_body(anthropic).is_err());
 
         let done = r#"{"choices":[{"message":{"content":"stroll"},"finish_reason":"stop"}]}"#;
         assert!(!truncated_body(done), "a natural stop is not a truncation");
@@ -2716,7 +2825,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             streamed(spent),
-            Streamed::Truncated(String::new()),
+            Streamed::Truncated(Truncation::ThinkingOnly),
             "the budget ran out before any text, which is not an empty reply"
         );
 
@@ -2733,8 +2842,7 @@ pub(crate) mod tests {
     }
 
     /// A cap reached after the model started writing is a truncation too.
-    /// What arrived is half a sentence. The text is kept so the log can say
-    /// the budget ran out writing rather than thinking.
+    /// A first line that still parses is Parseable, not a half-sentence.
     #[test]
     fn a_length_finish_that_wrote_text_is_a_truncation_too() {
         let clipped = concat!(
@@ -2744,22 +2852,22 @@ pub(crate) mod tests {
         );
         assert_eq!(
             streamed(clipped),
-            Streamed::Truncated("stroll\nhey th".to_string())
+            Streamed::Truncated(Truncation::Parseable("stroll\nhey th".to_string()))
         );
     }
 
-    /// Best effort, because we are the ones who cut the model off: what it
-    /// wrote is handed on, marked. With nothing written there is nothing to
-    /// show, and the Action Log line names the cap and the knob either way.
+    /// Best effort is the #606 table, not "any nonempty string". Thinking-only
+    /// and unparsable cuts stay Unsent. A parseable Behavior is spoken and
+    /// marked. Unmarked content is not Speech and is not heuristically split.
     #[test]
-    fn a_truncation_shows_what_it_wrote_and_silence_when_it_wrote_nothing() {
+    fn a_truncation_follows_the_best_effort_table() {
         let endpoint = Endpoint {
             max_tokens: LOCAL_MAX_TOKENS,
             ..local_endpoint()
         };
         let url = "http://127.0.0.1:1234/v1/chat/completions";
 
-        let thinking = endpoint.reply_from(url, Streamed::Truncated(String::new()));
+        let thinking = endpoint.reply_from(url, Streamed::Truncated(Truncation::ThinkingOnly));
         let Err(Unsent::Truncated(why)) = thinking else {
             panic!("a budget spent entirely on thinking has nothing to show");
         };
@@ -2770,10 +2878,39 @@ pub(crate) mod tests {
 
         assert_eq!(
             endpoint
-                .reply_from(url, Streamed::Truncated("stroll\nhey th".to_string()))
+                .reply_from(
+                    url,
+                    Streamed::Truncated(Truncation::Parseable("stroll\nhey th".to_string()))
+                )
                 .ok(),
             Some(Reply::truncated("stroll\nhey th")),
             "the Behavior is acted on and the words are said, with the mark beside them"
+        );
+
+        let mid = endpoint.reply_from(
+            url,
+            Streamed::Truncated(Truncation::MidSentence("hey th".to_string())),
+        );
+        let Err(Unsent::Truncated(why)) = mid else {
+            panic!("a mid-sentence cut is not spoken");
+        };
+        assert!(
+            why.contains("cut off mid-reply"),
+            "the log tells a budget spent thinking from a line that ran out: {why}"
+        );
+
+        let unmarked = endpoint.reply_from(
+            url,
+            Streamed::Truncated(Truncation::Unmarked(
+                "Thinking Process:\n\n1.  Analyze the Request:".to_string(),
+            )),
+        );
+        let Err(Unsent::Truncated(why)) = unmarked else {
+            panic!("unmarked thinking is not Speech");
+        };
+        assert!(
+            why.contains("unmarked content") && why.contains("not spoken"),
+            "the log names the unmarked row: {why}"
         );
 
         assert_eq!(
@@ -2783,12 +2920,34 @@ pub(crate) mod tests {
             Some(Reply::whole("stroll")),
             "a whole reply is not marked"
         );
+    }
 
-        assert!(
-            endpoint
-                .out_of_budget(url, false)
-                .contains("cut off mid-reply"),
-            "the log tells a budget spent thinking from a line that ran out"
+    /// The four #606 rows are a classification, not a content-emptiness check.
+    #[test]
+    fn classify_truncation_picks_the_table_row() {
+        assert_eq!(
+            classify_truncation("", true),
+            Truncation::ThinkingOnly,
+            "marked reasoning with no answer"
+        );
+        assert_eq!(
+            classify_truncation("\n", false),
+            Truncation::ThinkingOnly,
+            "a lone newline is still no answer, as in the #598 §6.1 stream"
+        );
+        assert_eq!(
+            classify_truncation("stroll\nhey th", true),
+            Truncation::Parseable("stroll\nhey th".to_string())
+        );
+        assert_eq!(
+            classify_truncation("hey th", true),
+            Truncation::MidSentence("hey th".to_string()),
+            "marked reasoning plus unparsable answer is a cut, not thinking"
+        );
+        assert_eq!(
+            classify_truncation("Thinking Process:\n\n1.  Analyze the Request:", false),
+            Truncation::Unmarked("Thinking Process:\n\n1.  Analyze the Request:".to_string()),
+            "Qwen whole-body thought-in-content, no reasoning field"
         );
     }
 
@@ -2802,7 +2961,64 @@ pub(crate) mod tests {
             "data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\
              \"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n",
         );
-        assert_eq!(streamed(sse), Streamed::Truncated(String::new()));
+        assert_eq!(streamed(sse), Streamed::Truncated(Truncation::ThinkingOnly));
+    }
+
+    /// vLLM / Ollama / gpt-oss spell the sibling field `reasoning`. Same
+    /// empty-length outcome as `reasoning_content`.
+    #[test]
+    fn a_reasoning_field_length_finish_is_thinking_only() {
+        let spent = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"hmm\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed(spent),
+            Streamed::Truncated(Truncation::ThinkingOnly)
+        );
+    }
+
+    /// Anthropic `/v1/messages` names the cap `stop_reason: "max_tokens"`.
+    /// Thinking deltas are not routed here; empty text at that stop is
+    /// ThinkingOnly, never Speech.
+    #[test]
+    fn an_anthropic_max_tokens_stop_is_a_truncation() {
+        let thinking_only = concat!(
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\
+             \"thinking\":\"hmm\"}}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n",
+        );
+        assert_eq!(
+            streamed(thinking_only),
+            Streamed::Truncated(Truncation::ThinkingOnly),
+            "thinking_delta is not content, so a cap here is the thinking-only row"
+        );
+
+        let parseable = concat!(
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\
+             \"text\":\"stroll\\nhey\"}}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n",
+        );
+        assert_eq!(
+            streamed(parseable),
+            Streamed::Truncated(Truncation::Parseable("stroll\nhey".to_string()))
+        );
+    }
+
+    /// Whole-body Qwen: thought in `content`, no reasoning field, `length`.
+    /// Not Speech, and not a thought-strip heuristic.
+    #[test]
+    fn an_unmarked_whole_body_length_finish_is_not_spoken() {
+        let body = r#"{"choices":[{"message":{"role":"assistant",
+            "content":"Thinking Process:\n\n1.  Analyze the Request:"},
+            "finish_reason":"length"}]}"#;
+        assert!(truncated_body(body));
+        assert!(!thought_in_body(body));
+        assert_eq!(
+            classify_truncation(&content_from_body(body).unwrap(), thought_in_body(body)),
+            Truncation::Unmarked("Thinking Process:\n\n1.  Analyze the Request:".to_string())
+        );
     }
 
     /// An endless stream is the only honest test of abandon. A reader that
@@ -4582,7 +4798,7 @@ pub(crate) mod tests {
             dir.path(),
             &request,
             Ok(&Reply::truncated("prowl\nMine now, and the")),
-            &endpoint.out_of_budget(&endpoint.url, false),
+            &endpoint.out_of_budget(&endpoint.url, &Truncation::Parseable(String::new())),
         );
 
         let body = std::fs::read_to_string(dir.path().join(crate::action_log::FILE)).unwrap();
