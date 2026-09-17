@@ -168,6 +168,7 @@ pub(crate) fn test_vars() -> Vec<&'static str> {
             harness::AUTH_RETRY_SECS,
             harness::TURN_TIMEOUT_SECS,
             harness::MCP_BIN,
+            harness::CWD,
         ])
         .collect()
 }

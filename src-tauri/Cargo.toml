@@ -58,8 +58,8 @@ agent-client-protocol = "2.1"
 file-rotate = "0.8"
 tokio = {version = "1", features = ["rt", "sync", "macros"]}
 # How the SDK reads a child's pipes. Spawned by us rather than by the SDK's
-# `AcpAgent`, which has no working-directory knob, and ADR-0010 puts the
-# Harness in the data folder.
+# `AcpAgent`, which has no working-directory knob; attach cwd is a setting
+# (#782). The data folder holds the session file and Action Log.
 async-process = "2"
 # Ctrl+C from `cargo run` must shut the Harness down on a dedicated thread:
 # a signal handler itself cannot take the mutex `shutdown` needs. Isolation

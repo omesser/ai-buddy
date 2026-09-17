@@ -488,6 +488,7 @@ pub const BYO_HEADING: &str = "Point a Harness you run yourself at ai-buddy";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
+pub const HARNESS_CWD_ID: &str = "harness_cwd";
 
 /// The two Completer-source titles the file does not spell the same way: Model
 /// API (wire: empty string) and Harness · Custom (wire: `custom`), which
@@ -1386,6 +1387,8 @@ fn development_sections() -> Vec<FormSection> {
         env_row_parts("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
     let (mcp_bin_label, mcp_bin_frozen, mcp_bin_status) =
         env_row_parts("MCP server binary", crate::harness::MCP_BIN);
+    let (harness_cwd_label, harness_cwd_frozen, harness_cwd_status) =
+        env_row_parts("Working directory", crate::harness::CWD);
 
     vec![
         FormSection {
@@ -1473,7 +1476,7 @@ fn development_sections() -> Vec<FormSection> {
             heading: "Harness attachment".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).",
+                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project. Empty is the data folder. Session file and Action Log stay in the data folder.",
                 crate::harness::TURN_TIMEOUT.as_secs()
             )),
             status: None,
@@ -1510,6 +1513,17 @@ fn development_sections() -> Vec<FormSection> {
                     help: Some("The stdio MCP server for the Harness.".to_string()),
                     disclosure: None,
                     status: mcp_bin_status,
+                },
+                FormRow::TextField {
+                    id: HARNESS_CWD_ID.to_string(),
+                    label: Some(harness_cwd_label),
+                    placeholder: "the data folder".to_string(),
+                    writes: TextField::HarnessCwd,
+                    frozen: harness_cwd_frozen,
+                    batched: false,
+                    help: Some("The directory the Harness treats as the project. Empty is the data folder. Session file and Action Log stay in the data folder.".to_string()),
+                    disclosure: None,
+                    status: harness_cwd_status,
                 },
             ],
         },
@@ -2677,6 +2691,7 @@ mod tests {
             ),
             (HARNESS_AUTH_RETRY_SECS_ID, TextField::HarnessAuthRetrySecs),
             (MCP_BIN_ID, TextField::McpBin),
+            (HARNESS_CWD_ID, TextField::HarnessCwd),
         ] {
             assert!(ids.contains(&id), "{id} is a Development row");
             assert_eq!(
