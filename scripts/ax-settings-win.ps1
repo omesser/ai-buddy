@@ -5,28 +5,68 @@ param(
     [string]$Command,
     [int]$Timeout = 30,
     [string]$Title,
-    [string]$DisclosureLabel
+    [string]$DisclosureLabel,
+    [Parameter(Position=1)]
+    [int]$ProcessId = 0
 )
 $ErrorActionPreference = "Continue"
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 function Find-SettingsWindow {
-    $condition = New-Object System.Windows.Automation.PropertyCondition(
+    # ProcessId, not Pid: $PID is Constant+AllScope and cannot be a parameter.
+    param([int]$ProcessId = 0)
+
+    $nativeCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
         "AiBuddySettings"
     )
+    if ($ProcessId -gt 0) {
+        $pidCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+            $ProcessId
+        )
+        $nativeCond = New-Object System.Windows.Automation.AndCondition($nativeCond, $pidCond)
+    }
+    $native = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        $nativeCond
+    )
+    if ($null -ne $native) { return $native }
+
+    $classCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ClassNameProperty,
+        "Tauri Window"
+    )
+    $nameCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        "Settings"
+    )
+    $typeCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Window
+    )
+    # Class + name + window: Name=Settings alone matches the Windows Settings app (#805).
+    if ($ProcessId -gt 0) {
+        $pidCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+            $ProcessId
+        )
+        $webviewCond = New-Object System.Windows.Automation.AndCondition($classCond, $nameCond, $typeCond, $pidCond)
+    } else {
+        $webviewCond = New-Object System.Windows.Automation.AndCondition($classCond, $nameCond, $typeCond)
+    }
     return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
-        $condition
+        $webviewCond
     )
 }
 
 function Wait-ForSettings {
-    param([int]$TimeoutSec)
+    param([int]$TimeoutSec, [int]$ProcessId = 0)
     $waited = 0
     while ($waited -lt $TimeoutSec) {
-        if ($null -ne (Find-SettingsWindow)) { return 0 }
+        if ($null -ne (Find-SettingsWindow -ProcessId $ProcessId)) { return 0 }
         Start-Sleep -Seconds 1
         $waited++
     }
@@ -60,15 +100,16 @@ function Dump-Tree {
 }
 
 function Invoke-Dump {
-    $window = Find-SettingsWindow
+    param([int]$ProcessId = 0)
+    $window = Find-SettingsWindow -ProcessId $ProcessId
     if ($null -eq $window) { Write-Host "ERROR: Settings window not found"; exit 1 }
     Dump-Tree -element $window
     exit 0
 }
 
 function Invoke-PickSource {
-    param([string]$SourceTitle)
-    $window = Find-SettingsWindow
+    param([string]$SourceTitle, [int]$ProcessId = 0)
+    $window = Find-SettingsWindow -ProcessId $ProcessId
     if ($null -eq $window) { Write-Host "ERROR: Settings window not found"; exit 1 }
 
     $comboCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -126,8 +167,8 @@ function Invoke-PickSource {
 }
 
 function Invoke-ExpandDisclosure {
-    param([string]$Label)
-    $window = Find-SettingsWindow
+    param([string]$Label, [int]$ProcessId = 0)
+    $window = Find-SettingsWindow -ProcessId $ProcessId
     if ($null -eq $window) { Write-Host "ERROR: Settings window not found"; exit 1 }
     $nameCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty, $Label)
@@ -145,17 +186,17 @@ function Invoke-ExpandDisclosure {
 
 switch ($Command) {
     'wait' {
-        $code = Wait-ForSettings -TimeoutSec $Timeout
+        $code = Wait-ForSettings -TimeoutSec $Timeout -ProcessId $ProcessId
         if ($code -ne 0) { Write-Host "ERROR: Timed out waiting for Settings"; exit 1 }
         Write-Output "ready"; exit 0
     }
-    'dump' { Invoke-Dump }
+    'dump' { Invoke-Dump -ProcessId $ProcessId }
     'pick-source' {
         if (-not $Title) { Write-Host "ERROR: -Title required"; exit 1 }
-        Invoke-PickSource -SourceTitle $Title
+        Invoke-PickSource -SourceTitle $Title -ProcessId $ProcessId
     }
     'expand-disclosure' {
         if (-not $DisclosureLabel) { Write-Host "ERROR: -DisclosureLabel required"; exit 1 }
-        Invoke-ExpandDisclosure -Label $DisclosureLabel
+        Invoke-ExpandDisclosure -Label $DisclosureLabel -ProcessId $ProcessId
     }
 }

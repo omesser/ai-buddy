@@ -186,6 +186,23 @@ for ($i = 0; $i -lt 150; $i++) {
       Pass "Settings window appeared and moved to secondary display"
       break
     }
+    if ($className -eq "Tauri Window") {
+      $len = [SettingsVerify]::GetWindowTextLength($hwnd)
+      if ($len -gt 0) {
+        $txt = New-Object System.Text.StringBuilder($len + 1)
+        [SettingsVerify]::GetWindowText($hwnd, $txt, $txt.Capacity) | Out-Null
+        if ($txt.ToString() -eq "Settings") {
+          $settingsHwnd = $hwnd
+          $winX = $secLeft + 50
+          $winY = $secTop + 50
+          $winW = 580
+          $winH = 720
+          [SettingsVerify]::SetWindowPos($settingsHwnd, [IntPtr]::Zero, $winX, $winY, $winW, $winH, 0) | Out-Null
+          Pass "Settings window (webview) appeared and moved to secondary display"
+          break
+        }
+      }
+    }
   }
   if ($settingsHwnd -ne [IntPtr]::Zero) { break }
   Start-Sleep -Milliseconds 100
