@@ -100,6 +100,7 @@ scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
 scripts/verify-settings-macos.sh  # macOS: Settings via Accessibility, not CI
 scripts/verify-settings-webview-select-macos.sh  # macOS: webview <select> above overlay (#849)
+scripts/verify-settings-keyboard-webview.sh  # macOS: keyboard-only Settings webview (#848)
 scripts/verify-settings-linux.sh  # Linux: Settings via AT-SPI, not CI
 scripts/verify-settings-win.ps1   # Windows: Settings via UI Automation, not CI
 scripts/verify-anchor-taskbar-win.ps1  # Windows: no auto-open Settings (Q1), taskbar click opens Settings (Q2)
@@ -110,7 +111,7 @@ scripts/bench-rss-windows.ps1   # Windows: RSS baseline
 
 Each overlay script checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
 
-`verify-settings-macos.sh` drives the AppKit Settings window through Accessibility. `verify-settings-linux.sh` drives the GTK Settings window through AT-SPI via `scripts/ax-settings-linux.py`. `verify-settings-win.ps1` drives the Win32 Settings window through UI Automation via `scripts/ax-settings-win.ps1`. CI does not run any of them.
+`verify-settings-macos.sh` drives the AppKit Settings window through Accessibility. `verify-settings-keyboard-webview.sh` launches with `AI_BUDDY_SETTINGS_WEBVIEW=1` and drives Tab, Space, Enter, and Escape on that window; it writes a six-row pass/fail table and stills under `.verify/`. `verify-settings-linux.sh` drives the GTK Settings window through AT-SPI via `scripts/ax-settings-linux.py`. `verify-settings-win.ps1` drives the Win32 Settings window through UI Automation via `scripts/ax-settings-win.ps1`. CI does not run any of them.
 
 Build the debug binary, then run the script from the repo root:
 
