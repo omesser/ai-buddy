@@ -7,7 +7,8 @@
 // wrong row. Coordinates appear nowhere; controls are pressed by name.
 
 // Needs an Accessibility grant for whatever runs it (System Settings > Privacy
-// & Security > Accessibility). verify-settings-macos.sh is its only caller.
+// & Security > Accessibility). Callers: verify-settings-macos.sh and
+// verify-settings-webview-select-macos.sh.
 
 import ApplicationServices
 import Foundation
@@ -20,7 +21,7 @@ func die(_ message: String) -> Never {
 }
 
 guard args.count >= 2, let pid = pid_t(args[1]) else {
-    die("usage: ax-settings <open|tab|pick|dump|frame> <pid> [args]")
+    die("usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move> <pid> [args]")
 }
 
 guard AXIsProcessTrusted() else {
@@ -127,13 +128,7 @@ func click(_ element: AXUIElement) -> Bool {
 /// that menu to no accessibility tree: not under the popup, not under the
 /// application, and not by hit test from either. A window on the menu layer is
 /// the only evidence the script has that the menu opened. #797.
-func menuWindowCount() -> Int {
-    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-    return ((info as? [[String: AnyObject]]) ?? []).filter {
-        ($0[kCGWindowOwnerPID as String] as? pid_t) == pid
-            && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 100
-    }.count
-}
+func menuWindowCount() -> Int { menuWindows().count }
 
 /// Picks an item out of an already-open menu by typing its title, then Return.
 /// macOS menus select by typed prefix, so the script can still pick by name
@@ -179,6 +174,43 @@ func window(titled title: String) -> AXUIElement? {
 
 func settingsWindow() -> AXUIElement? { window(titled: "Settings") }
 
+/// The popup whose preceding static text is `label`. Render order, not index:
+/// a source change rebuilds the webview tree, so callers resolve this fresh.
+func popup(labelled label: String) -> AXUIElement? {
+    guard let window = settledWindow(titled: "Settings") else { return nil }
+    var lastLabel = ""
+    var hit: AXUIElement?
+    func scan(_ element: AXUIElement, depth: Int) {
+        guard depth < 30, hit == nil else { return }
+        let role = string(element, kAXRoleAttribute) ?? ""
+        if role == "AXStaticText" { lastLabel = string(element, kAXValueAttribute) ?? "" }
+        if role == "AXPopUpButton", lastLabel == label {
+            hit = element
+            return
+        }
+        for child in children(element) { scan(child, depth: depth + 1) }
+    }
+    scan(window, depth: 0)
+    return hit
+}
+
+/// On-screen menu-layer windows this pid owns. WebKit's `<select>` menu is
+/// one of these and publishes no AXMenu (#797).
+func menuWindows() -> [[String: AnyObject]] {
+    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+    return ((info as? [[String: AnyObject]]) ?? []).filter {
+        ($0[kCGWindowOwnerPID as String] as? pid_t) == pid
+            && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 100
+    }
+}
+
+func printRect(_ rect: CGRect, extra: String = "") {
+    let suffix = extra.isEmpty ? "" : ",\(extra)"
+    print(
+        "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))\(suffix)"
+    )
+}
+
 /// A WKWebView publishes its tree only on request. The first pass into the
 /// window gets the content view as a childless AXGroup with no AXScrollArea
 /// or AXWebArea under it, and the real subtree lands 107 ms after that ask.
@@ -194,9 +226,9 @@ func webContentSettled(_ window: AXUIElement) -> Bool {
     }
 }
 
-/// `tab`, `pick` and `dump` each address a control the webview owns, so each
-/// waits for that priming. `open` and `frame` do not: the status item and the
-/// window rectangle are AppKit's, and neither descends into the content. #779.
+/// `tab`, `pick`, `dump`, `popup-frame` and `open-popup` each address a
+/// control the webview owns, so each waits for that priming. `open`, `move`
+/// and `frame` do not: the status item and the window rectangle are AppKit's. #779.
 func settledWindow(titled title: String) -> AXUIElement? {
     guard let window = window(titled: title) else { return nil }
     _ = waitFor(5, { webContentSettled(window) ? window : nil })
@@ -243,26 +275,6 @@ case "pick":
     // two launches. The popup is addressed by the label above it, because the
     // tree is in render order and a label is stabler than an index.
     guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
-    // Resolved fresh on every call rather than captured once. The webview
-    // rebuilds its whole tree on a source change, so an element found before
-    // the pick reports nothing afterwards.
-    func popup(labelled label: String) -> AXUIElement? {
-        guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
-        var lastLabel = ""
-        var hit: AXUIElement?
-        func scan(_ element: AXUIElement, depth: Int) {
-            guard depth < 30, hit == nil else { return }
-            let role = string(element, kAXRoleAttribute) ?? ""
-            if role == "AXStaticText" { lastLabel = string(element, kAXValueAttribute) ?? "" }
-            if role == "AXPopUpButton", lastLabel == label {
-                hit = element
-                return
-            }
-            for child in children(element) { scan(child, depth: depth + 1) }
-        }
-        scan(window, depth: 0)
-        return hit
-    }
     guard let target = popup(labelled: args[2]) else { die("no popup labelled \(args[2])") }
     // Setting AXValue is refused by NSPopUpButton, so open it and press the
     // row: the same path a person takes, and the only one that fires the
@@ -310,12 +322,83 @@ case "pick":
                 + "after picking \(args[3])")
     }
 
+case "popup-frame":
+    guard args.count >= 3 else { die("usage: ax-settings popup-frame <pid> <label>") }
+    guard let target = popup(labelled: args[2]), let rect = frame(target) else {
+        die("no popup labelled \(args[2])")
+    }
+    printRect(rect)
+
+case "open-popup":
+    // Press the popup and leave the menu up. #849 needs a still of that menu
+    // against the overlay; `pick` would dismiss it before the capture.
+    guard args.count >= 3 else { die("usage: ax-settings open-popup <pid> <label>") }
+    var opened = menuWindows().first
+    if opened == nil {
+        guard let target = popup(labelled: args[2]) else { die("no popup labelled \(args[2])") }
+        let menusBefore = menuWindowCount()
+        guard press(target) else { die("could not open the \(args[2]) popup") }
+        let deadline = Date().addingTimeInterval(5)
+        repeat {
+            let menus = menuWindows()
+            if menus.count > menusBefore {
+                opened = menus.first
+                break
+            }
+            usleep(100_000)
+        } while Date() < deadline
+    }
+    guard let opened,
+        let bounds = opened[kCGWindowBounds as String] as? [String: AnyObject]
+    else {
+        die("the \(args[2]) popup drew no menu; last: \(lastError)")
+    }
+    let x = (bounds["X"] as? NSNumber)?.doubleValue ?? 0
+    let y = (bounds["Y"] as? NSNumber)?.doubleValue ?? 0
+    let w = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
+    let h = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
+    let layer = (opened[kCGWindowLayer as String] as? Int) ?? 0
+    printRect(CGRect(x: x, y: y, width: w, height: h), extra: "layer=\(layer)")
+
+case "type-select":
+    // Menu already open. WebKit publishes no AXMenu, so the option is typed (#801).
+    guard args.count >= 4 else { die("usage: ax-settings type-select <pid> <label> <option>") }
+    guard menuWindowCount() > 0 else { die("no menu is open") }
+    typeSelect(args[3])
+    guard
+        waitFor(
+            10,
+            {
+                guard let fresh = popup(labelled: args[2]),
+                    string(fresh, kAXValueAttribute) == args[3]
+                else { return nil }
+                return fresh
+            }) != nil
+    else {
+        die(
+            "the \(args[2]) popup still reads "
+                + "\(popup(labelled: args[2]).flatMap { string($0, kAXValueAttribute) } ?? "nothing") "
+                + "after picking \(args[3])")
+    }
+
+case "move":
+    guard args.count >= 4, let x = Double(args[2]), let y = Double(args[3]) else {
+        die("usage: ax-settings move <pid> <x> <y>")
+    }
+    guard let window = settingsWindow() else { die("Settings is not open") }
+    var origin = CGPoint(x: x, y: y)
+    guard let value = AXValueCreate(.cgPoint, &origin),
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success
+    else {
+        die("could not move Settings")
+    }
+
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
     guard let window = settingsWindow(), let rect = frame(window) else {
         die("Settings is not open")
     }
-    print("\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))")
+    printRect(rect)
 
 case "dump":
     // One line per element as role|title|value|placeholder|enabled|settable, so

@@ -15,6 +15,17 @@ let clicks = args.count >= 4 ? max(1, Int(args[3]) ?? 1) : 1
 
 let point = CGPoint(x: x, y: y)
 CGWarpMouseCursorPosition(point)
+// A tracking <select> menu only highlights after a move, not a warp.
+if let source = CGEventSource(stateID: .combinedSessionState),
+    let moved = CGEvent(
+        mouseEventSource: source,
+        mouseType: .mouseMoved,
+        mouseCursorPosition: point,
+        mouseButton: .left)
+{
+    moved.post(tap: .cghidEventTap)
+    Thread.sleep(forTimeInterval: 0.12)
+}
 
 let interval = NSEvent.doubleClickInterval > 0 ? NSEvent.doubleClickInterval : 0.5
 let gap = interval * 0.4
