@@ -1,49 +1,20 @@
-//! Two-clock scheduler: active timer when animating, idle recv() when still.
-//!
-//! The frame loop runs at 16ms when the sprite needs it — Grab, Throw, fall,
-//! walk, any playing Animation, multi-frame idle/sleep art, or sleep-after
-//! accrual — and blocks on `recv()` when it does not: single-frame still art,
-//! already asleep, or hidden.
-//!
-//! **Deep-idle savings:** With shipped Characters' multi-frame looping
-//! idle/sleep animations, visible buddies almost never reach deep-idle (block
-//! on recv). The CPU win is primarily when **Hidden** — a fullscreen app, a
-//! sleep rule, or hotkey hide. When Hidden, frame_loop uses `thread::sleep`
-//! instead of `recv` so XI2 input events cannot wake the loop (Spec CLEAR).
-//! When visible but Idle (Asleep, DND), `recv` stays to keep XI2 for hit-test
-//! and gesture (Poke/Grab/Throw). SPEC #27: DND stays visible+quiet.
-//! Optional future: duty-cycle the animation so visible idle buddies can also
-//! deep-idle between frames.
-//!
-//! Idle mode predicate: visible sprite with Grounded/Perched state runs Active
-//! until truly still (animation settled, sleep-after complete). Active ensures
-//! Engine clocks (animation_ms, idle_ms) advance at wall-clock rate; Idle waits
-//! for real work deadlines without artificial caps. See frame_loop for
-//! animation + sleep-after checks.
-//!
-//! This is pure state-based logic tested in core. The `ScheduleMode` tells the
-//! loop which clock to use; the loop owns the channel, timer, platform input
-//! source, and animation/sleep-accrual checks.
+//! Two-clock scheduler: 16ms timer when the sprite needs ticks, `recv` when it
+//! does not. Hidden sleeps so XI2 cannot wake the loop. Visible Idle keeps
+//! `recv` for hit-test and gesture. DND stays visible and quiet.
 
 use crate::engine::{Frame, State};
 
 /// How the frame loop should wait for the next tick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScheduleMode {
-    /// Active: run the 16ms timer. The sprite is animating, falling, being
-    /// dragged, or otherwise needs frequent ticks.
+    /// Run the 16ms timer.
     Active,
-    /// Idle: block on `recv()` until an input event or other wake source
-    /// arrives. The sprite is still, hidden, or asleep.
+    /// Block on `recv()` until an input event arrives.
     Idle,
 }
 
-/// Whether this tick requires active timing for the next.
-///
-/// Accepts the current `Frame`, whether the sprite is visible, and whether any
-/// `Behavior` is playing. A playing Behavior may drive an Animation (walk,
-/// talk, react) even while the sprite is Grounded, which is why State alone
-/// cannot decide.
+/// Which clock the next tick uses.
+/// A playing Behavior may animate while Grounded, so State alone cannot decide.
 pub fn mode(frame: &Frame, visible: bool, behavior_playing: bool) -> ScheduleMode {
     if !visible {
         return ScheduleMode::Idle;
