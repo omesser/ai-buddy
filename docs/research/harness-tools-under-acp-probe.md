@@ -39,9 +39,12 @@ Mac. `npx -y @agentclientprotocol/claude-agent-acp@latest` was 0.79.0,
 spawning bundled `claude` 2.1.274. ACP `_auth/status_update` reported
 `account.plan` as `team` and then `Claude Team`. `~/.claude.json`
 `oauthAccount.organizationType` is `claude_team` and `seatTier` is
-`team_tier_1`. Claim 11 stays Assumption. This machine is still Team, so
-the interactive-session gate is still behind the plan gate. The fixture
-run is in the round-three section below.
+`team_tier_1`. The Team run could not isolate the plan gate from the
+interactive-session gate, but vendor documentation now resolves the
+remaining question: computer use requires an interactive Claude Code
+session, while the ACP adapter launches the SDK's stream-json print path.
+Claim 11 is therefore a documented Inference, not an Assumption. The
+fixture run is in the round-three section below.
 
 ## How claims are marked
 
@@ -68,10 +71,10 @@ causes are Assumptions.
    --permission-prompt-tool stdio`, the print-mode class. Fact, measured: the
    session's `mcp_servers` list carries no `computer-use` entry, with or
    without the undocumented `ALLOW_ANT_COMPUTER_USE_MCP=1` in the child's
-   environment. Assumption: which gate fires first on this machine is not
-   observable, because the Team plan trips the plan gate before the
-   interactive gate can. The blocker is Anthropic's platform (two documented
-   gates), not the adapter and not ai-buddy's client capabilities.
+   environment. Inference: the adapter does not satisfy the vendor's
+   interactive-session requirement, so a Pro or Max plan would not make this
+   ACP path eligible. The blocker is Anthropic's documented session mode,
+   not ai-buddy's client capabilities.
 3. **Web search and fetch.** Fact, measured: `WebSearch` and `WebFetch` are in
    the tool list in every Claude probe. Fact, measured: Grok's session lists
    `web_search`, `web_fetch`, `open_page` and the `x_*` search tools. Fact,
@@ -153,7 +156,7 @@ causes are Assumptions.
 | 8 | Computer use needs macOS, Pro or Max (not Team or Enterprise), claude.ai auth, and an interactive session | Fact | code.claude.com/docs/en/computer-use |
 | 9 | The computer-use opt-in is `enabledMcpServers`, recorded per project in `~/.claude.json` | Fact | code.claude.com/docs/en/mcp, "an opt-in list for built-in servers that default to off, such as `computer-use`" |
 | 10 | No `computer-use` server appears in an ACP session on this machine, with or without `ALLOW_ANT_COMPUTER_USE_MCP=1` | Fact | measured, `init.mcp_servers`; round three: still absent with `enabledMcpServers: ["computer-use"]` on a throwaway fixture `cwd` |
-| 11 | On a Pro or Max machine with the opt-in recorded for ai-buddy's `cwd`, the interactive gate would still keep `computer-use` out of an ACP session | Assumption | follows from claim 8's fourth clause. Round three (2026-09-18): this Mac is still Team (`account.plan` = `team` / `Claude Team`). The interactive gate is still not observable |
+| 11 | On a Pro or Max machine with the opt-in recorded for ai-buddy's `cwd`, the interactive gate would still keep `computer-use` out of an ACP session | **Inference** | Anthropic's computer-use docs require an interactive Claude Code session; the CLI reference defines `-p` as the SDK/non-interactive path; the ACP adapter launches stream-json print mode. Round three confirmed the Team plan but was not needed to establish this session-mode conclusion |
 | 12 | The Harness turn budget is 120 seconds by default | Fact | `harness.rs` tests for #690 at anchor |
 | 13 | ACP has no computer-use client capability; `fs/*` and `terminal/*` are methods the agent calls on the client | Fact | agentclientprotocol.com/protocol/initialization |
 | 14 | Grok's ACP session carries web, shell, file, subagent, scheduler and media tools | Fact about the self-report, Inference about the actual list | measured `AGENT_TEXT`, 33 names |
@@ -174,7 +177,7 @@ measured cell.
 
 | Harness | Computer use (user's desktop) | Shell | Web search / fetch | User's own MCP servers | Filesystem / edit | Ask the user a question |
 |---|---|---|---|---|---|---|
-| `claude` | **no** (two platform gates; Assumption that the interactive gate holds on Pro/Max) | **yes** | **yes** | **conditional**: user scope and claude.ai connectors yes; local and project scope only when `cwd` matches | **yes** | **no** without `elicitation.form` |
+| `claude` | **no** (Pro/Max, macOS, claude.ai auth, and interactive-session requirements; ACP uses the SDK print path) | **yes** | **yes** | **conditional**: user scope and claude.ai connectors yes; local and project scope only when `cwd` matches | **yes** | **no** without `elicitation.form` |
 | `opencode` | no (none exists) | **yes** (`bash`) | **fetch only** (`webfetch`; no websearch tool in the list) | **yes** (`mcpCapabilities: {http, sse}`; the user's own agents and commands loaded) | **yes** (`edit`, `write`, `read`, `glob`, `grep`) | **no** (none listed) |
 | `hermes` | no (browser automation instead, opt-in) | **yes** (`terminal`, `process`, `execute_code`) | **yes** (`web_search`, `web_extract`); **browser tools listed but unavailable** — the start-up CDP check fails and gates all ten | **yes** (vendor `mcp` subcommand; not exercised) | **yes** (`read_file`, `write_file`, `patch`, `search_files`) | **no** (none listed) |
 | `cursor-agent` | no | **yes** (`Shell`) | **yes** (`WebSearch`, `WebFetch`) | **yes** (`ListMcpResources`, `FetchMcpResource`) | **yes** (`Read`, `Write`, `StrReplace`, `Glob`, `Grep`, `Delete`) | **no** (none listed) |
@@ -250,9 +253,9 @@ out of the product.
 
 ### 5. Host an interactive session for a full-tool lane (#508)
 
-Assumption: an interactive `claude` on a Pro or Max plan would offer
-computer use, since that is the documented shape. It is the only route to
-that cell in the matrix and it costs the most. ADR-0018 forbids it
+Inference: an interactive `claude` on a Pro or Max plan is the documented
+shape for computer use, but ACP cannot provide that session mode. It is the
+only route to that cell in the matrix and it costs the most. ADR-0018 forbids it
 outright ("We never launch, embed, or wrap the Harness's TUI"), so it needs
 a supersession. ADR-0023 is strained. An interactive CLI takes MCP from its
 own config, so ai-buddy's endpoint would have to be registered rather than
@@ -265,34 +268,18 @@ payoff is one tool class on one Harness on one plan tier.
 Out of scope by the issue and by ADR-0003. Listed so the ranking is
 exhaustive.
 
-## Recommendation, and the smallest probe that would falsify the top option
+## Recommendation
 
 Option 1 ranks first. It claims that changing `cwd` restores the user's
-local and project MCP servers to the attach. The cheap half is already
-measured and held. What remains is the probe that would show `cwd` does not
-also restore computer use. Its result sizes the option.
+local and project MCP servers to the attach. The computer-use cell is
+closed by the vendor's documented session-mode requirement: changing `cwd`
+or recording `enabledMcpServers: ["computer-use"]` cannot turn the ACP
+SDK print path into an interactive Claude Code session. #508 remains the
+route that would require a separate architectural decision.
 
-**Run this on a Mac signed in to claude.ai on a Pro or Max plan.** Record
-`enabledMcpServers: ["computer-use"]` under
-`projects["<DIR>"]` in `~/.claude.json` for the directory you will pass, the
-way `/mcp` writes it. Then run the probe client below:
-
-```sh
-PROBE_META='{"claudeCode":{"emitRawSDKMessages":[{"type":"system","subtype":"init"}]}}' \
-node acp-probe.mjs "<DIR>" 90 'Reply with the single word ok.' \
-  -- npx -y @agentclientprotocol/claude-agent-acp@latest
-```
-
-On `@agentclientprotocol/claude-agent-acp@0.79.0`, set
-`emitRawSDKMessages` to `true` instead of the 0.78.0 filter array. Round
-three needed that boolean or `init.mcp_servers` never arrived.
-
-Success signal, read off the one `_claude/sdkMessage` notification:
-
-| `init.mcp_servers` contains `computer-use` | Meaning |
-|---|---|
-| yes, `connected` | The interactive gate does not bind the SDK path. Option #1 plus the opt-in restores computer use. Reopen this note and #508 loses its reason. |
-| no | The interactive gate holds (claim 11 confirmed). Option #1 restores MCP scope only. #508 is the only remaining route to that cell. |
+No further Pro or Max probe is required for this question. The vendor docs
+define the eligibility boundary, and the ACP adapter's launch mode is already
+recorded above.
 
 Any machine on any plan can rerun the cheap half. Run the same command
 twice with two `cwd` values, one of them a directory where
@@ -498,14 +485,15 @@ rate-limit label, not a consumer Max plan. The ACP account object and
 ```
 
 No `computer-use` name. No `mcp__computer-use__*` tool. Claim 10 still
-holds with the per-project opt-in recorded. Claim 11 is still
-Assumption. A Team plan trips the plan gate first, so this run cannot
-say whether the interactive-session gate would bind on Pro or Max.
+holds with the per-project opt-in recorded. Claim 11 is now an Inference
+from the vendor's interactive-session requirement and the adapter's
+stream-json print path. The Team result is consistent with that conclusion
+but is not presented as a Pro or Max observation.
 
-## Open, not resolved here
+## Open questions
 
-- Claim 11 still needs a Pro or Max Mac. Round three measured Team on
-  this machine and left the cell open.
+- Claim 11 is resolved as an Inference from Anthropic's documented
+  interactive-session requirement and the ACP adapter's SDK print path.
 - hermes' and opencode's lists are self-reported through a model turn, except
   hermes' `/tools`, which is the adapter's own registry and therefore stronger
   evidence. cursor-agent's and codex's are self-reported. Only the `claude` row
