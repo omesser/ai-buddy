@@ -15,7 +15,7 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 
 ## What It Does
 
-- **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue. Works offline with Static weights; optionally connect a Completer (API key or local model) for more variety.
+- **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue. Works offline with Static weights; optionally connect a model (API key or local) for more variety.
 - **Perches on windows.** Falls, lands on a window's top edge, rides a slow drag, drops when you yank or close the window.
 - **Reacts to gestures.** Poke, pick up, throw — it arcs, lands, and keeps going.
 - **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
@@ -114,7 +114,7 @@ SmartScreen may warn on the first open because the build is not Authenticode sig
 
 **Works offline.** With no API key, Static weights pick idle Behaviors from the Character. No model, no account required.
 
-**Optional Completer.** Point Settings → Director (or env vars) at OpenAI, Anthropic, Ollama, or any OpenAI-compatible `/v1/chat/completions` endpoint:
+**Optional Model API.** Point Settings → AI (or env vars) at OpenAI, Anthropic, Ollama, or any OpenAI-compatible `/v1/chat/completions` endpoint:
 
 ```sh
 # OpenAI (or export env vars to persist)
