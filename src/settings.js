@@ -304,6 +304,36 @@ export async function handleEvent(payload) {
   return processResponse(response);
 }
 
+// Native Settings copies in the window controller. The webview only gets
+// Outcome::Run, so the page writes the string it already shows. #855.
+const COPY_RUN_FIELDS = Object.freeze({
+  copy_byo_snippet: "byo_snippet",
+  copy_byo_token: "byo_token",
+});
+
+const COPY_PRESS_RUN = Object.freeze({
+  byo_copy: "copy_byo_snippet",
+  byo_copy_token: "copy_byo_token",
+});
+
+export async function writeRunClipboard(run, values, writeText) {
+  const field = COPY_RUN_FIELDS[run];
+  if (field === undefined) return;
+  const text = values[field] ?? "";
+  if (text === "") return;
+  await writeText(text);
+}
+
+export async function applyEventOutcome(outcome, values, writeText) {
+  if (!outcome) return false;
+  await writeRunClipboard(outcome.run, values, writeText);
+  return true;
+}
+
+export function copyRunForPress(payload) {
+  return payload && typeof payload.press === "string" ? COPY_PRESS_RUN[payload.press] : undefined;
+}
+
 // --- The tab shell ---------------------------------------------------------
 
 export function tabTitles(form) {
@@ -392,10 +422,20 @@ if (typeof document !== "undefined") {
   }
 
   // handleEvent already invokes settings_event; a truthy outcome (refresh,
-  // fill, reset, clearKey, run) means the page's snapshot is stale.
+  // fill, reset, clearKey, run) means the page's snapshot is stale. Copy
+  // starts writeText in this click turn: awaiting settings_event first
+  // drops the user gesture WebKit requires for the clipboard.
   async function emitEvent(payload) {
+    const writeText = (text) => navigator.clipboard.writeText(text);
+    const hinted = copyRunForPress(payload);
+    const early =
+      hinted !== undefined ? writeRunClipboard(hinted, currentValues, writeText) : Promise.resolve();
     try {
-      if (await handleEvent(payload)) {
+      const outcome = await handleEvent(payload);
+      await early;
+      if (hinted !== undefined) {
+        if (outcome) await loadSnapshot();
+      } else if (await applyEventOutcome(outcome, currentValues, writeText)) {
         await loadSnapshot();
       }
     } catch (err) {
