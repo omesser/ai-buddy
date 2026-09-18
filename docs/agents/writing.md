@@ -100,15 +100,33 @@ usually worth keeping beside the asset it documents.
 ## An agent signs what it writes on GitHub
 
 End every issue comment, pull request description, review and inline reply an
-agent writes with one line of its own:
+agent writes with one line of its own. There are two kinds of signer. The first
+words of the line say which, so a Grok Build session and a Grok bot named Coder
+cannot be mistaken for each other.
+
+**A Harness agent** names the Harness that launched the session, then `agent`:
 
 ```
-_— Cursor agent (<AgentName>), on [@omesser](https://github.com/omesser)'s behalf._
+_— Grok Build agent, on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-`<AgentName>` is the agent's profile name if available (Architect, Coder, …). This applies
-to every issue, PR body, review, comment, and gist on any GitHub repository when
-writing through Oded's account.
+The Harness is the product, written as the README Harness Support table already
+names it for humans: `Cursor`, `Claude Code`, `Grok Build`, `Codex`,
+`OpenCode`, `Hermes`, `Pi`. An unnamed attach uses that command (`copilot`,
+not a made-up brand). Do not add a parenthetical after `agent`. `Coder` and
+`Architect` are Grok bot instance names. `_— Cursor agent (Coder)_` and
+`_— Grok Build agent (Coder)_` both read as that bot.
+
+**A Grok bot** (a named bot in Grok, not a Harness attach) names the bot:
+
+```
+_— Grok bot (Coder), on [@omesser](https://github.com/omesser)'s behalf._
+```
+
+`<Name>` is the bot's configured name. Only this line may use those names.
+
+This applies to every issue, PR body, review, comment, and gist on any GitHub
+repository when writing through Oded's account.
 
 When an agent writes through an owner's account, the author name never says
 who wrote a comment. A reader following a back-and-forth needs that: which line
