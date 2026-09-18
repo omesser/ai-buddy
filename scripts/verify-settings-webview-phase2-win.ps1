@@ -7,8 +7,8 @@
 .DESCRIPTION
   Four checks against AI_BUDDY_SETTINGS_WEBVIEW=1: window opens as a webview,
   all five tabs are present and driven, Presence Sound round-trips to
-  %APPDATA%\ai-buddy\settings.json, z-order still is a cropped screenshot for
-  a human to judge.
+  %APPDATA%\ai-buddy\settings.json, z-order is GetTopWindow plus GW_HWNDNEXT
+  (Settings HWND before each overlay HWND). 04-zorder.png is illustration.
 
   Does not replace scripts/verify-settings-win.ps1 (native Win32 children).
 
@@ -80,12 +80,15 @@ public static class Phase2Win {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint processId);
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int X, int Y, int cx, int cy, uint flags);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc cb, IntPtr data);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
   [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
   public static readonly IntPtr HWND_TOP = IntPtr.Zero;
+  public const uint GW_HWNDNEXT = 2;
   public const uint SWP_NOSIZE=1, SWP_NOZORDER=4, SWP_SHOWWINDOW=0x40, MONITORINFOF_PRIMARY=1;
   public const uint WM_LBUTTONDOWN=0x0201, WM_LBUTTONUP=0x0202;
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
@@ -177,6 +180,91 @@ function Find-SettingsHwnd([uint32]$TargetProcessId) {
   }
   [void][Phase2Win]::EnumWindows($cb, [IntPtr]::Zero)
   return $script:foundHwnd
+}
+
+function Get-ZOrderHwnds {
+  # Top-to-bottom top-level walk. Same role as X11 _NET_CLIENT_LIST_STACKING.
+  $list = New-Object System.Collections.Generic.List[IntPtr]
+  $h = [Phase2Win]::GetTopWindow([IntPtr]::Zero)
+  $guard = 0
+  # Cap a cyclic GetWindow walk; a desktop does not have thousands of top-level HWNDs.
+  while ($h -ne [IntPtr]::Zero -and $guard -lt 4096) {
+    [void]$list.Add($h)
+    $h = [Phase2Win]::GetWindow($h, [Phase2Win]::GW_HWNDNEXT)
+    $guard++
+  }
+  return $list
+}
+
+function Get-HwndStackIndex([IntPtr]$Needle, $Stack) {
+  $i = 0
+  foreach ($h in $Stack) {
+    if ($h -eq $Needle) { return $i }
+    $i++
+  }
+  return -1
+}
+
+function Test-HwndAbove([IntPtr]$Front, [IntPtr]$Back, $Stack) {
+  $fi = Get-HwndStackIndex $Front $Stack
+  $bi = Get-HwndStackIndex $Back $Stack
+  return ($fi -ge 0) -and ($bi -ge 0) -and ($fi -lt $bi)
+}
+
+function Get-OverlayMinSize($monitors) {
+  # 400 is above Tauri 10x10 and ~200x200 placeholders. Lower only when a
+  # monitor's half-size is smaller, matching the X11 ROOT/2 idea.
+  $minW = 400
+  $minH = 400
+  foreach ($m in @($monitors)) {
+    $mw = [int]($m.width / 2)
+    $mh = [int]($m.height / 2)
+    if ($mw -gt 0 -and $mw -lt $minW) { $minW = $mw }
+    if ($mh -gt 0 -and $mh -lt $minH) { $minH = $mh }
+  }
+  return @{ width = $minW; height = $minH }
+}
+
+function Find-OverlayHwnds([uint32]$TargetProcessId, [IntPtr]$SettingsHwnd, [int]$MinW, [int]$MinH) {
+  # Overlay title is ai-buddy (main.rs). Size drops the 1x1 taskbar anchor.
+  $script:overlayHwnds = New-Object System.Collections.Generic.List[IntPtr]
+  $script:overlayPid = $TargetProcessId
+  $script:overlaySettings = $SettingsHwnd
+  $script:overlayMinW = $MinW
+  $script:overlayMinH = $MinH
+  $cb = [Phase2Win+EnumProc]{
+    param($h, $l)
+    $processId = [uint32]0
+    [void][Phase2Win]::GetWindowThreadProcessId($h, [ref]$processId)
+    if ($processId -ne $script:overlayPid) { return $true }
+    if ($h -eq $script:overlaySettings) { return $true }
+    $cls = New-Object Text.StringBuilder 256
+    $title = New-Object Text.StringBuilder 256
+    [void][Phase2Win]::GetClassName($h, $cls, 256)
+    [void][Phase2Win]::GetWindowText($h, $title, 256)
+    $c = $cls.ToString(); $t = $title.ToString()
+    if ($t -eq 'Settings') { return $true }
+    if ($t -ne 'ai-buddy') { return $true }
+    $rect = New-Object Phase2Win+RECT
+    if (-not [Phase2Win]::GetWindowRect($h, [ref]$rect)) { return $true }
+    $w = $rect.Right - $rect.Left
+    $hgt = $rect.Bottom - $rect.Top
+    if ($w -ge $script:overlayMinW -and $hgt -ge $script:overlayMinH) {
+      [void]$script:overlayHwnds.Add($h)
+      Log "HWND overlay class='$c' ${w}x${hgt} processId=$processId"
+    }
+    return $true
+  }
+  [void][Phase2Win]::EnumWindows($cb, [IntPtr]::Zero)
+  return $script:overlayHwnds
+}
+
+function Test-SettingsAboveOverlays([IntPtr]$SettingsHwnd, $OverlayHwnds, $Stack) {
+  if ($null -eq $OverlayHwnds -or $OverlayHwnds.Count -eq 0) { return $false }
+  foreach ($ov in $OverlayHwnds) {
+    if (-not (Test-HwndAbove $SettingsHwnd $ov $Stack)) { return $false }
+  }
+  return $true
 }
 
 function Park-OnSecondary([IntPtr]$hwnd, $monitors) {
@@ -523,9 +611,31 @@ try {
 Log ("CHECK3 " + $Report.checks['3_roundtrip'])
 
 Capture '04-zorder.png' $hwnd
-$Report.checks['4_zorder'] = 'REVIEW'
-$Report.notes += 'Judge Settings above Character/overlay in 04-zorder.png (HWND crop; sprite only visible if it overlaps Settings)'
-Log 'CHECK4 REVIEW'
+$minSize = Get-OverlayMinSize $monitors
+$overlays = $null
+$stack = $null
+$zOk = $false
+for ($i = 0; $i -lt 40; $i++) {
+  $overlays = Find-OverlayHwnds $targetProcessId $hwnd $minSize.width $minSize.height
+  $stack = Get-ZOrderHwnds
+  $zOk = Test-SettingsAboveOverlays $hwnd $overlays $stack
+  if ($zOk) { break }
+  Start-Sleep -Milliseconds 250
+}
+$si = Get-HwndStackIndex $hwnd $stack
+if ($null -eq $overlays -or $overlays.Count -eq 0) {
+  $Report.notes += 'overlay HWND missing (title ai-buddy, large rect, same process)'
+} else {
+  foreach ($ov in $overlays) {
+    $oi = Get-HwndStackIndex $ov $stack
+    $Report.notes += "zorder settings=$hwnd pos=$si overlay=$ov pos=$oi"
+  }
+}
+$Report.checks['4_zorder'] = $(if ($zOk) { 'PASS' } else { 'FAIL' })
+$Report.notes += '04-zorder.png is HWND crop illustration; stacking is GetTopWindow+GW_HWNDNEXT'
+$overlayCount = 0
+if ($null -ne $overlays) { $overlayCount = $overlays.Count }
+Log ("CHECK4 " + $Report.checks['4_zorder'] + " settings_pos=$si overlays=$overlayCount")
 Stop-Target $targetProcessId
 Write-Report
 Log "DONE OutDir=$OutDir"
