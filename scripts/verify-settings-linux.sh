@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Linux Settings Window smoke test, the GTK counterpart to
 # verify-settings-win.ps1 / verify-settings-macos.sh.
-#
 # Checks what the GTK renderer actually built: the AI tab's section order,
 # the labels and help lines, and - the part no unit test can reach - whether
 # the HTTP Completer rows freeze and unfreeze when the AI source popup
@@ -17,10 +16,8 @@
 # so the run does not read your own settings or Secret Service. Output under
 # .verify/settings-linux-<stamp>/.
 #
-# Needs AT-SPI accessibility infrastructure available (atspi2, pyatspi).
-# The Harness switch needs that Harness installed and signed in; those freeze
-# checks are skipped, not failed, when it never answers. CI does not run this
-# script.
+# Needs AT-SPI (atspi2, pyatspi). Freeze checks are skipped, not failed, when
+# the Harness never answers. CI does not run this script.
 
 set -uo pipefail
 

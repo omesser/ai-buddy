@@ -31,11 +31,6 @@ valid:
     //
     //
     //
-    //
-    //
-    //
-    //
-    //
     fn f() {}
   - |
     //!
@@ -71,11 +66,6 @@ valid:
     fn f() {}
 invalid:
   - |
-    //
-    //
-    //
-    //
-    //
     //
     //
     //
@@ -123,21 +113,11 @@ invalid:
     //
     //
     //
-    //
-    //
-    //
-    //
-    //
     const f = 1;
 ---
 id: comment-block-ceiling-typescript
 invalid:
   - |
-    //
-    //
-    //
-    //
-    //
     //
     //
     //
@@ -185,21 +165,11 @@ invalid:
     #
     #
     #
-    #
-    #
-    #
-    #
-    #
     f = 1
 ---
 id: comment-block-ceiling-bash
 invalid:
   - |
-    #
-    #
-    #
-    #
-    #
     #
     #
     #
@@ -246,19 +216,9 @@ valid:
     //
     //
     //
-    //
-    //
-    //
-    //
-    //
     let f = 1
 invalid:
   - |
-    //
-    //
-    //
-    //
-    //
     //
     //
     //
@@ -306,11 +266,6 @@ invalid:
     #
     #
     #
-    #
-    #
-    #
-    #
-    #
     key: value
 ---
 id: comment-block-ceiling-css
@@ -335,21 +290,11 @@ valid:
     x
     x
     x
-    x
-    x
-    x
-    x
-    x
     x */
     a { color: red; }
 invalid:
   - |
     /*
-    x
-    x
-    x
-    x
-    x
     x
     x
     x
@@ -376,11 +321,6 @@ id: comment-block-ceiling-html
 invalid:
   - |
     <!--
-    x
-    x
-    x
-    x
-    x
     x
     x
     x
