@@ -68,6 +68,7 @@ function matches(el, conds) {
       case "NameProperty":
         return el.name === unquote(c.value);
       case "ControlTypeProperty":
+        if (/ControlType\]::TabItem/.test(c.value)) return el.controlType === "TabItem";
         return el.controlType === "Window" && /ControlType\]::Window/.test(c.value);
       case "ProcessIdProperty":
         return el.processId === el.boundProcessId;
@@ -216,6 +217,39 @@ test("phase2 CHECK2 tries LegacyIAccessible before PostMessage", () => {
   assert.ok(legacyAt > selectAt, "LegacyIAccessible after the two missing WebView2 patterns");
   assert.match(activate, /DoDefaultAction/);
   assert.ok(postAt > legacyAt, "PostMessage last, still no SetCursorPos");
+});
+
+test("phase2 CHECK2 waits for TabItem names then finds TabItem AND Name", () => {
+  const waiter = extractFunction(phase2Src, "Wait-SettingsTabs");
+  assert.match(waiter, /TimeoutMs = 8000/);
+  assert.match(waiter, /PollMs = 350/);
+  assert.match(waiter, /Find-SettingsTab/);
+  assert.doesNotMatch(waiter, /AutomationElement\]::RootElement/);
+
+  const tabFinder = extractFunction(phase2Src, "Find-SettingsTab");
+  assert.match(tabFinder, /New-TabItemAndNameCondition/);
+  assert.doesNotMatch(tabFinder, /AutomationElement\]::RootElement/);
+
+  const condFn = extractFunction(phase2Src, "New-TabItemAndNameCondition");
+  const conds = parsePropertyConditions(condFn);
+  const byVar = new Map(conds.map((c) => [c.var, c]));
+  const ands = parseAndConditionArgs(condFn, "andCond");
+  assert.equal(ands.length, 1);
+  assert.deepEqual(ands[0].slice().sort(), ["nameCond", "typeCond"]);
+  assert.equal(byVar.get("nameCond").property, "NameProperty");
+  assert.equal(byVar.get("nameCond").value, "$Name");
+  assert.equal(byVar.get("typeCond").property, "ControlTypeProperty");
+  assert.match(byVar.get("typeCond").value, /ControlType\]::TabItem/);
+
+  const tabItemAndName = [
+    { property: "NameProperty", value: '"Presence"' },
+    byVar.get("typeCond"),
+  ];
+  const presencePane = { name: "Presence", controlType: "Pane" };
+  const presenceTab = { name: "Presence", controlType: "TabItem" };
+  assert.equal(matches(presencePane, tabItemAndName), false, "Pane named Presence is not a tab");
+  assert.equal(matches(presenceTab, tabItemAndName), true);
+  assert.match(phase2Src, /already selected \(activate no-op/);
 });
 
 test("phase2 reports the four #715 checks and crops evidence to HWND", () => {

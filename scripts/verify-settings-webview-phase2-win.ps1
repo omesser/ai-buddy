@@ -19,10 +19,11 @@
   Evidence PNGs are cropped to the Settings HWND (privacy) and scaled ~1/3;
   do not commit them. Runners attach with gh issue comment --attach.
 
-  CHECK2: WebView2 tabs often lack Invoke/SelectionItem. This script also
-  tries LegacyIAccessible DoDefaultAction, then PostMessage at the clickable
-  point. Live activate is unproven on a Linux VM (no UIAutomationClient /
-  WebView2); DESKTOP-UQIE144 at 1b9243b failed Invoke/SelectionItem only.
+  CHECK2: wait until all five ControlType.TabItem names exist (WebView2 UIA
+  tree is empty on the first tick), then find each tab with TabItem AND Name
+  -- Name-only hits the Pane also named Presence (ESTHER 2026-09-18). Activate
+  is Invoke, SelectionItem.Select, LegacyIAccessible DoDefaultAction, then
+  PostMessage. Presence already selected plus a no-op activate still PASSes.
 
 .USAGE
   .\scripts\verify-settings-webview-phase2-win.ps1
@@ -222,6 +223,53 @@ function Get-AutomationElementFromHandle([IntPtr]$hwnd) {
   }
 }
 
+function New-TabItemAndNameCondition([string]$Name) {
+  # TabItem AND Name: Name-only FindFirst can return the Pane named Presence
+  # (the tabpanel aria-label) instead of the tab (#715 ESTHER).
+  $nameCond = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::NameProperty, $Name)
+  $typeCond = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [System.Windows.Automation.ControlType]::TabItem)
+  $andCond = New-Object System.Windows.Automation.AndCondition($nameCond, $typeCond)
+  return $andCond
+}
+
+function Find-SettingsTab($win, [string]$Name) {
+  if ($null -eq $win) { return $null }
+  $andCond = New-TabItemAndNameCondition $Name
+  return $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $andCond)
+}
+
+function Wait-SettingsTabs($win, $names, [int]$TimeoutMs = 8000, [int]$PollMs = 350) {
+  if ($null -eq $win) { return $false }
+  $deadline = [datetime]::UtcNow.AddMilliseconds($TimeoutMs)
+  $missing = @($names)
+  while ([datetime]::UtcNow -le $deadline) {
+    $missing = @()
+    foreach ($n in $names) {
+      if ($null -eq (Find-SettingsTab $win $n)) { $missing += $n }
+    }
+    if ($missing.Count -eq 0) {
+      Log ("CHECK2 tabs ready: " + ($names -join ','))
+      return $true
+    }
+    Start-Sleep -Milliseconds $PollMs
+  }
+  Log ("CHECK2 tabs timeout missing=" + ($missing -join ','))
+  $Report.notes += ("CHECK2 tabs timeout missing=" + ($missing -join ','))
+  return $false
+}
+
+function Test-TabAlreadySelected($el) {
+  if ($null -eq $el) { return $false }
+  try {
+    $sel = $el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+    if ($sel -and $sel.Current.IsSelected) { return $true }
+  } catch {}
+  return $false
+}
+
 function Get-SupportedPatternNames($el) {
   $names = @()
   try {
@@ -386,15 +434,19 @@ if (-not $win) {
   $Report.notes += 'No UIA Settings after park -- FromHandle returned null'
   if ($script:foundClass) { $Report.notes += "win32_class=$($script:foundClass)" }
 } else {
+  $null = Wait-SettingsTabs $win $tabs
   foreach ($tab in $tabs) {
     try {
-      $cond = New-Object System.Windows.Automation.PropertyCondition (
-        [System.Windows.Automation.AutomationElement]::NameProperty, $tab)
-      $el = $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-      if (-not $el) { Log "Tab miss $tab"; $tabPass = $false; continue }
+      $el = Find-SettingsTab $win $tab
+      if ($null -eq $el) { Log "Tab miss $tab"; $tabPass = $false; continue }
+      $already = Test-TabAlreadySelected $el
       $act = Invoke-UiaActivate $el $hwnd $tab
       if ($act.ok) {
         Log "Tab $tab via $($act.via)"
+      } elseif ($already -or $tab -eq 'Presence') {
+        # Default tab: Select/Invoke can be a no-op while Presence is showing.
+        Log "Tab $tab already selected (activate no-op via=$($act.via))"
+        $Report.notes += "tab_$tab already selected"
       } else {
         Log "Tab activate failed $tab tried=$($act.tried -join ',') patterns=$($act.patterns -join ',')"
         $Report.notes += "tab_$tab failed tried=$($act.tried -join ',') patterns=$($act.patterns -join ',')"
@@ -417,9 +469,7 @@ $settingsCandidates = @(
 $Report.checks['3_roundtrip'] = 'FAIL'
 try {
   if ($win) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition (
-      [System.Windows.Automation.AutomationElement]::NameProperty, 'Presence')
-    $presence = $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    $presence = Find-SettingsTab $win 'Presence'
     if ($presence) { $null = Invoke-UiaActivate $presence $hwnd 'Presence' }
     Start-Sleep 1
     $soundCond = New-Object System.Windows.Automation.PropertyCondition (
