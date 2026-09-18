@@ -403,16 +403,28 @@ mod macos {
 }
 
 pub fn rows(wanted: impl Fn(CapabilityId) -> bool) -> Vec<ConsentRow> {
-    CAPABILITIES
-        .iter()
-        .map(|cap| ConsentRow {
-            id: cap.id,
-            title: cap.title,
-            buys: cap.buys,
-            costs: cap.costs,
-            granted: wanted(cap.id),
-        })
-        .collect()
+    // Linux has no grant to emit. Mapping CAPABILITIES here would reprint the
+    // TCC titles the form already omits (#250 leftover after #538). The const
+    // is still named so clippy -D warnings does not treat the catalog as dead.
+    #[cfg(target_os = "linux")]
+    {
+        let _ = wanted;
+        let _ = CAPABILITIES;
+        Vec::new()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        CAPABILITIES
+            .iter()
+            .map(|cap| ConsentRow {
+                id: cap.id,
+                title: cap.title,
+                buys: cap.buys,
+                costs: cap.costs,
+                granted: wanted(cap.id),
+            })
+            .collect()
+    }
 }
 
 pub fn enable(id: CapabilityId, probe: &dyn Probe) {
@@ -522,6 +534,7 @@ mod tests {
 
     /// The window prints this catalog. Dropping a row makes that grant unreachable: nothing else names the trade.
     #[test]
+    #[cfg(not(target_os = "linux"))]
     fn the_catalog_names_each_capability_and_its_trade() {
         let rows = rows(|_| false);
         assert_eq!(rows.len(), 2);
@@ -559,6 +572,7 @@ mod tests {
     /// user turned off here must show as off or they cannot stop the buddy
     /// using it.
     #[test]
+    #[cfg(not(target_os = "linux"))]
     fn rows_report_wanted_capabilities() {
         let rows = rows(|id| id == CapabilityId::Accessibility);
         assert!(rows[0].granted);
@@ -633,6 +647,15 @@ mod tests {
     #[test]
     fn process_listed_as_is_not_empty() {
         assert!(!process_listed_as().is_empty());
+    }
+
+    /// A wanted closure that says yes still produces no rows: Linux has no
+    /// grant to emit, and the empty vec is the catalog, not a mock of TCC (#250).
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_rows_are_empty_whether_wanted_or_not() {
+        assert_eq!(rows(|_| true), Vec::new());
+        assert_eq!(rows(|_| false), Vec::new());
     }
 
     #[test]

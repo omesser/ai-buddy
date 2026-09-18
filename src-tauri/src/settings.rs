@@ -2276,15 +2276,24 @@ mod tests {
         assert_eq!(view.instances[0].name, "Nim");
         assert_eq!(view.instance_lines(), ["Nim (nim)"]);
         assert!(!view.api_key_set);
-        assert_eq!(
-            view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-            ["Accessibility", "Screen Recording"]
-        );
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(
+                view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
+                ["Accessibility", "Screen Recording"]
+            );
+            assert!(
+                view.consent[0].granted,
+                "the checkbox follows settings intent, not the OS grant"
+            );
+            assert!(!view.consent[1].granted);
+        }
+        #[cfg(target_os = "linux")]
         assert!(
-            view.consent[0].granted,
-            "the checkbox follows settings intent, not the OS grant"
+            view.consent.is_empty(),
+            "Linux has no grant to emit, got {:?}",
+            view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
         );
-        assert!(!view.consent[1].granted);
         #[cfg(target_os = "macos")]
         {
             view.consent_listed_as = "Cursor".into();
@@ -2318,9 +2327,16 @@ mod tests {
             (false, String::new(), String::new()),
             None,
         );
+        #[cfg(not(target_os = "linux"))]
         assert!(
             !view.consent[0].granted,
             "unchecking has to show off even if the OS still holds the grant"
+        );
+        #[cfg(target_os = "linux")]
+        assert!(
+            view.consent.is_empty(),
+            "Linux has no consent row to uncheck, got {:?}",
+            view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
         );
     }
 
