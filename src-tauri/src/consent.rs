@@ -11,6 +11,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub enum CapabilityId {
     Accessibility,
     ScreenRecording,
+    /// macOS only: the idle event tap (#721). Windows and Linux have no such
+    /// grant, and a variant nothing there constructs is a `dead_code` warning
+    /// those jobs deny.
+    #[cfg(target_os = "macos")]
+    InputMonitoring,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +57,13 @@ pub const CAPABILITIES: &[Capability] = &[
         buys: "Window titles, and Capture when it ships.",
         costs: "macOS Screen Recording, which can see the screen.",
     },
+    #[cfg(target_os = "macos")]
+    Capability {
+        id: CapabilityId::InputMonitoring,
+        title: "Input Monitoring",
+        buys: "The buddy notices the mouse the moment it moves, instead of up to a second later while it sits idle.",
+        costs: "macOS Input Monitoring. The buddy listens for mouse movement and clicks — that a mouse moved, never what you type.",
+    },
 ];
 
 /// Linux, and tests that do not care about the live OS.
@@ -62,6 +74,8 @@ pub struct Null;
 
 static WANT_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
 static WANT_SCREEN_RECORDING: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static WANT_INPUT_MONITORING: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
@@ -70,6 +84,7 @@ pub fn wanted(id: CapabilityId) -> bool {
     match id {
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.load(Ordering::Relaxed),
         CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.load(Ordering::Relaxed),
+        CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.load(Ordering::Relaxed),
     }
 }
 
@@ -77,6 +92,8 @@ pub fn set_wanted(id: CapabilityId, on: bool) {
     match id {
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.store(on, Ordering::Relaxed),
         CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.store(on, Ordering::Relaxed),
+        #[cfg(target_os = "macos")]
+        CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.store(on, Ordering::Relaxed),
     }
 }
 
@@ -98,6 +115,7 @@ impl Probe for Macos {
         match id {
             CapabilityId::Accessibility => macos::accessibility_granted(),
             CapabilityId::ScreenRecording => macos::screen_recording_granted(),
+            CapabilityId::InputMonitoring => macos::input_monitoring_granted(),
         }
     }
 
@@ -105,6 +123,7 @@ impl Probe for Macos {
         match id {
             CapabilityId::Accessibility => macos::request_accessibility(),
             CapabilityId::ScreenRecording => macos::request_screen_recording(),
+            CapabilityId::InputMonitoring => macos::request_input_monitoring(),
         }
     }
 }
@@ -229,7 +248,10 @@ mod macos {
         kAXTrustedCheckOptionPrompt, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
     };
     use objc2_core_foundation::{CFBoolean, CFDictionary, CFString};
-    use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
+    use objc2_core_graphics::{
+        CGPreflightListenEventAccess, CGPreflightScreenCaptureAccess, CGRequestListenEventAccess,
+        CGRequestScreenCaptureAccess,
+    };
 
     pub fn accessibility_granted() -> bool {
         // SAFETY: the binding takes nothing and documents no precondition;
@@ -263,6 +285,20 @@ mod macos {
         // The answer is dropped: it reports the grant as it stands now, before
         // the user has answered the dialog, and the checkbox re-reads it after.
         let _ = CGRequestScreenCaptureAccess();
+    }
+
+    pub fn input_monitoring_granted() -> bool {
+        // Preflight is the half that does not prompt, as with Screen Recording
+        // above. `CGEventTapCreate` is not a test: it can return a port that
+        // was never enabled when the grant is missing.
+        CGPreflightListenEventAccess()
+    }
+
+    pub fn request_input_monitoring() {
+        // macOS opens Privacy & Security rather than granting in place, and
+        // the tap only starts once the grant lands; `platform::spawn_event_tap`
+        // retries every idle wait until it does.
+        let _ = CGRequestListenEventAccess();
     }
 
     pub fn tcc_list_name() -> String {
@@ -537,7 +573,8 @@ mod tests {
     #[cfg(not(target_os = "linux"))]
     fn the_catalog_names_each_capability_and_its_trade() {
         let rows = rows(|_| false);
-        assert_eq!(rows.len(), 2);
+        // Input Monitoring is the third row on macOS and exists nowhere else.
+        assert_eq!(rows.len(), if cfg!(target_os = "macos") { 3 } else { 2 });
 
         assert_eq!(rows[0].id, CapabilityId::Accessibility);
         assert_eq!(rows[0].title, "Accessibility");
@@ -566,6 +603,28 @@ mod tests {
             rows[1].costs
         );
         assert!(!rows[1].granted);
+
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(rows[2].id, CapabilityId::InputMonitoring);
+            assert_eq!(rows[2].title, "Input Monitoring");
+            assert!(
+                rows[2].buys.contains("mouse"),
+                "Input Monitoring has to say hearing the mouse is what it buys, got {:?}",
+                rows[2].buys
+            );
+            assert!(
+                rows[2].costs.contains("Input Monitoring"),
+                "Input Monitoring has to name the macOS grant, got {:?}",
+                rows[2].costs
+            );
+            assert!(
+                rows[2].costs.contains("never what you type"),
+                "the row has to say the tap is mouse-only, got {:?}",
+                rows[2].costs
+            );
+            assert!(!rows[2].granted);
+        }
     }
 
     /// The checkbox is settings intent, not the OS grant. An OS grant the

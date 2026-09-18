@@ -500,6 +500,17 @@
               "comment": null,
               "disclosure": "Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles would reach MCP sensing tools; not used in v1.",
               "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "consent_input_monitoring",
+              "label": "Input Monitoring",
+              "writes": "UseInputMonitoring",
+              "frozen": false,
+              "help": "Reacts to the mouse at once, not a second late.",
+              "comment": null,
+              "disclosure": "Without this grant the buddy asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the buddy the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the buddy goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.",
+              "status": null
             }
           ],
           "comment": "Checking a box asks macOS for the permission. macOS lists this app as ai-buddy, under Privacy & Security.",

@@ -453,12 +453,14 @@ pub const NEW_CHARACTER_ID: &str = "new_character";
 pub const SPAWN_ID: &str = "spawn";
 pub const MEMORY_OPEN_ID: &str = "memory_open";
 pub const MEMORY_WIPE_ID: &str = "memory_wipe";
-/// The two consent rows. Gated because Linux offers neither, so the ids exist
-/// only where the rows do. #250.
+/// The consent rows. Gated because Linux offers none, so the ids exist
+/// only where the rows do. #250. Input Monitoring is macOS alone (#721).
 #[cfg(not(target_os = "linux"))]
 pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
 #[cfg(not(target_os = "linux"))]
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
+#[cfg(target_os = "macos")]
+pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
@@ -1278,6 +1280,17 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles would reach MCP sensing tools; not used in v1.".to_string()),
             status: None,
         },
+        #[cfg(target_os = "macos")]
+        FormRow::Checkbox {
+            id: CONSENT_INPUT_MONITORING_ID.to_string(),
+            label: "Input Monitoring".to_string(),
+            writes: BoolField::UseInputMonitoring,
+            frozen: false,
+            help: Some("Reacts to the mouse at once, not a second late.".to_string()),
+            comment: None,
+            disclosure: Some("Without this grant the buddy asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the buddy the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the buddy goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.".to_string()),
+            status: None,
+        },
     ];
 
     #[cfg(target_os = "linux")]
@@ -1612,13 +1625,18 @@ mod tests {
     const FIXTURE_CONSENT_INTRO: &str =
         "Checking a box asks macOS for the permission. macOS lists this app as ai-buddy, under Privacy & Security.";
 
-    /// Linux builds two tabs deliberately smaller: no capture-exclusion row and
-    /// no consent rows, because there is nothing there to grant (#250). Those
-    /// two are pinned on the platforms that build them; the other three pin
-    /// everywhere, and they are where form churn lands.
+    /// The fixtures hold the macOS form. Linux builds two tabs deliberately
+    /// smaller: no capture-exclusion row and no consent rows, because there is
+    /// nothing there to grant (#250). Windows builds Privacy one row smaller
+    /// for the same reason (#721). Each tab is pinned on the platforms that
+    /// build it the same way, and the three that never differ pin everywhere.
     #[cfg(target_os = "linux")]
     const UNPINNED_TABS: &[&str] = &["Presence", "Privacy"];
-    #[cfg(not(target_os = "linux"))]
+    /// Windows builds Privacy without the Input Monitoring row: the grant is
+    /// macOS's (#721).
+    #[cfg(target_os = "windows")]
+    const UNPINNED_TABS: &[&str] = &["Privacy"];
+    #[cfg(target_os = "macos")]
     const UNPINNED_TABS: &[&str] = &[];
 
     fn fixture_live(driving: bool, configured: bool) -> Live {
@@ -2256,8 +2274,36 @@ mod tests {
         assert!(on_the_tab, "Start new session is not on Settings -> AI");
     }
 
+    /// The native macOS window fills these checkboxes by zipping them against
+    /// `consent::rows` by position, so a row added to one list and not the
+    /// other, or added in another order, shows the wrong grant's state.
     #[test]
-    fn consent_section_has_two_checkboxes() {
+    fn the_consent_rows_are_in_catalog_order() {
+        let description = describe();
+        let consent = description
+            .sections()
+            .find(|s| s.heading == "What the buddy can see")
+            .expect("Consent section exists");
+
+        let ids: Vec<&str> = consent
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                FormRow::Checkbox { id, .. } => Some(id.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        let from_catalog: Vec<String> = crate::consent::rows(|_| false)
+            .iter()
+            .map(|row| format!("consent_{}", row.title.to_lowercase().replace(' ', "_")))
+            .collect();
+
+        assert_eq!(ids, from_catalog);
+    }
+
+    #[test]
+    fn the_consent_section_has_a_checkbox_per_grant_this_platform_offers() {
         let description = describe();
         let consent = description
             .sections()
@@ -2266,7 +2312,7 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         {
-            assert_eq!(consent.rows.len(), 2);
+            assert_eq!(consent.rows.len(), 3);
             let listed = crate::consent::process_listed_as();
             assert!(
                 consent
@@ -2324,6 +2370,39 @@ mod tests {
             assert_eq!(
                 description.bool_write(CONSENT_SCREEN_RECORDING_ID),
                 Some(BoolField::UseScreenRecording)
+            );
+
+            let input_monitoring = consent
+                .rows
+                .iter()
+                .find(
+                    |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_INPUT_MONITORING_ID),
+                )
+                .expect("Input Monitoring checkbox exists");
+
+            match input_monitoring {
+                FormRow::Checkbox {
+                    label, disclosure, ..
+                } => {
+                    assert_eq!(label, "Input Monitoring");
+                    let disclosure = disclosure
+                        .as_ref()
+                        .expect("the row explains the grant before it is asked for (#721)");
+                    assert!(
+                        disclosure.contains("mouse"),
+                        "the disclosure has to say the tap is mouse-only, got {disclosure:?}"
+                    );
+                    assert!(
+                        disclosure.contains("keyboard"),
+                        "the disclosure has to say the tap cannot see the keyboard, got {disclosure:?}"
+                    );
+                }
+                _ => panic!("Input Monitoring row must be a checkbox"),
+            }
+
+            assert_eq!(
+                description.bool_write(CONSENT_INPUT_MONITORING_ID),
+                Some(BoolField::UseInputMonitoring)
             );
         }
 
