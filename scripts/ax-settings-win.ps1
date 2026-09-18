@@ -13,9 +13,27 @@ $ErrorActionPreference = "Continue"
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
+function Get-AutomationElementFromHandle {
+    # FromHandle, not RootElement.FindFirst(Descendants): the latter can hang
+    # indefinitely on a multi-monitor desktop (#715).
+    param([IntPtr]$WindowHandle)
+    if ($WindowHandle -eq [IntPtr]::Zero) { return $null }
+    try {
+        return [System.Windows.Automation.AutomationElement]::FromHandle($WindowHandle)
+    } catch {
+        return $null
+    }
+}
+
 function Find-SettingsWindow {
     # ProcessId, not Pid: $PID is Constant+AllScope and cannot be a parameter.
-    param([int]$ProcessId = 0)
+    # WindowHandle takes FromHandle so a known HWND never starts a desktop search.
+    param([int]$ProcessId = 0, [IntPtr]$WindowHandle = 0)
+
+    if ($WindowHandle -ne [IntPtr]::Zero) {
+        $fromHandle = Get-AutomationElementFromHandle -WindowHandle $WindowHandle
+        if ($null -ne $fromHandle) { return $fromHandle }
+    }
 
     $nativeCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
@@ -28,6 +46,8 @@ function Find-SettingsWindow {
         )
         $nativeCond = New-Object System.Windows.Automation.AndCondition($nativeCond, $pidCond)
     }
+    # RootElement descendant search can hang on multi-monitor (#715). Prefer
+    # Get-AutomationElementFromHandle when HWND is already known.
     $native = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $nativeCond
@@ -56,6 +76,7 @@ function Find-SettingsWindow {
     } else {
         $webviewCond = New-Object System.Windows.Automation.AndCondition($classCond, $nameCond, $typeCond)
     }
+    # Same hang risk as the native arm: desktop-wide Descendants on RootElement.
     return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $webviewCond

@@ -11,6 +11,10 @@ import { test } from "node:test";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const axSrc = readFileSync(join(root, "scripts/ax-settings-win.ps1"), "utf8");
 const verifySrc = readFileSync(join(root, "scripts/verify-settings-win.ps1"), "utf8");
+const phase2Src = readFileSync(
+  join(root, "scripts/verify-settings-webview-phase2-win.ps1"),
+  "utf8",
+);
 
 function extractFunction(src, name) {
   const marker = `function ${name}`;
@@ -64,6 +68,7 @@ function matches(el, conds) {
       case "NameProperty":
         return el.name === unquote(c.value);
       case "ControlTypeProperty":
+        if (/ControlType\]::TabItem/.test(c.value)) return el.controlType === "TabItem";
         return el.controlType === "Window" && /ControlType\]::Window/.test(c.value);
       case "ProcessIdProperty":
         return el.processId === el.boundProcessId;
@@ -169,4 +174,92 @@ test("verify-settings-win.ps1 webview path also requires Tauri Window class and 
   assert.ok(tauriIdx > nativeIdx, "webview fallback comes after native class match");
   const tauriBlock = verifySrc.slice(tauriIdx, tauriIdx + 800);
   assert.match(tauriBlock, /\$txt\.ToString\(\) -eq "Settings"/);
+});
+
+test("FromHandle helper is the multi-monitor UIA entry, not RootElement", () => {
+  const helper = extractFunction(axSrc, "Get-AutomationElementFromHandle");
+  assert.match(helper, /AutomationElement\]::FromHandle/);
+  assert.doesNotMatch(helper, /AutomationElement\]::RootElement/);
+  assert.match(helper, /multi-monitor/);
+  assert.match(finder, /WindowHandle/);
+  assert.match(finder, /Get-AutomationElementFromHandle/);
+  assert.match(finder, /multi-monitor/);
+});
+
+test("phase2 webview smoke does not replace native verify-settings-win.ps1", () => {
+  assert.match(phase2Src, /Does not replace scripts\/verify-settings-win\.ps1/);
+  assert.match(verifySrc, /AiBuddySettings/);
+});
+
+test("phase2 smoke never assigns $PID and uses ProcessId names", () => {
+  assert.doesNotMatch(phase2Src, /\$pid\s*=/i);
+  assert.match(phase2Src, /\$targetProcessId/);
+  assert.match(phase2Src, /Constant\+AllScope/);
+});
+
+test("phase2 UIA is FromHandle-only and parks via work area", () => {
+  assert.match(phase2Src, /AutomationElement\]::FromHandle/);
+  assert.doesNotMatch(phase2Src, /AutomationElement\]::RootElement/);
+  assert.match(phase2Src, /EnumDisplayMonitors/);
+  assert.match(phase2Src, /No secondary monitor/);
+  assert.match(phase2Src, /GetWindowRect/);
+  assert.doesNotMatch(phase2Src, /VirtualScreen/);
+  assert.doesNotMatch(phase2Src, /::SetCursorPos/);
+});
+
+test("phase2 CHECK2 tries LegacyIAccessible before PostMessage", () => {
+  const activate = extractFunction(phase2Src, "Invoke-UiaActivate");
+  const invokeAt = activate.indexOf("InvokePattern");
+  const selectAt = activate.indexOf("SelectionItemPattern");
+  const legacyAt = activate.indexOf("LegacyIAccessiblePattern");
+  const postAt = activate.indexOf("[Phase2Win]::PostMessage");
+  assert.ok(invokeAt >= 0 && selectAt > invokeAt, "Invoke then SelectionItem");
+  assert.ok(legacyAt > selectAt, "LegacyIAccessible after the two missing WebView2 patterns");
+  assert.match(activate, /DoDefaultAction/);
+  assert.ok(postAt > legacyAt, "PostMessage last, still no SetCursorPos");
+});
+
+test("phase2 CHECK2 waits for TabItem names then finds TabItem AND Name", () => {
+  const waiter = extractFunction(phase2Src, "Wait-SettingsTabs");
+  assert.match(waiter, /TimeoutMs = 8000/);
+  assert.match(waiter, /PollMs = 350/);
+  assert.match(waiter, /Find-SettingsTab/);
+  assert.doesNotMatch(waiter, /AutomationElement\]::RootElement/);
+
+  const tabFinder = extractFunction(phase2Src, "Find-SettingsTab");
+  assert.match(tabFinder, /New-TabItemAndNameCondition/);
+  assert.doesNotMatch(tabFinder, /AutomationElement\]::RootElement/);
+
+  const condFn = extractFunction(phase2Src, "New-TabItemAndNameCondition");
+  const conds = parsePropertyConditions(condFn);
+  const byVar = new Map(conds.map((c) => [c.var, c]));
+  const ands = parseAndConditionArgs(condFn, "andCond");
+  assert.equal(ands.length, 1);
+  assert.deepEqual(ands[0].slice().sort(), ["nameCond", "typeCond"]);
+  assert.equal(byVar.get("nameCond").property, "NameProperty");
+  assert.equal(byVar.get("nameCond").value, "$Name");
+  assert.equal(byVar.get("typeCond").property, "ControlTypeProperty");
+  assert.match(byVar.get("typeCond").value, /ControlType\]::TabItem/);
+
+  const tabItemAndName = [
+    { property: "NameProperty", value: '"Presence"' },
+    byVar.get("typeCond"),
+  ];
+  const presencePane = { name: "Presence", controlType: "Pane" };
+  const presenceTab = { name: "Presence", controlType: "TabItem" };
+  assert.equal(matches(presencePane, tabItemAndName), false, "Pane named Presence is not a tab");
+  assert.equal(matches(presenceTab, tabItemAndName), true);
+  assert.match(phase2Src, /already selected \(activate no-op/);
+});
+
+test("phase2 reports the four #715 checks and crops evidence to HWND", () => {
+  assert.match(phase2Src, /1_window_opens/);
+  assert.match(phase2Src, /2_five_tabs/);
+  assert.match(phase2Src, /3_roundtrip/);
+  assert.match(phase2Src, /4_zorder/);
+  assert.match(phase2Src, /ai-buddy\\settings\.json/);
+  const capture = extractFunction(phase2Src, "Capture");
+  assert.match(capture, /GetWindowRect/);
+  assert.match(capture, /CopyFromScreen/);
+  assert.match(capture, /\/ 3\.0/);
 });
