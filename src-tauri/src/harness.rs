@@ -4067,8 +4067,11 @@ mod tests {
         // Read before the reactive turn's own timeout cancel, which is the
         // only other thing that would put a `cancel` on this wire.
         assert_eq!(fx.count("cancel"), 0, "the Poke was cancelled for a tick");
-        let _ = worker.join();
+        // Stop the fake child before joining. The assertion above proves the
+        // refusal while the reactive turn is live; waiting for its timeout
+        // would add the full three-second budget to this unit test.
         session.shutdown();
+        let _ = worker.join();
 
         // The refused wake sent no prompt, so without a line of its own the
         // `parsed` line the Shell writes for it would read against the prompt
