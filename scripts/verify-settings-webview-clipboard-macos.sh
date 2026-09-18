@@ -130,7 +130,7 @@ downscale() {
 snippet=$(awk -F'|' '$3 ~ /mcp add/ { gsub(/\\n/, "\n", $3); print $3; exit }' "$dump")
 if [ -z "$snippet" ]; then
   fail "AI dump has no BYO snippet (no line matching mcp add)"
-  cat "$dump" | head -80
+  head -80 "$dump"
   exit 1
 fi
 printf '%s\n' "$snippet" > "$out/snippet.txt"
