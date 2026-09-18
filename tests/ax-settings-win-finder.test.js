@@ -263,3 +263,116 @@ test("phase2 reports the four #715 checks and crops evidence to HWND", () => {
   assert.match(capture, /CopyFromScreen/);
   assert.match(capture, /\/ 3\.0/);
 });
+
+function hwndAbove(front, back, stack) {
+  const fi = stack.indexOf(front);
+  const bi = stack.indexOf(back);
+  return fi >= 0 && bi >= 0 && fi < bi;
+}
+
+function settingsAboveOverlays(settings, overlays, stack) {
+  if (!overlays.length) return false;
+  return overlays.every((ov) => hwndAbove(settings, ov, stack));
+}
+
+function isOverlay(el, settingsHwnd, minW, minH) {
+  if (el.hwnd === settingsHwnd) return false;
+  if (el.title === "Settings") return false;
+  if (el.title !== "ai-buddy") return false;
+  if (el.processId !== el.boundProcessId) return false;
+  return el.width >= minW && el.height >= minH;
+}
+
+test("phase2 check 4 is PASS/FAIL from GetWindow stacking, not REVIEW", () => {
+  const walk = extractFunction(phase2Src, "Get-ZOrderHwnds");
+  assert.match(walk, /GetTopWindow/);
+  assert.match(walk, /GW_HWNDNEXT/);
+  assert.match(phase2Src, /public const uint GW_HWNDNEXT = 2/);
+
+  const above = extractFunction(phase2Src, "Test-HwndAbove");
+  assert.match(above, /Get-HwndStackIndex/);
+  assert.match(above, /-lt/);
+
+  const find = extractFunction(phase2Src, "Find-OverlayHwnds");
+  assert.match(find, /ai-buddy/);
+  assert.match(find, /GetWindowRect/);
+  assert.match(find, /\$t -eq 'Settings'/);
+
+  assert.match(phase2Src, /Capture '04-zorder\.png'/);
+  assert.match(
+    phase2Src,
+    /\$Report\.checks\['4_zorder'\] = \$\(if \(\$zOk\) \{ 'PASS' \} else \{ 'FAIL' \}\)/,
+  );
+  assert.doesNotMatch(phase2Src, /4_zorder'\] = 'REVIEW'/);
+  assert.doesNotMatch(phase2Src, /Judge Settings above/);
+});
+
+test("stacking fixtures: Settings before overlay is above; missing HWND is not", () => {
+  assert.equal(hwndAbove("settings", "overlay", ["settings", "overlay", "other"]), true);
+  assert.equal(hwndAbove("settings", "overlay", ["overlay", "settings"]), false);
+  assert.equal(hwndAbove("settings", "overlay", ["settings"]), false);
+  assert.equal(hwndAbove("settings", "overlay", ["overlay"]), false);
+  assert.equal(
+    settingsAboveOverlays("settings", ["ov1", "ov2"], ["settings", "ov1", "ov2"]),
+    true,
+  );
+  assert.equal(
+    settingsAboveOverlays("settings", ["ov1", "ov2"], ["ov1", "settings", "ov2"]),
+    false,
+  );
+  assert.equal(settingsAboveOverlays("settings", [], ["settings"]), false);
+
+  const all = extractFunction(phase2Src, "Test-SettingsAboveOverlays");
+  assert.match(all, /Test-HwndAbove/);
+  assert.match(all, /Count -eq 0/);
+});
+
+test("overlay finder fixtures: large ai-buddy matches; Settings, 1x1 anchor, and Chat do not", () => {
+  const minW = 400;
+  const minH = 400;
+  const settingsHwnd = 1;
+  const tauriSettings = {
+    hwnd: 1,
+    title: "Settings",
+    width: 600,
+    height: 520,
+    processId: 4242,
+    boundProcessId: 4242,
+  };
+  const overlay = {
+    hwnd: 2,
+    title: "ai-buddy",
+    width: 1920,
+    height: 1080,
+    processId: 4242,
+    boundProcessId: 4242,
+  };
+  const anchor = {
+    hwnd: 3,
+    title: "ai-buddy",
+    width: 1,
+    height: 1,
+    processId: 4242,
+    boundProcessId: 4242,
+  };
+  const chat = {
+    hwnd: 4,
+    title: "Timber Wolf",
+    width: 420,
+    height: 560,
+    processId: 4242,
+    boundProcessId: 4242,
+  };
+  const otherPid = { ...overlay, hwnd: 5, processId: 99, boundProcessId: 4242 };
+  assert.equal(isOverlay(overlay, settingsHwnd, minW, minH), true);
+  assert.equal(isOverlay(tauriSettings, settingsHwnd, minW, minH), false);
+  assert.equal(isOverlay(anchor, settingsHwnd, minW, minH), false);
+  assert.equal(isOverlay(chat, settingsHwnd, minW, minH), false);
+  assert.equal(isOverlay(otherPid, settingsHwnd, minW, minH), false);
+
+  const find = extractFunction(phase2Src, "Find-OverlayHwnds");
+  assert.match(find, /\$t -ne 'ai-buddy'/);
+  assert.match(find, /\$w -ge \$script:overlayMinW/);
+  assert.match(find, /\$hgt -ge \$script:overlayMinH/);
+  assert.match(find, /\$processId -ne \$script:overlayPid/);
+});
