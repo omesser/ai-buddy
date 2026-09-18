@@ -7,9 +7,10 @@
 // wrong row. Coordinates appear nowhere; controls are pressed by name.
 
 // Needs an Accessibility grant for whatever runs it (System Settings > Privacy
-// & Security > Accessibility). Callers: verify-settings-macos.sh and
-// verify-settings-webview-select-macos.sh.
+// & Security > Accessibility). Callers: verify-settings-macos.sh,
+// verify-settings-webview-select-macos.sh, verify-settings-keyboard-webview.sh.
 
+import AppKit
 import ApplicationServices
 import Foundation
 
@@ -21,7 +22,9 @@ func die(_ message: String) -> Never {
 }
 
 guard args.count >= 2, let pid = pid_t(args[1]) else {
-    die("usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move> <pid> [args]")
+    die(
+        "usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move|key|type|focused|focus-window|menus> <pid> [args]"
+    )
 }
 
 guard AXIsProcessTrusted() else {
@@ -209,6 +212,51 @@ func printRect(_ rect: CGRect, extra: String = "") {
     print(
         "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))\(suffix)"
     )
+}
+
+/// Keys have to land in the Settings webview, not the terminal that posted them.
+func activateSettings() {
+    if let running = NSRunningApplication(processIdentifier: pid) {
+        running.activate()
+    }
+    if let window = settingsWindow() {
+        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    }
+    usleep(200_000)
+}
+
+func postKey(_ virtualKey: CGKeyCode, flags: CGEventFlags = []) {
+    for down in [true, false] {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: virtualKey, keyDown: down)
+        else { continue }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        usleep(30_000)
+    }
+    usleep(120_000)
+}
+
+func typeText(_ title: String) {
+    for character in title {
+        var utf16 = Array(String(character).utf16)
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+            else { continue }
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+            event.post(tap: .cghidEventTap)
+        }
+        usleep(50_000)
+    }
+}
+
+func dumpOne(_ element: AXUIElement) -> String {
+    let role = string(element, kAXRoleAttribute) ?? "?"
+    let subrole = string(element, kAXSubroleAttribute) ?? ""
+    let title = string(element, kAXTitleAttribute) ?? ""
+    let value = attribute(element, kAXValueAttribute).map { "\($0)" } ?? ""
+    let enabled = (attribute(element, kAXEnabledAttribute) as? Bool).map(String.init) ?? ""
+    let flat = { (s: String) in s.replacingOccurrences(of: "\n", with: "\\n") }
+    return "\(role)\(subrole.isEmpty ? "" : ":" + subrole)|\(flat(title))|\(flat(value))|\(enabled)"
 }
 
 /// A WKWebView publishes its tree only on request. The first pass into the
@@ -399,6 +447,60 @@ case "frame":
         die("Settings is not open")
     }
     printRect(rect)
+
+case "key":
+    // HID key into the Settings webview. Open still goes through the tray;
+    // after that the sitting is keyboard only.
+    guard args.count >= 3 else {
+        die("usage: ax-settings key <pid> <tab|space|return|escape|down|up|delete|end>")
+    }
+    let codes: [String: (CGKeyCode, CGEventFlags)] = [
+        "tab": (48, []), "space": (49, []), "return": (36, []), "escape": (53, []),
+        "down": (125, []), "up": (126, []), "delete": (51, []), "end": (119, []),
+    ]
+    guard let pair = codes[args[2]] else { die("unknown key \(args[2])") }
+    postKey(pair.0, flags: pair.1)
+
+case "type":
+    guard args.count >= 3 else { die("usage: ax-settings type <pid> <text>") }
+    typeText(args[2])
+
+case "focused":
+    // The control Tab last landed on, same columns as dump minus placeholder/settable.
+    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
+    var focusedRef: CFTypeRef?
+    let err = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focusedRef)
+    guard err == .success, let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID()
+    else {
+        die("no focused element")
+    }
+    _ = window
+    print(dumpOne(focused as! AXUIElement))
+
+case "focus-window":
+    // Click the title bar, not a control, so the webview is key without
+    // changing a row. Keyboard-only starts after this.
+    guard let window = settingsWindow(), let rect = frame(window) else {
+        die("Settings is not open")
+    }
+    activateSettings()
+    let point = CGPoint(x: rect.midX, y: rect.minY + 12)
+    guard
+        let down = CGEvent(
+            mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point,
+            mouseButton: .left),
+        let up = CGEvent(
+            mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point,
+            mouseButton: .left)
+    else { die("could not click the title bar") }
+    down.post(tap: .cghidEventTap)
+    usleep(60_000)
+    up.post(tap: .cghidEventTap)
+    usleep(150_000)
+
+case "menus":
+    // WebKit's <select> menu is a layer>=100 window with no AX tree. #797.
+    print(menuWindowCount())
 
 case "dump":
     // One line per element as role|title|value|placeholder|enabled|settable, so
