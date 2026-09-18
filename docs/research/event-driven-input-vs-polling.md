@@ -17,6 +17,14 @@ under any event design: draining a channel once per tick and setting an edge
 bit are the same thing, and the `Witness` is the one-bit form of that queue.
 Merge #236. Re-scope #183 into a permission spike before any loop rewrite.
 
+**Since this investigation.** #562 shipped XI2 raw events on X11, #718 shipped
+the idle back-off on macOS and Windows, and #721 put the macOS tap behind an
+Input Monitoring row in settings — opt-in, explained before it is asked for,
+and off until the user checks it. The Stage 1 observations below are still
+open on real hardware: `platform::macos::input_events` carries an `#[ignore]`d
+test that prints the four #183 asks for. The findings below are as the
+investigation read them and are not rewritten to match what shipped.
+
 ## macOS
 
 **`CGEventTapCreate`.** Apple's discussion gates only keys: "Event taps

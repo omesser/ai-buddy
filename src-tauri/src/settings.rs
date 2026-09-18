@@ -1026,6 +1026,8 @@ impl SettingsSession {
         }
         let prompt_ax = patch.use_accessibility == Some(true);
         let prompt_sr = patch.use_screen_recording == Some(true);
+        #[cfg(target_os = "macos")]
+        let prompt_im = patch.use_input_monitoring == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
@@ -1035,6 +1037,8 @@ impl SettingsSession {
         apply_and_seed(&mut settings, patch);
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
         consent::set_wanted(CapabilityId::ScreenRecording, settings.use_screen_recording);
+        #[cfg(target_os = "macos")]
+        consent::set_wanted(CapabilityId::InputMonitoring, settings.use_input_monitoring);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -1102,6 +1106,10 @@ impl SettingsSession {
         }
         if prompt_sr {
             self.enable_consent(CapabilityId::ScreenRecording);
+        }
+        #[cfg(target_os = "macos")]
+        if prompt_im {
+            self.enable_consent(CapabilityId::InputMonitoring);
         }
         Ok(())
     }
@@ -1188,6 +1196,7 @@ pub struct SettingsPatch {
     pub director_api_key: Option<String>,
     pub use_accessibility: Option<bool>,
     pub use_screen_recording: Option<bool>,
+    pub use_input_monitoring: Option<bool>,
     /// Throw the conversation in flight away and open a fresh one on the same
     /// Completer. Not a file field either: a session boundary is a moment, not
     /// a setting, and nothing about it survives the restart (#679).
@@ -1226,6 +1235,9 @@ pub enum BoolField {
     UseAccessibility,
     #[cfg(not(target_os = "linux"))]
     UseScreenRecording,
+    /// The idle event tap, which macOS alone has a grant to ask for (#721).
+    #[cfg(target_os = "macos")]
+    UseInputMonitoring,
 }
 
 /// A text field of `SettingsPatch`, as the form row writing it names it.
@@ -1284,6 +1296,8 @@ impl SettingsPatch {
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseScreenRecording => self.use_screen_recording = Some(value),
+            #[cfg(target_os = "macos")]
+            BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
         }
     }
 
@@ -1376,6 +1390,7 @@ impl fmt::Debug for SettingsPatch {
             )
             .field("use_accessibility", &self.use_accessibility)
             .field("use_screen_recording", &self.use_screen_recording)
+            .field("use_input_monitoring", &self.use_input_monitoring)
             .finish()
     }
 }
@@ -1507,6 +1522,9 @@ impl Settings {
         if let Some(value) = patch.use_screen_recording {
             self.use_screen_recording = value;
         }
+        if let Some(value) = patch.use_input_monitoring {
+            self.use_input_monitoring = value;
+        }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
     }
@@ -1532,6 +1550,8 @@ impl Settings {
         match id {
             CapabilityId::Accessibility => self.use_accessibility,
             CapabilityId::ScreenRecording => self.use_screen_recording,
+            #[cfg(target_os = "macos")]
+            CapabilityId::InputMonitoring => self.use_input_monitoring,
         }
     }
 }
@@ -1640,6 +1660,11 @@ pub struct Settings {
     pub use_accessibility: bool,
     /// Use Screen Recording where the OS has granted it. Off does not revoke TCC.
     pub use_screen_recording: bool,
+    /// Listen for mouse events so the frame loop can sleep while the desktop is
+    /// idle (#721). macOS alone acts on it; the field is unconditional so the
+    /// document round-trips on every platform.
+    #[serde(default)]
+    pub use_input_monitoring: bool,
     /// Whether the first-run gesture tour has been shown. Once only, persisted
     /// per-app rather than per-Instance: a second buddy spawned later sees
     /// this flag set.
@@ -1681,6 +1706,7 @@ impl Default for Settings {
             capturable: true,
             use_accessibility: false,
             use_screen_recording: false,
+            use_input_monitoring: false,
             first_run_tour_shown: false,
         }
     }
@@ -1935,6 +1961,7 @@ mod tests {
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
+            use_input_monitoring: true,
             first_run_tour_shown: false,
         };
         settings.save(&path).expect("save");
@@ -2244,6 +2271,7 @@ mod tests {
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
+            use_input_monitoring: false,
             first_run_tour_shown: false,
         };
         #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
@@ -2278,6 +2306,12 @@ mod tests {
         assert!(!view.api_key_set);
         #[cfg(not(target_os = "linux"))]
         {
+            #[cfg(target_os = "macos")]
+            assert_eq!(
+                view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
+                ["Accessibility", "Screen Recording", "Input Monitoring"]
+            );
+            #[cfg(not(target_os = "macos"))]
             assert_eq!(
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
                 ["Accessibility", "Screen Recording"]
@@ -2303,6 +2337,32 @@ mod tests {
                 view.consent_intro()
             );
         }
+    }
+
+    /// The frame loop reads this one through `consent::wanted`, which
+    /// `SettingsSession::apply` and launch both seed from this field. Off is
+    /// the shipped state: decision 9 does not let a first run ask (#721).
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn the_input_monitoring_checkbox_is_what_the_tap_follows() {
+        let mut settings = Settings::default();
+        assert!(!settings.wants_consent(CapabilityId::InputMonitoring));
+
+        settings.apply(SettingsPatch {
+            use_input_monitoring: Some(true),
+            ..SettingsPatch::default()
+        });
+        assert!(settings.use_input_monitoring);
+        assert!(settings.wants_consent(CapabilityId::InputMonitoring));
+
+        settings.apply(SettingsPatch {
+            use_input_monitoring: Some(false),
+            ..SettingsPatch::default()
+        });
+        assert!(
+            !settings.wants_consent(CapabilityId::InputMonitoring),
+            "unchecking has to stop the tap even though macOS keeps the grant"
+        );
     }
 
     #[test]

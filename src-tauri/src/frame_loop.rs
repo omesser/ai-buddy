@@ -152,9 +152,14 @@ pub(crate) fn run_frame_loop(
         // Spawn XI2 input event listener on X11. When available, the frame loop
         // blocks on this channel when idle instead of polling at 16ms. #183.
         #[cfg(all(unix, not(target_os = "macos")))]
-        let input_events = platform::spawn_xi2_listener();
-        #[cfg(any(target_os = "macos", not(unix)))]
-        let input_events: Option<mpsc::Receiver<()>> = None;
+        let mut input_events = platform::spawn_xi2_listener();
+        // macOS: the same channel, fed by a mouse event tap, and only once the
+        // user has turned Input Monitoring on. `mut` because that setting can
+        // be flipped while the loop runs (#721).
+        #[cfg(target_os = "macos")]
+        let mut input_events = platform::spawn_event_tap();
+        #[cfg(not(unix))]
+        let mut input_events: Option<mpsc::Receiver<()>> = None;
 
         let mut button_was_down = false;
         let mut sound_allowed = true;
@@ -166,9 +171,38 @@ pub(crate) fn run_frame_loop(
         let mut was_visible = true;
 
         loop {
+            // The tap follows the setting: checked and granted, it starts here
+            // and the arms below block on it; unchecked, the receiver goes and
+            // the tap thread ends with it, back to the Stage 2b back-off (#721).
+            #[cfg(target_os = "macos")]
+            {
+                let wanted = crate::consent::wanted(crate::consent::CapabilityId::InputMonitoring);
+                if !wanted {
+                    input_events = None;
+                    // A grant revoked while the tap runs is not caught here:
+                    // macOS disables the tap, the re-enable in the callback
+                    // fails, and the loop waits out the deadline below. That
+                    // deadline is the sense interval, so the cost is the
+                    // back-off it would have had anyway (#721).
+                } else if input_events.is_none() && schedule_mode == scheduler::ScheduleMode::Idle {
+                    // Idle only: this asks TCC whether the grant has landed
+                    // yet, and an Active tick asking 60 times a second would
+                    // cost more than the tap saves. An idle wait is at most a
+                    // second while the poll is still on, so a grant made in
+                    // System Settings is picked up about that fast.
+                    input_events = platform::spawn_event_tap();
+                }
+            }
+
+            // A listener that hung up is worse than none: `recv_timeout` on a
+            // closed channel returns at once, which is a spin rather than a
+            // sleep. Dropped after the match, where nothing borrows it.
+            let mut listener_hung_up = false;
+
             // Active sleeps 16ms. Idle blocks until a real deadline with no
-            // cap (#183). Hidden: sleep, ignore XI2. Visible (Asleep/DND
-            // included): XI2 stays on so hit-testing keeps Poke/Grab/Throw.
+            // cap (#183). Hidden: sleep, ignore input events. Visible
+            // (Asleep/DND included): the listener stays on so hit-testing keeps
+            // Poke/Grab/Throw.
             match (schedule_mode, was_visible, &input_events) {
                 (scheduler::ScheduleMode::Idle, true, Some(events)) => {
                     let next_director = lives
@@ -187,11 +221,16 @@ pub(crate) fn run_frame_loop(
                     let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
                     let deadline = next_director.min(next_sense);
 
-                    let _ = events.recv_timeout(deadline);
+                    // `matches!` rather than `==`: the X11 channel carries an
+                    // `InputEvent`, which derives no `PartialEq`.
+                    listener_hung_up = matches!(
+                        events.recv_timeout(deadline),
+                        Err(mpsc::RecvTimeoutError::Disconnected)
+                    );
                 }
                 (scheduler::ScheduleMode::Idle, false, Some(_events)) => {
-                    // Hidden idle: deep sleep without XI2. Only non-input
-                    // callbacks unblock.
+                    // Hidden idle: deep sleep, input events ignored. Only
+                    // non-input callbacks unblock.
                     let next_director = lives
                         .iter()
                         .filter_map(|live| {
@@ -211,9 +250,9 @@ pub(crate) fn run_frame_loop(
                     thread::sleep(deadline);
                 }
                 _ => {
-                    // No XI2: poll with back-off. CGEventTap needs Input
-                    // Monitoring (decision 9 forbids it), so event-driven
-                    // input is unavailable (#183).
+                    // No listener: poll with back-off. That is Windows always,
+                    // Wayland always, and macOS until the user grants Input
+                    // Monitoring (#183 Stage 2b).
                     match (schedule_mode, was_visible) {
                         (scheduler::ScheduleMode::Active, _) => {
                             thread::sleep(ENGINE_TICK);
@@ -265,6 +304,13 @@ pub(crate) fn run_frame_loop(
                         }
                     }
                 }
+            }
+
+            if listener_hung_up {
+                // The listener thread ended: the tap lost its grant, or X11
+                // went away. Back off rather than spin; on macOS the next
+                // iteration starts a new tap if the setting is still on.
+                input_events = None;
             }
 
             // Read per tick: the Development tab can flip these while the
