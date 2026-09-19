@@ -8,7 +8,8 @@
 
 // Needs an Accessibility grant for whatever runs it (System Settings > Privacy
 // & Security > Accessibility). Callers: verify-settings-macos.sh,
-// verify-settings-webview-select-macos.sh, verify-settings-keyboard-webview.sh.
+// verify-settings-webview-select-macos.sh, verify-settings-keyboard-webview.sh,
+// verify-settings-webview-clipboard-macos.sh.
 
 import AppKit
 import ApplicationServices
@@ -23,7 +24,7 @@ func die(_ message: String) -> Never {
 
 guard args.count >= 2, let pid = pid_t(args[1]) else {
     die(
-        "usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move|key|type|focused|focus-window|menus> <pid> [args]"
+        "usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move|key|type|focused|focus-window|menus|press-button> <pid> [args]"
     )
 }
 
@@ -501,6 +502,36 @@ case "focus-window":
 case "menus":
     // WebKit's <select> menu is a layer>=100 window with no AX tree. #797.
     print(menuWindowCount())
+
+case "press-button":
+    // Tree order, 1-based among buttons that share a title. The BYO section
+    // draws two Copy buttons; the snippet is first and the Hermes token is
+    // second when that row is showing. #855.
+    guard args.count >= 3 else {
+        die("usage: ax-settings press-button <pid> <title> [index]")
+    }
+    let want = args[2]
+    let index = args.count >= 4 ? (Int(args[3]) ?? 1) : 1
+    guard index >= 1 else { die("button index must be >= 1") }
+    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
+    var matches: [AXUIElement] = []
+    func collect(_ element: AXUIElement, depth: Int) {
+        guard depth < 30 else { return }
+        if string(element, kAXRoleAttribute) == "AXButton",
+            string(element, kAXTitleAttribute) == want
+        {
+            matches.append(element)
+        }
+        for child in children(element) { collect(child, depth: depth + 1) }
+    }
+    collect(window, depth: 0)
+    guard index <= matches.count else {
+        die("no AXButton titled \(want) at index \(index) (\(matches.count) found)")
+    }
+    let target = matches[index - 1]
+    activateSettings()
+    guard press(target) else { die("could not press \(want) #\(index); last: \(lastError)") }
+    if let rect = frame(target) { printRect(rect) }
 
 case "dump":
     // One line per element as role|title|value|placeholder|enabled|settable, so
