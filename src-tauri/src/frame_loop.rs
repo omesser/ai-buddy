@@ -154,10 +154,11 @@ pub(crate) fn run_frame_loop(
         #[cfg(all(unix, not(target_os = "macos")))]
         let mut input_events = platform::spawn_xi2_listener();
         // macOS: the same channel, fed by a mouse event tap, and only once the
-        // user has turned Input Monitoring on. `mut` because that setting can
-        // be flipped while the loop runs (#721).
+        // user has turned Input Monitoring on. Starts `None` so a leftover OS
+        // grant cannot listen before the first tick reads the setting. `mut`
+        // because that setting can be flipped while the loop runs (#721).
         #[cfg(target_os = "macos")]
-        let mut input_events = platform::spawn_event_tap();
+        let mut input_events: Option<platform::EventTap> = None;
         #[cfg(not(unix))]
         let mut input_events: Option<mpsc::Receiver<()>> = None;
 
@@ -172,18 +173,17 @@ pub(crate) fn run_frame_loop(
 
         loop {
             // The tap follows the setting: checked and granted, it starts here
-            // and the arms below block on it; unchecked, the receiver goes and
-            // the tap thread ends with it, back to the Stage 2b back-off (#721).
+            // and the arms below block on it; unchecked, Drop stops the tap
+            // thread, back to the Stage 2b back-off (#721).
             #[cfg(target_os = "macos")]
             {
                 let wanted = crate::consent::wanted(crate::consent::CapabilityId::InputMonitoring);
                 if !wanted {
+                    // Drop stops the tap thread from this side. A grant
+                    // revoked while the setting stays on is still not caught
+                    // here: the loop waits out the deadline below, which is
+                    // the back-off it would have had anyway (#721).
                     input_events = None;
-                    // A grant revoked while the tap runs is not caught here:
-                    // macOS disables the tap, the re-enable in the callback
-                    // fails, and the loop waits out the deadline below. That
-                    // deadline is the sense interval, so the cost is the
-                    // back-off it would have had anyway (#721).
                 } else if input_events.is_none() && schedule_mode == scheduler::ScheduleMode::Idle {
                     // Idle only: this asks TCC whether the grant has landed
                     // yet, and an Active tick asking 60 times a second would

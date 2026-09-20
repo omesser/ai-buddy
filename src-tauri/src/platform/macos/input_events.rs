@@ -8,7 +8,8 @@
 //! macOS gates this tap behind Input Monitoring, which DESIGN.md decision 9
 //! forbids asking for at launch. So nothing here starts until the user checks
 //! the Input Monitoring row in settings and macOS grants it: without the grant
-//! the loop keeps the Stage 2b back-off, and `spawn_listener` answers `None`.
+//! the loop keeps the Stage 2b back-off, and `spawn_listener` answers `None`
+//! unless the setting is on and the grant is present.
 //!
 //! The mask carries the six mouse types #183 Stage 1 names and nothing else.
 //! There is no key event in it, and a listen-only tap "receives events but
@@ -17,8 +18,9 @@
 
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::thread;
+use std::time::Duration;
 
 use objc2_core_foundation::{kCFRunLoopCommonModes, CFMachPort, CFRetained, CFRunLoop};
 use objc2_core_graphics::{
@@ -53,11 +55,49 @@ struct Tap {
     port: Option<CFRetained<CFMachPort>>,
 }
 
-/// Start listening, or answer `None` when the grant is missing or the tap will
-/// not start. The receiver is the frame loop's idle clock: one wake per event,
-/// coalesced, because the loop reads the cursor itself and only needs to know
-/// that something moved.
-pub fn spawn_listener() -> Option<Receiver<()>> {
+/// The frame loop's handle on a running tap. Drop stops the tap thread from
+/// this side, so uncheck does not wait for a mouse event the tap may never
+/// see (a disabled tap delivers no callback, including `Disconnected`).
+pub struct EventTap {
+    events: Receiver<()>,
+    stop: StopHandle,
+}
+
+impl EventTap {
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<(), RecvTimeoutError> {
+        self.events.recv_timeout(timeout).map(|_| ())
+    }
+}
+
+impl Drop for EventTap {
+    fn drop(&mut self) {
+        // `stop` alone stays queued until the loop next wakes. A disabled tap
+        // never wakes. `wake_up` is the other half of the pair Apple documents
+        // for stopping a run loop from another thread.
+        self.stop.0.stop();
+        self.stop.0.wake_up();
+    }
+}
+
+/// `CFRunLoop` is `!Send` because `run()` belongs on the tap thread. `stop`
+/// and `wake_up` are the documented cross-thread pair, so the frame thread
+/// may hold this and only call those two.
+struct StopHandle(CFRetained<CFRunLoop>);
+
+// SAFETY: the handle is used only for `stop` and `wake_up`, which Core
+// Foundation documents as safe from any thread. Nothing here calls `run`.
+unsafe impl Send for StopHandle {}
+
+/// Start listening, or answer `None` when the setting is off, the grant is
+/// missing, or the tap will not start. The receiver is the frame loop's idle
+/// clock: one wake per event, coalesced, because the loop reads the cursor
+/// itself and only needs to know that something moved.
+pub fn spawn_listener() -> Option<EventTap> {
+    // The setting is this session's intent. The OS grant can remain after
+    // uncheck, and a leftover grant must not start a tap on launch.
+    if !consent::wanted(consent::CapabilityId::InputMonitoring) {
+        return None;
+    }
     // Asked rather than assumed from a successful create: an ungranted tap can
     // come back as a port that never delivers, and the frame loop would then
     // block for the whole deadline hearing nothing. The consent probe is the
@@ -82,17 +122,20 @@ pub fn spawn_listener() -> Option<Receiver<()>> {
     // channel returns at once — a spin, not a sleep.
     //
     // Bounded because the frame loop is the caller: a setup that hangs must
-    // cost a late tap, never a frozen sprite. A thread that reports after the
-    // timeout finds the receiver gone and ends itself at the next event.
-    started.recv_timeout(SETUP_TIMEOUT).ok()?.then_some(woken)
+    // cost a late tap, never a frozen sprite. A send after the timeout sees
+    // the receiver gone and returns without parking in the run loop.
+    let stop = started.recv_timeout(SETUP_TIMEOUT).ok()??;
+    Some(EventTap {
+        events: woken,
+        stop,
+    })
 }
 
 /// Create the tap, put it on this thread's run loop, and stay here.
 ///
-/// The thread ends at the first event after the frame loop drops the receiver,
-/// which is how unchecking the setting stops the tap. The loop stops listening
-/// at once either way; this only decides when the thread goes.
-fn listen(wake: SyncSender<()>, ready: &mpsc::Sender<bool>) {
+/// The frame loop's `EventTap` Drop stops this run loop. The callback still
+/// stops it on `Disconnected` so a hang-up without Drop also ends the thread.
+fn listen(wake: SyncSender<()>, ready: &mpsc::Sender<Option<StopHandle>>) {
     let mut tap = Box::new(Tap { wake, port: None });
     let context: *mut c_void = std::ptr::from_mut(tap.as_mut()).cast();
 
@@ -111,7 +154,7 @@ fn listen(wake: SyncSender<()>, ready: &mpsc::Sender<bool>) {
     };
 
     let Some(port) = port else {
-        let _ = ready.send(false);
+        let _ = ready.send(None);
         return;
     };
 
@@ -120,13 +163,13 @@ fn listen(wake: SyncSender<()>, ready: &mpsc::Sender<bool>) {
     // loop is better off with the poll it already has.
     CGEvent::tap_enable(&port, true);
     if !CGEvent::tap_is_enabled(&port) {
-        let _ = ready.send(false);
+        let _ = ready.send(None);
         return;
     }
 
     let source = CFMachPort::new_run_loop_source(None, Some(&port), 0);
     let (Some(source), Some(run_loop)) = (source, CFRunLoop::current()) else {
-        let _ = ready.send(false);
+        let _ = ready.send(None);
         return;
     };
 
@@ -136,7 +179,9 @@ fn listen(wake: SyncSender<()>, ready: &mpsc::Sender<bool>) {
     run_loop.add_source(Some(&source), modes);
     tap.port = Some(port);
 
-    let _ = ready.send(true);
+    if ready.send(Some(StopHandle(run_loop.clone()))).is_err() {
+        return;
+    }
     CFRunLoop::run();
 }
 
@@ -223,13 +268,30 @@ mod tests {
     }
 
     /// Without the grant there is no tap and no thread: the frame loop reads
-    /// `None` as "keep backing off" (#183 Stage 2b).
+    /// `None` as "keep backing off" (#183 Stage 2b). The setting has to be on
+    /// or the wanted gate answers `None` first and this would not see the grant.
     #[test]
     fn an_ungranted_mac_starts_no_tap() {
+        consent::set_wanted(consent::CapabilityId::InputMonitoring, true);
         if consent::live().granted(consent::CapabilityId::InputMonitoring) {
             return;
         }
         assert!(spawn_listener().is_none());
+    }
+
+    /// Unchecked is the shipped state. A leftover TCC grant must not start a
+    /// tap; the frame loop used to spawn from `granted` alone and listen until
+    /// the first tick dropped the receiver.
+    #[test]
+    fn a_cleared_setting_starts_no_tap() {
+        consent::set_wanted(consent::CapabilityId::InputMonitoring, false);
+        assert!(spawn_listener().is_none());
+    }
+
+    #[test]
+    fn the_frame_thread_can_hold_the_stop_handle() {
+        fn assert_send<T: Send>() {}
+        assert_send::<EventTap>();
     }
 
     /// The whole pipe, end to end: tap to channel. Needs the grant, and posts
@@ -244,6 +306,7 @@ mod tests {
     #[test]
     #[ignore = "needs the Input Monitoring grant; run by hand"]
     fn a_mouse_event_wakes_the_loop() {
+        consent::set_wanted(consent::CapabilityId::InputMonitoring, true);
         let Some(woken) = spawn_listener() else {
             println!("  no Input Monitoring grant here: nothing to listen with");
             return;

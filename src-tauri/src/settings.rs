@@ -2339,12 +2339,13 @@ mod tests {
         }
     }
 
-    /// The frame loop reads this one through `consent::wanted`, which
-    /// `SettingsSession::apply` and launch both seed from this field. Off is
-    /// the shipped state: decision 9 does not let a first run ask (#721).
+    /// The document field the native checkbox writes. `SettingsSession::apply`
+    /// and launch seed `consent::wanted` from it; the tap follows that, and
+    /// `a_cleared_setting_starts_no_tap` is the spawn-side half. Off is the
+    /// shipped state: decision 9 does not let a first run ask (#721).
     #[test]
     #[cfg(target_os = "macos")]
-    fn the_input_monitoring_checkbox_is_what_the_tap_follows() {
+    fn unchecking_input_monitoring_clears_store_intent() {
         let mut settings = Settings::default();
         assert!(!settings.wants_consent(CapabilityId::InputMonitoring));
 
