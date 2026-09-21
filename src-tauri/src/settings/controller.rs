@@ -87,6 +87,11 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
             None => Outcome::Nothing,
         },
         Event::SetText { id, value } => {
+            // A batched row lives in the widgets until Apply. Writing here
+            // would kill a Harness child the Cancel button still offers (#663).
+            if description.text_batched(id) {
+                return Outcome::Nothing;
+            }
             text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::Apply)
         }
         Event::Pick { id, value } => {
@@ -94,6 +99,9 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
             // selected. Writing that back is a save and a redraw for nothing,
             // and on the source list it is lossy (#452).
             if view.popup_value(id).as_deref() == Some(value.as_str()) {
+                return Outcome::Nothing;
+            }
+            if description.text_batched(id) {
                 return Outcome::Nothing;
             }
             text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::ApplyAndRefresh)
@@ -183,13 +191,7 @@ mod tests {
 
     /// A window that has drawn itself from `view` and has not been typed into.
     fn drawn<'a>(view: &SettingsView, description: &'a FormDescription) -> DirectorDraft<'a> {
-        DirectorDraft {
-            base_url: view.director_base_url.clone(),
-            model: view.director_model.clone(),
-            key: String::new(),
-            clear_key: false,
-            description,
-        }
+        DirectorDraft::live(view, description)
     }
 
     fn press(id: &str) -> Event {
@@ -397,6 +399,52 @@ mod tests {
             };
             assert!(patch.new_session);
             assert!(patch.director_base_url.is_none());
+        });
+    }
+
+    /// #663: a source pick stages. Apply is what reaches the file, so a
+    /// patch here would kill the child Cancel is supposed to keep.
+    #[test]
+    fn picking_the_completer_source_stages_rather_than_saves() {
+        model::tests::with_harness(None, || {
+            let view = director_view();
+            let description = form::describe();
+            let event = Event::Pick {
+                id: form::HARNESS_ID.into(),
+                value: "Harness · opencode".into(),
+            };
+            assert_eq!(
+                handle(&event, &drawn(&view, &description), &view),
+                Outcome::Nothing,
+            );
+            let typed = DirectorDraft {
+                harness: "Harness · opencode".into(),
+                ..drawn(&view, &description)
+            };
+            let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &typed, &view) else {
+                panic!("Apply commits the staged source");
+            };
+            assert_eq!(patch.harness.as_deref(), Some("opencode"));
+            assert_eq!(
+                handle(&press(form::CANCEL_ID), &typed, &view),
+                Outcome::Reset,
+            );
+        });
+    }
+
+    #[test]
+    fn a_batched_command_line_does_not_commit_on_blur() {
+        model::tests::with_harness(None, || {
+            let view = director_view();
+            let description = form::describe();
+            let event = Event::SetText {
+                id: form::HARNESS_COMMAND_ID.into(),
+                value: "hermes acp".into(),
+            };
+            assert_eq!(
+                handle(&event, &drawn(&view, &description), &view),
+                Outcome::Nothing,
+            );
         });
     }
 

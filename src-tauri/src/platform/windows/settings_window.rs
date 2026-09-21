@@ -222,12 +222,17 @@ impl SettingsWindow {
                         );
                     }
                     Control::Edit(hwnd, _) => {
+                        if (id == form::DIRECTOR_BASE_URL_ID && staged.base_url)
+                            || (id == form::DIRECTOR_MODEL_ID && staged.model)
+                            || (id == form::DIRECTOR_API_KEY_ID && staged.key)
+                            || (id == form::HARNESS_COMMAND_ID && staged.harness_command)
+                        {
+                            continue;
+                        }
                         let text = match id.as_str() {
-                            form::DIRECTOR_BASE_URL_ID if !staged.base_url => {
-                                view.director_base_url.clone()
-                            }
-                            form::DIRECTOR_MODEL_ID if !staged.model => view.director_model.clone(),
-                            form::DIRECTOR_API_KEY_ID if !staged.key => String::new(),
+                            form::DIRECTOR_BASE_URL_ID => view.director_base_url.clone(),
+                            form::DIRECTOR_MODEL_ID => view.director_model.clone(),
+                            form::DIRECTOR_API_KEY_ID => String::new(),
                             form::EXCLUDED_ID => view.excluded_text(),
                             _ => {
                                 if let Some(value) = view.development_texts.get(id) {
@@ -291,6 +296,9 @@ impl SettingsWindow {
                         }
                     }
                     Control::ComboBox(hwnd, _, options) => {
+                        if id == form::HARNESS_ID && staged.harness {
+                            continue;
+                        }
                         // No options of its own leaves the list to the renderer,
                         // which is how the two Character rows get the installed
                         // packages — a list the form cannot see (#468).
@@ -333,6 +341,8 @@ impl SettingsWindow {
             base_url: get_control_text(&controls, form::DIRECTOR_BASE_URL_ID),
             model: get_control_text(&controls, form::DIRECTOR_MODEL_ID),
             key: get_control_text(&controls, form::DIRECTOR_API_KEY_ID),
+            harness: get_combo_title(&controls, form::HARNESS_ID),
+            harness_command: get_control_text(&controls, form::HARNESS_COMMAND_ID),
             clear_key: *self.clear_pending.borrow(),
             description,
         }
@@ -451,6 +461,9 @@ impl SettingsWindow {
         };
 
         let description = form::describe();
+        if description.text_batched(&form_id) {
+            return;
+        }
         if let Some(field) = description.text_write(&form_id) {
             let value = match field {
                 TextField::Harness => form::harness_choice(&title),
@@ -720,10 +733,7 @@ impl SettingsWindow {
             .cloned();
 
         if let Some(form_id) = form_id {
-            if form::DIRECTOR_BASE_URL_ID == form_id
-                || form::DIRECTOR_MODEL_ID == form_id
-                || form::DIRECTOR_API_KEY_ID == form_id
-            {
+            if form::describe().text_batched(&form_id) {
                 let view = {
                     let guard = self.session.lock().unwrap();
                     guard.as_ref().map(|s| s.view())
@@ -1080,6 +1090,17 @@ fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
             }
             _ => None,
         })
+}
+
+fn get_combo_title(controls: &HashMap<String, Control>, id: &str) -> String {
+    let Some(Control::ComboBox(hwnd, _, options)) = controls.get(id) else {
+        return String::new();
+    };
+    let index = unsafe { SendMessageA(*hwnd, CB_GETCURSEL, 0, 0) };
+    if index < 0 {
+        return String::new();
+    }
+    options.get(index as usize).cloned().unwrap_or_default()
 }
 
 fn get_control_text(controls: &HashMap<String, Control>, id: &str) -> String {

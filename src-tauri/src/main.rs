@@ -527,6 +527,8 @@ enum SettingsEventPayload {
     },
     Press {
         press: String,
+        #[serde(default)]
+        draft: Option<DirectorDraftWire>,
     },
     Pick {
         pick: String,
@@ -542,6 +544,24 @@ enum SettingsEventPayload {
 #[derive(serde::Deserialize, Debug)]
 struct PickFills {
     row: String,
+}
+
+/// Widget text the webview holds for batched Director rows. Apply reads this
+/// the way a native window reads its fields (#663).
+#[derive(serde::Deserialize, Debug, Default)]
+struct DirectorDraftWire {
+    #[serde(default)]
+    director_base_url: Option<String>,
+    #[serde(default)]
+    director_model: Option<String>,
+    #[serde(default)]
+    director_api_key: Option<String>,
+    #[serde(default)]
+    harness: Option<String>,
+    #[serde(default)]
+    harness_command: Option<String>,
+    #[serde(default)]
+    clear_key: bool,
 }
 
 #[cfg(test)]
@@ -582,8 +602,26 @@ mod settings_event_tests {
         let payload: SettingsEventPayload =
             serde_json::from_str(json).expect("press payload should deserialize");
         match payload {
-            SettingsEventPayload::Press { press } => {
+            SettingsEventPayload::Press { press, draft } => {
                 assert_eq!(press, "apply");
+                assert!(draft.is_none());
+            }
+            _ => panic!("expected Press variant"),
+        }
+    }
+
+    #[test]
+    fn press_with_draft_deserializes_from_js() {
+        let json = r#"{"press":"director_apply","draft":{"harness":"Harness · opencode"}}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("press with draft should deserialize");
+        match payload {
+            SettingsEventPayload::Press { press, draft } => {
+                assert_eq!(press, "director_apply");
+                assert_eq!(
+                    draft.expect("draft").harness.as_deref(),
+                    Some("Harness · opencode")
+                );
             }
             _ => panic!("expected Press variant"),
         }
@@ -692,29 +730,51 @@ fn settings_event(
     let view = session.view();
     let description = settings::form::describe();
 
-    let draft = settings::DirectorDraft {
-        base_url: view.director_base_url.clone(),
-        model: view.director_model.clone(),
-        key: String::new(),
-        clear_key: false,
-        description: &description,
-    };
-
-    let event = match payload {
-        SettingsEventPayload::SetBool { set_bool, value } => controller::Event::SetBool {
-            id: set_bool,
-            value,
-        },
-        SettingsEventPayload::SetText { set_text, value } => controller::Event::SetText {
-            id: set_text,
-            value,
-        },
-        SettingsEventPayload::Press { press } => controller::Event::Press { id: press },
+    let (event, draft) = match payload {
+        SettingsEventPayload::SetBool { set_bool, value } => (
+            controller::Event::SetBool {
+                id: set_bool,
+                value,
+            },
+            settings::DirectorDraft::live(&view, &description),
+        ),
+        SettingsEventPayload::SetText { set_text, value } => (
+            controller::Event::SetText {
+                id: set_text,
+                value,
+            },
+            settings::DirectorDraft::live(&view, &description),
+        ),
+        SettingsEventPayload::Press { press, draft: wire } => {
+            let mut draft = settings::DirectorDraft::live(&view, &description);
+            if let Some(wire) = wire {
+                if let Some(value) = wire.director_base_url {
+                    draft.base_url = value;
+                }
+                if let Some(value) = wire.director_model {
+                    draft.model = value;
+                }
+                if let Some(value) = wire.director_api_key {
+                    draft.key = value;
+                }
+                if let Some(value) = wire.harness {
+                    draft.harness = value;
+                }
+                if let Some(value) = wire.harness_command {
+                    draft.harness_command = value;
+                }
+                draft.clear_key = wire.clear_key;
+            }
+            (controller::Event::Press { id: press }, draft)
+        }
         SettingsEventPayload::Pick {
             pick,
             value,
             fills: None,
-        } => controller::Event::Pick { id: pick, value },
+        } => (
+            controller::Event::Pick { id: pick, value },
+            settings::DirectorDraft::live(&view, &description),
+        ),
         SettingsEventPayload::Pick {
             pick,
             value,
@@ -733,11 +793,14 @@ fn settings_event(
                 })
                 .unwrap_or_default()
                 .to_string();
-            controller::Event::Shortcut {
-                id: pick,
-                value,
-                current,
-            }
+            (
+                controller::Event::Shortcut {
+                    id: pick,
+                    value,
+                    current,
+                },
+                settings::DirectorDraft::live(&view, &description),
+            )
         }
         SettingsEventPayload::Dismiss { dismiss, value } => {
             return Err(format!(

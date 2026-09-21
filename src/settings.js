@@ -166,7 +166,11 @@ function drawRow(row, values, emit) {
         "aria-readonly": row.frozen ? "true" : null,
       });
       input.value = values[row.id] ?? "";
-      input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value, batched: row.batched }));
+      // Batched rows stay in the widget until Apply. A blur here would write
+      // the file and retarget before Cancel could restore the row (#663).
+      if (!row.batched) {
+        input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value, batched: row.batched }));
+      }
       return labelled(row, input, notes(row));
     }
     case "SecureField": {
@@ -184,7 +188,9 @@ function drawRow(row, values, emit) {
     }
     case "Popup": {
       const select = popup(row, values, row.frozen);
-      select.addEventListener("change", () => emit({ set_text: row.id, value: select.value }));
+      if (!row.batched) {
+        select.addEventListener("change", () => emit({ set_text: row.id, value: select.value }));
+      }
       return labelled(row, select, notes(row));
     }
     case "Multiline": {
@@ -239,7 +245,14 @@ function drawRow(row, values, emit) {
             text: control.label,
             "data-id": control.id,
           });
-          button.addEventListener("click", () => emit({ press: control.id }));
+          button.addEventListener("click", () => {
+            const payload = { press: control.id };
+            if (control.id === "director_apply") {
+              const root = button.closest('[role="tabpanel"]') ?? button.getRootNode();
+              payload.draft = directorDraft(root);
+            }
+            emit(payload);
+          });
           line.append(button);
         } else if (control.type === "Popup") {
           const select = popup(control, values, control.frozen);
@@ -265,6 +278,22 @@ function drawRow(row, values, emit) {
     default:
       return el("div", { class: "set-row set-unknown", text: `unrendered row type ${row.type}` });
   }
+}
+
+function rowValue(root, id) {
+  const row = root.querySelector?.(`[data-row="${id}"]`);
+  const control = row?.querySelector("input, select, textarea");
+  return control ? control.value : "";
+}
+
+function directorDraft(root) {
+  return {
+    director_base_url: rowValue(root, "director_base_url"),
+    director_model: rowValue(root, "director_model"),
+    director_api_key: rowValue(root, "director_api_key"),
+    harness: rowValue(root, "harness"),
+    harness_command: rowValue(root, "harness_command"),
+  };
 }
 
 export function render(root, tab, values, emit = () => {}) {
