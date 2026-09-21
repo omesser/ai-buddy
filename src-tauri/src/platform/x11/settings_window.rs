@@ -886,6 +886,7 @@ impl SettingsWindow {
                 help,
                 options,
                 frozen,
+                batched,
                 disclosure,
                 status,
                 ..
@@ -913,7 +914,9 @@ impl SettingsWindow {
                 // Frozen like the field arms above, so `draw`'s
                 // `set_active_id` has nothing to fire into: an exported
                 // variable's value is drawn and takes no edit (#272).
-                if !frozen {
+                if *batched {
+                    self.bind_batched_popup(&combo);
+                } else if !frozen {
                     let writes = *writes;
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
@@ -977,6 +980,22 @@ impl SettingsWindow {
     /// A batched field gets no commit binding: the tab commits on Apply, and
     /// `connect_changed` only keeps Apply and Cancel in step with what the
     /// field holds (#279).
+    fn bind_batched_popup(&self, combo: &gtk::ComboBoxText) {
+        let session = Arc::clone(&self.session);
+        let refreshing = self.refreshing.clone();
+        let controls = self.controls.clone();
+        let clear_pending = self.clear_pending.clone();
+        combo.connect_changed(move |_| {
+            if refreshing.get() {
+                return;
+            }
+            let Some(view) = view_of(&session) else {
+                return;
+            };
+            update_director_buttons(&controls.borrow(), &view, clear_pending.get());
+        });
+    }
+
     fn bind_batched(&self, entry: &gtk::Entry) {
         let session = Arc::clone(&self.session);
         let refreshing = self.refreshing.clone();
@@ -1170,6 +1189,9 @@ impl SettingsWindow {
             }
         }
         for (id, text) in &view.development_texts {
+            if id == form::HARNESS_COMMAND_ID && staged.harness_command {
+                continue;
+            }
             if let Some(Control::Entry(entry)) = controls.get(id) {
                 entry.set_text(text);
             }
@@ -1271,9 +1293,11 @@ impl SettingsWindow {
         // moves the selection. Setting the active combo item writes nothing
         // back: `refreshing` is up, and GTK emits no `changed` for a combo
         // that was already at that index.
-        if let Some(Control::ComboBox(combo, options)) = controls.get(form::HARNESS_ID) {
-            if let Some(index) = options.iter().position(|opt| opt == &view.harness) {
-                combo.set_active(Some(index as u32));
+        if !staged.harness {
+            if let Some(Control::ComboBox(combo, options)) = controls.get(form::HARNESS_ID) {
+                if let Some(index) = options.iter().position(|opt| opt == &view.harness) {
+                    combo.set_active(Some(index as u32));
+                }
             }
         }
         // The registration picker, for the same reason and the same way (#577).
@@ -1379,6 +1403,10 @@ fn director_draft<'a>(
 ) -> DirectorDraft<'a> {
     let text = |id: &str| match controls.get(id) {
         Some(Control::Entry(entry)) => entry.text().to_string(),
+        Some(Control::ComboBox(combo, _)) => combo
+            .active_text()
+            .map(|title| title.to_string())
+            .unwrap_or_default(),
         _ => String::new(),
     };
     DirectorDraft {
@@ -1386,6 +1414,8 @@ fn director_draft<'a>(
         model: text(form::DIRECTOR_MODEL_ID),
         key: text(form::DIRECTOR_API_KEY_ID),
         clear_key: clear_pending,
+        harness: text(form::HARNESS_ID),
+        harness_command: text(form::HARNESS_COMMAND_ID),
         description,
     }
 }

@@ -846,11 +846,13 @@ pub struct Staged {
     pub base_url: bool,
     pub model: bool,
     pub key: bool,
+    pub harness: bool,
+    pub harness_command: bool,
 }
 
 impl Staged {
     pub fn any(&self) -> bool {
-        self.base_url || self.model || self.key
+        self.base_url || self.model || self.key || self.harness || self.harness_command
     }
 }
 
@@ -866,10 +868,31 @@ pub struct DirectorDraft<'a> {
     pub model: String,
     pub key: String,
     pub clear_key: bool,
+    pub harness: String,
+    pub harness_command: String,
     pub description: &'a form::FormDescription,
 }
 
-impl DirectorDraft<'_> {
+impl<'a> DirectorDraft<'a> {
+    /// The Director tab as live state would draw it: no typed key, source
+    /// rows matching the view. Tests and the webview fill from this and
+    /// override the fields that moved.
+    pub fn live(view: &SettingsView, description: &'a form::FormDescription) -> Self {
+        Self {
+            base_url: view.director_base_url.clone(),
+            model: view.director_model.clone(),
+            key: String::new(),
+            clear_key: false,
+            harness: view.harness.clone(),
+            harness_command: view
+                .development_texts
+                .get(form::HARNESS_COMMAND_ID)
+                .cloned()
+                .unwrap_or_default(),
+            description,
+        }
+    }
+
     /// The new Base URL, or `None` when the row is frozen or unchanged.
     ///
     /// A frozen row never applies: `model::resolve` gives the exported
@@ -884,6 +907,21 @@ impl DirectorDraft<'_> {
 
     fn model_edit(&self, view: &SettingsView) -> Option<&str> {
         self.edit(form::DIRECTOR_MODEL_ID, &self.model, &view.director_model)
+    }
+
+    fn harness_edit(&self, view: &SettingsView) -> Option<&str> {
+        self.edit(form::HARNESS_ID, &self.harness, &view.harness)
+    }
+
+    fn harness_command_edit(&self, view: &SettingsView) -> Option<&str> {
+        self.edit(
+            form::HARNESS_COMMAND_ID,
+            &self.harness_command,
+            view.development_texts
+                .get(form::HARNESS_COMMAND_ID)
+                .map(String::as_str)
+                .unwrap_or_default(),
+        )
     }
 
     fn edit<'t>(&self, id: &str, text: &'t str, live: &str) -> Option<&'t str> {
@@ -932,16 +970,24 @@ impl DirectorDraft<'_> {
         if let Some(key) = self.key_edit(view) {
             patch.director_api_key = Some(key.to_string());
         }
+        if let Some(text) = self.harness_edit(view) {
+            patch.set_text(TextField::Harness, text);
+        }
+        if let Some(text) = self.harness_command_edit(view) {
+            patch.set_text(TextField::HarnessCommand, text);
+        }
         Some(patch)
     }
 
-    /// The same three decisions as `patch`, as booleans, so a redraw and an
-    /// Apply cannot disagree about what is staged.
+    /// The same decisions as `patch`, as booleans, so a redraw and an Apply
+    /// cannot disagree about what is staged.
     pub fn staged(&self, view: &SettingsView) -> Staged {
         Staged {
             base_url: self.base_url_edit(view).is_some(),
             model: self.model_edit(view).is_some(),
             key: self.key_edit(view).is_some(),
+            harness: self.harness_edit(view).is_some(),
+            harness_command: self.harness_command_edit(view).is_some(),
         }
     }
 }
@@ -2754,9 +2800,7 @@ mod tests {
             let patch = DirectorDraft {
                 base_url: "https://api.x.ai".into(),
                 model: "grok-4.6".into(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             }
             .patch(&view)
             .expect("a new URL and model is dirty");
@@ -2791,9 +2835,7 @@ mod tests {
             let draft = DirectorDraft {
                 base_url: "https://typed.example".into(),
                 model: "grok-4.6".into(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             };
             assert!(
                 !draft.staged(&view).base_url,
@@ -2815,11 +2857,8 @@ mod tests {
             let view = director_view(true);
             let description = form::describe();
             let typed = DirectorDraft {
-                base_url: view.director_base_url.clone(),
-                model: view.director_model.clone(),
                 key: "sk-typed-then-cancelled".into(),
-                clear_key: false,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             };
             assert!(
                 typed.patch(&view).is_some(),
@@ -2843,11 +2882,8 @@ mod tests {
             let view = director_view(true);
             let description = form::describe();
             let patch = DirectorDraft {
-                base_url: view.director_base_url.clone(),
-                model: view.director_model.clone(),
-                key: String::new(),
                 clear_key: true,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             }
             .patch(&view)
             .expect("a staged clear is dirty");
@@ -2864,11 +2900,8 @@ mod tests {
             assert!(!view.clear_key_enabled(), "precondition: no key is stored");
             let description = form::describe();
             let draft = DirectorDraft {
-                base_url: view.director_base_url.clone(),
-                model: view.director_model.clone(),
-                key: String::new(),
                 clear_key: true,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             };
             assert!(draft.patch(&view).is_none());
         });
@@ -2882,11 +2915,9 @@ mod tests {
             let view = director_view(true);
             let description = form::describe();
             let patch = DirectorDraft {
-                base_url: view.director_base_url.clone(),
-                model: view.director_model.clone(),
                 key: "sk-typed-after-clear".into(),
                 clear_key: true,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             }
             .patch(&view)
             .expect("a typed key is dirty");
@@ -2906,19 +2937,15 @@ mod tests {
             let view = director_view(true);
             let description = form::describe();
             let staged = DirectorDraft {
-                base_url: view.director_base_url.clone(),
-                model: view.director_model.clone(),
                 key: "sk-typed".into(),
-                clear_key: false,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             }
             .staged(&view);
             assert_eq!(
                 staged,
                 Staged {
-                    base_url: false,
-                    model: false,
                     key: true,
+                    ..Staged::default()
                 }
             );
         });
@@ -2933,17 +2960,13 @@ mod tests {
             let description = form::describe();
             let draft = DirectorDraft {
                 base_url: "https://api.x.ai".into(),
-                model: view.director_model.clone(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             };
             assert_eq!(
                 draft.staged(&view),
                 Staged {
                     base_url: true,
-                    model: false,
-                    key: false,
+                    ..Staged::default()
                 }
             );
             let patch = draft.patch(&view).expect("a typed URL is dirty");
@@ -2957,13 +2980,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let draft = DirectorDraft {
-                base_url: view.director_base_url.clone(),
-                model: view.director_model.clone(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
-            };
+            let draft = DirectorDraft::live(&view, &description);
             assert!(
                 draft.patch(&view).is_none(),
                 "a clean tab is what disables both buttons"
@@ -2972,6 +2989,78 @@ mod tests {
                 !draft.staged(&view).any(),
                 "and what lets a redraw take every field from live state"
             );
+        });
+    }
+
+    /// #663: a source pick is the same batch as the endpoint. Apply is the
+    /// one patch, and Cancel is a draft that matches live state again.
+    #[test]
+    fn a_picked_source_is_one_apply_patch() {
+        crate::model::tests::with_harness(None, || {
+            let view = director_view(false);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                harness: "Harness · opencode".into(),
+                ..DirectorDraft::live(&view, &description)
+            };
+            assert!(draft.staged(&view).harness);
+            let patch = draft.patch(&view).expect("a pick is dirty");
+            assert_eq!(patch.harness.as_deref(), Some("opencode"));
+            assert!(patch.director_base_url.is_none());
+            assert!(
+                completer_retargets(&endpoint_settings(), &patch),
+                "Apply has to retarget once, not the pick"
+            );
+            let cancelled = DirectorDraft::live(&view, &description);
+            assert!(cancelled.patch(&view).is_none());
+            assert!(!completer_retargets(
+                &endpoint_settings(),
+                &SettingsPatch::default()
+            ));
+        });
+    }
+
+    /// Apply of a non-source Director edit must not reconnect the Harness.
+    /// The URL retargets the Completer. The source rows stay out of the patch,
+    /// so `harness::retarget` is not called for the child already running.
+    #[test]
+    fn an_endpoint_apply_does_not_retarget_an_unchanged_harness() {
+        crate::model::tests::with_harness(None, || {
+            let view = director_view(false);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: "https://api.x.ai".into(),
+                ..DirectorDraft::live(&view, &description)
+            };
+            let patch = draft.patch(&view).expect("a typed URL is dirty");
+            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
+            assert!(patch.harness.is_none());
+            assert!(patch.harness_command.is_none());
+            let settings = endpoint_settings();
+            assert!(!harness_retargets(&settings, &patch));
+            assert!(completer_retargets(&settings, &patch));
+        });
+    }
+
+    /// #272 on the source row: the variable owns the pick, so Apply must not
+    /// write a title the launch would throw away (#663).
+    #[test]
+    fn a_frozen_source_never_applies() {
+        crate::model::tests::with_harness(Some("claude"), || {
+            let view = director_view(false);
+            let description = form::describe();
+            assert!(
+                description.frozen(form::HARNESS_ID),
+                "precondition: the variable owns the source row"
+            );
+            let draft = DirectorDraft {
+                harness: "Harness · opencode".into(),
+                harness_command: "typed acp".into(),
+                ..DirectorDraft::live(&view, &description)
+            };
+            assert!(!draft.staged(&view).harness);
+            assert!(!draft.staged(&view).harness_command);
+            assert!(draft.patch(&view).is_none());
         });
     }
 
@@ -2995,16 +3084,14 @@ mod tests {
             let unfilled = DirectorDraft {
                 base_url: String::new(),
                 model: String::new(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
+                ..DirectorDraft::live(&view, &description)
             };
             assert_eq!(
                 unfilled.staged(&view),
                 Staged {
                     base_url: true,
                     model: true,
-                    key: false,
+                    ..Staged::default()
                 },
                 "empty text differs from live state, so a redraw that leaves \
                  staged rows alone leaves both of these showing placeholders"

@@ -261,6 +261,8 @@ test("the controls are the platform's own elements", () => {
   assert.match(source, /type: "checkbox"/, "a checkbox is an input, not a styled div");
   assert.match(source, /type: "password"/, "a secure field is an input, not a masked text box");
   assert.doesNotMatch(source, /role: "(button|checkbox|combobox|textbox)"/, "no element wears a role it is not");
+  assert.match(source, /if \(!row\.batched\)/, "batched source rows wait for Apply");
+  assert.match(source, /payload\.draft = directorDraft/, "Apply sends the widget draft");
 });
 
 // Two stylesheets on one window, and the second one wins: the prefix is what

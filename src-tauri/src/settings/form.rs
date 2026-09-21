@@ -114,6 +114,11 @@ pub enum FormRow {
         options: Vec<String>,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
+        /// Committed by Apply rather than on pick, for the same reason as
+        /// `TextField::batched`. The Completer source is the case that earned
+        /// it: a pick used to kill a child before Cancel could put it back
+        /// (#663).
+        batched: bool,
         /// Extended explanation behind progressive disclosure.
         disclosure: Option<String>,
         /// Status info shown in a muted strip.
@@ -381,13 +386,19 @@ impl FormDescription {
     }
 
     /// Whether the text row with this id commits on Apply rather than on
-    /// every blur. Secure fields are always batched (`FormRow::SecureField`);
-    /// an id that is not a text row stays false.
+    /// every blur or pick. Secure fields are always batched
+    /// (`FormRow::SecureField`); an id that is not a text or popup row stays
+    /// false.
     pub fn text_batched(&self, id: &str) -> bool {
         self.sections()
             .flat_map(|section| &section.rows)
             .find_map(|row| match row {
                 FormRow::TextField {
+                    id: row_id,
+                    batched,
+                    ..
+                }
+                | FormRow::Popup {
                     id: row_id,
                     batched,
                     ..
@@ -918,7 +929,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "director_actions".to_string(),
-                    help: Some("The endpoint rows take effect on Apply.".to_string()),
+                    help: Some("The endpoint and AI source rows take effect on Apply.".to_string()),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
@@ -962,9 +973,9 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 /// command the state line names is text, and nothing here runs it.
 ///
 /// All three renderers draw these rows — AppKit from the start, GTK since
-/// #467, Win32 since #468 — and all three commit them: `control_id_to_form_id`
-/// maps a Win32 child id back to its row (#461), and a pick reaches the file
-/// through the generic handler every row shares (#670).
+/// #467, Win32 since #468 — and all three commit them on Apply, the same
+/// batch as the HTTP endpoint (#663). `control_id_to_form_id` maps a Win32
+/// child id back to its row (#461).
 fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
@@ -973,7 +984,7 @@ fn completer_source_section() -> FormSection {
         // The preset list is read from `HARNESS_PRESETS` rather than spelled
         // again: the hand-kept copy this replaces had been missing `pi` since
         // it was added.
-        disclosure: Some(format!("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.", HARNESS_PRESETS.join(", "))),
+        disclosure: Some(format!("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.", HARNESS_PRESETS.join(", "))),
         status: None,
         rows: vec![
             FormRow::Popup {
@@ -983,7 +994,8 @@ fn completer_source_section() -> FormSection {
                 help: Some("Which \"AI brain\" answers for the buddy.".to_string()),
                 options: harness_options(),
                 frozen,
-                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
+                batched: true,
+                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.".to_string()),
                 status: source_status,
             },
             FormRow::TextField {
@@ -992,9 +1004,9 @@ fn completer_source_section() -> FormSection {
                 placeholder: "opencode acp".to_string(),
                 writes: TextField::HarnessCommand,
                 frozen,
-                batched: false,
+                batched: true,
                 help: None,
-                disclosure: Some("The command ai-buddy runs when Custom is picked above. Blur commits it and re-opens the attachment.".to_string()),
+                disclosure: Some("The command ai-buddy runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.".to_string()),
                 status: None,
             },
             FormRow::InspectBlock {
@@ -1043,6 +1055,7 @@ fn byo_section() -> FormSection {
                 help: Some("Which Harness the box below is written for.".to_string()),
                 options: HARNESS_PRESETS.map(str::to_string).to_vec(),
                 frozen: false,
+                batched: false,
                 disclosure: None,
                 status: None,
             },
@@ -1117,6 +1130,7 @@ fn character_sections() -> Vec<FormSection> {
                 help: Some("The character your buddy wears.".to_string()),
                 options: Vec::new(),
                 frozen: false,
+                batched: false,
                 disclosure: Some("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.".to_string()),
                 status: None,
             }],
@@ -2014,23 +2028,27 @@ mod tests {
         ));
     }
 
-    /// The Director endpoint, and no other editable row in the window.
+    /// The Director endpoint and Completer source, and no other editable row.
     ///
-    /// The Completer limits are the ones this test is really about: #273
-    /// landed them to be changed and watched, and a button between a limit
-    /// and its effect would undo that.
+    /// The Completer limits stay live: #273 landed them to be changed and
+    /// watched, and a button between a limit and its effect would undo that.
+    /// The source rows join the endpoint batch so a pick cannot kill a child
+    /// before Apply (#663).
     ///
     /// Clear key is the fourth batched control and is absent here, because it
     /// is an operation rather than a value: `RowOperation::ClearKey` stages,
     /// and that is the whole of what it means. `actions_map_to_patches_or_ops`
     /// is what holds that end (#279).
     #[test]
-    fn only_the_director_endpoint_batches() {
+    fn only_the_director_endpoint_and_source_batch() {
         let description = describe();
         let mut batched: Vec<&str> = Vec::new();
         for row in description.sections().flat_map(|section| &section.rows) {
             match row {
                 FormRow::TextField {
+                    id, batched: true, ..
+                }
+                | FormRow::Popup {
                     id, batched: true, ..
                 } => batched.push(id),
                 // No flag of its own: every secure field batches.
@@ -2039,9 +2057,17 @@ mod tests {
             }
         }
         batched.sort_unstable();
-        let mut expected = vec![DIRECTOR_API_KEY_ID, DIRECTOR_BASE_URL_ID, DIRECTOR_MODEL_ID];
+        let mut expected = vec![
+            DIRECTOR_API_KEY_ID,
+            DIRECTOR_BASE_URL_ID,
+            DIRECTOR_MODEL_ID,
+            HARNESS_COMMAND_ID,
+            HARNESS_ID,
+        ];
         expected.sort_unstable();
         assert_eq!(batched, expected);
+        assert!(!description.text_batched(CHARACTER_ID));
+        assert!(!description.text_batched(BYO_HARNESS_ID));
     }
 
     /// Mute sits under Do Not Disturb because that is the heading a user
@@ -3210,6 +3236,33 @@ mod tests {
                     && !copy.to_lowercase().contains("restart"),
                 "got {copy:?}"
             );
+        });
+    }
+
+    /// #663: pick and blur used to retarget. The disclosure has to name Apply
+    /// so the row and the button cannot disagree about when the child dies.
+    #[test]
+    fn the_source_rows_say_apply_commits() {
+        crate::model::tests::with_harness(None, || {
+            let section = completer_source_section();
+            let mut copy = section.disclosure.clone().unwrap_or_default();
+            for row in &section.rows {
+                if let FormRow::Popup { disclosure, .. } | FormRow::TextField { disclosure, .. } =
+                    row
+                {
+                    copy.push(' ');
+                    copy.push_str(disclosure.as_deref().unwrap_or_default());
+                }
+            }
+            let lower = copy.to_lowercase();
+            assert!(
+                !lower.contains("every pick takes effect") && !lower.contains("blur commits"),
+                "got {copy:?}"
+            );
+            assert!(lower.contains("apply"), "got {copy:?}");
+            let description = describe();
+            assert!(description.text_batched(HARNESS_ID));
+            assert!(description.text_batched(HARNESS_COMMAND_ID));
         });
     }
 

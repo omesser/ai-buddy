@@ -117,6 +117,7 @@
               "help": "The character your buddy wears.",
               "options": [],
               "frozen": false,
+              "batched": false,
               "disclosure": "Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.",
               "status": null
             }
@@ -248,7 +249,8 @@
                 "Harness · Custom"
               ],
               "frozen": false,
-              "disclosure": "Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.",
+              "batched": true,
+              "disclosure": "Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.",
               "status": null
             },
             {
@@ -259,8 +261,8 @@
               "writes": "HarnessCommand",
               "help": null,
               "frozen": false,
-              "batched": false,
-              "disclosure": "The command ai-buddy runs when Custom is picked above. Blur commits it and re-opens the attachment.",
+              "batched": true,
+              "disclosure": "The command ai-buddy runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.",
               "status": null
             },
             {
@@ -273,7 +275,7 @@
             }
           ],
           "comment": "Choose which \"AI brain\" answers: Model API or an attached Harness.",
-          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, cursor-agent, grok, hermes, opencode, pi, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.",
+          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, cursor-agent, grok, hermes, opencode, pi, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.",
           "status": null
         },
         {
@@ -295,6 +297,7 @@
                 "pi"
               ],
               "frozen": false,
+              "batched": false,
               "disclosure": null,
               "status": null
             },
@@ -447,7 +450,7 @@
                   "frozen": false
                 }
               ],
-              "help": "The endpoint rows take effect on Apply.",
+              "help": "The endpoint and AI source rows take effect on Apply.",
               "disclosure": null
             }
           ],

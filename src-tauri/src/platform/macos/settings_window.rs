@@ -198,6 +198,13 @@ define_class!(
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
+            // A batched popup stages in the widget. Dispatching a pick would
+            // write the file and kill a Harness child Cancel still offers
+            // (#663).
+            if form::describe().text_batched(&id) {
+                self.update_director_buttons();
+                return;
+            }
             self.dispatch(controller::Event::Pick {
                 id,
                 value: title.to_string(),
@@ -496,6 +503,11 @@ impl SettingsController {
             model: field_text(&ivars.model),
             key: field_text(&ivars.api_key),
             clear_key: ivars.clear_pending.get(),
+            harness: popup_title(&ivars.harness),
+            harness_command: self
+                .field(form::HARNESS_COMMAND_ID)
+                .map(|field| field.stringValue().to_string())
+                .unwrap_or_default(),
             description,
         }
     }
@@ -710,6 +722,9 @@ impl SettingsController {
             }
         }
         for (id, field) in self.ivars().fields.borrow().iter() {
+            if id == form::HARNESS_COMMAND_ID && staged.harness_command {
+                continue;
+            }
             if let Some(text) = view.development_texts.get(id) {
                 field.setStringValue(&NSString::from_str(text));
             }
@@ -753,11 +768,13 @@ impl SettingsController {
             ),
         );
         // Static choices, so they come from the form rather than the view.
-        fill_popup(
-            &self.ivars().harness,
-            &form::harness_options(),
-            &view.harness,
-        );
+        if !staged.harness {
+            fill_popup(
+                &self.ivars().harness,
+                &form::harness_options(),
+                &view.harness,
+            );
+        }
         fill_popup(
             &self.ivars().byo_harness,
             &form::HARNESS_PRESETS.map(str::to_string),
@@ -1761,6 +1778,14 @@ fn field_text(cell: &RefCell<Option<Retained<NSTextField>>>) -> String {
     cell.borrow()
         .clone()
         .map(|field| field.stringValue().to_string())
+        .unwrap_or_default()
+}
+
+fn popup_title(cell: &RefCell<Option<Retained<NSPopUpButton>>>) -> String {
+    cell.borrow()
+        .clone()
+        .and_then(|popup| popup.titleOfSelectedItem())
+        .map(|title| title.to_string())
         .unwrap_or_default()
 }
 
