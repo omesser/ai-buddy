@@ -292,7 +292,7 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 /// Redraw the settings window from the live roster. Main thread only.
 #[cfg(target_os = "macos")]
 pub fn refresh_settings(app: &tauri::AppHandle) {
-    if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+    if crate::settings::settings_is_webview() {
         if let Some(window) = app.get_webview_window("settings") {
             if let Err(why) = window.emit("settings-refresh", ()) {
                 eprintln!("settings webview refresh: {why}");
@@ -343,7 +343,7 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 /// Redraw the GTK settings window from the live roster. Main thread only.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn refresh_settings(app: &tauri::AppHandle) {
-    if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+    if crate::settings::settings_is_webview() {
         if let Some(window) = app.get_webview_window("settings") {
             if let Err(why) = window.emit("settings-refresh", ()) {
                 eprintln!("settings webview refresh: {why}");
@@ -371,7 +371,7 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 /// Redraw the settings window from the live roster. Main thread only.
 #[cfg(not(unix))]
 pub fn refresh_settings(app: &tauri::AppHandle) {
-    if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+    if crate::settings::settings_is_webview() {
         if let Some(window) = app.get_webview_window("settings") {
             if let Err(why) = window.emit("settings-refresh", ()) {
                 eprintln!("settings webview refresh: {why}");

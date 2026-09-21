@@ -81,6 +81,8 @@ Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo 
 |---|---|
 | `AI_BUDDY_TRACE_FRAMES=1` | Log every frame state to stderr: `Grounded pos(x,y)`, `Dragged`, `Perched`, etc. |
 | `AI_BUDDY_TRACE_WINDOWS=1` | Log window count and first 3 window bounds on first read (Windows only). |
+| `AI_BUDDY_SETTINGS_NATIVE=1` | Open the native Settings window. Default is the webview. Wins over `AI_BUDDY_SETTINGS_WEBVIEW`. |
+| `AI_BUDDY_SETTINGS_WEBVIEW=1` | Still selects the webview. Redundant after the Step 8 default flip (#706). |
 
 ## Verifying the Overlay
 
@@ -112,7 +114,9 @@ scripts/bench-rss-windows.ps1   # Windows: RSS baseline
 
 Each overlay script checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
 
-`verify-settings-macos.sh` drives the AppKit Settings window through Accessibility. `verify-settings-keyboard-webview.sh` launches with `AI_BUDDY_SETTINGS_WEBVIEW=1` and drives Tab, Space, Enter, and Escape on that window; it writes a six-row pass/fail table and stills under `.verify/`. `verify-settings-webview-clipboard-macos.sh` clicks Copy on the BYO row of that webview and checks `pbpaste`. `verify-settings-linux.sh` drives the GTK Settings window through AT-SPI via `scripts/ax-settings-linux.py`. `verify-settings-win.ps1` drives the Win32 Settings window through UI Automation via `scripts/ax-settings-win.ps1`. CI does not run any of them.
+Settings opens as the webview. `AI_BUDDY_SETTINGS_NATIVE=1` opens the AppKit, Win32, or GTK window instead. `AI_BUDDY_SETTINGS_WEBVIEW=1` still selects the webview. When both are set, native wins.
+
+`verify-settings-macos.sh` drives the AppKit Settings window through Accessibility and exports `AI_BUDDY_SETTINGS_NATIVE=1`. `verify-settings-keyboard-webview.sh` launches with `AI_BUDDY_SETTINGS_WEBVIEW=1` and drives Tab, Space, Enter, and Escape on that window; it writes a six-row pass/fail table and stills under `.verify/`. `verify-settings-webview-clipboard-macos.sh` clicks Copy on the BYO row of that webview and checks `pbpaste`. `verify-settings-linux.sh` drives the GTK Settings window through AT-SPI via `scripts/ax-settings-linux.py` and also exports `AI_BUDDY_SETTINGS_NATIVE=1`. `verify-settings-win.ps1` drives the Win32 Settings window through UI Automation via `scripts/ax-settings-win.ps1` and exports `AI_BUDDY_SETTINGS_NATIVE=1`. CI does not run any of them.
 
 Build the debug binary, then run the script from the repo root:
 
