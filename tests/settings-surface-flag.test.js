@@ -12,11 +12,13 @@ function read(rel) {
 }
 
 test("product code opts into native Settings, not the old webview flag", () => {
+  const helper = read("src-tauri/src/settings.rs");
   const main = read("src-tauri/src/main.rs");
   const platform = read("src-tauri/src/platform.rs");
-  assert.match(main, /AI_BUDDY_SETTINGS_NATIVE/);
-  assert.doesNotMatch(main, /AI_BUDDY_SETTINGS_WEBVIEW/);
-  assert.match(platform, /AI_BUDDY_SETTINGS_NATIVE/);
+  assert.match(helper, /fn settings_is_webview/);
+  assert.match(helper, /AI_BUDDY_SETTINGS_NATIVE/);
+  assert.match(main, /settings_is_webview/);
+  assert.match(platform, /settings_is_webview/);
   assert.doesNotMatch(platform, /AI_BUDDY_SETTINGS_WEBVIEW/);
 });
 
