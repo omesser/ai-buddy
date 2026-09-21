@@ -18,7 +18,7 @@ Double-clicking the buddy opens its Chat surface: the same conversation that dri
 
 Preconditions:
 
-- Overlay is running with `AI_BUDDY_TRACE_FRAMES=1` (and ideally `AI_BUDDY_TRACE_ENGINE=1`).
+- Overlay is running with `AI_BUDDY_TRACE_FRAMES=1`.
 - A real interactive display for Chat window proof; Xvfb can still prove the Summon verb.
 - Doctor green for the lane.
 
