@@ -582,21 +582,28 @@ That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP
 - **config generated, unverified** — the generator emits a shape that was checked against the installed CLI or its documentation, but no on-screen `speak` through that registration has been recorded.
 - **not supported** — the Harness has no way to load an HTTP MCP server with an `Authorization` header, so nothing the generator could emit would work.
 
-| Harness | What the generator emits | Standing |
-|---|---|---|
-| `claude` | `claude mcp remove` then `claude mcp add --transport http … --header "Authorization: Bearer …"` | **verified by hand** — see footnote † |
-| `codex` | `export AI_BUDDY_MCP_TOKEN=…` then `codex mcp add --url … --bearer-token-env-var`; `~/.codex/config.toml` alternative in the instructions | **config generated, unverified** |
-| `cursor-agent` | `mcpServers` JSON fragment for `.cursor/mcp.json`, then `cursor-agent mcp enable ai-buddy` | **config generated, unverified** |
-| `grok` | `grok mcp add … --transport http` with a header | **config generated, unverified** |
-| `hermes` | `hermes mcp add --url … --auth header`, token pasted at the prompt; `~/.hermes/config.yaml` alternative | **config generated, unverified** |
-| `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"`; `type: remote` JSON alternative | **config generated, unverified** |
-| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json`, then `/reload` and `/mcp reconnect ai-buddy` | **config generated, unverified** — see footnote ‡ |
+| Harness | What the generator emits | Where the entry lands | Standing |
+|---|---|---|---|
+| `claude` | `claude mcp remove` then `claude mcp add --transport http …` | `~/.claude.json`, keyed by working directory (local scope) | **verified by hand** |
+| `codex` | `export AI_BUDDY_MCP_TOKEN=…` then `codex mcp add --url … --bearer-token-env-var` | `~/.codex/config.toml`, token stays in the environment | **verified by hand** |
+| `cursor-agent` | `mcpServers` JSON fragment, then `cursor-agent mcp enable ai-buddy` | `.cursor/mcp.json` in the project | **verified by hand** |
+| `grok` | `grok mcp add … --transport http` with a header | `~/.grok/config.toml`, token in the file | **verified by hand** |
+| `hermes` | `hermes mcp add --url … --auth header`, token pasted at its prompt | `~/.hermes/config.yaml`, token in `~/.hermes/.env` | **verified by hand** |
+| `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"` | `~/.config/opencode/opencode.json`, token in the file | **verified by hand** |
+| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **config generated, unverified** — see footnote ‡ |
 
-† Verified 2026-09-21 on macOS 26.6.2, Claude Code 2.1.278. The two lines were read out of the Settings box by accessibility dump, not copied from the source, and run from a scratch directory at the default local scope. `claude mcp list` reported `✔ Connected`, then a headless `claude -p` turn called `mcp__ai-buddy__speak` and the overlay drew the text. Proof is the still above, OCR-matched across four consecutive frames against a control frame taken before the turn. Earlier evidence in #491 covered the loopback endpoint but handed the URL and token over ACP rather than through this command. The re-add trap (a re-add of an existing name keeps the old URL and token and exits 0, hence the `remove`) is recorded in `docs/research/byo-harness-mcp-reload.md`.
+All seven were read out of the Settings box by accessibility dump and run as the box gave them. Six drew their own line in the bubble on a real Mac, each naming itself, checked by OCR across consecutive frames against a control frame taken before the turn. `claude` was verified on 2026-09-21, the other five on 2026-09-22.
 
-‡ The README's "does not receive ai-buddy's MCP" for `pi` describes the attached path: `pi-acp` advertises no HTTP MCP capability, so the app forwards nothing. Pi itself reads an `mcpServers` file, which is what this fragment targets. The shape comes from Pi's documentation, not from a run.
+‡ `pi` is the one row nobody has watched speak, and it is not the fragment's fault. Pi ships no MCP client. It is deliberately barebones, and MCP arrives through an adapter plugin such as `pi-mcp-adapter` that the user installs themselves. With that plugin present the box's fragment is accepted: the adapter connected to the loopback endpoint and cached all seven tool schemas into `~/.pi/agent/mcp-cache.json`. The turn could not run for an unrelated reason, a local model server that was down. Treat `pi` as needing MCP support installed in Pi first. The README's "does not receive ai-buddy's MCP" is about the attached path, where `pi-acp` advertises no HTTP MCP capability and the app forwards nothing.
 
-The other rows' shapes were checked against each installed CLI in #580 and the research above; the `codex` shape in particular rests on documentation. A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself. Nothing is **not supported** today. Only `claude` is **verified by hand**; every other row is the middle state, which means its shape is known and its `speak` has never been watched land.
+A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself.
+
+**Four traps worth knowing before you register one of these.**
+
+- Every registration dies with the app. The port and token change on each launch, so a stale entry is a dead entry. Under `opencode` that is worse than useless: an entry pointing at a dead instance silently hangs `opencode run` at startup for minutes with no error, and removing the entry or passing `--pure` is what unsticks it.
+- `opencode` has no `mcp remove`. Its `mcp` subcommand offers add, list, auth, logout and debug only, so removing the entry means editing `~/.config/opencode/opencode.json` by hand.
+- `hermes mcp remove` drops the YAML block but leaves `MCP_AI_BUDDY_API_KEY` behind in `~/.hermes/.env`. A later `hermes mcp add` sees it as already configured, skips the token prompt, reuses the dead token and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml` wholesale, stripping inline comments and re-indenting lists.
+- `codex` needs the `export` to run in the same shell that launches `codex`, exactly as the box's steps say. Sourcing it through a pipe leaves the tool unregistered, and Codex then reports that the tool does not exist.
 
 ### What MCP implements today
 
