@@ -33,8 +33,7 @@ AXButton|Clear key|||true|false
 AXButton|Apply|||false|false
 EOF
 
-# The same rows out of the webview window, recorded under
-# AI_BUDDY_SETTINGS_WEBVIEW=1. WebKit sent every name twice until #706 wrapped
+# The same rows out of the webview window. WebKit sent every name twice until #706 wrapped
 # the control in its label - the label element and its own text run, both
 # AXStaticText - and the second block is what it sends now.
 cat > "$TEMP_DIR/webview-doubled.txt" << 'EOF'

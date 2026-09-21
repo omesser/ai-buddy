@@ -16,8 +16,8 @@ test("ax-settings can leave a <select> menu open for a still", () => {
   assert.match(ax, /verify-settings-webview-select-macos\.sh/);
 });
 
-test("select-over-overlay verify uses the webview flag, summon, and a mouse pick", () => {
-  assert.match(sh, /AI_BUDDY_SETTINGS_WEBVIEW=1/);
+test("select-over-overlay verify summons a character and uses a mouse pick", () => {
+  assert.doesNotMatch(sh, /AI_BUDDY_SETTINGS_NATIVE=1/);
   assert.match(sh, /click-cursor\.swift/);
   assert.match(sh, /\^verbs:\.\*Summon/);
   assert.doesNotMatch(sh, /role: "combobox"/);
