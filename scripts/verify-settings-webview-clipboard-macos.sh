@@ -4,7 +4,7 @@
 #   ./scripts/verify-settings-webview-clipboard-macos.sh
 #   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-webview-clipboard-macos.sh
 #
-# Forces AI_BUDDY_SETTINGS_WEBVIEW=1. Needs Accessibility (scripts/ax-settings.swift).
+# Settings webview is the default. Needs Accessibility (scripts/ax-settings.swift).
 # Stills land under .verify/; downscale before attaching. Do not commit PNGs.
 # Shares /tmp/ai-buddy-settings-overlay.lock with the other Settings sittings.
 
@@ -67,7 +67,6 @@ log="$out/app.log"
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" \
   AI_BUDDY_CAPTURABLE=1 \
-  AI_BUDDY_SETTINGS_WEBVIEW=1 \
   AI_BUDDY_CHARACTER=timber-wolf \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
   "$bin" > "$log" 2>&1 &

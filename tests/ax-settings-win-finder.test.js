@@ -191,6 +191,12 @@ test("phase2 webview smoke does not replace native verify-settings-win.ps1", () 
   assert.match(verifySrc, /AiBuddySettings/);
 });
 
+test("native verify pins AI_BUDDY_SETTINGS_NATIVE; phase2 relies on the webview default", () => {
+  assert.match(verifySrc, /AI_BUDDY_SETTINGS_NATIVE\s*=\s*"1"/);
+  assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_WEBVIEW/);
+  assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_NATIVE\s*=/);
+});
+
 test("phase2 smoke never assigns $PID and uses ProcessId names", () => {
   assert.doesNotMatch(phase2Src, /\$pid\s*=/i);
   assert.match(phase2Src, /\$targetProcessId/);

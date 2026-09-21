@@ -4,7 +4,7 @@
 #   ./scripts/verify-settings-keyboard-webview.sh
 #   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-keyboard-webview.sh
 #
-# Forces AI_BUDDY_SETTINGS_WEBVIEW=1. Overlay may be up. After the tray
+# Settings webview is the default. Overlay may be up. After the tray
 # open, every control is reached with Tab / Space / Enter / Escape, not AXPress.
 # Needs Accessibility (scripts/ax-settings.swift). CI does not run this.
 #
@@ -71,7 +71,6 @@ log="$out/app.log"
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" \
   AI_BUDDY_CAPTURABLE=1 \
-  AI_BUDDY_SETTINGS_WEBVIEW=1 \
   AI_BUDDY_CHARACTER=timber-wolf \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
   "$bin" > "$log" 2>&1 &

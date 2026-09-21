@@ -52,7 +52,6 @@ log="$out/app.log"
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
-  AI_BUDDY_SETTINGS_WEBVIEW=1 \
   AI_BUDDY_TRACE_FRAMES=1 \
   AI_BUDDY_TRACE_HITTEST=1 \
   "$bin" > "$log" 2>&1 &

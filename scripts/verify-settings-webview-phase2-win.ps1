@@ -5,7 +5,7 @@
   #715 Phase 2 Windows Settings-webview smoke.
 
 .DESCRIPTION
-  Four checks against AI_BUDDY_SETTINGS_WEBVIEW=1: window opens as a webview,
+  Four checks against the default Settings webview: window opens as a webview,
   all five tabs are present and driven, Presence Sound round-trips to
   %APPDATA%\ai-buddy\settings.json, z-order is GetTopWindow plus GW_HWNDNEXT
   (Settings HWND before each overlay HWND). 04-zorder.png is illustration.
@@ -44,7 +44,7 @@ $Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Pa
 $tip = (git -C $Root rev-parse HEAD).Trim()
 $Report = [ordered]@{
   tipSha = $tip
-  flag = 'AI_BUDDY_SETTINGS_WEBVIEW=1'
+  flag = 'default (webview)'
   os = [Environment]::OSVersion.VersionString
   checks = @{}
   screenshots = @()
@@ -454,7 +454,7 @@ foreach ($m in $monitors) {
 
 Get-Process ai-buddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep 1
-$env:AI_BUDDY_SETTINGS_WEBVIEW = '1'
+Remove-Item Env:AI_BUDDY_SETTINGS_NATIVE -ErrorAction SilentlyContinue
 $env:AI_BUDDY_OPEN_SETTINGS = '1'
 $env:AI_BUDDY_CAPTURABLE = '1'
 Log "Launch $Bin tip=$tip"
@@ -580,7 +580,7 @@ try {
   }
   Stop-Target $targetProcessId
   Start-Sleep 2
-  $env:AI_BUDDY_SETTINGS_WEBVIEW = '1'
+  Remove-Item Env:AI_BUDDY_SETTINGS_NATIVE -ErrorAction SilentlyContinue
   $env:AI_BUDDY_OPEN_SETTINGS = '1'
   $proc = Start-Process -FilePath $Bin -WorkingDirectory $Root -PassThru
   $targetProcessId = [uint32]$proc.Id
