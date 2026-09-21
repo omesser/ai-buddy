@@ -14,6 +14,8 @@ This research answers:
 
 **Product constraint (Oded)**: Prefer MCP **reconfiguration** methods over harness **launch** CLIs. ai-buddy tells users how to point their running Harness at ai-buddy's MCP, not how to launch the Harness itself.
 
+**Correction, 2026-09-22.** The Pi section below is wrong where it matters, and it is labelled **Fact from docs**, so it reads as settled. Pi ships **no MCP client**. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. "Pi uses standard `.mcp.json` immediately if present" holds only once that plugin is in place, and `/reload`, `/mcp reconnect` and `/mcp enable/disable` are the plugin's commands rather than stock ones. The word plugin appears nowhere below, which is what made the claim misleading. The finding is left as the investigation recorded it, per `docs/agents/docs.md`; this line governs it. All six other Harnesses were hand-verified on 2026-09-21 and 2026-09-22 against their installed CLIs, and their shapes held.
+
 ## Summary Table
 
 | Harness | Add with Auth | Reload Without Restart | Re-add Trap | Generate |
