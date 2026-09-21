@@ -233,6 +233,28 @@ mod tests {
     // The spike prints what the grant reads straight from CoreGraphics: it is
     // the API under test, not a thing to ask the consent probe about.
     use objc2_core_graphics::{CGMouseButton, CGPreflightListenEventAccess};
+    use std::sync::Mutex;
+
+    /// Serializes the tests that write the wanted flag.
+    ///
+    /// That flag is one atomic for the whole process and cargo runs these on
+    /// threads of a single binary, so without this one test's `true` lands
+    /// inside another's `false`. On a Mac that holds the grant that is not a
+    /// wrong assert, it is a real tap started by the test that asked for none.
+    static INTENT: Mutex<()> = Mutex::new(());
+
+    /// Run `check` with the setting at `on`, alone, and put back whatever the
+    /// flag held before. A poisoned lock is a test that already failed while
+    /// holding it; the flag still needs setting, so take it anyway.
+    fn with_setting(on: bool, check: impl FnOnce()) {
+        let _held = INTENT
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let before = consent::wanted(consent::CapabilityId::InputMonitoring);
+        consent::set_wanted(consent::CapabilityId::InputMonitoring, on);
+        check();
+        consent::set_wanted(consent::CapabilityId::InputMonitoring, before);
+    }
 
     /// The mask is the whole privacy claim the settings row makes: six mouse
     /// types, and no key event. A bit added by hand would otherwise be a
@@ -272,11 +294,12 @@ mod tests {
     /// or the wanted gate answers `None` first and this would not see the grant.
     #[test]
     fn an_ungranted_mac_starts_no_tap() {
-        consent::set_wanted(consent::CapabilityId::InputMonitoring, true);
-        if consent::live().granted(consent::CapabilityId::InputMonitoring) {
-            return;
-        }
-        assert!(spawn_listener().is_none());
+        with_setting(true, || {
+            if consent::live().granted(consent::CapabilityId::InputMonitoring) {
+                return;
+            }
+            assert!(spawn_listener().is_none());
+        });
     }
 
     /// Unchecked is the shipped state. A leftover TCC grant must not start a
@@ -284,8 +307,12 @@ mod tests {
     /// the first tick dropped the receiver.
     #[test]
     fn a_cleared_setting_starts_no_tap() {
-        consent::set_wanted(consent::CapabilityId::InputMonitoring, false);
-        assert!(spawn_listener().is_none());
+        with_setting(false, || {
+            assert!(
+                spawn_listener().is_none(),
+                "a leftover TCC grant must not start a tap the setting did not ask for"
+            );
+        });
     }
 
     #[test]
@@ -306,25 +333,24 @@ mod tests {
     #[test]
     #[ignore = "needs the Input Monitoring grant; run by hand"]
     fn a_mouse_event_wakes_the_loop() {
-        consent::set_wanted(consent::CapabilityId::InputMonitoring, true);
-        let Some(woken) = spawn_listener() else {
-            println!("  no Input Monitoring grant here: nothing to listen with");
-            return;
-        };
+        with_setting(true, || {
+            let Some(woken) = spawn_listener() else {
+                println!("  no Input Monitoring grant here: nothing to listen with");
+                return;
+            };
 
-        let here = CGEvent::location(CGEvent::new(None).as_deref());
-        let moved =
-            CGEvent::new_mouse_event(None, CGEventType::MouseMoved, here, CGMouseButton::Left)
-                .expect("a mouse event has to be constructible");
-        CGEvent::post(CGEventTapLocation::SessionEventTap, Some(&moved));
+            let here = CGEvent::location(CGEvent::new(None).as_deref());
+            let moved =
+                CGEvent::new_mouse_event(None, CGEventType::MouseMoved, here, CGMouseButton::Left)
+                    .expect("a mouse event has to be constructible");
+            CGEvent::post(CGEventTapLocation::SessionEventTap, Some(&moved));
 
-        assert!(
-            woken
-                .recv_timeout(std::time::Duration::from_secs(3))
-                .is_ok(),
-            "the tap heard nothing; the frame loop would have slept through the mouse"
-        );
-        println!("  the tap woke the loop at {here:?}");
+            assert!(
+                woken.recv_timeout(Duration::from_secs(3)).is_ok(),
+                "the tap heard nothing; the frame loop would have slept through the mouse"
+            );
+            println!("  the tap woke the loop at {here:?}");
+        });
     }
 
     /// The four observations #183 Stage 1 asks for, on whatever Mac runs it.
