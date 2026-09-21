@@ -12,7 +12,7 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 
 ### Picking work
 
-`👷 Todo` on the AI Buddy project board, highest priority first, matching the OS
+`Todo` on the AI Buddy project board, highest priority first, matching the OS
 you can build. See `docs/agents/picking-work.md`.
 
 ### pstack
