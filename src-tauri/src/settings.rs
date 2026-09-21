@@ -2985,6 +2985,28 @@ mod tests {
         });
     }
 
+    /// Apply of a non-source Director edit must not reconnect the Harness.
+    /// The URL retargets the Completer. The source rows stay out of the patch,
+    /// so `harness::retarget` is not called for the child already running.
+    #[test]
+    fn an_endpoint_apply_does_not_retarget_an_unchanged_harness() {
+        crate::model::tests::with_harness(None, || {
+            let view = director_view(false);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: "https://api.x.ai".into(),
+                ..DirectorDraft::live(&view, &description)
+            };
+            let patch = draft.patch(&view).expect("a typed URL is dirty");
+            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
+            assert!(patch.harness.is_none());
+            assert!(patch.harness_command.is_none());
+            let settings = endpoint_settings();
+            assert!(!harness_retargets(&settings, &patch));
+            assert!(completer_retargets(&settings, &patch));
+        });
+    }
+
     /// #272 on the source row: the variable owns the pick, so Apply must not
     /// write a title the launch would throw away (#663).
     #[test]
