@@ -557,6 +557,39 @@ Two transport axes (do not conflate):
 
 All requests are synchronous; no streaming, no push. The loopback server (`mcp_http.rs`) is thread-per-request with no async runtime.
 
+### Pointing a Harness you run yourself at ai-buddy
+
+The attached case above needs no setup: the app hands its Harness the endpoint on `session/new`. A Harness you launch yourself in a terminal gets nothing forwarded, so you register the endpoint with it by hand — once per app launch.
+
+1. Start ai-buddy and open Settings.
+2. Under **Point a Harness you run yourself at ai-buddy**, pick the Harness.
+3. Copy the generated command (or JSON fragment, for the Harnesses with no `mcp add`) and run it, or paste it where the instructions beside it say. Hermes prompts for the token interactively, so its row carries a separate Copy for the token.
+4. Reload or restart the Harness session as the instructions say. Claude Code and OpenCode read MCP config at session start only.
+
+No document can carry that command as a literal. `src-tauri/src/mcp_http.rs` binds `127.0.0.1:0`, so the OS picks the port, and mints the bearer token from 32 fresh random bytes into memory on every launch (ADR-0010 keeps it off disk and out of logs). Only the running app knows either value, and both change when the app restarts — so the registration is per launch, and a Harness that keeps a stale entry keeps a dead one. The generator (`byo_registration` in `src-tauri/src/settings.rs`) hands every Harness the loopback URL and token directly; the stdio relay shim is the attached path's fallback and plays no part here. The box is empty when the loopback bind failed this run.
+
+**Standing, per Harness the generator knows.** Three states, and no row is implied to work beyond the one it holds:
+
+- **verified by hand** — someone copied the generated registration into a real Harness session and recorded that Harness's `speak` drawn in the buddy's bubble.
+- **config generated, unverified** — the generator emits a shape that was checked against the installed CLI or its documentation, but no on-screen `speak` through that registration has been recorded.
+- **not supported** — the Harness has no way to load an HTTP MCP server with an `Authorization` header, so nothing the generator could emit would work.
+
+| Harness | What the generator emits | Standing |
+|---|---|---|
+| `claude` | `claude mcp remove` then `claude mcp add --transport http … --header "Authorization: Bearer …"` | **config generated, unverified** — see footnote † |
+| `codex` | `export AI_BUDDY_MCP_TOKEN=…` then `codex mcp add --url … --bearer-token-env-var`; `~/.codex/config.toml` alternative in the instructions | **config generated, unverified** |
+| `cursor-agent` | `mcpServers` JSON fragment for `.cursor/mcp.json`, then `cursor-agent mcp enable ai-buddy` | **config generated, unverified** |
+| `grok` | `grok mcp add … --transport http` with a header | **config generated, unverified** |
+| `hermes` | `hermes mcp add --url … --auth header`, token pasted at the prompt; `~/.hermes/config.yaml` alternative | **config generated, unverified** |
+| `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"`; `type: remote` JSON alternative | **config generated, unverified** |
+| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json`, then `/reload` and `/mcp reconnect ai-buddy` | **config generated, unverified** — see footnote ‡ |
+
+† The loopback endpoint this command points at is hand-verified: #491 recorded a real Claude Code process's `speak` drawn in the bubble. That run handed the URL and token over ACP and to `claude -p` directly, not through this Settings command. The command's shape and its re-add trap (a re-add of an existing name keeps the old URL and token and exits 0, hence the `remove`) were observed against the installed CLI in `docs/research/byo-harness-mcp-reload.md`. Nobody has yet recorded copying this box into a Claude Code session and seeing `speak` land, so the row stays unverified.
+
+‡ The README's "does not receive ai-buddy's MCP" for `pi` describes the attached path: `pi-acp` advertises no HTTP MCP capability, so the app forwards nothing. Pi itself reads an `mcpServers` file, which is what this fragment targets. The shape comes from Pi's documentation, not from a run.
+
+The other rows' shapes were checked against each installed CLI in #580 and the research above; the `codex` shape in particular rests on documentation. A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself. Nothing is **not supported** today, and nothing is **verified by hand** — the second state is the only one with evidence behind it, and the first is what closes #166 for a row.
+
 ### What MCP implements today
 
 - Seven sync tools, JSON-RPC 2.0 over HTTP POST
