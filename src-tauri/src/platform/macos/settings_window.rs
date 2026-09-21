@@ -1019,7 +1019,11 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             form::SOUND_ID => sound_button = Some(btn.clone()),
                             form::HIDDEN_ID => hidden_button = Some(btn.clone()),
                             form::FULLSCREEN_ID => fullscreen_button = Some(btn.clone()),
-                            form::CONSENT_ACCESSIBILITY_ID | form::CONSENT_SCREEN_RECORDING_ID => {
+                            form::CONSENT_ACCESSIBILITY_ID
+                            | form::CONSENT_SCREEN_RECORDING_ID
+                            | form::CONSENT_INPUT_MONITORING_ID => {
+                                // Pushed in form order, because `refresh` zips
+                                // these against `view.consent` by position.
                                 consent_buttons.push(btn.clone());
                             }
                             _ => {}

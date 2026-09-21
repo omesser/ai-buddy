@@ -277,7 +277,7 @@ cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
 
 A key saved before the first signed run keeps the old list — clear it in Settings and save it once more. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those again, once. Released builds are ad-hoc signed too, so an update prompts the same way until there is a Developer ID to sign with (#283).
 
-**Accessibility and Screen Recording:** Settings → What the buddy can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn that named app on in Privacy & Security.
+**Accessibility, Screen Recording, and Input Monitoring:** Settings → What the buddy can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn that named app on in Privacy & Security. Input Monitoring is the one that changes what the frame loop does: granted, an idle sprite is woken by the mouse rather than by its own timer, so a poke lands at once instead of up to a second later; ungranted, the loop keeps the back-off #718 shipped (#721). The tap starts within about a second of the grant landing — no relaunch — and the loop stops using it the moment you uncheck the box.
 
 ### Local Model Servers
 

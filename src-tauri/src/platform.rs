@@ -694,6 +694,18 @@ pub fn spawn_xi2_listener() -> Option<std::sync::mpsc::Receiver<x11::InputEvent>
     x11::spawn_listener()
 }
 
+#[cfg(target_os = "macos")]
+pub use macos::EventTap;
+
+/// Spawn the macOS mouse event tap. `None` until the Input Monitoring row is
+/// checked and macOS has granted it. The frame loop asks again on later idle
+/// waits, so a grant that lands mid-run is picked up. Dropping the value stops
+/// the tap thread from the frame thread. #721.
+#[cfg(target_os = "macos")]
+pub fn spawn_event_tap() -> Option<EventTap> {
+    macos::spawn_event_tap()
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 impl ActivitySource for LinuxActivitySource {
     fn frontmost_application(&self) -> Option<String> {

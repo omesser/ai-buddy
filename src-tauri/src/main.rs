@@ -2648,6 +2648,11 @@ fn main() {
                 consent::CapabilityId::ScreenRecording,
                 settings.use_screen_recording,
             );
+            #[cfg(target_os = "macos")]
+            consent::set_wanted(
+                consent::CapabilityId::InputMonitoring,
+                settings.use_input_monitoring,
+            );
             let wanted = requested_instances(&settings).unwrap_or_else(|why| {
                 eprintln!("instances: {why}");
                 std::process::exit(1);

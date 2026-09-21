@@ -377,6 +377,18 @@ geometry, `WM_CLASS`, frontmost, idle and DPMS need no grant, and there is no
 Dock SPI to ask for. So the pane offers no row on Linux and says so instead.
 #250 holds what changes when Linux does have a grant to offer.
 
+A third row asks for Input Monitoring, and it buys reaction time rather than
+sensing: with it the frame loop hears a mouse-only, listen-only event tap, so a
+poke or the cursor arriving over the art lands at once instead of waiting for
+the next idle wake a second later (#183, #721). X11 has that for free through
+XI2; this row is what it costs on macOS. The rule above is what makes it
+shippable —
+unchecked is the shipped state, the prompt fires when the user checks the box,
+and without the grant the loop backs off as it did before. The tap's mask holds
+six mouse types and no key event: a listen-only tap can neither modify nor
+divert what it hears, and nothing it hears is the keyboard. X11 needs no row
+for this; XI2 raw events are prompt-free (#562).
+
 Beyond that, two consented modes:
 
 - **Ambient Capture** — configurable periodic sampling plus capture on
