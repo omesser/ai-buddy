@@ -83,8 +83,10 @@ log="$out/app.log"
 # AI_BUDDY_CHARACTERS is defaulted because a bare binary has neither a HOME nor
 # a bundle for package::search_paths() to look in, and with no Character the
 # app exits before it draws a status item. An explicit value still wins.
+# Native AppKit window. Default Settings is the webview (#706 Step 8).
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
+  AI_BUDDY_SETTINGS_NATIVE=1 \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
   npm_config_cache="$npm_cache" \
   "$bin" > "$log" 2>&1 &

@@ -783,8 +783,8 @@ fn settings_event(
 }
 
 /// Open the Settings window. Native Shell furniture, so this runs on the
-/// toolkit main thread. `AI_BUDDY_SETTINGS_WEBVIEW=1` opens the webview
-/// instead; native remains the default.
+/// toolkit main thread. Webview is the default. `AI_BUDDY_SETTINGS_NATIVE=1`
+/// opens a native renderer instead.
 #[tauri::command]
 fn show_settings(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
@@ -792,7 +792,7 @@ fn show_settings(app: tauri::AppHandle) {
         return;
     };
 
-    if model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+    if settings::settings_is_webview() {
         // Same clone-then-post as `open_chat`: the closure takes the handle,
         // `run_on_main_thread` still borrows `app`.
         let handle = app.clone();
@@ -1018,8 +1018,8 @@ fn build_chat(
         .build()
 }
 
-/// Build the Settings webview window. Opens behind
-/// `AI_BUDDY_SETTINGS_WEBVIEW=1`; native remains the default.
+/// Build the Settings webview window. Default path; native is
+/// `AI_BUDDY_SETTINGS_NATIVE=1`.
 fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")

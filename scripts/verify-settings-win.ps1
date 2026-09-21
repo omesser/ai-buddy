@@ -125,6 +125,8 @@ if ($consoleHwnd -ne [IntPtr]::Zero) {
 
 $env:AI_BUDDY_OPEN_SETTINGS = "1"
 $env:AI_BUDDY_CHARACTER = "buddy-bot"
+# Native Win32 window. Default Settings is the webview (#706 Step 8).
+$env:AI_BUDDY_SETTINGS_NATIVE = "1"
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Bin

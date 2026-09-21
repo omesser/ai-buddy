@@ -62,8 +62,10 @@ log="$out/app.log"
 # AI_BUDDY_DIRECTOR_API_KEY is dropped: inherited key freezes API key row.
 # AI_BUDDY_CHARACTERS is defaulted: empty HOME has no characters.
 # AI_BUDDY_OPEN_SETTINGS=1 opens Settings window on launch.
+# Native GTK window. Default Settings is the webview (#706 Step 8).
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" AI_BUDDY_OPEN_SETTINGS=1 AI_BUDDY_CHARACTER=timber-wolf \
+  AI_BUDDY_SETTINGS_NATIVE=1 \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
   "$bin" > "$log" 2>&1 &
 app_pid=$!

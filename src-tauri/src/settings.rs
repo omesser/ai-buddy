@@ -28,6 +28,23 @@ use crate::dev_flags;
 use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
+/// Escape hatch to a native renderer until Step 9 deletes them (#706).
+pub(crate) const SETTINGS_NATIVE: &str = "AI_BUDDY_SETTINGS_NATIVE";
+/// Kept so scripts that already export it still select the webview.
+pub(crate) const SETTINGS_WEBVIEW: &str = "AI_BUDDY_SETTINGS_WEBVIEW";
+
+/// Settings opens as the webview unless native is requested.
+///
+/// `NATIVE=1` is the hatch. `WEBVIEW=1` is still webview. Both on: native
+/// wins, so a dogfood escape is one export even when a script sets WEBVIEW.
+pub(crate) fn settings_is_webview() -> bool {
+    if model::env_switch(SETTINGS_NATIVE).unwrap_or(false) {
+        false
+    } else {
+        model::env_switch(SETTINGS_WEBVIEW).unwrap_or(true)
+    }
+}
+
 /// One running buddy, as settings lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct InstanceRow {
@@ -1903,6 +1920,24 @@ mod tests {
             "ai-buddy-settings-{n}-{:?}.json",
             std::thread::current().id()
         ))
+    }
+
+    /// #706 Step 8: webview unless native is requested. NATIVE outranks WEBVIEW.
+    #[test]
+    fn settings_opens_as_webview_unless_native_is_requested() {
+        model::tests::with_env(None, None, None, || {
+            assert!(settings_is_webview(), "unset is the webview");
+
+            std::env::set_var(SETTINGS_WEBVIEW, "1");
+            assert!(settings_is_webview(), "WEBVIEW=1 is still the webview");
+
+            std::env::remove_var(SETTINGS_WEBVIEW);
+            std::env::set_var(SETTINGS_NATIVE, "1");
+            assert!(!settings_is_webview(), "NATIVE=1 is native");
+
+            std::env::set_var(SETTINGS_WEBVIEW, "1");
+            assert!(!settings_is_webview(), "NATIVE wins when both are on");
+        });
     }
 
     /// A missing file is first-run, not an error: that is how every new user starts.
