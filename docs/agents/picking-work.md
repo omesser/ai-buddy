@@ -11,26 +11,32 @@ The board's `Status` field has five values.
 
 | Status | What it means for you |
 |---|---|
-| `👷 Todo` | Scoped and unclaimed. This is the only status you pick from. |
-| `🏗 In Progress` | Someone is already on it. Never take it. |
-| `🙋 Human Triage` | A human still has to decide what this is. Leave it. |
-| `🍨 Ice Box` | Deferred on purpose. Do not revive it without asking. |
-| `🏁 Done` | Finished. Nothing to do. |
+| `Todo` | Scoped and unclaimed. This is the only status you pick from. |
+| `In Progress` | Someone is already on it. Never take it. |
+| `Human Triage` | A human still has to decide what this is. Leave it. |
+| `Ice Box` | Deferred on purpose. Do not revive it without asking. |
+| `Done` | Finished. Nothing to do. |
 
 Status lives on the board, not on the issue, so `gh issue list` cannot see it.
 Read it with `gh project item-list`:
 
 ```sh
 gh project item-list 2 --owner omesser --limit 300 --format json \
-  --jq '.items[] | select(.status == "👷 Todo") |
+  --jq '.items[] | select(.status == "Todo") |
         "\(.content.number)  \(.labels // [] | join(","))  \(.content.title)"'
 ```
 
 `--format json` carries the full body of every issue, so filter with `--jq` and
 never print the raw output.
 
+Match the names exactly as they are written above. The five options carried a
+leading emoji until 2026-09-21 and no longer do, so a filter copied from an
+older transcript — one whose status string still carries that prefix — matches
+nothing and reports an empty board rather than an error. An empty Todo list is
+a result worth double-checking before believing.
+
 An item whose `linked pull requests` field holds an open PR is being worked on
-even when its status still reads `👷 Todo`. Treat it as taken.
+even when its status still reads `Todo`. Treat it as taken.
 
 ## Milestone
 
@@ -93,4 +99,4 @@ sees the issue is gone:
 gh issue edit <number> --add-assignee @me
 ```
 
-Then move the board item to `🏗 In Progress`.
+Then move the board item to `In Progress`.
