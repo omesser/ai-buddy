@@ -305,8 +305,8 @@
               "type": "InspectBlock",
               "id": "byo_snippet",
               "label": null,
-              "help": "Good for this app run only: the port and the token are both new every launch, so a paste from yesterday stops connecting. Come back here and copy it again.",
-              "disclosure": null,
+              "help": "Good for this app run only. Come back here and copy it again after a relaunch.",
+              "disclosure": "The port and the token are both new every launch, so a paste from yesterday stops connecting.",
               "status": null
             },
             {
@@ -354,8 +354,8 @@
               "status": null
             }
           ],
-          "comment": "For a Harness you start in your own terminal. Registering ai-buddy as an MCP server there lets it speak, move and emote the buddy on your screen. Nothing here changes which mind the Director uses.",
-          "disclosure": null,
+          "comment": "For a Harness you start in your own terminal.",
+          "disclosure": "Registering ai-buddy as an MCP server there lets it speak, move and emote the buddy on your screen. Nothing here changes which mind the Director uses.",
           "status": null
         },
         {
