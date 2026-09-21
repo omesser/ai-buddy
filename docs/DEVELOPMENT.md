@@ -590,11 +590,11 @@ That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP
 | `grok` | `grok mcp add … --transport http` with a header | `~/.grok/config.toml`, token in the file | **verified by hand** |
 | `hermes` | `hermes mcp add --url … --auth header`, token pasted at its prompt | `~/.hermes/config.yaml`, token in `~/.hermes/.env` | **verified by hand** |
 | `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"` | `~/.config/opencode/opencode.json`, token in the file | **verified by hand** |
-| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **config generated, unverified** — see footnote ‡ |
+| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **verified by hand** — see footnote ‡ |
 
-All seven were read out of the Settings box by accessibility dump and run as the box gave them. Six drew their own line in the bubble on a real Mac, each naming itself, checked by OCR across consecutive frames against a control frame taken before the turn. `claude` was verified on 2026-09-21, the other five on 2026-09-22.
+All seven were read out of the Settings box by accessibility dump and run as the box gave them, and all seven drew their own line in the bubble on a real Mac, each naming itself, checked by OCR across consecutive frames against a control frame taken before the turn. `claude` was verified on 2026-09-21 and the rest on 2026-09-22.
 
-‡ `pi` is the one row nobody has watched speak, and it is not the fragment's fault. Pi ships no MCP client. It is deliberately barebones, and MCP arrives through an adapter plugin such as `pi-mcp-adapter` that the user installs themselves. With that plugin present the box's fragment is accepted: the adapter connected to the loopback endpoint and cached all seven tool schemas into `~/.pi/agent/mcp-cache.json`. The turn could not run for an unrelated reason, a local model server that was down. Treat `pi` as needing MCP support installed in Pi first. The README's "does not receive ai-buddy's MCP" is about the attached path, where `pi-acp` advertises no HTTP MCP capability and the app forwards nothing.
+‡ `pi` ships no MCP client of its own. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. With that plugin present the box's fragment works unchanged, verified on pi 0.85.1 with pi-mcp-adapter 2.36.0. Two things differ from every other row. The adapter connects lazily, so a headless `pi -p` run has to call `mcp({"connect": "ai-buddy"})` before the tool exists at all, and an interactive session wants `/mcp connect` or `/mcp reconnect ai-buddy`. And the tool is reached through Pi's `mcp` proxy under its prefixed name, `ai-buddy_speak`, not as `speak`. The README's "does not receive ai-buddy's MCP" is about the attached path, where `pi-acp` advertises no HTTP MCP capability and the app forwards nothing.
 
 A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself.
 
@@ -604,6 +604,7 @@ A Harness the popup does not list (a hand-edited command, `custom`) gets the bar
 - `opencode` has no `mcp remove`. Its `mcp` subcommand offers add, list, auth, logout and debug only, so removing the entry means editing `~/.config/opencode/opencode.json` by hand.
 - `hermes mcp remove` drops the YAML block but leaves `MCP_AI_BUDDY_API_KEY` behind in `~/.hermes/.env`. A later `hermes mcp add` sees it as already configured, skips the token prompt, reuses the dead token and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml` wholesale, stripping inline comments and re-indenting lists.
 - `codex` needs the `export` to run in the same shell that launches `codex`, exactly as the box's steps say. Sourcing it through a pipe leaves the tool unregistered, and Codex then reports that the tool does not exist.
+- `pi` needs its adapter told to connect before the tool exists. The fragment the box emits carries no `"lifecycle": "eager"`, so the server sits configured and disconnected until something asks for it.
 
 ### What MCP implements today
 
