@@ -15,7 +15,7 @@
 //! progress. That is why this is 200 lines of `std` rather than axum and hyper
 //! in a desktop app's tree.
 //!
-//! Three things keep it off the network, and they are the ones ADR-0010's
+//! Three things keep it off the network, and they are the ones ADR-0018's
 //! credential rules imply for a listener rather than a client:
 //!
 //! 1. The listener binds `127.0.0.1` on an ephemeral port, and a connection
