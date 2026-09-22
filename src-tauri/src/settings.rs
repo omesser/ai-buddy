@@ -87,12 +87,16 @@ pub struct SettingsView {
     /// all of that again before it did anything (#273).
     pub development_switches: HashMap<String, bool>,
     pub development_texts: HashMap<String, String>,
+    /// Consent checkbox values keyed by form row id, so `settings.js` can read
+    /// `values[row.id]` directly. Separate from the nested `consent` array.
+    pub consent_checkboxes: HashMap<String, bool>,
     /// Live OS grants, not a file field. The window rereads them on become-key.
     pub consent: Vec<ConsentRow>,
     /// The name Privacy & Security will show for this process.
     pub consent_listed_as: String,
 }
 
+<<<<<<< HEAD
 /// One row's value, in the three shapes the page draws.
 ///
 /// Untagged, so a checkbox reads a bare `true` and a text row a bare string,
@@ -105,6 +109,48 @@ pub enum RowValue {
     /// The Instances list. Objects rather than printed lines, because Dismiss
     /// has to name an Instance by its id and a line throws the id away (#875).
     Instances(Vec<InstanceRow>),
+=======
+/// The consent checkboxes, by form row id, as the window must draw them.
+///
+/// Flattens consent capabilities into checkbox values keyed by form row id
+/// so `settings.js` can read `values[row.id]`. Without this map, the nested
+/// `consent` array structure leaves checkboxes always Off (#875 class of bug).
+fn consent_checkboxes(settings: &Settings) -> HashMap<String, bool> {
+    let mut map = HashMap::new();
+    #[cfg(not(target_os = "linux"))]
+    {
+        map.insert(
+            form::CONSENT_ACCESSIBILITY_ID.to_string(),
+            settings.use_accessibility,
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        map.insert(
+            form::CONSENT_SCREEN_RECORDING_ID.to_string(),
+            settings.use_window_titles,
+        );
+        map.insert(
+            form::CONSENT_INPUT_MONITORING_ID.to_string(),
+            settings.use_input_monitoring,
+        );
+    }
+    #[cfg(target_os = "linux")]
+    {
+        map.insert(
+            form::CONSENT_PORTAL_SCREENCAST_ID.to_string(),
+            settings.use_window_titles,
+        );
+    }
+    #[cfg(target_os = "windows")]
+    {
+        map.insert(
+            form::CONSENT_WINDOW_TITLES_ID.to_string(),
+            settings.use_window_titles,
+        );
+    }
+    map
+>>>>>>> 2e4524c9 (fix(windows): Add consent_checkboxes HashMap for webview form row binding)
 }
 
 /// The Development switches, by row id, as the window must draw them.
@@ -514,6 +560,7 @@ impl SettingsView {
             byo_token,
             development_switches: development_switches(settings),
             development_texts: development_texts(settings),
+            consent_checkboxes: consent_checkboxes(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
         }
@@ -2578,6 +2625,48 @@ mod tests {
             !view.consent[0].granted,
             "unchecking has to show off even if the OS still holds the grant"
         );
+
+        // Consent checkboxes must be keyed by form row id for the webview.
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(
+                view.consent_checkboxes.get(form::CONSENT_ACCESSIBILITY_ID),
+                Some(&settings.use_accessibility),
+                "Accessibility checkbox value must match settings.use_accessibility"
+            );
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                view.consent_checkboxes.get(form::CONSENT_WINDOW_TITLES_ID),
+                Some(&settings.use_window_titles),
+                "Window Titles checkbox value must match settings.use_window_titles"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                view.consent_checkboxes
+                    .get(form::CONSENT_SCREEN_RECORDING_ID),
+                Some(&settings.use_window_titles),
+                "Screen Recording checkbox value must match settings.use_window_titles"
+            );
+            assert_eq!(
+                view.consent_checkboxes
+                    .get(form::CONSENT_INPUT_MONITORING_ID),
+                Some(&settings.use_input_monitoring),
+                "Input Monitoring checkbox value must match settings.use_input_monitoring"
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                view.consent_checkboxes
+                    .get(form::CONSENT_PORTAL_SCREENCAST_ID),
+                Some(&settings.use_window_titles),
+                "Screen Cast checkbox value must match settings.use_window_titles"
+            );
+        }
     }
 
     /// The Instances list is this view. After a dismiss the window must
