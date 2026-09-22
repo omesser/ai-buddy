@@ -2383,15 +2383,16 @@ mod tests {
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
                 ["Accessibility", "Screen Recording", "Input Monitoring"]
             );
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
             assert_eq!(
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                ["Accessibility", "Screen Recording"]
+                ["Accessibility"]
             );
             assert!(
                 view.consent[0].granted,
                 "the checkbox follows settings intent, not the OS grant"
             );
+            #[cfg(target_os = "macos")]
             assert!(!view.consent[1].granted);
         }
         #[cfg(target_os = "linux")]

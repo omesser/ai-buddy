@@ -2484,8 +2484,8 @@ mod tests {
             {
                 assert_eq!(
                     consent.rows.len(),
-                    2,
-                    "Windows still declares the rows; #250 is about Linux"
+                    1,
+                    "Windows has only Accessibility; WindowTitles is macOS+Linux only"
                 );
                 let listed = crate::consent::process_listed_as();
                 assert!(
