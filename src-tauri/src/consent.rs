@@ -105,6 +105,7 @@ static GRANTED_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
 #[cfg(not(target_os = "windows"))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
         #[cfg(not(target_os = "linux"))]
@@ -118,8 +119,9 @@ pub fn wanted(id: CapabilityId) -> bool {
     }
 }
 
-/// Whether the capability is both wanted and granted. Capture will gate on this.
+/// Whether the capability is both wanted and granted. Capture/Wayland titles will gate on it.
 #[cfg(not(target_os = "windows"))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
