@@ -708,6 +708,19 @@ mod tests {
         assert!(!process_listed_as().is_empty());
     }
 
+    /// The Privacy pane's intro names the process TCC will list, which is the
+    /// responsible parent for a `cargo run` and ai-buddy for a packaged build.
+    /// `settings::form::Live::current` builds the section comment from this,
+    /// and it was `SettingsView::consent_intro` that used to be asked (#871).
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_pane_intro_names_the_process_tcc_lists() {
+        assert_eq!(
+            pane_intro("Cursor"),
+            "Checking a box asks macOS for the permission. macOS lists this app as Cursor, under Privacy & Security."
+        );
+    }
+
     /// A wanted closure that says yes still produces no rows: Linux has no
     /// grant to emit, and the empty vec is the catalog, not a mock of TCC (#250).
     #[test]

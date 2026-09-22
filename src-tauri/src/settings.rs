@@ -503,19 +503,23 @@ impl SettingsView {
         }
     }
 
-    /// The pane copy. The listed name is live: a `cargo run` from Cursor is
-    /// Cursor, a packaged build is ai-buddy.
-    #[cfg(target_os = "macos")]
-    pub fn consent_intro(&self) -> String {
-        consent::pane_intro(&self.consent_listed_as)
-    }
-
     /// One name per line, the same text the excluded-applications field edits.
+    ///
+    /// #875: no caller since the renderers went. `src/settings.js` indexes
+    /// `values` by form row id, and this view serializes by field name, so the
+    /// page asks for `excluded` and finds `excluded_applications`. Kept
+    /// because this is still the text the row has to draw.
+    #[allow(dead_code)]
     pub fn excluded_text(&self) -> String {
         self.excluded_applications.join("\n")
     }
 
     /// The Instances list as the window prints it: name, then Character.
+    ///
+    /// #875: no caller, and the page has no substitute. `values["instances"]`
+    /// reaches it as `InstanceRow` objects, so every row of the live list
+    /// draws `[object Object]`.
+    #[allow(dead_code)]
     pub fn instance_lines(&self) -> Vec<String> {
         self.instances
             .iter()
@@ -526,6 +530,11 @@ impl SettingsView {
     /// What the key field shows when it is empty. The placeholder, not the
     /// value: a fingerprint sitting in the field would be committed as a key
     /// on the next blur.
+    ///
+    /// #875: no caller. `settings.js` reads `director_api_key_placeholder`
+    /// and nothing writes it, so the live field says nothing where it should
+    /// say "Not set" or name the override.
+    #[allow(dead_code)]
     pub fn api_key_placeholder(&self) -> String {
         if model::env_override(model::API_KEY).is_some() {
             // The variable's key is the one `resolve` hands the Completer, so
@@ -575,10 +584,15 @@ impl SettingsView {
 /// Work the settings window asks the frame loop to do.
 #[derive(Clone, Debug)]
 pub enum SettingsOp {
+    /// #875: never sent. `frame_loop` still handles both, and the senders
+    /// below lost their callers with the renderers, so the dead half is the
+    /// send. They stay with the handler rather than taking it down with them.
+    #[allow(dead_code)]
     Spawn {
         character: String,
         name: String,
     },
+    #[allow(dead_code)]
     Dismiss {
         id: String,
     },
@@ -1173,10 +1187,18 @@ impl SettingsSession {
         (set, fingerprint, error)
     }
 
+    /// #875: the four operations the page renders a button for and never
+    /// runs. `settings_event` hands `Outcome::Run` to JavaScript, which acts
+    /// on the two clipboard operations and drops the rest, and a Dismiss press
+    /// is answered "dismiss not yet implemented". #706 puts opening and wiping
+    /// Memory, spawning and dismissing in Rust on purpose, so these wait for
+    /// the caller they never got rather than leaving with the renderers.
+    #[allow(dead_code)]
     pub fn open_memory(&self) -> Result<(), String> {
         crate::platform::open_path(&self.memory_path)
     }
 
+    #[allow(dead_code)]
     pub fn wipe_memory(&self) -> Result<(), String> {
         MemoryManifest::new(&self.memory_path)
             .wipe()
@@ -1184,10 +1206,12 @@ impl SettingsSession {
             .map_err(|error| error.to_string())
     }
 
+    #[allow(dead_code)]
     pub fn spawn(&self, character: String, name: String) {
         let _ = self.ops.send(SettingsOp::Spawn { character, name });
     }
 
+    #[allow(dead_code)]
     pub fn dismiss(&self, id: String) {
         let _ = self.ops.send(SettingsOp::Dismiss { id });
     }
@@ -2308,8 +2332,7 @@ mod tests {
             use_input_monitoring: false,
             first_run_tour_shown: false,
         };
-        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
-        let mut view = SettingsView::from_parts(
+        let view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/ai-buddy/memory.md"),
             Some("You are Nim.".to_string()),
@@ -2362,15 +2385,6 @@ mod tests {
             "Linux has no grant to emit, got {:?}",
             view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
         );
-        #[cfg(target_os = "macos")]
-        {
-            view.consent_listed_as = "Cursor".into();
-            assert!(
-                view.consent_intro().contains("Cursor"),
-                "the pane has to name the TCC row, got {:?}",
-                view.consent_intro()
-            );
-        }
     }
 
     /// The document field the native checkbox writes. `SettingsSession::apply`
