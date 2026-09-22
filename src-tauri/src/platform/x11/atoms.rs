@@ -31,7 +31,6 @@ pub struct Atoms {
     pub net_wm_window_type: Atom,
     pub net_wm_window_type_dock: Atom,
     pub net_wm_window_type_normal: Atom,
-    pub net_wm_name: Atom,
     pub utf8_string: Atom,
 }
 
@@ -58,7 +57,6 @@ fn intern_all() -> Option<Atoms> {
         net_wm_window_type: intern(conn, "_NET_WM_WINDOW_TYPE")?,
         net_wm_window_type_dock: intern(conn, "_NET_WM_WINDOW_TYPE_DOCK")?,
         net_wm_window_type_normal: intern(conn, "_NET_WM_WINDOW_TYPE_NORMAL")?,
-        net_wm_name: intern(conn, "_NET_WM_NAME")?,
         utf8_string: intern(conn, "UTF8_STRING")?,
     })
 }

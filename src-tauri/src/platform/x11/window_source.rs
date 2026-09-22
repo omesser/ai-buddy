@@ -91,7 +91,7 @@ pub fn visible_window_titles() -> Vec<WindowTitle> {
     let Some(conn) = super::connection::connection() else {
         return Vec::new();
     };
-    visible_windows()
+    visible_windows(false)
         .into_iter()
         .map(|window| WindowTitle {
             title: window_title(conn, window.id as Window),
