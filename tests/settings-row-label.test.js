@@ -34,7 +34,13 @@ function element(tag) {
     },
   };
 }
-globalThis.document = { createElement: element };
+globalThis.document = {
+  createElement: element,
+  // #901 render clears #set-footer; this suite has no page chrome.
+  getElementById() {
+    return null;
+  },
+};
 
 function snapshot(name) {
   const read = (kind) =>

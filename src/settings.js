@@ -302,13 +302,33 @@ function directorDraft(root) {
 
 export function render(root, tab, values, emit = () => {}) {
   root.replaceChildren();
+  const footer =
+    typeof document !== "undefined" && typeof document.getElementById === "function"
+      ? document.getElementById("set-footer")
+      : null;
+  if (footer) footer.replaceChildren();
+
   for (const section of tab.sections) {
     const node = el("section", { class: "set-section" }, el("h2", { text: section.heading }));
     if (section.comment) node.append(el("p", { class: "set-comment", text: section.comment }));
     if (section.status) node.append(status(section.status));
     if (section.disclosure) node.append(disclosure(section.disclosure));
-    for (const row of section.rows) node.append(drawRow(row, values, emit));
+    for (const row of section.rows) {
+      if (row.type === "Composite" && row.id === "director_actions") {
+        if (footer) {
+          footer.append(drawRow(row, values, emit));
+        } else {
+          node.append(drawRow(row, values, emit));
+        }
+      } else {
+        node.append(drawRow(row, values, emit));
+      }
+    }
     root.append(node);
+  }
+
+  if (footer) {
+    footer.style.display = footer.children.length > 0 ? "" : "none";
   }
 }
 
@@ -415,6 +435,11 @@ if (typeof document !== "undefined") {
   function showError(message, onRetry) {
     if (!panel) return;
     panel.replaceChildren();
+    const footer = document.getElementById("set-footer");
+    if (footer) {
+      footer.replaceChildren();
+      footer.style.display = "none";
+    }
     const errorDiv = document.createElement("div");
     errorDiv.className = "set-error";
     errorDiv.style.cssText = "padding: 2rem; text-align: center;";
