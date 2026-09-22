@@ -129,7 +129,9 @@ pub(super) fn window_title(conn: &RustConnection, window: xproto::Window) -> Opt
     .ok()?;
 
     if reply.format == 8 && !reply.value.is_empty() {
-        String::from_utf8(reply.value).ok().filter(|s| !s.is_empty())
+        String::from_utf8(reply.value)
+            .ok()
+            .filter(|s| !s.is_empty())
     } else {
         None
     }

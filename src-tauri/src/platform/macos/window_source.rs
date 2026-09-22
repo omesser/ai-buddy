@@ -183,17 +183,20 @@ mod tests {
     fn live_desktop_geometry_follows_the_real_windows() {
         // Displays are the window manager's answer and arrive from the Shell,
         // so this stands one in. Windows are what this test watches.
-        let source = MacosWindowSource::new(|| {
-            (
-                vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                None,
-            )
-        });
+        let source = MacosWindowSource::new(
+            || {
+                (
+                    vec![Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1920.0,
+                        height: 1080.0,
+                    }],
+                    None,
+                )
+            },
+            || false,
+        );
         let start = std::time::Instant::now();
         let deadline = start + std::time::Duration::from_secs(5);
         let mut previous = None;
