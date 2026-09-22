@@ -24,7 +24,6 @@ pub struct MacosWindowSource {
     /// bounds when Accessibility lets the Shell read them. Supplied rather
     /// than read here: reserved strips are the window manager's answer.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
-    /// Whether WindowTitles consent is usable right now.
     can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
 }
 

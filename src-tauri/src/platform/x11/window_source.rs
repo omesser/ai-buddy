@@ -17,7 +17,6 @@ pub struct X11WindowSource {
     /// Where the usable part of each display comes from, and the Dock's true
     /// bounds when a panel announces itself via _NET_WM_STRUT_PARTIAL.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
-    /// Whether WindowTitles consent is usable right now.
     can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
 }
 

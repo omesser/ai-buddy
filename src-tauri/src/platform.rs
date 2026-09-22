@@ -718,6 +718,11 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
+    fn can_read_titles() -> bool {
+        crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
+            && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
+    }
+
     let source = macos::MacosWindowSource::new(
         {
             let cache = cache.clone();
@@ -742,10 +747,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
                 )
             }
         },
-        || {
-            crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
-                && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
-        },
+        can_read_titles,
     );
 
     (source, cache)
@@ -767,6 +769,11 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
+    fn can_read_titles() -> bool {
+        crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
+            && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
+    }
+
     let source = x11::X11WindowSource::new(
         {
             let cache = cache.clone();
@@ -783,10 +790,7 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
                 )
             }
         },
-        || {
-            crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
-                && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
-        },
+        can_read_titles,
     );
 
     (LinuxWindowSource::X11(source), cache)
