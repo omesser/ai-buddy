@@ -527,8 +527,6 @@ impl SettingsView {
     /// `describe()`, so a row added without a value fails a test rather than
     /// drawing blank. #875.
     ///
-    /// A `SecureField` answers under `<id>_placeholder` too: its own value is
-    /// always empty, because the secret never leaves the store (ADR-0010).
     pub fn row_values(&self) -> BTreeMap<String, RowValue> {
         let text = |value: &str| RowValue::Text(value.to_string());
         let popup = |id: &str| RowValue::Text(self.popup_value(id).unwrap_or_default());
@@ -585,11 +583,6 @@ impl SettingsView {
             (
                 form::DIRECTOR_MODEL_ID.to_string(),
                 text(&self.director_model),
-            ),
-            (form::DIRECTOR_API_KEY_ID.to_string(), text("")),
-            (
-                format!("{}{}", form::DIRECTOR_API_KEY_ID, form::PLACEHOLDER_SUFFIX),
-                RowValue::Text(self.api_key_placeholder()),
             ),
             (
                 form::PAYLOAD_ID.to_string(),

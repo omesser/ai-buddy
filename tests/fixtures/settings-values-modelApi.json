@@ -10,8 +10,6 @@
   "consent_input_monitoring": false,
   "consent_screen_recording": false,
   "director": true,
-  "director_api_key": "",
-  "director_api_key_placeholder": "Set: …4f2a",
   "director_base_url": "https://api.openai.com",
   "director_base_url_pick": "OpenAI (https://api.openai.com)",
   "director_blank": false,

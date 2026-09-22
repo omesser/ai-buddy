@@ -32,8 +32,8 @@ export function controls(tab, values) {
           push("textfield", row.id, row.label ?? null, values[row.id] ?? "", row.frozen);
           break;
         case "SecureField":
-          // A stored key never reaches a renderer: what `values` holds for this
-          // row describes whether one is set, and it belongs in the placeholder.
+          // A stored key never reaches a renderer. Whether one is set is the
+          // row's placeholder, so the field itself has no value to draw.
           push("securefield", row.id, row.label ?? null, "", row.frozen);
           break;
         case "Popup":
@@ -176,12 +176,9 @@ function drawRow(row, values, emit) {
       return labelled(row, input, notes(row));
     }
     case "SecureField": {
-      // What the snapshot carries for a secure row is whether a key is stored,
-      // under `<id>_placeholder` — the row's own value is always empty, because
-      // the secret never leaves the store (ADR-0010).
       const input = el("input", {
         type: "password",
-        placeholder: values[`${row.id}_placeholder`] ?? "",
+        placeholder: row.placeholder,
         readonly: row.frozen,
         autocomplete: "off",
       });

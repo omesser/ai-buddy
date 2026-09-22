@@ -415,6 +415,7 @@
               "type": "SecureField",
               "id": "director_api_key",
               "label": "API key",
+              "placeholder": "Set: …4f2a",
               "writes": "DirectorApiKey",
               "frozen": false,
               "status": null

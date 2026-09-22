@@ -506,9 +506,17 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
         .try_state::<SettingsState>()
         .ok_or("settings: asked for before the shell was ready")?;
     let session = settings_session(&app, &state);
+    let view = session.view();
+    // The one caller that can fill the API key row's placeholder. `current()`
+    // leaves it blank because the status is a store read, and the view has it
+    // from the cache that keeps become-key off Keychain. #875.
+    let live = settings::form::Live {
+        api_key_placeholder: view.api_key_placeholder(),
+        ..settings::form::Live::current()
+    };
     Ok(SettingsSnapshot {
-        form: settings::form::describe(),
-        view: session.view().row_values(),
+        form: settings::form::describe_with(&live),
+        view: view.row_values(),
     })
 }
 

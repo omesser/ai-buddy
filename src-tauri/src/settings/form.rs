@@ -174,6 +174,13 @@ pub enum FormRow {
     SecureField {
         id: String,
         label: Option<String>,
+        /// What the empty field says about the store: whether a key is set, or
+        /// which variable overrides it. On the row rather than in `values`,
+        /// the way `TextField` carries its own. The field's value stays empty,
+        /// because the secret never leaves the store (ADR-0010) and a
+        /// fingerprint sitting in it would be committed as a key on the next
+        /// blur. #875.
+        placeholder: String,
         writes: TextField,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
@@ -433,9 +440,6 @@ pub const DIRECTOR_BASE_URL_PICK_ID: &str = "director_base_url_pick";
 pub const DIRECTOR_MODEL_ID: &str = "director_model";
 pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
 pub const CLEAR_KEY_ID: &str = "clear_key";
-/// What `src/settings.js` appends to a `SecureField`'s row id to read its
-/// placeholder. The row's own value is always empty (ADR-0010).
-pub const PLACEHOLDER_SUFFIX: &str = "_placeholder";
 pub const NEW_SESSION_ID: &str = "new_session";
 pub const APPLY_ID: &str = "director_apply";
 pub const CANCEL_ID: &str = "director_cancel";
@@ -905,6 +909,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
                     label: Some(api_key_label),
+                    placeholder: live.api_key_placeholder.clone(),
                     writes: TextField::DirectorApiKey,
                     frozen: api_key_frozen,
                     status: api_key_status,
@@ -1577,6 +1582,13 @@ pub struct Live {
     pub consent_intro: String,
     /// Where a blank Working directory row runs, for its placeholder (#913).
     pub attach_cwd: String,
+    /// What the API key row's empty field says about the store.
+    ///
+    /// `current()` leaves it blank: the status is a store read, and
+    /// `settings_event` builds a description on every gesture. Only
+    /// `settings_snapshot` fills it, from the view that already has it
+    /// cached. Nothing but the row reads it. #875.
+    pub api_key_placeholder: String,
 }
 
 impl Live {
@@ -1590,6 +1602,7 @@ impl Live {
             configured: crate::harness::attached().is_some(),
             consent_intro,
             attach_cwd: crate::harness::attach_cwd_placeholder(),
+            api_key_placeholder: String::new(),
         }
     }
 }
@@ -1673,6 +1686,9 @@ mod tests {
             configured,
             consent_intro: FIXTURE_CONSENT_INTRO.to_string(),
             attach_cwd: FIXTURE_ATTACH_CWD.to_string(),
+            // From the same view the values fixtures come from, so the two
+            // files cannot disagree about what the key row says.
+            api_key_placeholder: fixture_view(driving).api_key_placeholder(),
         }
     }
 
@@ -1736,8 +1752,7 @@ mod tests {
     }
 
     /// Every row id the page looks a value up by, on the tabs these fixtures
-    /// pin. A button carries no value; a `SecureField` carries two, its own
-    /// and the placeholder beside it.
+    /// pin. One key per row; a button and a secure field carry no value.
     fn value_row_ids(
         description: &FormDescription,
         skip: &[&str],
@@ -1749,10 +1764,6 @@ mod tests {
             }
             for row in tab.sections.iter().flat_map(|section| section.rows.iter()) {
                 match row {
-                    FormRow::SecureField { id, .. } => {
-                        ids.insert(id.clone());
-                        ids.insert(format!("{id}{PLACEHOLDER_SUFFIX}"));
-                    }
                     FormRow::Composite { controls, .. } => {
                         for control in controls {
                             match control {
@@ -1764,6 +1775,9 @@ mod tests {
                             }
                         }
                     }
+                    // A secure row carries its placeholder and no value: the
+                    // secret never leaves the store (ADR-0010).
+                    FormRow::SecureField { .. } => {}
                     FormRow::Checkbox { id, .. }
                     | FormRow::TextField { id, .. }
                     | FormRow::InspectBlock { id, .. }
@@ -1885,6 +1899,11 @@ mod tests {
             let every = value_row_ids(&description, &[]);
             let mut pinned = value_row_ids(&description, UNPINNED_TABS);
             pinned.retain(|id| !OS_SPECIFIC_VALUES.contains(&id.as_str()));
+            // Where the fixture is this platform's whole form, compare it
+            // whole: a key the view stopped producing has to fail here rather
+            // than be filtered away. Elsewhere only the shared rows are
+            // pinned, and the file keeps keys this build does not draw.
+            let whole = pinned == every;
             let keep = |value: serde_json::Value| -> serde_json::Value {
                 let object = value.as_object().expect("the fixture is an object").clone();
                 object
@@ -1903,8 +1922,8 @@ mod tests {
                     every,
                     "{name}: the value map and the form no longer name the same rows"
                 );
-                let expected =
-                    keep(serde_json::from_str(committed).expect("the fixture has to be JSON"));
+                let raw = serde_json::from_str(committed).expect("the fixture has to be JSON");
+                let expected = if whole { raw } else { keep(raw) };
                 let actual =
                     keep(serde_json::to_value(&values).expect("the values have to serialize"));
                 if actual != expected {
