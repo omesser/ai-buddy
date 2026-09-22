@@ -205,8 +205,22 @@ impl DisplayCache {
 /// How often the reserved strips are re-read. They move at human speed, so
 /// 500ms is far more often than needed and still costs at most one read
 /// every other poll.
-#[cfg(unix)]
 const USABLE_FRAME_REFRESH: Duration = Duration::from_millis(500);
+
+/// Whether enough time has passed to re-read the displays, marking them read
+/// if so. Every platform waits the same interval; what differs is the refresh
+/// each one then runs, which stays at its call site: macOS posts to the main
+/// thread, X11 and Windows read where they stand.
+fn due(refreshed: &Mutex<Instant>) -> bool {
+    let Ok(mut refreshed) = refreshed.lock() else {
+        return false;
+    };
+    if refreshed.elapsed() < USABLE_FRAME_REFRESH {
+        return false;
+    }
+    *refreshed = Instant::now();
+    true
+}
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -835,21 +849,6 @@ impl WindowSource for LinuxWindowSource {
     }
 }
 
-/// Whether enough time has passed to re-read the displays, marking them read
-/// if so. Unix lanes share the clock; Windows reads once, which is why this
-/// is `unix`.
-#[cfg(unix)]
-fn due(refreshed: &Mutex<Instant>) -> bool {
-    let Ok(mut refreshed) = refreshed.lock() else {
-        return false;
-    };
-    if refreshed.elapsed() < USABLE_FRAME_REFRESH {
-        return false;
-    }
-    *refreshed = Instant::now();
-    true
-}
-
 /// Screen-edge physics without window geometry: a supported mode, not a
 /// failure (`docs/SPEC.md`). Displays still come from Tauri; only windows
 /// are missing. The Wayland fallback; X11 fills `window_source` above.
@@ -897,19 +896,6 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     });
 
     (source, cache)
-}
-
-/// Windows needs the time check that unix lanes already use.
-#[cfg(not(unix))]
-fn due(refreshed: &Mutex<Instant>) -> bool {
-    let Ok(mut refreshed) = refreshed.lock() else {
-        return false;
-    };
-    if refreshed.elapsed() < Duration::from_millis(500) {
-        return false;
-    }
-    *refreshed = Instant::now();
-    true
 }
 
 /// The displays as the windowing layer sees them right now.
