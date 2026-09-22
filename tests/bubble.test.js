@@ -11,7 +11,6 @@ import {
   wrapText,
   placeBubble,
   createBubbleMachine,
-  forOverlay,
   THINKING_GRACE_MS,
   THINKING_MIN_HOLD_MS,
 } from "../src/bubble.js";
@@ -28,6 +27,23 @@ test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
 
   const long = "a".repeat(200);
   assert.equal(bubbleDuration(long), 8000, "max clamp");
+});
+
+// One Speech duration. `bubbleDuration` clamps how long the bubble may show a
+// line; the Shell's `CARRY_WINDOW` is how long it may re-say one to a new bubble
+// owner. A longer carry resurrects a line nobody could still be reading, and a
+// shorter one drops one still on screen (#178).
+test("the Shell carries a line for exactly as long as the bubble can show one", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
+
+  const carry = shell.match(/const CARRY_WINDOW: Duration = Duration::from_secs\((\d+)\)/);
+  assert.ok(carry, "the Shell names a carry window");
+  assert.equal(
+    Number(carry[1]) * 1000,
+    bubbleDuration("a".repeat(1000)),
+    "the carry window is bubbleDuration's max clamp",
+  );
 });
 
 test("wrap text at max width", () => {
@@ -441,30 +457,20 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
   );
 });
 
-// --- One overlay owns the bubble; the rest draw the art only. ---
-
 // --- #178: one overlay owns the bubble; the rest draw the art only. ---
+// The Shell nulls `dialogue`, `thinking` and `cue` on every overlay but the
+// owner's, so the placements below are what a losing overlay is really handed.
 
-test("a placement this overlay does not own carries no bubble", () => {
-  const spoken = { dialogue: "Yare yare daze.", thinking: true, bubble: true, x: 1 };
-  assert.equal(forOverlay(spoken), spoken, "the owner sees it untouched");
-
-  const elsewhere = forOverlay({ ...spoken, bubble: false });
-  assert.equal(elsewhere.dialogue, null, "no line to latch on the wrong display");
-  assert.equal(elsewhere.thinking, false, "no thinking to arm on the wrong display");
-  assert.equal(elsewhere.x, 1, "everything the art needs is left alone");
-});
-
-test("a losing overlay never arms the indicator off a thinking it does not own", () => {
+test("a losing overlay is told no thinking, so it never arms the indicator", () => {
   const { machine, advance, placement, surface } = machineHarness();
 
-  machine.frame(forOverlay(placement({ thinking: true, bubble: false })));
+  machine.frame(placement({ thinking: false, bubble: false }));
   advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
   assert.equal(surface(), null, "grace never armed: this display is not the owner");
 
-  machine.frame(forOverlay(placement({ thinking: true, bubble: true })));
+  machine.frame(placement({ thinking: true, bubble: true }));
   advance(THINKING_GRACE_MS);
-  assert.equal(surface(), "thinking", "the same frame, owned, arms it");
+  assert.equal(surface(), "thinking", "the same turn, owned, arms it");
 });
 
 test("a line crossing the seam hides on the old display before it shows on the new", () => {
@@ -474,16 +480,16 @@ test("a line crossing the seam hides on the old display before it shows on the n
   const a = machineHarness();
   const b = machineHarness();
 
-  a.machine.event(forOverlay(a.placement({ dialogue: "hi", bubble: true })));
-  a.machine.frame(forOverlay(a.placement({ bubble: true })));
-  b.machine.event(forOverlay(b.placement({ dialogue: "hi", bubble: false })));
+  a.machine.event(a.placement({ dialogue: "hi", bubble: true }));
+  a.machine.frame(a.placement({ bubble: true }));
+  b.machine.event(b.placement({ dialogue: null, bubble: false }));
   assert.equal(a.surface(), "speech", "the owner shows the line");
-  assert.equal(b.surface(), null, "the other display never latched it");
+  assert.equal(b.surface(), null, "the other display was never told the line");
 
   // Mid-reading, ownership flips: the shell re-pulses to b and stops naming a.
   a.machine.hideAllNow();
-  b.machine.event(forOverlay(b.placement({ dialogue: "hi", bubble: true })));
-  b.machine.frame(forOverlay(b.placement({ bubble: true })));
+  b.machine.event(b.placement({ dialogue: "hi", bubble: true }));
+  b.machine.frame(b.placement({ bubble: true }));
   assert.equal(a.surface(), null, "the old display is already clear");
   assert.equal(b.surface(), "speech", "and the new one shows the same line");
 });
