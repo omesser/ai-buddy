@@ -253,11 +253,14 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
 }
 
-/// Raise the Settings webview above the overlay. Main thread only.
+/// Raise one of the Shell's own windows above the overlay. Main thread only.
 ///
 /// NSStatusWindowLevel sits above the overlay's NSFloatingWindowLevel, so tray-open is not a no-op.
+/// Chat takes the same band as Settings: both are windows the app opens on
+/// purpose, and the overlay covers every display, so a window left in the
+/// normal band is behind the sprite layer for its whole life. #891.
 #[cfg(target_os = "macos")]
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     use objc2::msg_send;
     use objc2_app_kit::{NSApplication, NSStatusWindowLevel, NSWindowLevel};
     use objc2_foundation::MainThreadMarker;
@@ -295,11 +298,11 @@ pub fn tune_tray_icon(tray: &tauri::tray::TrayIcon) -> Result<(), tauri::Error> 
     macos::tune_tray_icon(tray)
 }
 
-/// Raise the Settings webview above the overlay. Main thread only.
+/// Raise one of the Shell's own windows above the overlay. Main thread only.
 ///
 /// The overlay is `_NET_WM_STATE_ABOVE`. Settings keep_above shares that band (#799).
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     use gtk::prelude::*;
 
     let gtk_window = window
@@ -314,11 +317,11 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
     Ok(())
 }
 
-/// Raise the Settings webview above the overlay. Main thread only.
+/// Raise one of the Shell's own windows above the overlay. Main thread only.
 ///
 /// The overlay is HWND_TOPMOST. A normal window cannot stack above that band.
 #[cfg(not(unix))]
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     windows::raise_settings_window(window)
 }
 

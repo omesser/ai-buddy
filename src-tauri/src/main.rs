@@ -869,7 +869,7 @@ fn show_settings(app: tauri::AppHandle) {
                 }
             },
         };
-        if let Err(why) = platform::raise_settings_window(&window) {
+        if let Err(why) = platform::raise_above_overlay(&window) {
             eprintln!("settings webview raise: {why}");
         }
     }) {
@@ -1090,6 +1090,13 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
         // has to do, and doing it here keeps the overlay from taking focus.
         if let Err(why) = window.set_focus() {
             eprintln!("chat: {label} could not be raised: {why}");
+        }
+        // Focus is not enough: the overlay covers every display from a band
+        // above this one, so a Chat window left in the normal band spends its
+        // life behind the sprite layer. Settings has taken the same raise
+        // since #803. #891.
+        if let Err(why) = platform::raise_above_overlay(&window) {
+            eprintln!("chat: {label} raise: {why}");
         }
     }) {
         eprintln!("chat: could not reach the main thread: {why}");
@@ -2936,6 +2943,18 @@ fn main() {
             // For verify/smoke scripts that need the settings window on launch.
             if model::env_switch("AI_BUDDY_OPEN_SETTINGS").unwrap_or(false) {
                 show_settings(app.handle().clone());
+            }
+
+            // Dev/test hook: open the Chat surface immediately if
+            // AI_BUDDY_OPEN_CHAT=1. Its twin above exists for the same reason;
+            // this one lets the caret sitting reach the composer without a
+            // synthetic click on the tray, on a machine someone else is using.
+            if model::env_switch("AI_BUDDY_OPEN_CHAT").unwrap_or(false) {
+                if let Some(live) = lives.first() {
+                    if let Some(instance) = roster.get(&live.id) {
+                        open_chat(app.handle(), &live.id, instance.name.clone());
+                    }
+                }
             }
 
             let tray = {
