@@ -67,7 +67,7 @@ pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
 /// string the Director's other knobs do.
 pub static DIRECTOR_BLANK: Flag = Flag::new(model::BLANK);
 
-/// Completer timeout, reply cap, and first ambient wait, as the variable or the file gives them.
+/// Completer timeout, turn ceiling, and first ambient wait, as the variable or the file gives them.
 ///
 /// Zero is unset: a blank or non-numeric field, and none of those zeros is a value worth telling apart from absent.
 static TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
@@ -92,7 +92,7 @@ pub fn director_timeout_secs() -> Option<u64> {
     (secs > 0).then_some(secs)
 }
 
-/// The reply cap in force, in tokens.
+/// The turn ceiling in force, in tokens.
 pub fn director_max_tokens() -> Option<u32> {
     let cap = MAX_TOKENS.load(Ordering::Relaxed);
     (cap > 0).then_some(cap)

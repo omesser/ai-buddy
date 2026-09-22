@@ -206,12 +206,20 @@ When no Harness is attached, the HTTP Completer streams chat-completions (first
 token arrives long before the reply; a dropped call stops the host generating
 rather than merely going unheard; non-streaming hosts are answered whole). When
 a Harness is attached, it fills the trait instead. Settings names the HTTP
-fill's timeout and reply cap. A Harness turn has its own budget
+fill's timeout and turn ceiling. A Harness turn has its own budget
 (#690). The environment variables
 `AI_BUDDY_DIRECTOR_BASE_URL`, `AI_BUDDY_DIRECTOR_MODEL`, and
 `AI_BUDDY_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
 _Avoid_: Using "Completer" as Settings or README brand (say AI, Model, API, AI
 source, or Harness), or as synonym for HTTP-only fill
+
+**Turn ceiling**:
+The token bound on one HTTP Completer turn, thought and answer together. A
+safeguard against a model that will not stop, not a budget sized for a reply,
+so one number covers every wake, local or hosted (#877). A host seen to mark
+its thinking is given a higher one (#606). Settings names the row, and
+`AI_BUDDY_DIRECTOR_MAX_TOKENS` outranks both numbers.
+_Avoid_: Reply cap, reply length, token budget
 
 **Executor**:
 Whatever posts synthetic mouse and keyboard events to the operating system.
