@@ -15,15 +15,20 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 `Todo` on the AI Buddy project board, highest priority first, matching the OS
 you can build. See `docs/agents/picking-work.md`.
 
-### pstack
+### Vendored skill sets
 
-The pstack skill library is vendored at `.agents/skills/`. Each skill is
-a directory holding a `SKILL.md`, and `.agents/pstack/SKILLS.md` indexes all 47
-with one line each. None of them is on by default. Apply one when the user names
-it, by reading that skill's `SKILL.md` and following it. `poteto-mode` is sticky
-once entered — it stays on across turns — so never enter it unprompted. When you
-do apply a skill, `docs/agents/pstack.md` records where pstack's opinions
+pstack and Matt Pocock's engineering set are vendored into `.agents/skills/`,
+each skill a directory holding a `SKILL.md`. `.agents/pstack/SKILLS.md` and
+`.agents/mattpocock/SKILLS.md` index them, one line each. These are the skills
+behind `/implement`, `/research` and `/tdd`.
+
+None of them is on by default. Apply one when the user names it, by reading that
+skill's `SKILL.md` and following it. `poteto-mode` is sticky once entered — it
+stays on across turns — so never enter it unprompted.
+
+`docs/agents/vendored-skills.md` records where a vendored skill's opinions
 collide with this repository's rules, and this repository's rules win.
+`.agents/README.md` covers where the bytes live and how the syncs work.
 
 ### Domain docs
 
