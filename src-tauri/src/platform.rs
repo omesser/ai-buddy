@@ -714,16 +714,10 @@ pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     }
 }
 
-/// Titles from `GetWindowText`, gated behind WindowTitles consent.
+/// Titles from `GetWindowText`. Windows consent gate is #912 (out of this PR).
 /// Owner is still the process image, never the title, matching the geometry path.
 #[cfg(not(unix))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
-    if !crate::consent::usable(
-        crate::consent::CapabilityId::WindowTitles,
-        crate::consent::live(),
-    ) {
-        return Vec::new();
-    }
     windows::visible_window_titles()
 }
 
@@ -1340,7 +1334,7 @@ mod tests {
         );
     }
 
-    /// MCP titles resource must gate on WindowTitles consent. Without grant,
+    /// MCP titles resource must gate on WindowTitles consent. Without wanted,
     /// no titles leak (even on X11 where _NET_WM_NAME is technically consent-free
     /// at the protocol level).
     #[test]
@@ -1352,17 +1346,5 @@ mod tests {
             without_wanted.is_empty(),
             "list_window_titles must return empty when WindowTitles is not wanted"
         );
-
-        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, true);
-        #[cfg(target_os = "linux")]
-        {
-            crate::consent::GRANTED_WINDOW_TITLES
-                .store(false, std::sync::atomic::Ordering::Relaxed);
-            let without_granted = list_window_titles();
-            assert!(
-                without_granted.is_empty(),
-                "list_window_titles must return empty when WindowTitles is wanted but not granted"
-            );
-        }
     }
 }
