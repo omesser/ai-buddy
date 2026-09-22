@@ -336,18 +336,17 @@ mod linux {
     }
 
     async fn screencast_request() -> ashpd::Result<()> {
-        use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
+        use ashpd::desktop::screencast::{Screencast, SourceType};
 
         let proxy = Screencast::new().await?;
         let session = proxy.create_session(Default::default()).await?;
 
+        let opts = ashpd::desktop::screencast::SelectSourcesOptions::default();
         proxy
             .select_sources(
                 &session,
-                ashpd::desktop::screencast::SelectSourcesOptions::default()
-                    .cursor_mode(CursorMode::Hidden)
-                    .sources(SourceType::Monitor | SourceType::Window)
-                    .multiple(false),
+                opts.set_sources(SourceType::Monitor | SourceType::Window)
+                    .set_multiple(false),
             )
             .await?;
 
@@ -686,7 +685,7 @@ mod tests {
 
         #[cfg(target_os = "linux")]
         {
-            assert_eq!(rows.len(), 2);
+            assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
             assert_eq!(rows[0].title, "Screen Cast");
             assert!(
@@ -700,20 +699,6 @@ mod tests {
                 rows[0].costs
             );
             assert!(!rows[0].granted);
-
-            assert_eq!(rows[1].id, CapabilityId::PortalScreenshot);
-            assert_eq!(rows[1].title, "Screenshot");
-            assert!(
-                rows[1].buys.contains("screenshot") || rows[1].buys.contains("Capture"),
-                "Screenshot has to say what screenshots buy, got {:?}",
-                rows[1].buys
-            );
-            assert!(
-                rows[1].costs.contains("portal") || rows[1].costs.contains("Screenshot"),
-                "Screenshot has to name the portal, got {:?}",
-                rows[1].costs
-            );
-            assert!(!rows[1].granted);
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -821,8 +806,8 @@ mod tests {
     fn enabling_a_granted_capability_does_not_prompt() {
         #[cfg(target_os = "linux")]
         {
-            let probe = Fake::granting(&[CapabilityId::PortalScreenshot]);
-            enable(CapabilityId::PortalScreenshot, &probe);
+            let probe = Fake::granting(&[CapabilityId::PortalScreenCast]);
+            enable(CapabilityId::PortalScreenCast, &probe);
             assert!(probe.prompted.lock().expect("prompt log").is_empty());
         }
         #[cfg(not(target_os = "linux"))]
@@ -904,18 +889,17 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn linux_rows_are_portal_capabilities() {
         let rows = rows(|_| false);
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
-        assert_eq!(rows[1].id, CapabilityId::PortalScreenshot);
         assert!(
             !rows[0].costs.contains("macOS"),
             "Linux rows must not mention macOS, got {:?}",
             rows[0].costs
         );
         assert!(
-            !rows[1].costs.contains("Accessibility"),
+            !rows[0].costs.contains("Accessibility"),
             "Linux rows must not mention Accessibility, got {:?}",
-            rows[1].costs
+            rows[0].costs
         );
     }
 
@@ -925,7 +909,6 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             assert!(!probe.granted(CapabilityId::PortalScreenCast));
-            assert!(!probe.granted(CapabilityId::PortalScreenshot));
             probe.prompt(CapabilityId::PortalScreenCast);
             assert!(!probe.granted(CapabilityId::PortalScreenCast));
         }
@@ -976,7 +959,6 @@ mod tests {
     fn linux_live_probe_is_portal_not_null() {
         let probe = live();
         assert!(!probe.granted(CapabilityId::PortalScreenCast));
-        assert!(!probe.granted(CapabilityId::PortalScreenshot));
     }
 
     /// The fake portal grants what it was told to grant. Settings can flip
@@ -987,11 +969,9 @@ mod tests {
     fn fake_portal_grants_what_it_was_constructed_with() {
         let granted = Fake::granting(&[CapabilityId::PortalScreenCast]);
         assert!(granted.granted(CapabilityId::PortalScreenCast));
-        assert!(!granted.granted(CapabilityId::PortalScreenshot));
 
         let nothing = Fake::granting(&[]);
         assert!(!nothing.granted(CapabilityId::PortalScreenCast));
-        assert!(!nothing.granted(CapabilityId::PortalScreenshot));
     }
 
     #[test]
