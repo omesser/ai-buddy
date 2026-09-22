@@ -56,6 +56,12 @@
   padding: 6px 18px 18px;
 }
 
+.set-footer {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border-top: 1px solid var(--chat-rule);
+}
+
 .set-section {
   padding: 12px 0 6px;
   border-bottom: 1px solid var(--chat-rule);

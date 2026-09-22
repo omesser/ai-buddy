@@ -298,12 +298,21 @@ function directorDraft(root) {
 
 export function render(root, tab, values, emit = () => {}) {
   root.replaceChildren();
+  const footer = document.getElementById("set-footer");
+  if (footer) footer.replaceChildren();
+
   for (const section of tab.sections) {
     const node = el("section", { class: "set-section" }, el("h2", { text: section.heading }));
     if (section.comment) node.append(el("p", { class: "set-comment", text: section.comment }));
     if (section.status) node.append(status(section.status));
     if (section.disclosure) node.append(disclosure(section.disclosure));
-    for (const row of section.rows) node.append(drawRow(row, values, emit));
+    for (const row of section.rows) {
+      if (row.type === "Composite" && row.id === "director_actions") {
+        if (footer) footer.append(drawRow(row, values, emit));
+      } else {
+        node.append(drawRow(row, values, emit));
+      }
+    }
     root.append(node);
   }
 }
