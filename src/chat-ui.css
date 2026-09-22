@@ -887,6 +887,7 @@ body {
   border-radius: var(--chat-radius-control);
   background: var(--chat-fill);
   color: var(--chat-ink);
+  caret-color: var(--chat-accent);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
