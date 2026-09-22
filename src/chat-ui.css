@@ -573,6 +573,8 @@ body {
    Drawn from the Instance's side like an answer, because it is asking. */
 .row.ask .options {
   display: flex;
+  /* One answer per line, as the Harness lists them. A wrapping row drops No under Yes. */
+  flex-direction: column;
   gap: 6px;
   margin-top: 6px;
 }
@@ -586,6 +588,10 @@ body {
   font: inherit;
   font-size: 12.5px;
   cursor: pointer;
+  text-align: start;
+  /* Inherited wrap-anywhere makes min-content one character, so Yes is a circle. */
+  min-width: min-content;
+  overflow-wrap: normal;
 }
 
 .row.ask button:disabled {
