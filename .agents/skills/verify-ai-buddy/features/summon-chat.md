@@ -10,7 +10,7 @@ Double-clicking the buddy opens its Chat surface: the same conversation that dri
 
 ## How to get to it (user POV)
 
-- Double-click the sprite body.
+- Double-click the sprite body. (Only this path emits the `verbs:.*Summon` trace; other paths open Chat without the verb.)
 - Or choose the speech bubble's **Open chat** control when a bubble is showing.
 - Or select **Chat…** from the tray icon menu.
 
@@ -22,7 +22,8 @@ Preconditions:
 - A real interactive display for Chat window proof; Xvfb can still prove the Summon verb.
 - Doctor green for the lane.
 
-- **Summon verb (X11).** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite `pos()` from the last `frame:` line, `xdotool mousemove --sync $X $Y`, then `xdotool click --repeat 2 --delay 50 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$AI_BUDDY_VERIFY_EVIDENCE/summon-chat/`.
+- **macOS Summon (preferred).** Run `cargo run -p ai-buddy-verify -- summon`. Real double-click, asserts `verbs:.*Summon`, writes evidence to `$AI_BUDDY_VERIFY_EVIDENCE/summon/`.
+- **Summon verb (X11 hand-rolled).** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite feet `pos()` from the last `frame:` line. Click the body above the feet: `xdotool mousemove --sync $X $(($Y - 40))`, then `xdotool click --repeat 2 --delay 50 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$AI_BUDDY_VERIFY_EVIDENCE/summon-chat/`.
 - **Chat window (interactive desktop).** After the double-click, observe a Chat window belonging to the buddy. Capture a screenshot with `AI_BUDDY_CAPTURABLE=1` into evidence when the platform allows.
 - **Harness without sprite.** Chat Completer wiring without the overlay: `AI_BUDDY_HARNESS=<name> scripts/probe-harness.sh` (exit `0` = end_turn). This does **not** prove Summon UI; record it as harness-only if used.
 - **Proof.** Require the Summon verb line for the gesture path. Treat Chat window visibility as a second observer when a GUI session exists.
