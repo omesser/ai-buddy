@@ -20,13 +20,13 @@ use tauri::{Emitter, Manager};
 use super::session_log;
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, mcp_http,
-    mcp_resources, menu, model, note_happened, open_chat, overlay_label, paced, place_overlays,
-    platform, publish_instances, push_chat_opening, push_chat_openings, remember_instances,
-    spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun,
-    Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT,
-    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    apply_menu_action, cancelled_caret, chat_label, close_chat, describe_menu, dev_flags, harness,
+    mcp_http, mcp_resources, menu, model, note_happened, open_chat, overlay_label, paced,
+    place_overlays, platform, publish_instances, push_chat_opening, push_chat_openings,
+    remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
+    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
+    MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
+    CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// How long an overlay may go without being told anything.
@@ -763,7 +763,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
-                            superseded: false,
+                            superseded_by: None,
                         },
                     );
                     continue;
@@ -788,7 +788,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
-                            superseded: false,
+                            superseded_by: None,
                         },
                     );
                     continue;
@@ -808,7 +808,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
-                            superseded: false,
+                            superseded_by: None,
                         },
                     );
                     continue;
@@ -1332,7 +1332,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error,
-                            superseded: false,
+                            superseded_by: None,
                         },
                     );
                 }
@@ -1430,21 +1430,10 @@ pub(crate) fn run_frame_loop(
                             }
                             // Starting a call cancels the one before it
                             // (ADR-0016). Tell a typed line on the wire its
-                            // caret is cancelled, not that nothing came back (#681).
-                            if live.chat_turn {
-                                let _ = app.emit_to(
-                                    chat_label(&live.id),
-                                    CHAT_EVENT,
-                                    ChatReply {
-                                        said: None,
-                                        busy: false,
-                                        reacting_to: None,
-                                        you: false,
-                                        at: None,
-                                        error: None,
-                                        superseded: true,
-                                    },
-                                );
+                            // caret is cancelled, not that nothing came back (#681),
+                            // and name the wake that cancelled it (#890).
+                            if let Some(note) = cancelled_caret(live.chat_turn, &context.happened) {
+                                let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
                             }
                             live.chat_turn = matches!(context.happened, Happened::Chat(_));
                             live.happened_last = Some(director::happened_cell(&context.happened));

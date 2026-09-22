@@ -1,5 +1,6 @@
 // An empty `said` after Speech has already been drawn is not a missing answer;
-// treating it as one is the production change that fails this file.
+// treating it as one is the production change that fails this file. Nor is a
+// caret the Shell cancelled, which owes the user the wake that cancelled it.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -15,6 +16,8 @@ function play(turns, payloads) {
     } else if (outcome.action === "missing") {
       log.push(outcome.note);
     } else if (outcome.action === "error") {
+      log.push(outcome.note);
+    } else if (outcome.action === "preempted") {
       log.push(outcome.note);
     }
   }
@@ -63,13 +66,43 @@ test("a later turn that produced no Speech still reports a missing answer", () =
   assert.deepEqual(log, [MISSING_ANSWER]);
 });
 
-test("a superseded caret is not reported as a missing answer", () => {
+test("a preempted caret says what preempted it, not that an answer is missing", () => {
   const turns = createChatTurns();
   turns.typed();
 
-  const log = play(turns, [{ said: null, superseded: true }]);
+  const log = play(turns, [{ said: null, superseded_by: "poked" }]);
 
-  assert.deepEqual(log, []);
+  assert.deepEqual(log, ["You poked me before that answer landed, so I dropped it."]);
+  assert.equal(
+    log.includes(MISSING_ANSWER),
+    false,
+    "the Shell already said why the caret was cancelled",
+  );
+});
+
+test("the note names which wake took the slot", () => {
+  const turns = createChatTurns();
+  turns.typed();
+  turns.typed();
+
+  const log = play(turns, [
+    { said: null, superseded_by: "poked" },
+    { said: null, superseded_by: "spoken to" },
+  ]);
+
+  assert.deepEqual(log, [
+    "You poked me before that answer landed, so I dropped it.",
+    "You asked something else before that answer landed, so I dropped it.",
+  ]);
+});
+
+test("a cause with no clause of its own still reads as a sentence", () => {
+  const turns = createChatTurns();
+  turns.typed();
+
+  const log = play(turns, [{ said: null, superseded_by: "levitated" }]);
+
+  assert.deepEqual(log, ["Something else started before that answer landed, so I dropped it."]);
 });
 
 test("a Harness error is still the error, not a missing answer", () => {
