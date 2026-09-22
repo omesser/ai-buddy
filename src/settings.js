@@ -193,7 +193,7 @@ function drawRow(row, values, emit) {
     case "Popup": {
       const select = popup(row, values, row.frozen);
       if (!row.batched) {
-        select.addEventListener("change", () => emit({ set_text: row.id, value: select.value }));
+        select.addEventListener("change", () => emit({ pick: row.id, value: select.value }));
       }
       return labelled(row, select, notes(row));
     }
