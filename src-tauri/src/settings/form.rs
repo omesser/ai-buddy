@@ -1039,13 +1039,13 @@ fn completer_source_section() -> FormSection {
 fn byo_section() -> FormSection {
     FormSection {
         heading: BYO_HEADING.to_string(),
-        comment: Some(
-            "For a Harness you start in your own terminal. Registering ai-buddy as \
-             an MCP server there lets it speak, move and emote the buddy on your \
-             screen. Nothing here changes which mind the Director uses."
+        comment: Some("For a Harness you start in your own terminal.".to_string()),
+        disclosure: Some(
+            "Registering ai-buddy as an MCP server there lets it speak, move and \
+             emote the buddy on your screen. Nothing here changes which mind the \
+             Director uses."
                 .to_string(),
         ),
-        disclosure: None,
         status: None,
         rows: vec![
             FormRow::Popup {
@@ -1063,12 +1063,15 @@ fn byo_section() -> FormSection {
                 id: BYO_SNIPPET_ID.to_string(),
                 label: None,
                 help: Some(
-                    "Good for this app run only: the port and the token are both new \
-                     every launch, so a paste from yesterday stops connecting. Come \
-                     back here and copy it again."
+                    "Good for this app run only. Come back here and copy it again \
+                     after a relaunch."
                         .to_string(),
                 ),
-                disclosure: None,
+                disclosure: Some(
+                    "The port and the token are both new every launch, so a paste \
+                     from yesterday stops connecting."
+                        .to_string(),
+                ),
                 status: None,
             },
             FormRow::Composite {
