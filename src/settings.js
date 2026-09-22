@@ -243,6 +243,11 @@ function drawRow(row, values, emit) {
     }
     case "Composite": {
       const line = el("div", { class: "set-controls" });
+      // A press carries this row's own controls, by the id `describe()` gave
+      // each. New spawns under the name and Character beside it, and only the
+      // page can read what they hold (#875).
+      const fields = [];
+      const typed = () => Object.fromEntries(fields.map((node) => [node.dataset.id, node.value]));
       for (const control of row.controls) {
         if (control.type === "Button") {
           const button = el("button", {
@@ -252,7 +257,7 @@ function drawRow(row, values, emit) {
             "data-id": control.id,
           });
           button.addEventListener("click", () => {
-            const payload = { press: control.id };
+            const payload = { press: control.id, fields: typed() };
             if (control.id === "director_apply") {
               const root = button.closest('[role="tabpanel"]') ?? button.getRootNode();
               payload.draft = directorDraft(root);
@@ -265,11 +270,14 @@ function drawRow(row, values, emit) {
           select.addEventListener("change", () =>
             emit({ pick: control.id, value: select.value, fills: control.fills?.row ?? null }),
           );
+          fields.push(select);
           line.append(select);
         } else {
-          const input = el("input", { type: "text", placeholder: control.placeholder, "data-id": control.id });
+          const input = el("input", { type: "text", placeholder: control.placeholder });
+          input.dataset.id = control.id;
           input.value = values[control.id] ?? "";
           input.addEventListener("blur", () => emit({ set_text: control.id, value: input.value }));
+          fields.push(input);
           line.append(input);
         }
       }

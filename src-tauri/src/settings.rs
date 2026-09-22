@@ -672,6 +672,14 @@ impl SettingsView {
         }
     }
 
+    /// The Instance a Dismiss press names.
+    ///
+    /// `None` for an id the roster no longer carries: the page draws from a
+    /// snapshot, and a buddy can go while that list is on screen. #875.
+    pub fn instance(&self, id: &str) -> Option<&InstanceRow> {
+        self.instances.iter().find(|row| row.id == id)
+    }
+
     /// Whether Clear key has anything to clear. A key the store would not
     /// hand over counts: an unreadable one can still be wiped.
     pub fn clear_key_enabled(&self) -> bool {
@@ -682,15 +690,10 @@ impl SettingsView {
 /// Work the settings window asks the frame loop to do.
 #[derive(Clone, Debug)]
 pub enum SettingsOp {
-    /// #875: never sent. `frame_loop` still handles both, and the senders
-    /// below lost their callers with the renderers, so the dead half is the
-    /// send. They stay with the handler rather than taking it down with them.
-    #[allow(dead_code)]
     Spawn {
         character: String,
         name: String,
     },
-    #[allow(dead_code)]
     Dismiss {
         id: String,
     },
@@ -1304,12 +1307,13 @@ impl SettingsSession {
             .map_err(|error| error.to_string())
     }
 
-    #[allow(dead_code)]
+    /// Both hand the frame loop the work and answer at once. The loop owns
+    /// the roster, and it pushes `settings-refresh` on the tick that runs the
+    /// op, so the window redraws from the roster rather than from a guess.
     pub fn spawn(&self, character: String, name: String) {
         let _ = self.ops.send(SettingsOp::Spawn { character, name });
     }
 
-    #[allow(dead_code)]
     pub fn dismiss(&self, id: String) {
         let _ = self.ops.send(SettingsOp::Dismiss { id });
     }

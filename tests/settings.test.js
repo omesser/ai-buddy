@@ -295,6 +295,13 @@ function stubDocument() {
         },
         append(...nodes) {
           node.children.push(...nodes);
+          // A <select> reads its value off the option marked selected, which
+          // is how a press learns the Character the popup shows.
+          for (const child of nodes) {
+            if (tag === "select" && child.attributes.selected !== undefined) {
+              node.value = child.attributes.value;
+            }
+          }
         },
         addEventListener(name, handler) {
           node.handlers[name] = handler;
@@ -326,6 +333,20 @@ function drawn(title, emit) {
 test("a secure row takes its placeholder from the key status beside it", () => {
   const key = drawn("AI").find((node) => node.attributes.type === "password");
   assert.equal(key.attributes.placeholder, "Set: \u20264f2a");
+});
+
+// `SettingsSession::spawn` takes a Character and a name, and `DirectorDraft`
+// carries neither, so the press used to arrive with nothing to spawn. #875.
+test("New carries the name typed beside it and the Character it shows", () => {
+  const emitted = [];
+  const nodes = drawn("Character", (payload) => emitted.push(payload));
+  const name = nodes.find((node) => node.dataset.id === "new_name");
+  name.value = "Nim";
+  nodes.find((node) => node.textContent === "New").handlers.click();
+
+  assert.deepEqual(emitted, [
+    { press: "spawn", fields: { new_name: "Nim", new_character: "bmo" } },
+  ]);
 });
 
 // The line is ambiguous between two buddies of one name and Character, and
