@@ -109,7 +109,10 @@ pub const CAPABILITIES: &[Capability] = &[
 /// Tests that do not care about the live OS, and the fallback when a platform
 /// has no consent system. Was Linux's answer when X11 sensing was consent-free;
 /// the portal Probe replaced it once Wayland titles needed a grant.
-#[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
+#[cfg(any(
+    test,
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows"))
+))]
 pub struct Null;
 
 #[cfg(not(target_os = "linux"))]
@@ -1162,7 +1165,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     fn windows_capabilities_catalog_includes_window_titles() {
         let rows = rows(|_| false);
-        assert!(!rows.is_empty(), "Windows should have at least WindowTitles");
+        assert!(
+            !rows.is_empty(),
+            "Windows should have at least WindowTitles"
+        );
 
         let titles_row = rows
             .iter()
