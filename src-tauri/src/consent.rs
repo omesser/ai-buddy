@@ -767,9 +767,12 @@ mod tests {
     fn rows_report_wanted_capabilities() {
         #[cfg(target_os = "linux")]
         {
-            let rows = rows(|id| id == CapabilityId::PortalScreenCast);
-            assert!(rows[0].granted);
-            assert!(!rows[1].granted);
+            let all_off = rows(|_id| false);
+            assert_eq!(all_off.len(), 1);
+            assert!(!all_off[0].granted);
+
+            let portal_on = rows(|id| id == CapabilityId::PortalScreenCast);
+            assert!(portal_on[0].granted);
         }
         #[cfg(not(target_os = "linux"))]
         {

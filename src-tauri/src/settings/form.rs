@@ -460,7 +460,7 @@ pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 #[cfg(target_os = "macos")]
 pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
 #[cfg(target_os = "linux")]
-pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_portal_screencast";
+pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
@@ -2454,15 +2454,24 @@ mod tests {
 
             #[cfg(target_os = "linux")]
             {
+                assert_eq!(consent.rows.len(), 1);
+                let portal_screencast = consent
+                    .rows
+                    .iter()
+                    .find(|r| {
+                        matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_PORTAL_SCREENCAST_ID)
+                    })
+                    .expect("PortalScreenCast checkbox exists");
+
                 assert!(
-                    consent.rows.is_empty(),
-                    "Linux has no grant to offer a row for, so it declares none (#250), got {:?}",
-                    consent.rows
+                    matches!(portal_screencast, FormRow::Checkbox { label, .. } if label == "Screen Cast"),
+                    "Linux ScreenCast checkbox label must be 'Screen Cast', got {:?}",
+                    portal_screencast
                 );
+
                 assert!(
-                    comment.contains("no permission is requested")
-                        || comment.contains("no permission requested"),
-                    "Linux prose must say nothing is requested, got {comment:?}"
+                    comment.contains("portal") || comment.contains("Portal"),
+                    "Linux prose must mention the portal, got {comment:?}"
                 );
                 assert!(
                     comment.contains("window") || comment.contains("Window"),
