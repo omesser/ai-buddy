@@ -757,9 +757,8 @@ mod settings_event_tests {
         std::collections::HashMap::new()
     }
 
-    /// The Privacy tab's two buttons reloaded the snapshot and did nothing,
-    /// because `settings_event` handed the operation to a page with no case
-    /// for it. #875.
+    /// The Privacy tab's two buttons run here. One handed to the page reaches
+    /// nothing that acts on it. #875.
     #[test]
     fn opening_and_wiping_memory_run_here_and_do_not_cross_to_the_page() {
         use settings::form::RowOperation;
@@ -776,8 +775,9 @@ mod settings_event_tests {
         assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
     }
 
-    /// New reached `Outcome::Run(Spawn)` and stopped at the page, and the
-    /// press carried neither the name nor the Character to spawn under. #875.
+    /// New spawns under the name and Character the press carries.
+    /// `DirectorDraft` carries neither, so they ride the Composite's own
+    /// fields. #875.
     #[test]
     fn new_spawns_under_the_name_and_character_the_page_shows() {
         use settings::form::RowOperation;
@@ -797,8 +797,8 @@ mod settings_event_tests {
         assert_eq!(session.ran(), ["spawn ghost as Nim"]);
     }
 
-    /// Dismiss answered "dismiss not yet implemented", which the page shows
-    /// as "Could not save changes". #875.
+    /// A Dismiss press reaches the roster, and a stale one reaches nothing.
+    /// #875.
     #[test]
     fn dismiss_reaches_the_roster_and_a_stale_press_does_not() {
         let session = Recorded::default();
@@ -1069,10 +1069,8 @@ impl Operations for settings::SettingsSession {
 ///
 /// Not a `RowOperation`: the press names a row of the list rather than the
 /// form, and only the roster can say whether that Instance is still there.
-/// The page draws from a snapshot, so a stale press does nothing instead of
-/// sending an op under an id nothing answers to. `settings_event` used to
-/// answer this payload "dismiss not yet implemented", which the page shows as
-/// a failed save (#875).
+/// The page draws from a snapshot, so a stale press does nothing rather than
+/// sending an op under an id nothing answers to. #875.
 fn dismiss_press(
     session: &dyn Operations,
     view: &settings::SettingsView,
@@ -1089,8 +1087,7 @@ fn dismiss_press(
 ///
 /// The two clipboard writes cross because WebKit gives `writeText` the click's
 /// own turn and nothing else. Everything else is a `SettingsSession` method,
-/// and forwarding those to a page with no case for them is why Open in editor
-/// and Wipe reloaded the snapshot and did nothing (#875).
+/// and the page has no case for one it is handed instead (#875).
 fn run_operation(
     session: &dyn Operations,
     op: &settings::form::RowOperation,

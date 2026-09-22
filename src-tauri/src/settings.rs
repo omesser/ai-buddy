@@ -522,10 +522,10 @@ impl SettingsView {
     /// Every value the page draws, by the form row id it asks for.
     ///
     /// The page indexes `values` by row id and the fields above are named for
-    /// the file they came from, so the two vocabularies overlapped only by
-    /// accident and most of the form drew blank. This is the one place they
+    /// the file they came from. This is the one place the two vocabularies
     /// are reconciled, and `form.rs`'s fixture test pins the key set against
-    /// `describe()` so a new row cannot be forgotten. #875.
+    /// `describe()`, so a row added without a value fails a test rather than
+    /// drawing blank. #875.
     ///
     /// A `SecureField` answers under `<id>_placeholder` too: its own value is
     /// always empty, because the secret never leaves the store (ADR-0010).
