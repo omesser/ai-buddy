@@ -50,7 +50,7 @@ runs in the frame loop and never drives animation directly. See
 │  └──────────┬────────────┘                                  │
 │             │ occasional                                    │
 │  ┌──────────▼────────────┐   ┌───────────────────────────┐  │
-│  │ Director              │   │ Local Gate                │  │
+│  │ Director              │   │ (Capture dropped)         │  │
 │  │ • proposes Behaviors  │◀──│ • phash change detect     │  │
 │  │ • never in frame loop │   │ • on-device OCR (Vision)  │  │
 │  └───────────────────────┘   └─────────▲─────────────────┘  │
@@ -389,27 +389,14 @@ six mouse types and no key event: a listen-only tap can neither modify nor
 divert what it hears, and nothing it hears is the keyboard. X11 needs no row
 for this; XI2 raw events are prompt-free (#562).
 
-Beyond that, two consented modes:
-
-- **Ambient Capture** — configurable periodic sampling plus capture on
-  interaction. Needs Screen Recording.
-- **On-Demand Capture** — a single capture in direct response to a user act.
-
-**Every Capture passes a mandatory Local Gate.** On-device processing first —
-perceptual hashing for meaningful change, on-device OCR via the macOS Vision
-framework — and only a changed, interesting frame escalates to the Director.
-Most ticks cost nothing and never leave the machine. At one capture per minute
-that is roughly 1,440 frames a day; sending each to a cloud vision model is
-untenable on cost and battery alike. The Gate also produces *better* Director
-input than raw images: "the frontmost window's text went from a passing test to
-a failing one" beats a JPEG.
-
-The sampling interval is user-configurable. It controls sampling, not spend.
-
-**The sprite is the privacy indicator.** Its eyes open, or it turns toward your
-window, exactly when it is looking, and it visibly cannot look while asleep. No
-other product category can render surveillance state as character animation.
-This is a load-bearing rule, not polish.
+**Capture tiers (Ambient, On-Demand, Local Gate) are dropped.** ai-buddy never takes
+screenshots, never analyzes screen pixels, and never embeds OCR or vision models for
+desktop content awareness. Free sensing — OS metadata without permissions — is the only
+sensing tier shipped. Agents that need pixel access or desktop control use harness-native
+computer use (Cursor Cloud Agents, Codex Computer Use plugin, Hermes computer_use toolset)
+or attach an MCP server like cua-driver.
+[ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes
+[ADR-0005](./docs/adr/0005-sensing-posture.md).
 
 ### 10. No Executor
 
@@ -541,13 +528,18 @@ space.
 **Deferred:**
 
 - Voice: hotkey push-to-talk, transcription, wake word
-- Ambient and On-Demand Capture, the Local Gate, Screen Recording consent
 - Windows implementation
 - Published Character Package format and authoring documentation
 
-**Explicitly not planned:** ambient screenshots without a Local Gate, an
-ai-buddy Executor, an undo system, a provider abstraction layer, per-Instance
-memory.
+**Dropped (not deferred):**
+
+- Ambient Capture, On-Demand Capture, and Local Gate. ai-buddy never takes screenshots,
+  never analyzes screen pixels, and never embeds OCR or vision models.
+  [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes
+  [ADR-0005](./docs/adr/0005-sensing-posture.md).
+
+**Explicitly not planned:** an ai-buddy Executor, an undo system, a provider abstraction
+layer, per-Instance memory.
 
 With nothing configured, ai-buddy is a complete product: spatial layer, physics,
 Static Director, ambient reactions, and a nudge to connect a Harness. No API
@@ -627,15 +619,15 @@ records it.
 | 9 / 14 | Behavior ownership | Engine-owned Primitives, Character-declared Behaviors — [ADR-0002](./docs/adr/0002-engine-owns-primitives-characters-declare-behaviors.md) |
 | 10 | Physics and verbs | Gravity + Throw; Perch = window top edges only; five verbs, capped |
 | 11 | Z-order | Always-on-top, non-activating, `canJoinAllSpaces`; aggressive auto-hide |
-| 12 / 16 | Sensing | Ambient titles + configurable periodic capture + On-Demand — [ADR-0005](./docs/adr/0005-sensing-posture.md) |
+| 12 / 16 | Sensing | Free tier only (OS metadata, no permissions); Capture dropped — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes [ADR-0005](./docs/adr/0005-sensing-posture.md) |
 | 13 | Codebase origin | Greenfield; WindowPet (MIT) as reference — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
 | 15 | Voice | Hotkey PTT + click-to-chat; wake word opt-in, on-device detection only |
 | 15b | Transcription | Trait: Apple `SpeechAnalyzer` on macOS 26+, `whisper.cpp` elsewhere |
 | 17 / 22 | Computer use | MCP server + MCP host; no first-party Executor — [ADR-0003](./docs/adr/0003-no-executor-harness-owns-desktop-control.md) |
-| 18 | Capture processing | Mandatory Local Gate; only changed and interesting frames escalate |
+| 18 | Capture processing | Dropped; ai-buddy never takes screenshots — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) |
 | 19 | Permissions we own | Sensing only. Never duplicate the Harness's action prompts |
 | 20 | Memory | One shared plaintext Markdown file the user owns; chat history session-scoped |
 | 21 | No Harness attached | Fully charming — full Spatial Layer, chat shows a connect nudge |
 | 23 | Art | True pixel art, integer nearest-neighbour — [ADR-0006](./docs/adr/0006-pixel-art-integer-scaling.md) |
 | 24 | Displays | One overlay per display, each covering it; physics spans them all |
-| 25 | Release staging | v1 is charm, chat, Memory, and Harness attach; voice and Ambient Capture deferred |
+| 25 | Release staging | v1 is charm, chat, Memory, and Harness attach; voice deferred, Capture dropped |

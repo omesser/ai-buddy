@@ -109,9 +109,9 @@ Terms from `CONTEXT.md` Language section:
 | Completer | `Completer` trait, thing that answers | ✅ |
 | Executor | owned by Harness, not ai-buddy | ✅ |
 | Action Log | `action_log.rs`, Harness actions | ✅ |
-| Ambient Capture | future; no code yet | — |
-| On-Demand Capture | future; no code yet | — |
-| Local Gate | future; no code yet | — |
+| Ambient Capture | dropped (ADR-0031) | — |
+| On-Demand Capture | dropped (ADR-0031) | — |
+| Local Gate | dropped (ADR-0031) | — |
 | Grab, Throw, Poke, Menu, Summon | verbs, correctly named | ✅ |
 | Speech, speak | `Speech` and `speak` tool | ✅ |
 | Speech bubble | `bubble.js`, held for reading time | ✅ |
@@ -143,7 +143,7 @@ Terms from `CONTEXT.md` Language section:
 3. **ADR-0012 compliance verified**: Character Prompt terminology (Personality
    Prompt, Instance Prompt, layers) matches implementation.
 
-4. **Future monitoring**: As new features land (Ambient/On-Demand Capture, Voice),
+4. **Future monitoring**: As new features land (Voice),
    ensure they adopt glossary terms immediately rather than inventing synonyms.
 
 ## Methodology

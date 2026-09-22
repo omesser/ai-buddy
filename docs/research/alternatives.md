@@ -58,8 +58,8 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Memory (shared, user-editable) | ✅ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✅ (plugin storage) | ❌ |
-| Ambient Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| On-Demand Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Ambient Capture | ❌ (dropped, ADR-0031) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| On-Demand Capture | ❌ (dropped, ADR-0031) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Local-first (no cloud required) | ✅ (Spatial) | ✅ | ✅ | ✅ | ✅ (Spatial) | ✅ | ✅ |
 | Consent-per-feature (opt-in gates) | ✅ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✅ (permissions) | ❌ |
 | Denylist (excluded apps) | ~ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -178,7 +178,7 @@ Animation assets require specific PNG sequence-frame structure:
 
 **Absent.** No ballistic physics (gravity, throw). No window top-edge Perches
 (sprite appears to rest on desktop floor, not on windows). No agent
-integrations, MCP, chat, or Harness. No Memory system. No Ambient Capture. No
+integrations, MCP, chat, or Harness. No Memory system. No Capture. No
 evidence of screen-sharing exclusion. Hide rules not verified (no fullscreen
 auto-hide or hotkey hide mentioned in Steam page or README). **macOS:** ❌
 official Steam. **Linux:** ❌ official; Proton users report non-transparent /
@@ -265,7 +265,7 @@ edges). No hide rules (fullscreen auto-hide). No capture exclusion. No
 multi-instance verified (homepage shows singular "pet"). No agent runtime beyond
 OpenAI chat (no MCP, no Harness). No MCP server. No Memory system
 (conversations not saved permanently per privacy policy). No Ambient or
-On-Demand Capture. No Linux version. No animation set requirement
+Capture. No Linux version. No animation set requirement
 (procedural/model-driven, not sprite sequences). No declarative Behaviors or
 Director.
 
@@ -320,7 +320,7 @@ window-edge Perch riding.
 **Absent.** No ballistic Perch riding model (ai-buddy's throw arcs + window-top
 Perches with acceleration gate). No hide rules (fullscreen auto-hide, hotkey).
 No capture exclusion verified. No window awareness (pets don't track app names
-or geometry). No Ambient or On-Demand Capture. No Denylist (excluded apps).
+or geometry). No Capture. No Denylist (excluded apps).
 
 **Linux reality.** AppImage available; Wayland overlay issues reported (focus
 steal #32, invisible pet / tray-only #108/#141).
