@@ -718,29 +718,35 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    let source = macos::MacosWindowSource::new({
-        let cache = cache.clone();
-        move || {
-            // Posted, not awaited: a poll that arrives while the main thread
-            // is busy is served the previous answer.
-            if due(&refreshed) {
-                let app = app.clone();
-                let cache = cache.clone();
-                let _ = app.clone().run_on_main_thread(move || {
-                    let read = read_displays(&app);
-                    if let Ok(mut displays) = cache.0.lock() {
-                        *displays = read;
-                    }
-                });
-            }
+    let source = macos::MacosWindowSource::new(
+        {
+            let cache = cache.clone();
+            move || {
+                // Posted, not awaited: a poll that arrives while the main thread
+                // is busy is served the previous answer.
+                if due(&refreshed) {
+                    let app = app.clone();
+                    let cache = cache.clone();
+                    let _ = app.clone().run_on_main_thread(move || {
+                        let read = read_displays(&app);
+                        if let Ok(mut displays) = cache.0.lock() {
+                            *displays = read;
+                        }
+                    });
+                }
 
-            let displays = cache.read();
-            (
-                displays.usable_frames,
-                displays.dock.map(|(bounds, _)| bounds),
-            )
-        }
-    });
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
+            }
+        },
+        || {
+            crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
+                && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
+        },
+    );
 
     (source, cache)
 }
@@ -761,21 +767,27 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    let source = x11::X11WindowSource::new({
-        let cache = cache.clone();
-        let app_clone = app.clone();
-        move || {
-            if due(&refreshed) {
-                *cache.0.lock().unwrap() = read_displays(&app_clone);
-            }
+    let source = x11::X11WindowSource::new(
+        {
+            let cache = cache.clone();
+            let app_clone = app.clone();
+            move || {
+                if due(&refreshed) {
+                    *cache.0.lock().unwrap() = read_displays(&app_clone);
+                }
 
-            let displays = cache.read();
-            (
-                displays.usable_frames,
-                displays.dock.map(|(bounds, _)| bounds),
-            )
-        }
-    });
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
+            }
+        },
+        || {
+            crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
+                && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
+        },
+    );
 
     (LinuxWindowSource::X11(source), cache)
 }

@@ -305,6 +305,7 @@ mod tests {
                 height,
             },
             owner: owner.to_string(),
+            title: None,
             layer: 0,
         }
     }

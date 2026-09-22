@@ -41,6 +41,8 @@ pub trait ExpressionHandle {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WindowInfo {
     pub owner: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -289,6 +291,7 @@ pub(crate) fn list_windows(
             .into_iter()
             .map(|w| WindowInfo {
                 owner: w.owner,
+                title: w.title,
                 x: w.bounds.x,
                 y: w.bounds.y,
                 width: w.bounds.width,
@@ -309,9 +312,15 @@ pub(crate) fn describe_screen(
     } else {
         let mut parts = vec![format!("{} visible windows:", windows.len())];
         for window in &windows {
+            let title_part = window
+                .title
+                .as_ref()
+                .map(|t| format!(" ({})", t))
+                .unwrap_or_default();
             parts.push(format!(
-                "- {} at ({:.0}, {:.0}), size {:.0}x{:.0}",
+                "- {}{} at ({:.0}, {:.0}), size {:.0}x{:.0}",
                 window.owner,
+                title_part,
                 window.bounds.x,
                 window.bounds.y,
                 window.bounds.width,

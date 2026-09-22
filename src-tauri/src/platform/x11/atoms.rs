@@ -22,6 +22,7 @@ pub struct Atoms {
     pub net_client_list: Atom,
     pub net_client_list_stacking: Atom,
     pub net_frame_extents: Atom,
+    pub net_wm_name: Atom,
     pub net_wm_state: Atom,
     pub net_wm_state_above: Atom,
     pub net_wm_state_skip_pager: Atom,
@@ -48,6 +49,7 @@ fn intern_all() -> Option<Atoms> {
         net_client_list: intern(conn, "_NET_CLIENT_LIST")?,
         net_client_list_stacking: intern(conn, "_NET_CLIENT_LIST_STACKING")?,
         net_frame_extents: intern(conn, "_NET_FRAME_EXTENTS")?,
+        net_wm_name: intern(conn, "_NET_WM_NAME")?,
         net_wm_state: intern(conn, "_NET_WM_STATE")?,
         net_wm_state_above: intern(conn, "_NET_WM_STATE_ABOVE")?,
         net_wm_state_skip_pager: intern(conn, "_NET_WM_STATE_SKIP_PAGER")?,
@@ -108,6 +110,29 @@ pub(super) fn window_class(conn: &RustConnection, window: xproto::Window) -> Opt
     }
 
     parse_wm_class(&reply.value)
+}
+
+/// Read _NET_WM_NAME to get the window's title.
+pub(super) fn window_title(conn: &RustConnection, window: xproto::Window) -> Option<String> {
+    let atoms = atoms()?;
+    let reply = xproto::get_property(
+        conn,
+        false,
+        window,
+        atoms.net_wm_name,
+        xproto::AtomEnum::ANY,
+        0,
+        1024,
+    )
+    .ok()?
+    .reply()
+    .ok()?;
+
+    if reply.format == 8 && !reply.value.is_empty() {
+        String::from_utf8(reply.value).ok().filter(|s| !s.is_empty())
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

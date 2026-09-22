@@ -17,14 +17,18 @@ pub struct X11WindowSource {
     /// Where the usable part of each display comes from, and the Dock's true
     /// bounds when a panel announces itself via _NET_WM_STRUT_PARTIAL.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
+    /// Whether WindowTitles consent is usable right now.
+    can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl X11WindowSource {
     pub fn new(
         read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
+        can_read_titles: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             read_displays: Box::new(read_displays),
+            can_read_titles: Box::new(can_read_titles),
         }
     }
 }
@@ -42,9 +46,10 @@ impl WindowSource for X11WindowSource {
 
     fn read(&self) -> WorldGeometry {
         let (usable_frames, dock) = (self.read_displays)();
+        let can_read_titles = (self.can_read_titles)();
         WorldGeometry {
             usable_frames,
-            windows: visible_windows(),
+            windows: visible_windows(can_read_titles),
             dock: dock.or_else(strut_panel_bounds),
         }
     }
@@ -53,7 +58,7 @@ impl WindowSource for X11WindowSource {
 /// Visible windows, frontmost first.
 /// `_NET_CLIENT_LIST_STACKING` is bottom-to-top, so reverse it. Fall back to
 /// `_NET_CLIENT_LIST` when stacking is missing. Own windows stay; `window_rect` sets the overlay's level.
-fn visible_windows() -> Vec<WindowRect> {
+fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
     use std::sync::atomic::{AtomicBool, Ordering};
     static LOGGED: AtomicBool = AtomicBool::new(false);
 
@@ -71,7 +76,7 @@ fn visible_windows() -> Vec<WindowRect> {
     let result: Vec<WindowRect> = windows
         .into_iter()
         .rev()
-        .filter_map(|w| window_rect(conn, w))
+        .filter_map(|w| window_rect(conn, w, can_read_titles))
         .collect();
 
     if !LOGGED.swap(true, Ordering::Relaxed) {
@@ -184,12 +189,17 @@ fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     )
 }
 
-fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
+fn window_rect(conn: &RustConnection, window: Window, can_read_titles: bool) -> Option<WindowRect> {
     if !is_normal_window(conn, window) {
         return None;
     }
 
     let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
+    let title = if can_read_titles {
+        super::atoms::window_title(conn, window)
+    } else {
+        None
+    };
 
     let geom = xproto::get_geometry(conn, window).ok()?.reply().ok()?;
     let translated = xproto::translate_coordinates(conn, window, geom.root, 0, 0)
@@ -215,6 +225,7 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
             height: f64::from(height),
         },
         owner,
+        title,
         layer: i32::from(is_above(conn, window)),
     })
 }
