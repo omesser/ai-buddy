@@ -1425,7 +1425,7 @@ fn development_sections() -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the buddy or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,
@@ -1448,7 +1448,7 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
-                    help: Some("HTTP endpoint only. Harness decides its own.".to_string()),
+                    help: Some("A runaway guard, not a reply length. HTTP endpoint only.".to_string()),
                     disclosure: None,
                     status: max_tokens_status,
                 },
