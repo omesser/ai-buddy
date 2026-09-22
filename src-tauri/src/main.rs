@@ -52,7 +52,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::{Character, Primitive};
 use ai_buddy_core::director::{
-    app_instructions, Happened, ModelDirector, Pace, Seeded, StaticDirector,
+    app_instructions, happened_cell, Happened, ModelDirector, Pace, Seeded, StaticDirector,
 };
 use ai_buddy_core::engine::{Cue, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
@@ -1642,10 +1642,28 @@ struct ChatReply {
     /// is `None` because static weights took the turn, but "no answer" is
     /// wrong when one named a version this CLI will not serve (#514).
     error: Option<String>,
-    /// The Shell cancelled this caret because a newer wake started (ADR-0016).
-    /// `said` is `None`; this is not a turn that produced no Speech (#681).
+    /// The Shell cancelled this caret because a newer wake started (ADR-0016),
+    /// named in `happened_cell`'s word for that wake. `said` is `None`; this is
+    /// not a turn that produced no Speech (#681). The surface says which wake
+    /// did it, because "you poked me" reads as cause and "dropped" as a bug (#890).
     #[serde(default)]
-    superseded: bool,
+    superseded_by: Option<&'static str>,
+}
+
+/// What the Shell owes a Chat surface when a newer wake cancels the slot
+/// (ADR-0016). `None` unless a typed question was the turn on the wire:
+/// a poke or an ambient wake opened no question on this surface, so a
+/// notice there would answer nobody (#890).
+fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
+    chat_turn.then(|| ChatReply {
+        said: None,
+        busy: false,
+        reacting_to: None,
+        you: false,
+        at: None,
+        error: None,
+        superseded_by: Some(happened_cell(by)),
+    })
 }
 
 /// Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
@@ -1716,7 +1734,7 @@ fn chat_ready(
                     reacting_to: turn.reacting_to,
                     you: turn.you,
                     error: None,
-                    superseded: false,
+                    superseded_by: None,
                     at: Some(
                         turn.at
                             .duration_since(UNIX_EPOCH)
@@ -3718,5 +3736,30 @@ mod tests {
         {
         }
         takes_async(overlay_open_chat);
+    }
+
+    /// Asserted on the serialized payload, because the webview reads the wire
+    /// shape and not the struct. Production change that would fail this:
+    /// sending a bare flag again, so the surface cannot name the cause (#890).
+    #[test]
+    fn a_preempted_typed_question_carries_the_wake_that_took_its_slot() {
+        let poked = serde_json::to_value(cancelled_caret(true, &Happened::Poke).unwrap())
+            .expect("a ChatReply should serialize");
+        assert_eq!(poked["superseded_by"], "poked");
+        assert!(poked["said"].is_null(), "a cancelled caret said nothing");
+
+        let asked_again = serde_json::to_value(
+            cancelled_caret(true, &Happened::Chat("and another thing".to_string())).unwrap(),
+        )
+        .expect("a ChatReply should serialize");
+        assert_eq!(asked_again["superseded_by"], "spoken to");
+    }
+
+    /// The half a careless fix breaks. A poke or an ambient wake opened no
+    /// question on the Chat surface, so a notice there answers nobody (#890).
+    #[test]
+    fn an_ambient_turn_superseded_by_another_wake_tells_chat_nothing() {
+        assert!(cancelled_caret(false, &Happened::Ambient).is_none());
+        assert!(cancelled_caret(false, &Happened::Poke).is_none());
     }
 }

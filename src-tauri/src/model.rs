@@ -1426,8 +1426,10 @@ enum Unsent {
     /// question at the same cap gets the same nothing. The text names the cap,
     /// the model, and which #606 row it was.
     Truncated(String),
-    /// Superseded while the tokens were arriving. Nobody is waiting for this
-    /// answer, so there is no error worth composing.
+    /// Superseded while the tokens were arriving. No error is composed here,
+    /// and not because nobody is waiting: this is simply not where a waiting
+    /// caret is told. The frame loop names the wake that cancelled it, as that
+    /// wake starts (#890).
     Abandoned,
     /// A status, a transport error, or an unreadable reply.
     Failed(String),
