@@ -1181,7 +1181,6 @@ impl SettingsSession {
         apply_and_seed(&mut settings, patch);
         #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
-        #[cfg(not(target_os = "windows"))]
         consent::set_wanted(CapabilityId::WindowTitles, settings.use_window_titles);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
