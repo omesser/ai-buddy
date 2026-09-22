@@ -111,6 +111,7 @@ test("bubble placement stays above sprite by default", () => {
   assert.ok(pos.x >= displayBounds.x, "bubble is within display left");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble is within display right");
   assert.equal(pos.tailOffset, 0, "tail centered when bubble not clamped");
+  assert.equal(pos.inverted, false, "tail still points down");
 });
 
 // Near the ceiling the bubble inverts below the sprite at the same mirrored
@@ -124,6 +125,46 @@ test("bubble inverts below sprite at ceiling when above would cover face", () =>
 
   assert.ok(pos.y > spriteRect.y + spriteRect.height, "bubble is below sprite, not clamped above");
   assert.equal(pos.y, spriteRect.y + spriteRect.height + 10, "10px gap below, mirroring the normal above gap");
+});
+
+// #903: the overlay flips the tail from this flag. y is the known ceiling
+// geometry (sprite at 50, 64 tall, bubble 100, 10px gap) — not recomputed.
+test("inverted Speech bubble reports inverted so the tail can point up", () => {
+  const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
+  const bubbleSize = { width: 200, height: 100 };
+  const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
+
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
+
+  assert.equal(pos.y, 124);
+  assert.equal(pos.inverted, true);
+});
+
+// #903: the inverted class flips the same ring/fill sandwich to the top.
+// Default stays bottom + border-top; inverted uses top + border-bottom.
+test("inverted Speech bubble tail CSS points up at the Character", () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/main.css"), "utf8");
+
+  assert.match(
+    css,
+    /\.bubble::before\s*\{[^}]*bottom:\s*-10px;[^}]*border-top:/s,
+    "default ring hangs off the bottom and points down",
+  );
+  assert.match(
+    css,
+    /\.bubble::after\s*\{[^}]*bottom:\s*-7px;[^}]*border-top:/s,
+    "default fill sits on that ring",
+  );
+  assert.match(
+    css,
+    /\.bubble\.inverted::before\s*\{[^}]*top:\s*-10px;[^}]*border-bottom:/s,
+    "inverted ring sits on the top edge and points up",
+  );
+  assert.match(
+    css,
+    /\.bubble\.inverted::after\s*\{[^}]*top:\s*-7px;[^}]*border-bottom:/s,
+    "inverted fill sits on that ring",
+  );
 });
 
 // The clamp is the only thing that moves the bubble off the head: with room

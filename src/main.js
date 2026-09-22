@@ -175,6 +175,7 @@ function positionBubble(view, spriteRect, displayBounds) {
   view.bubble.style.left = `${pos.x}px`;
   view.bubble.style.top = `${pos.y}px`;
   view.bubble.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
+  view.bubble.classList.toggle("inverted", pos.inverted);
 
   // `clientLeft`/`clientTop` are the bubble's 2px ring; without them the rect
   // sits 2px up and left and an 18px target's bottom rows click through. The

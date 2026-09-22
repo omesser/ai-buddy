@@ -183,7 +183,7 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds) {
 
   const tailOffset = spriteCenterX - (x + bubbleSize.width / 2);
 
-  return { x, y, tailOffset };
+  return { x, y, tailOffset, inverted: wouldCoverSprite };
 }
 
 // A placement as this overlay may act on it: the shell names one bubble owner

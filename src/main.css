@@ -127,6 +127,21 @@ body {
   border-top: 8px solid var(--bubble-panel);
 }
 
+/* #903: below the Character the same sandwich points up. */
+.bubble.inverted::before {
+  bottom: auto;
+  top: -10px;
+  border-top: none;
+  border-bottom: 10px solid var(--shared-ink);
+}
+
+.bubble.inverted::after {
+  bottom: auto;
+  top: -7px;
+  border-top: none;
+  border-bottom: 8px solid var(--bubble-panel);
+}
+
 .thinking-dots {
   display: flex;
   gap: 5px;
