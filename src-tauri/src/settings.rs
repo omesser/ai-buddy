@@ -1273,8 +1273,7 @@ pub struct SettingsPatch {
 /// A name rather than a `&str` so the row and the setter cannot disagree: with
 /// a string key, a row could name a field no setter knew, and that compiled
 /// clean and shipped a checkbox that wrote nothing (#273).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum BoolField {
     DirectorEnabled,
     AmbientWakes,
