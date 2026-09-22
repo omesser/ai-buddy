@@ -333,18 +333,50 @@ struct SpritePlacement<'a> {
     /// mirroring would turn it back round. Hit-test uses the same answer.
     mirror: i8,
     /// A line to speak on this tick only. Dialogue is an event, not a state.
-    /// #119: the webview latches it and owns display duration.
+    /// #119: the webview latches it and owns display duration. `None` on every
+    /// overlay but the bubble owner's.
     dialogue: Option<String>,
     /// Whether to show the thinking ellipsis. Derived from what the Instance
     /// has on the wire. #119: grace and min-hold are in the webview so the
-    /// Engine stays tick-pure.
+    /// Engine stays tick-pure. False on every overlay but the bubble owner's.
     thinking: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
+    /// Still sent to the overlays that lost, which drop the bubble they were
+    /// showing on the tick the answer changes.
     bubble: bool,
     /// Cue to play this tick only, by the name the webview keys visual and
-    /// sound by. Only the bubble owner acts (`forOverlay`): every overlay
+    /// sound by. `None` on every overlay but the bubble owner's: every overlay
     /// draws the art, so a cue from all of them is one sound per display. #277
     cue: Option<&'static str>,
+}
+
+impl<'a> SpritePlacement<'a> {
+    /// One Instance as one overlay is told about it, in that overlay's own
+    /// coordinates.
+    ///
+    /// Every overlay draws the art. Only the bubble owner is told the line,
+    /// the indicator and the cue (#178, #277). Decided here because the Shell
+    /// already knows the owner: the webview used to strip these itself, which
+    /// made it reconstruct an answer it had been handed.
+    fn new(instance: &'a Placed, display: Rect, index: usize) -> Self {
+        let local = instance.sprite.in_overlay(display);
+        let bubble = instance.owner == Some(index);
+        Self {
+            id: &instance.id,
+            character: &instance.character,
+            x: local.x,
+            y: local.y,
+            width: instance.width,
+            height: instance.height,
+            animation: &instance.animation,
+            frame_index: instance.frame_index,
+            mirror: instance.mirror,
+            dialogue: instance.dialogue.clone().filter(|_| bubble),
+            thinking: bubble && instance.thinking,
+            bubble,
+            cue: instance.cue.filter(|_| bubble).map(Cue::name),
+        }
+    }
 }
 
 /// One tick's instruction to the renderer. Pushed so the webview holds no
@@ -3961,6 +3993,63 @@ mod tests {
             carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
             Some("second"),
             "and it is the new line that crosses"
+        );
+    }
+
+    /// #178 and #277: every overlay is told about every Instance, and only the
+    /// one that owns the bubble is told the line, the indicator and the cue.
+    /// The webview used to strip these for itself.
+    #[test]
+    fn only_the_bubble_owner_is_told_the_line_the_indicator_and_the_cue() {
+        let left = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let right = Rect { x: 1920.0, ..left };
+        let placed = Placed {
+            id: "one".to_string(),
+            character: "bmo".to_string(),
+            sprite: SpriteRect {
+                x: 2000,
+                y: 400,
+                scale: 2,
+            },
+            width: 128,
+            height: 128,
+            animation: "idle".to_string(),
+            frame_index: 0,
+            mirror: 1,
+            dialogue: Some("Yare yare daze.".to_string()),
+            thinking: true,
+            cue: Some(Cue::Poke),
+            owner: Some(1),
+            mask: ai_buddy_core::overlay::AlphaMask::from_png(PATCHY, 128)
+                .expect("the 2x2 fixture decodes"),
+        };
+
+        let owner = SpritePlacement::new(&placed, right, 1);
+        assert_eq!(owner.dialogue.as_deref(), Some("Yare yare daze."));
+        assert!(owner.thinking);
+        assert!(owner.bubble);
+        assert_eq!(owner.cue, Some("poke"));
+
+        let elsewhere = SpritePlacement::new(&placed, left, 0);
+        assert_eq!(elsewhere.dialogue, None, "no line to latch off the owner");
+        assert!(!elsewhere.thinking, "no indicator to arm off the owner");
+        assert!(!elsewhere.bubble);
+        assert_eq!(elsewhere.cue, None, "or the cue sounds once per display");
+
+        assert_eq!(
+            (elsewhere.animation, elsewhere.frame_index, elsewhere.mirror),
+            (owner.animation, owner.frame_index, owner.mirror),
+            "both draw the same art"
+        );
+        assert_eq!(
+            (owner.x, elsewhere.x),
+            (80, 2000),
+            "each in its own overlay's coordinates, so the halves meet on the seam"
         );
     }
 

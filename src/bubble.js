@@ -185,11 +185,3 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds) {
 
   return { x, y, tailOffset, inverted: wouldCoverSprite };
 }
-
-// A placement as this overlay may act on it: the shell names one bubble owner
-// per Instance, and stripping the bubble fields keeps a losing overlay from
-// arming the thinking grace. The cue goes too, or it would sound once per display.
-export function forOverlay(placement) {
-  if (placement.bubble) return placement;
-  return { ...placement, dialogue: null, thinking: false, cue: null };
-}
