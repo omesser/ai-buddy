@@ -206,8 +206,8 @@ impl Probe for LinuxPortal {
 impl Probe for WindowsProbe {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
-            CapabilityId::Accessibility => false, // Placeholder: UI Automation not implemented
-            CapabilityId::WindowTitles => true,   // No system permission needed
+            CapabilityId::Accessibility => false,
+            CapabilityId::WindowTitles => true,
         }
     }
 
@@ -1119,7 +1119,6 @@ mod tests {
         assert!(!is_toolchain("ai-buddy"));
     }
 
-    /// Windows WindowTitles requires no system permission: always granted.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_window_titles_always_granted() {
@@ -1130,7 +1129,6 @@ mod tests {
         );
     }
 
-    /// Windows live probe returns WindowsProbe, which grants WindowTitles.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_live_probe_grants_window_titles() {
@@ -1138,15 +1136,13 @@ mod tests {
         assert!(probe.granted(CapabilityId::WindowTitles));
     }
 
-    /// Windows Probe prompt is a no-op for WindowTitles (no permission needed).
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_window_titles_prompt_is_noop() {
         let probe = WindowsProbe;
-        probe.prompt(CapabilityId::WindowTitles); // Should not panic or do anything
+        probe.prompt(CapabilityId::WindowTitles);
     }
 
-    /// Windows usable() returns true when wanted, since granted is always true.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_usable_follows_wanted() {
@@ -1159,7 +1155,6 @@ mod tests {
         assert!(usable(CapabilityId::WindowTitles, &probe));
     }
 
-    /// Windows capabilities catalog includes WindowTitles with accurate copy.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_capabilities_catalog_includes_window_titles() {

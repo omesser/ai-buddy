@@ -186,8 +186,7 @@ fn window_rect(hwnd: HWND, can_read_titles: bool) -> Option<WindowRect> {
     })
 }
 
-/// Read the window title via GetWindowTextW. Returns None when the title
-/// is empty or cannot be read.
+/// Returns None when the title is empty or cannot be read.
 fn read_window_title(hwnd: HWND) -> Option<String> {
     const MAX_TITLE_LENGTH: usize = 512;
     let mut buffer = [0u16; MAX_TITLE_LENGTH];
