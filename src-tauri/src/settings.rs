@@ -1700,7 +1700,6 @@ impl Settings {
         match id {
             #[cfg(not(target_os = "linux"))]
             CapabilityId::Accessibility => self.use_accessibility,
-            #[cfg(not(target_os = "windows"))]
             CapabilityId::WindowTitles => self.use_window_titles,
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => self.use_input_monitoring,
