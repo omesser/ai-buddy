@@ -3366,17 +3366,9 @@ mod tests {
     /// defaults onto `memory::data_dir()` was wiping the configured Harness
     /// whenever this module's tests ran.
     #[test]
-    fn describing_the_form_does_not_create_or_rewrite_settings() {
-        let dir = std::env::temp_dir().join(format!(
-            "ai-buddy-form-describe-{:?}-{}",
-            std::thread::current().id(),
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("temp data dir");
-        let path = crate::settings::settings_path(&dir);
-        let original = "{\n  \"harness\": \"hermes\"\n}";
-        std::fs::write(&path, original).expect("sentinel settings");
+    fn describing_the_form_does_not_rewrite_the_user_settings_file() {
+        let path = crate::settings::settings_path(&ai_buddy_core::memory::data_dir());
+        let before = std::fs::read(&path).ok();
 
         let description = describe_with(&fixture_live(false, false));
         let section = description
@@ -3399,12 +3391,11 @@ mod tests {
             "the copy token button is always present"
         );
 
+        let after = std::fs::read(&path).ok();
         assert_eq!(
-            std::fs::read_to_string(&path).expect("read sentinel"),
-            original,
-            "describing the form must not rewrite a settings document"
+            before, after,
+            "describing the form must not create or rewrite the user settings document"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The button is wired, not just drawn: a control with no operation behind
