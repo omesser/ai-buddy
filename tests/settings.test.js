@@ -237,9 +237,8 @@ test("an InspectPath is a path and nothing else", () => {
   });
 });
 
-// The name field starts empty because it is the user's to type. The Character
-// popup carries the Character in force, which is the only one `describe()`
-// offers it, and it is what New spawns under (#875).
+// The Character popup carries the Character in force, the only one
+// `describe()` offers it, and that is what New spawns under (#875).
 test("a Composite spreads into one control per member, its text field included", () => {
   const spawn = tab(MODEL_API, "Character").filter((control) =>
     ["new_name", "new_character", "spawn"].includes(control.id),
@@ -252,9 +251,8 @@ test("a Composite spreads into one control per member, its text field included",
   ]);
 });
 
-// The page indexes `values` by row id and the Rust view used to serialize by
-// field name, so these rows drew blank however the file was set. One literal
-// per shape the reconciliation has to get right. #875.
+// One literal per shape the row-id reconciliation has to get right, because
+// a row the view has no value for draws blank however the file is set. #875.
 test("a row whose id is not its field name still draws the value the snapshot carries", () => {
   const presence = tab(MODEL_API, "Presence");
   assert.equal(byId(presence, "hotkey").value, "Control-Option-Command-B");
@@ -336,7 +334,7 @@ test("a secure row takes its placeholder from the key status beside it", () => {
 });
 
 // `SettingsSession::spawn` takes a Character and a name, and `DirectorDraft`
-// carries neither, so the press used to arrive with nothing to spawn. #875.
+// carries neither. #875.
 test("New carries the name typed beside it and the Character it shows", () => {
   const emitted = [];
   const nodes = drawn("Character", (payload) => emitted.push(payload));

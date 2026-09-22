@@ -1285,10 +1285,8 @@ impl SettingsSession {
         (set, fingerprint, error)
     }
 
-    /// Hand the Memory file to whatever the desktop opens it with.
-    ///
-    /// In Rust rather than in the page, because #706 keeps the file system
-    /// out of JavaScript. `settings_event` is its caller.
+    /// Hand the Memory file to the desktop's opener, in Rust rather than in
+    /// the page: #706 keeps the file system out of JavaScript.
     pub fn open_memory(&self) -> Result<(), String> {
         crate::platform::open_path(&self.memory_path)
     }
@@ -1300,9 +1298,8 @@ impl SettingsSession {
             .map_err(|error| error.to_string())
     }
 
-    /// Both hand the frame loop the work and answer at once. The loop owns
-    /// the roster, and it pushes `settings-refresh` on the tick that runs the
-    /// op, so the window redraws from the roster rather than from a guess.
+    /// The loop pushes `settings-refresh` on the tick that runs the op, so
+    /// the window redraws from the roster rather than from a guess.
     pub fn spawn(&self, character: String, name: String) {
         let _ = self.ops.send(SettingsOp::Spawn { character, name });
     }

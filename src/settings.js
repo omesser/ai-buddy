@@ -240,9 +240,8 @@ function drawRow(row, values, emit) {
     }
     case "Composite": {
       const line = el("div", { class: "set-controls" });
-      // A press carries this row's own controls, by the id `describe()` gave
-      // each. New spawns under the name and Character beside it, and only the
-      // page can read what they hold (#875).
+      // Only the page can read what these controls hold, and New spawns
+      // under the name and Character beside it (#875).
       const fields = [];
       const typed = () => Object.fromEntries(fields.map((node) => [node.dataset.id, node.value]));
       for (const control of row.controls) {

@@ -1586,8 +1586,7 @@ pub struct Live {
     ///
     /// `current()` leaves it blank: the status is a store read, and
     /// `settings_event` builds a description on every gesture. Only
-    /// `settings_snapshot` fills it, from the view that already has it
-    /// cached. Nothing but the row reads it. #875.
+    /// `settings_snapshot` fills it, from the view that has it cached.
     pub api_key_placeholder: String,
 }
 
@@ -1810,7 +1809,7 @@ mod tests {
     const FIXTURE_BYO_STEPS: &str = "Run the line above in a terminal, then start claude.";
     const FIXTURE_MEMORY_PATH: &str = "/Users/fixture/Library/Application Support/ai-buddy/memory";
 
-    /// The view behind the values fixtures, in the same two states the
+    /// The view behind the values fixtures, in the two states the
     /// description fixtures pin.
     fn fixture_view(driving: bool) -> crate::settings::SettingsView {
         let settings = crate::settings::Settings {
@@ -1878,8 +1877,7 @@ mod tests {
     /// The other half of the interface: `tests/settings.test.js` renders the
     /// description above against these, so a row the view has no value for
     /// draws blank on the live page and green in the tests. Generated from
-    /// the view rather than written by hand, which is how the two stopped
-    /// agreeing in the first place (#875).
+    /// the view rather than written by hand (#875).
     #[test]
     fn both_ai_sources_produce_the_committed_values_fixtures() {
         const FIXTURES: [(&str, &str, bool); 2] = [

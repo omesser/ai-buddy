@@ -536,8 +536,7 @@ enum SettingsEventPayload {
         press: String,
         #[serde(default)]
         draft: Option<DirectorDraftWire>,
-        /// The pressed Composite row's own controls, by row id. New reads the
-        /// name and Character beside it from here (#875).
+        /// New reads the name and Character beside it from here (#875).
         #[serde(default)]
         fields: std::collections::HashMap<String, String>,
     },
@@ -704,7 +703,6 @@ mod settings_event_tests {
         }
     }
 
-    /// Every press, recorded rather than performed.
     #[derive(Default)]
     struct Recorded {
         ran: std::cell::RefCell<Vec<String>>,
@@ -743,7 +741,6 @@ mod settings_event_tests {
         }
     }
 
-    /// One buddy on screen, as the Instances list draws it.
     fn one_instance() -> settings::SettingsView {
         settings::SettingsView::from_parts(
             &settings::Settings::default(),
@@ -765,8 +762,7 @@ mod settings_event_tests {
         std::collections::HashMap::new()
     }
 
-    /// The Privacy tab's two buttons run here. One handed to the page reaches
-    /// nothing that acts on it. #875.
+    /// A press handed to the page reaches nothing that acts on it. #875.
     #[test]
     fn opening_and_wiping_memory_run_here_and_do_not_cross_to_the_page() {
         use settings::form::RowOperation;
@@ -783,9 +779,8 @@ mod settings_event_tests {
         assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
     }
 
-    /// New spawns under the name and Character the press carries.
-    /// `DirectorDraft` carries neither, so they ride the Composite's own
-    /// fields. #875.
+    /// `DirectorDraft` carries neither the name nor the Character, so they
+    /// ride the Composite's own fields. #875.
     #[test]
     fn new_spawns_under_the_name_and_character_the_page_shows() {
         use settings::form::RowOperation;
@@ -805,8 +800,6 @@ mod settings_event_tests {
         assert_eq!(session.ran(), ["spawn ghost as Nim"]);
     }
 
-    /// A Dismiss press reaches the roster, and a stale one reaches nothing.
-    /// #875.
     #[test]
     fn dismiss_reaches_the_roster_and_a_stale_press_does_not() {
         let session = Recorded::default();
@@ -1047,7 +1040,7 @@ fn settings_event(
 ///
 /// `SettingsSession` is the real one. It needs a live `AppHandle`, which a
 /// unit test has not got, and the bug #875 closes is a press that reached no
-/// method at all - which is exactly what a test with no seam here cannot see.
+/// method at all — which is what a test with no seam here cannot see.
 trait Operations {
     fn open_memory(&self) -> Result<(), String>;
     fn wipe_memory(&self) -> Result<(), String>;
