@@ -506,9 +506,15 @@ pub(crate) fn timeout_placeholder() -> String {
     TIMEOUT.as_secs().to_string()
 }
 
-/// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
+/// What an empty reply-cap field means, in tokens. Three numbers, not one:
+/// `wire_budget` hands `THINK_CEILING` to a host that has marked its thinking,
+/// so a placeholder naming only the reply-sized default is wrong on exactly
+/// the hosts #606 is about. See `timeout_placeholder`.
 pub(crate) fn max_tokens_placeholder() -> String {
-    format!("{HOSTED_MAX_TOKENS} ({LOCAL_MAX_TOKENS} for a local server)")
+    format!(
+        "{HOSTED_MAX_TOKENS} ({LOCAL_MAX_TOKENS} local, \
+         {THINK_CEILING} once the host marks its thinking)"
+    )
 }
 
 /// What an empty reasoning-effort field means. One default here: the ask does
