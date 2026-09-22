@@ -94,3 +94,12 @@ test("no rule is still addressed to the input the composer no longer has", () =>
     "these stopped applying the moment the element changed",
   );
 });
+
+test("the composer textarea has an explicit caret color for webkit2gtk visibility", () => {
+  const field = ruleBlock(".composer textarea");
+  assert.match(
+    field,
+    /caret-color:/,
+    "webkit2gtk on Linux needs an explicit caret-color; without it the caret is invisible",
+  );
+});
