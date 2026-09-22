@@ -497,7 +497,7 @@
               "type": "Checkbox",
               "id": "consent_screen_recording",
               "label": "Screen Recording",
-              "writes": "UseScreenRecording",
+              "writes": "UseWindowTitles",
               "frozen": false,
               "help": "Reads window titles.",
               "comment": null,

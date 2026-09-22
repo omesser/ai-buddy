@@ -57,7 +57,7 @@ pub const CAPABILITIES: &[Capability] = &[
         buys: "Exact Dock geometry, so the sprite does not walk into the Dock.",
         costs: "macOS Accessibility. The buddy reads the Dock's bounds; it does not control your computer.",
     },
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     Capability {
         id: CapabilityId::WindowTitles,
         title: "Screen Recording",
@@ -699,7 +699,14 @@ mod tests {
 
         #[cfg(not(target_os = "linux"))]
         {
-            assert_eq!(rows.len(), if cfg!(target_os = "macos") { 3 } else { 2 });
+            #[cfg(target_os = "macos")]
+            {
+                assert_eq!(rows.len(), 3);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                assert_eq!(rows.len(), 1);
+            }
 
             assert_eq!(rows[0].id, CapabilityId::Accessibility);
             assert_eq!(rows[0].title, "Accessibility");
@@ -715,19 +722,22 @@ mod tests {
             );
             assert!(!rows[0].granted);
 
-            assert_eq!(rows[1].id, CapabilityId::WindowTitles);
-            assert_eq!(rows[1].title, "Screen Recording");
-            assert!(
-                rows[1].buys.contains("title"),
-                "Screen Recording has to say titles are what it buys, got {:?}",
-                rows[1].buys
-            );
-            assert!(
-                rows[1].costs.contains("Screen Recording"),
-                "Screen Recording has to name the macOS grant, got {:?}",
-                rows[1].costs
-            );
-            assert!(!rows[1].granted);
+            #[cfg(target_os = "macos")]
+            {
+                assert_eq!(rows[1].id, CapabilityId::WindowTitles);
+                assert_eq!(rows[1].title, "Screen Recording");
+                assert!(
+                    rows[1].buys.contains("title"),
+                    "Screen Recording has to say titles are what it buys, got {:?}",
+                    rows[1].buys
+                );
+                assert!(
+                    rows[1].costs.contains("Screen Recording"),
+                    "Screen Recording has to name the macOS grant, got {:?}",
+                    rows[1].costs
+                );
+                assert!(!rows[1].granted);
+            }
 
             #[cfg(target_os = "macos")]
             {
@@ -771,6 +781,7 @@ mod tests {
         {
             let rows = rows(|id| id == CapabilityId::Accessibility);
             assert!(rows[0].granted);
+            #[cfg(target_os = "macos")]
             assert!(!rows[1].granted);
         }
     }
@@ -788,7 +799,7 @@ mod tests {
                 [CapabilityId::WindowTitles]
             );
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
         {
             let probe = Fake::granting(&[]);
             enable(CapabilityId::WindowTitles, &probe);
@@ -914,9 +925,12 @@ mod tests {
         #[cfg(not(target_os = "linux"))]
         {
             assert!(!probe.granted(CapabilityId::Accessibility));
-            assert!(!probe.granted(CapabilityId::WindowTitles));
-            probe.prompt(CapabilityId::WindowTitles);
-            assert!(!probe.granted(CapabilityId::WindowTitles));
+            #[cfg(target_os = "macos")]
+            {
+                assert!(!probe.granted(CapabilityId::WindowTitles));
+                probe.prompt(CapabilityId::WindowTitles);
+                assert!(!probe.granted(CapabilityId::WindowTitles));
+            }
         }
     }
 

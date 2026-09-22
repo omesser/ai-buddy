@@ -1277,7 +1277,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
             label: "Screen Recording".to_string(),
-            writes: BoolField::UseScreenRecording,
+            writes: BoolField::UseWindowTitles,
             frozen: false,
             help: Some("Reads window titles.".to_string()),
             comment: None,
@@ -1302,7 +1302,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         FormRow::Checkbox {
             id: CONSENT_PORTAL_SCREENCAST_ID.to_string(),
             label: "Screen Cast".to_string(),
-            writes: BoolField::UsePortalScreenCast,
+            writes: BoolField::UseWindowTitles,
             frozen: false,
             help: Some("For Wayland window titles and similar metadata.".to_string()),
             comment: None,
@@ -2396,7 +2396,7 @@ mod tests {
             );
             assert_eq!(
                 description.bool_write(CONSENT_SCREEN_RECORDING_ID),
-                Some(BoolField::UseScreenRecording)
+                Some(BoolField::UseWindowTitles)
             );
 
             let input_monitoring = consent

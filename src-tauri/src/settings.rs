@@ -1074,9 +1074,7 @@ impl SettingsSession {
         }
         #[cfg(not(target_os = "linux"))]
         let prompt_ax = patch.use_accessibility == Some(true);
-        #[cfg(not(target_os = "linux"))]
-        let prompt_wt = patch.use_window_titles == Some(true);
-        #[cfg(target_os = "linux")]
+        #[cfg(not(target_os = "windows"))]
         let prompt_wt = patch.use_window_titles == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
@@ -1275,13 +1273,8 @@ pub struct SettingsPatch {
 /// A name rather than a `&str` so the row and the setter cannot disagree: with
 /// a string key, a row could name a field no setter knew, and that compiled
 /// clean and shipped a checkbox that wrote nothing (#273).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-/// The Settings file's fields that consent rows flip (#25). Like `BoolField`,
-/// a type because each value names the two places that must agree: the row
-/// declaring itself to `form` and the patch handler extracting it here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[cfg(not(target_os = "windows"))]
 pub enum BoolField {
     DirectorEnabled,
     AmbientWakes,
@@ -1303,6 +1296,7 @@ pub enum BoolField {
     // is macOS-only. The patch fields are not gated; the file carries them. #250.
     #[cfg(not(target_os = "linux"))]
     UseAccessibility,
+    #[cfg(not(target_os = "windows"))]
     UseWindowTitles,
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
@@ -1363,6 +1357,7 @@ impl SettingsPatch {
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
+            #[cfg(not(target_os = "windows"))]
             BoolField::UseWindowTitles => self.use_window_titles = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
