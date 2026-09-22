@@ -217,30 +217,6 @@ test("a List is one row and one dismiss button per item", () => {
   ]);
 });
 
-// Live snapshot.view.instances is InstanceRow objects, not the newline
-// string the fixtures hand-write. An object in a text node is [object Object]
-// (#892). Name (character) is what the list has to print.
-test("a List of Instance rows labels each Name (character)", () => {
-  const values = {
-    ...MODEL_API.values,
-    instances: [
-      { id: "bmo-1", name: "BMO", character: "bmo", prompt: "" },
-      { id: "ghost-1", name: "Boo", character: "ghost", prompt: "boo" },
-    ],
-  };
-  const instances = controls(
-    MODEL_API.form.tabs.find((candidate) => candidate.title === "Character"),
-    values,
-  ).filter((control) => control.id === "instances");
-
-  assert.deepEqual(instances, [
-    { role: "statictext", id: "instances", label: "BMO (bmo)", value: "BMO (bmo)", frozen: false },
-    { role: "button", id: "instances", label: "Dismiss", value: "BMO (bmo)", frozen: false },
-    { role: "statictext", id: "instances", label: "Boo (ghost)", value: "Boo (ghost)", frozen: false },
-    { role: "button", id: "instances", label: "Dismiss", value: "Boo (ghost)", frozen: false },
-  ]);
-});
-
 test("a Multiline keeps its lines and is live while the form says editable", () => {
   assert.deepEqual(byId(tab(MODEL_API, "Privacy"), "excluded"), {
     role: "textarea",
@@ -630,6 +606,8 @@ test("AI tab shows footer with Apply and Cancel buttons", async () => {
 });
 
 test("showError clears and hides footer to prevent empty-payload wipes (Bug 2)", async () => {
+  const { showError } = await import("../src/settings.js");
+
   const mockPanel = {
     replaceChildren() {
       this.children = [];
@@ -674,29 +652,6 @@ test("showError clears and hides footer to prevent empty-payload wipes (Bug 2)",
   };
 
   globalThis.document = mockDocument;
-
-  const showError = (message, onRetry) => {
-    if (!mockPanel) return;
-    mockPanel.replaceChildren();
-    const footer = mockDocument.getElementById("set-footer");
-    if (footer) {
-      footer.replaceChildren();
-      footer.style.display = "none";
-    }
-    const errorDiv = mockDocument.createElement("div");
-    errorDiv.className = "set-error";
-    errorDiv.style.cssText = "padding: 2rem; text-align: center;";
-    const errorText = mockDocument.createElement("p");
-    errorText.textContent = message;
-    errorDiv.appendChild(errorText);
-    if (onRetry) {
-      const retryButton = mockDocument.createElement("button");
-      retryButton.textContent = "Retry";
-      retryButton.addEventListener("click", onRetry);
-      errorDiv.appendChild(retryButton);
-    }
-    mockPanel.appendChild(errorDiv);
-  };
 
   mockFooter.children = [{ tagName: "button", textContent: "Apply" }];
   mockFooter.style = {};

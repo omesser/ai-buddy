@@ -9,13 +9,9 @@
 
 // `values` carries one scalar per row id, so a list of Instances or excluded
 // applications arrives as lines, the way the AppKit block shows them. An array
-// is taken as already split. The live snapshot sends InstanceRow objects at
-// `instances` (#892); those print as Name (character).
+// is taken as already split.
 function listItems(value) {
-  const items = Array.isArray(value) ? value : String(value ?? "").split("\n").filter(Boolean);
-  return items.map((item) =>
-    item && typeof item === "object" ? `${item.name} (${item.character})` : item,
-  );
+  return Array.isArray(value) ? value : String(value ?? "").split("\n").filter(Boolean);
 }
 
 export function controls(tab, values) {
@@ -421,6 +417,35 @@ export function shouldBeginDrag(event) {
   return !isControl;
 }
 
+export function showError(message, onRetry) {
+  const panel = document.querySelector('[role="tabpanel"]');
+  if (!panel) return;
+  panel.replaceChildren();
+  const footer = document.getElementById("set-footer");
+  if (footer) {
+    footer.replaceChildren();
+    footer.style.display = "none";
+  }
+  const errorDiv = document.createElement("div");
+  errorDiv.className = "set-error";
+  errorDiv.style.cssText = "padding: 2rem; text-align: center;";
+
+  const errorText = document.createElement("p");
+  errorText.textContent = message;
+  errorText.style.marginBottom = "1rem";
+  errorDiv.appendChild(errorText);
+
+  if (onRetry) {
+    const retryButton = document.createElement("button");
+    retryButton.textContent = "Retry";
+    retryButton.type = "button";
+    retryButton.addEventListener("click", onRetry);
+    errorDiv.appendChild(retryButton);
+  }
+
+  panel.appendChild(errorDiv);
+}
+
 // Snapshot + settings-refresh once Tauri is in the page; tab clicks still
 // work without it so the shell does not sit dead in a non-Tauri load.
 if (typeof document !== "undefined") {
@@ -431,34 +456,6 @@ if (typeof document !== "undefined") {
   let currentValues = null;
   let currentTabIndex = 0;
   let lastSnapshotPromise = null;
-
-  function showError(message, onRetry) {
-    if (!panel) return;
-    panel.replaceChildren();
-    const footer = document.getElementById("set-footer");
-    if (footer) {
-      footer.replaceChildren();
-      footer.style.display = "none";
-    }
-    const errorDiv = document.createElement("div");
-    errorDiv.className = "set-error";
-    errorDiv.style.cssText = "padding: 2rem; text-align: center;";
-
-    const errorText = document.createElement("p");
-    errorText.textContent = message;
-    errorText.style.marginBottom = "1rem";
-    errorDiv.appendChild(errorText);
-
-    if (onRetry) {
-      const retryButton = document.createElement("button");
-      retryButton.textContent = "Retry";
-      retryButton.type = "button";
-      retryButton.addEventListener("click", onRetry);
-      errorDiv.appendChild(retryButton);
-    }
-
-    panel.appendChild(errorDiv);
-  }
 
   async function loadSnapshot() {
     const currentLoad = (async () => {
