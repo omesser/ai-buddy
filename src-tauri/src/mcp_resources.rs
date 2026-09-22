@@ -1,7 +1,7 @@
 //! Readonly MCP resources: Memory, the Action Log, and window titles.
 //!
-//! Titles live here, not on `WindowRect`. The Spatial Layer stays title-free;
-//! a Harness that wants a window name reads this resource, never a Perch.
+//! Window titles appear on `WindowRect` when `usable(WindowTitles)` is true
+//! (sensing layer) and in this MCP resource (independent read path).
 
 use std::fs;
 use std::sync::Mutex;

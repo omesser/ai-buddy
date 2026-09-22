@@ -57,8 +57,7 @@ pub type WindowId = u64;
 pub const DOCK_PERCH_ID: WindowId = WindowId::MAX;
 
 /// One visible window: which one it is, where it is, who owns it, and how high
-/// it stacks. No title: titles need Screen Recording and live on the MCP
-/// resource, never here. The Spatial Layer stays title-free by construction.
+/// it stacks. Title is present when WindowTitles consent is usable.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowRect {
     /// The window server's own id, carried all the way to the Engine. Geometry
@@ -68,6 +67,9 @@ pub struct WindowRect {
     pub bounds: Rect,
     /// The owning application's name, as the window server reports it.
     pub owner: String,
+    /// The window's title. None when WindowTitles consent is not usable, or when
+    /// the platform/window has no title to report.
+    pub title: Option<String>,
     /// The window server's level: 0 for ordinary application windows, higher for
     /// menus and docks, lower for the desktop picture. Reported, not acted on:
     /// the Shell keeps only the levels a sprite may stand on, so the Engine never sees one.
@@ -380,6 +382,7 @@ mod tests {
             id,
             bounds,
             owner: owner.to_string(),
+            title: None,
             layer: 0,
         }
     }

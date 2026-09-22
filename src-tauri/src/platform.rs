@@ -685,17 +685,28 @@ pub fn activity_source() -> impl ActivitySource {
     windows::WindowsActivitySource
 }
 
-/// Window titles for the MCP resource. Not on `WindowSource`: the Spatial
-/// Layer stays title-free, and this walk is the titles listing only.
+/// Window titles for the MCP resource, gated behind WindowTitles consent.
 #[cfg(target_os = "macos")]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if !crate::consent::usable(
+        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::live(),
+    ) {
+        return Vec::new();
+    }
     macos::visible_window_titles()
 }
 
-/// Titles from `_NET_WM_NAME` / `WM_NAME`. Empty on a Wayland session with
-/// no X server, which is the supported stub.
+/// Titles from `_NET_WM_NAME` / `WM_NAME`, gated behind WindowTitles consent.
+/// Empty on a Wayland session with no X server, which is the supported stub.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if !crate::consent::usable(
+        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::live(),
+    ) {
+        return Vec::new();
+    }
     if x11_answers() {
         x11::visible_window_titles()
     } else {
@@ -703,8 +714,8 @@ pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     }
 }
 
-/// Titles from `GetWindowText`. Owner is still the process image, never
-/// the title, matching the geometry path.
+/// Titles from `GetWindowText`. Windows consent gate is #912 (out of this PR).
+/// Owner is still the process image, never the title, matching the geometry path.
 #[cfg(not(unix))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     windows::visible_window_titles()
@@ -718,29 +729,39 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    let source = macos::MacosWindowSource::new({
-        let cache = cache.clone();
-        move || {
-            // Posted, not awaited: a poll that arrives while the main thread
-            // is busy is served the previous answer.
-            if due(&refreshed) {
-                let app = app.clone();
-                let cache = cache.clone();
-                let _ = app.clone().run_on_main_thread(move || {
-                    let read = read_displays(&app);
-                    if let Ok(mut displays) = cache.0.lock() {
-                        *displays = read;
-                    }
-                });
-            }
+    fn can_read_titles() -> bool {
+        crate::consent::usable(
+            crate::consent::CapabilityId::WindowTitles,
+            crate::consent::live(),
+        )
+    }
 
-            let displays = cache.read();
-            (
-                displays.usable_frames,
-                displays.dock.map(|(bounds, _)| bounds),
-            )
-        }
-    });
+    let source = macos::MacosWindowSource::new(
+        {
+            let cache = cache.clone();
+            move || {
+                // Posted, not awaited: a poll that arrives while the main thread
+                // is busy is served the previous answer.
+                if due(&refreshed) {
+                    let app = app.clone();
+                    let cache = cache.clone();
+                    let _ = app.clone().run_on_main_thread(move || {
+                        let read = read_displays(&app);
+                        if let Ok(mut displays) = cache.0.lock() {
+                            *displays = read;
+                        }
+                    });
+                }
+
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
+            }
+        },
+        can_read_titles,
+    );
 
     (source, cache)
 }
@@ -761,21 +782,31 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    let source = x11::X11WindowSource::new({
-        let cache = cache.clone();
-        let app_clone = app.clone();
-        move || {
-            if due(&refreshed) {
-                *cache.0.lock().unwrap() = read_displays(&app_clone);
-            }
+    fn can_read_titles() -> bool {
+        crate::consent::usable(
+            crate::consent::CapabilityId::WindowTitles,
+            crate::consent::live(),
+        )
+    }
 
-            let displays = cache.read();
-            (
-                displays.usable_frames,
-                displays.dock.map(|(bounds, _)| bounds),
-            )
-        }
-    });
+    let source = x11::X11WindowSource::new(
+        {
+            let cache = cache.clone();
+            let app_clone = app.clone();
+            move || {
+                if due(&refreshed) {
+                    *cache.0.lock().unwrap() = read_displays(&app_clone);
+                }
+
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
+            }
+        },
+        can_read_titles,
+    );
 
     (LinuxWindowSource::X11(source), cache)
 }
@@ -1300,6 +1331,20 @@ mod tests {
             cached,
             resolve_double_click_interval(os_double_click_interval_ms()),
             "cached public value must equal resolve of the raw OS read"
+        );
+    }
+
+    /// MCP titles resource must gate on WindowTitles consent. Without wanted,
+    /// no titles leak (even on X11 where _NET_WM_NAME is technically consent-free
+    /// at the protocol level).
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn mcp_window_titles_require_consent() {
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, false);
+        let without_wanted = list_window_titles();
+        assert!(
+            without_wanted.is_empty(),
+            "list_window_titles must return empty when WindowTitles is not wanted"
         );
     }
 }

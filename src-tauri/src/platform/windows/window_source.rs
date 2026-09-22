@@ -169,6 +169,7 @@ fn window_rect(hwnd: HWND) -> Option<WindowRect> {
             height: f64::from(rect.bottom - rect.top),
         },
         owner,
+        title: None,
         layer: 0,
     })
 }

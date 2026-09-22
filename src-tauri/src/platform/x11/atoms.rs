@@ -22,6 +22,7 @@ pub struct Atoms {
     pub net_client_list: Atom,
     pub net_client_list_stacking: Atom,
     pub net_frame_extents: Atom,
+    pub net_wm_name: Atom,
     pub net_wm_state: Atom,
     pub net_wm_state_above: Atom,
     pub net_wm_state_skip_pager: Atom,
@@ -30,7 +31,6 @@ pub struct Atoms {
     pub net_wm_window_type: Atom,
     pub net_wm_window_type_dock: Atom,
     pub net_wm_window_type_normal: Atom,
-    pub net_wm_name: Atom,
     pub utf8_string: Atom,
 }
 
@@ -48,6 +48,7 @@ fn intern_all() -> Option<Atoms> {
         net_client_list: intern(conn, "_NET_CLIENT_LIST")?,
         net_client_list_stacking: intern(conn, "_NET_CLIENT_LIST_STACKING")?,
         net_frame_extents: intern(conn, "_NET_FRAME_EXTENTS")?,
+        net_wm_name: intern(conn, "_NET_WM_NAME")?,
         net_wm_state: intern(conn, "_NET_WM_STATE")?,
         net_wm_state_above: intern(conn, "_NET_WM_STATE_ABOVE")?,
         net_wm_state_skip_pager: intern(conn, "_NET_WM_STATE_SKIP_PAGER")?,
@@ -56,7 +57,6 @@ fn intern_all() -> Option<Atoms> {
         net_wm_window_type: intern(conn, "_NET_WM_WINDOW_TYPE")?,
         net_wm_window_type_dock: intern(conn, "_NET_WM_WINDOW_TYPE_DOCK")?,
         net_wm_window_type_normal: intern(conn, "_NET_WM_WINDOW_TYPE_NORMAL")?,
-        net_wm_name: intern(conn, "_NET_WM_NAME")?,
         utf8_string: intern(conn, "UTF8_STRING")?,
     })
 }

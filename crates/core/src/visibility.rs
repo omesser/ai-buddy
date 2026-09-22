@@ -566,6 +566,7 @@ mod tests {
                 height,
             },
             owner: String::new(),
+            title: None,
             layer: 0,
         }
     }

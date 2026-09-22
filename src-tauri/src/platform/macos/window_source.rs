@@ -24,14 +24,17 @@ pub struct MacosWindowSource {
     /// bounds when Accessibility lets the Shell read them. Supplied rather
     /// than read here: reserved strips are the window manager's answer.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
+    can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl MacosWindowSource {
     pub fn new(
         read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
+        can_read_titles: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             read_displays: Box::new(read_displays),
+            can_read_titles: Box::new(can_read_titles),
         }
     }
 }
@@ -46,9 +49,10 @@ impl WindowSource for MacosWindowSource {
 
     fn read(&self) -> WorldGeometry {
         let (usable_frames, dock) = (self.read_displays)();
+        let can_read_titles = (self.can_read_titles)();
         WorldGeometry {
             usable_frames,
-            windows: visible_windows(),
+            windows: visible_windows(can_read_titles),
             dock,
         }
     }
@@ -57,8 +61,8 @@ impl WindowSource for MacosWindowSource {
 /// Visible windows, frontmost first — ours among them.
 /// The overlay is a layer-3 panel `snapshot` already drops. Excluding our
 /// process took Chat (#362) and Settings with it.
-fn visible_windows() -> Vec<WindowRect> {
-    walk_visible(window)
+fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
+    walk_visible(|e| window(e, can_read_titles))
 }
 
 /// Owner plus title, same walk and order as `visible_windows`. Empty title
@@ -86,7 +90,7 @@ fn walk_visible<T>(map: impl Fn(&NSDictionary<NSString, AnyObject>) -> Option<T>
 /// One window-list entry, or `None` for entries we cannot or should not use.
 /// Keys are literals because `kCGWindow*` constants are exactly these strings,
 /// and a bridged dictionary compares string keys by value.
-fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
+fn window(entry: &NSDictionary<NSString, AnyObject>, can_read_titles: bool) -> Option<WindowRect> {
     let bounds = entry.objectForKey(ns_string!("kCGWindowBounds"))?;
     let mut cg_rect = CGRect::ZERO;
     // SAFETY: `kCGWindowBounds` is documented to be a rectangle in the
@@ -102,6 +106,16 @@ fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
         return None;
     }
 
+    let title = if can_read_titles {
+        entry
+            .objectForKey(ns_string!("kCGWindowName"))
+            .and_then(|obj| obj.downcast::<NSString>().ok())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
     Some(WindowRect {
         // The window server's id, same call, no permission. `CGWindowID` is
         // 32-bit and `WindowId` is 64-bit, so `from` rather than `as` cannot
@@ -113,12 +127,13 @@ fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
             .downcast::<NSString>()
             .ok()?
             .to_string(),
+        title,
         layer: number(entry, ns_string!("kCGWindowLayer"))?.as_i32(),
     })
 }
 
 fn window_title(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowTitle> {
-    let geometry = window(entry)?;
+    let geometry = window(entry, false)?;
     let title = entry
         .objectForKey(ns_string!("kCGWindowName"))
         .and_then(|value| value.downcast::<NSString>().ok())
@@ -168,17 +183,20 @@ mod tests {
     fn live_desktop_geometry_follows_the_real_windows() {
         // Displays are the window manager's answer and arrive from the Shell,
         // so this stands one in. Windows are what this test watches.
-        let source = MacosWindowSource::new(|| {
-            (
-                vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                None,
-            )
-        });
+        let source = MacosWindowSource::new(
+            || {
+                (
+                    vec![Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1920.0,
+                        height: 1080.0,
+                    }],
+                    None,
+                )
+            },
+            || false,
+        );
         let start = std::time::Instant::now();
         let deadline = start + std::time::Duration::from_secs(5);
         let mut previous = None;

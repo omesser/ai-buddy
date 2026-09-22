@@ -284,7 +284,9 @@ model, and no waiting.
 polls `CGWindowListCopyWindowInfo` at 10Hz while the sprite is still, and at the Engine tick
 (16 ms) while it is riding a moving Perch, which returns window bounds,
 owning application name, and layer with no permission prompt. Window titles require
-Screen Recording consent and are a readonly MCP resource, never a field on `WindowRect`.
+Screen Recording consent on macOS (or the platform equivalent, e.g., xdg-desktop-portal
+ScreenCast on Wayland) and appear on `WindowRect` only when `usable(WindowTitles)` is true.
+MCP resources expose titles independently.
 
 Window level is a platform concept and stays in the Shell. The Shell drops every window
 above or below the ordinary application level while assembling the snapshot, so the menu
@@ -374,9 +376,10 @@ v1 context is the free sensing tier only — frontmost application name, time of
 day, State, what just happened, what the feet stand on (window owner, display
 floor above the Dock, or screen edge), recent Behavior identifiers, and the two
 authored prompt layers — the active Character's Personality Prompt and this
-Instance's own Instance Prompt (opening turn only, ADR-0012). No window titles, no
-screen capture, no clipboard, no input contents. Window titles need Screen
-Recording; the Perch is named by owning application instead.
+Instance's own Instance Prompt (opening turn only, ADR-0012). No screen capture, no
+clipboard, no input contents. Window titles are available when WindowTitles consent
+is granted (Screen Recording on macOS, ScreenCast on Wayland); without grant, the
+Perch is named by owning application only.
 
 The opening payload is the Character Prompt. Later session turns are a short
 follow-up. Both are inspectable in settings as the last user turn.

@@ -239,6 +239,7 @@ mod tests {
             id,
             bounds,
             owner: owner.to_string(),
+            title: None,
             layer: 0,
         }
     }
@@ -256,6 +257,7 @@ mod tests {
             id,
             bounds,
             owner: owner.to_string(),
+            title: None,
             layer,
         }
     }

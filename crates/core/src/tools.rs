@@ -41,6 +41,8 @@ pub trait ExpressionHandle {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WindowInfo {
     pub owner: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -289,6 +291,7 @@ pub(crate) fn list_windows(
             .into_iter()
             .map(|w| WindowInfo {
                 owner: w.owner,
+                title: w.title,
                 x: w.bounds.x,
                 y: w.bounds.y,
                 width: w.bounds.width,
@@ -309,9 +312,15 @@ pub(crate) fn describe_screen(
     } else {
         let mut parts = vec![format!("{} visible windows:", windows.len())];
         for window in &windows {
+            let title_part = window
+                .title
+                .as_ref()
+                .map(|t| format!(" ({})", t))
+                .unwrap_or_default();
             parts.push(format!(
-                "- {} at ({:.0}, {:.0}), size {:.0}x{:.0}",
+                "- {}{} at ({:.0}, {:.0}), size {:.0}x{:.0}",
                 window.owner,
+                title_part,
                 window.bounds.x,
                 window.bounds.y,
                 window.bounds.width,
@@ -499,6 +508,178 @@ mod tests {
         let result = describe_screen(&source, &denylist);
 
         assert_eq!(result.description, "No windows are visible.");
+    }
+
+    #[test]
+    fn list_windows_includes_titles_when_present() {
+        use crate::window_source::{
+            Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry,
+        };
+
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows: vec![
+                    WindowRect {
+                        id: 1,
+                        bounds: Rect {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 800.0,
+                            height: 600.0,
+                        },
+                        owner: "Terminal".to_string(),
+                        title: Some("bash".to_string()),
+                        layer: 0,
+                    },
+                    WindowRect {
+                        id: 2,
+                        bounds: Rect {
+                            x: 100.0,
+                            y: 200.0,
+                            width: 1200.0,
+                            height: 800.0,
+                        },
+                        owner: "Safari".to_string(),
+                        title: None,
+                        layer: 0,
+                    },
+                ],
+                dock: None,
+            },
+        };
+
+        let result = list_windows(&source, &DenyList::default());
+
+        assert_eq!(result.windows.len(), 2);
+        assert_eq!(result.windows[0].owner, "Terminal");
+        assert_eq!(result.windows[0].title, Some("bash".to_string()));
+        assert_eq!(result.windows[1].owner, "Safari");
+        assert_eq!(result.windows[1].title, None);
+    }
+
+    #[test]
+    fn windows_without_titles_are_not_dropped() {
+        use crate::window_source::{
+            Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry,
+        };
+
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows: vec![
+                    WindowRect {
+                        id: 1,
+                        bounds: Rect {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 800.0,
+                            height: 600.0,
+                        },
+                        owner: "Finder".to_string(),
+                        title: None,
+                        layer: 0,
+                    },
+                    WindowRect {
+                        id: 2,
+                        bounds: Rect {
+                            x: 100.0,
+                            y: 200.0,
+                            width: 1200.0,
+                            height: 800.0,
+                        },
+                        owner: "System Preferences".to_string(),
+                        title: None,
+                        layer: 0,
+                    },
+                ],
+                dock: None,
+            },
+        };
+
+        let result = list_windows(&source, &DenyList::default());
+
+        assert_eq!(
+            result.windows.len(),
+            2,
+            "consent on + missing title keys must not drop windows"
+        );
+        assert!(result.windows[0].title.is_none());
+        assert!(result.windows[1].title.is_none());
+    }
+
+    #[test]
+    fn describe_screen_includes_titles_in_parentheses() {
+        use crate::window_source::{
+            Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry,
+        };
+
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows: vec![
+                    WindowRect {
+                        id: 1,
+                        bounds: Rect {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 800.0,
+                            height: 600.0,
+                        },
+                        owner: "Terminal".to_string(),
+                        title: Some("bash".to_string()),
+                        layer: 0,
+                    },
+                    WindowRect {
+                        id: 2,
+                        bounds: Rect {
+                            x: 100.0,
+                            y: 200.0,
+                            width: 1200.0,
+                            height: 800.0,
+                        },
+                        owner: "Safari".to_string(),
+                        title: None,
+                        layer: 0,
+                    },
+                ],
+                dock: None,
+            },
+        };
+
+        let result = describe_screen(&source, &DenyList::default());
+
+        assert!(result.description.contains("2 visible windows"));
+        assert!(result.description.contains("Terminal (bash)"));
+        assert!(result.description.contains("Safari at"));
+        assert!(!result.description.contains("Safari ()"));
     }
 
     // No tool posts input events
