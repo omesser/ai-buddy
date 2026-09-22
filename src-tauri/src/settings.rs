@@ -1072,8 +1072,10 @@ impl SettingsSession {
         if let Some(raw) = patch.director_api_key.as_deref() {
             self.remember_written_key(raw);
         }
+        #[cfg(not(target_os = "linux"))]
         let prompt_ax = patch.use_accessibility == Some(true);
-        let prompt_sr = patch.use_screen_recording == Some(true);
+        #[cfg(not(target_os = "windows"))]
+        let prompt_wt = patch.use_window_titles == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
@@ -1083,10 +1085,10 @@ impl SettingsSession {
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and reply cap.
         apply_and_seed(&mut settings, patch);
+        #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
-        consent::set_wanted(CapabilityId::ScreenRecording, settings.use_screen_recording);
-        #[cfg(target_os = "macos")]
-        consent::set_wanted(CapabilityId::InputMonitoring, settings.use_input_monitoring);
+        #[cfg(not(target_os = "windows"))]
+        consent::set_wanted(CapabilityId::WindowTitles, settings.use_window_titles);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -1149,11 +1151,13 @@ impl SettingsSession {
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
         }
+        #[cfg(not(target_os = "linux"))]
         if prompt_ax {
             self.enable_consent(CapabilityId::Accessibility);
         }
-        if prompt_sr {
-            self.enable_consent(CapabilityId::ScreenRecording);
+        #[cfg(not(target_os = "windows"))]
+        if prompt_wt {
+            self.enable_consent(CapabilityId::WindowTitles);
         }
         #[cfg(target_os = "macos")]
         if prompt_im {
@@ -1252,8 +1256,10 @@ pub struct SettingsPatch {
     /// Present so callers can write the store; `Settings::apply` ignores it
     /// because the key is not a file field.
     pub director_api_key: Option<String>,
+    #[serde(default)]
     pub use_accessibility: Option<bool>,
-    pub use_screen_recording: Option<bool>,
+    #[serde(default)]
+    pub use_window_titles: Option<bool>,
     pub use_input_monitoring: Option<bool>,
     /// Throw the conversation in flight away and open a fresh one on the same
     /// Completer. Not a file field either: a session boundary is a moment, not
@@ -1267,7 +1273,7 @@ pub struct SettingsPatch {
 /// A name rather than a `&str` so the row and the setter cannot disagree: with
 /// a string key, a row could name a field no setter knew, and that compiled
 /// clean and shipped a checkbox that wrote nothing (#273).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum BoolField {
     DirectorEnabled,
     AmbientWakes,
@@ -1285,14 +1291,12 @@ pub enum BoolField {
     /// not gated: the file carries it anywhere.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     Capturable,
-    // The two consent rows, gated for the reason `Capturable` is: Linux offers
-    // neither, so no Linux row writes them, and a variant nothing constructs is
-    // a dead_code warning the Linux job denies. The patch fields are not gated;
-    // the file carries them. #250.
+    // The consent rows. Linux and macOS both offer WindowTitles; Accessibility
+    // is macOS-only. The patch fields are not gated; the file carries them. #250.
     #[cfg(not(target_os = "linux"))]
     UseAccessibility,
-    #[cfg(not(target_os = "linux"))]
-    UseScreenRecording,
+    #[cfg(not(target_os = "windows"))]
+    UseWindowTitles,
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
@@ -1352,8 +1356,8 @@ impl SettingsPatch {
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
-            #[cfg(not(target_os = "linux"))]
-            BoolField::UseScreenRecording => self.use_screen_recording = Some(value),
+            #[cfg(not(target_os = "windows"))]
+            BoolField::UseWindowTitles => self.use_window_titles = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
         }
@@ -1447,7 +1451,7 @@ impl fmt::Debug for SettingsPatch {
                 &self.director_api_key.as_deref().map(model::key_fingerprint),
             )
             .field("use_accessibility", &self.use_accessibility)
-            .field("use_screen_recording", &self.use_screen_recording)
+            .field("use_window_titles", &self.use_window_titles)
             .field("use_input_monitoring", &self.use_input_monitoring)
             .finish()
     }
@@ -1577,8 +1581,8 @@ impl Settings {
         if let Some(value) = patch.use_accessibility {
             self.use_accessibility = value;
         }
-        if let Some(value) = patch.use_screen_recording {
-            self.use_screen_recording = value;
+        if let Some(value) = patch.use_window_titles {
+            self.use_window_titles = value;
         }
         if let Some(value) = patch.use_input_monitoring {
             self.use_input_monitoring = value;
@@ -1606,8 +1610,10 @@ impl Settings {
 
     pub fn wants_consent(&self, id: CapabilityId) -> bool {
         match id {
+            #[cfg(not(target_os = "linux"))]
             CapabilityId::Accessibility => self.use_accessibility,
-            CapabilityId::ScreenRecording => self.use_screen_recording,
+            #[cfg(not(target_os = "windows"))]
+            CapabilityId::WindowTitles => self.use_window_titles,
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => self.use_input_monitoring,
         }
@@ -1716,8 +1722,16 @@ pub struct Settings {
     pub capturable: bool,
     /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
     pub use_accessibility: bool,
-    /// Use Screen Recording where the OS has granted it. Off does not revoke TCC.
-    pub use_screen_recording: bool,
+    /// Use window titles consent where the OS has granted it. macOS uses TCC
+    /// Screen Recording; Linux uses xdg-desktop-portal ScreenCast (Wayland).
+    /// Off does not revoke the grant while running.
+    /// Serde aliases preserve compatibility with old settings files.
+    #[serde(
+        default,
+        alias = "use_screen_recording",
+        alias = "use_portal_screencast"
+    )]
+    pub use_window_titles: bool,
     /// Listen for mouse events so the frame loop can sleep while the desktop is
     /// idle (#721). macOS alone acts on it; the field is unconditional so the
     /// document round-trips on every platform.
@@ -1763,7 +1777,7 @@ impl Default for Settings {
             director_blank: false,
             capturable: true,
             use_accessibility: false,
-            use_screen_recording: false,
+            use_window_titles: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
         }
@@ -2018,7 +2032,7 @@ mod tests {
             director_blank: true,
             capturable: true,
             use_accessibility: true,
-            use_screen_recording: false,
+            use_window_titles: false,
             use_input_monitoring: true,
             first_run_tour_shown: false,
         };
@@ -2328,7 +2342,7 @@ mod tests {
             director_blank: false,
             capturable: true,
             use_accessibility: true,
-            use_screen_recording: false,
+            use_window_titles: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
         };
@@ -2368,23 +2382,33 @@ mod tests {
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
                 ["Accessibility", "Screen Recording", "Input Monitoring"]
             );
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
             assert_eq!(
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                ["Accessibility", "Screen Recording"]
+                ["Accessibility"]
             );
             assert!(
                 view.consent[0].granted,
                 "the checkbox follows settings intent, not the OS grant"
             );
+            #[cfg(target_os = "macos")]
             assert!(!view.consent[1].granted);
         }
         #[cfg(target_os = "linux")]
-        assert!(
-            view.consent.is_empty(),
-            "Linux has no grant to emit, got {:?}",
-            view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
-        );
+        {
+            assert_eq!(view.consent.len(), 1);
+            assert_eq!(view.consent[0].title, "Screen Cast");
+            assert!(!view.consent[0].granted);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let intro = consent::pane_intro("Cursor");
+            assert!(
+                intro.contains("Cursor"),
+                "the pane has to name the TCC row, got {:?}",
+                intro
+            );
+        }
     }
 
     /// The document field the native checkbox writes. `SettingsSession::apply`
@@ -2417,16 +2441,32 @@ mod tests {
     #[test]
     fn unchecking_consent_stops_using_it_without_a_file_grant() {
         let mut settings = Settings::default();
-        settings.apply(SettingsPatch {
-            use_accessibility: Some(true),
-            ..SettingsPatch::default()
-        });
-        assert!(settings.use_accessibility);
-        settings.apply(SettingsPatch {
-            use_accessibility: Some(false),
-            ..SettingsPatch::default()
-        });
-        assert!(!settings.use_accessibility);
+        #[cfg(not(target_os = "linux"))]
+        {
+            settings.apply(SettingsPatch {
+                use_accessibility: Some(true),
+                ..SettingsPatch::default()
+            });
+            assert!(settings.use_accessibility);
+            settings.apply(SettingsPatch {
+                use_accessibility: Some(false),
+                ..SettingsPatch::default()
+            });
+            assert!(!settings.use_accessibility);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            settings.apply(SettingsPatch {
+                use_window_titles: Some(true),
+                ..SettingsPatch::default()
+            });
+            assert!(settings.use_window_titles);
+            settings.apply(SettingsPatch {
+                use_window_titles: Some(false),
+                ..SettingsPatch::default()
+            });
+            assert!(!settings.use_window_titles);
+        }
         let view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/memory.md"),
@@ -2436,16 +2476,9 @@ mod tests {
             (false, String::new(), String::new()),
             None,
         );
-        #[cfg(not(target_os = "linux"))]
         assert!(
             !view.consent[0].granted,
             "unchecking has to show off even if the OS still holds the grant"
-        );
-        #[cfg(target_os = "linux")]
-        assert!(
-            view.consent.is_empty(),
-            "Linux has no consent row to uncheck, got {:?}",
-            view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
         );
     }
 

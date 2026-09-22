@@ -93,6 +93,11 @@ bytemuck = "1.16"
 # so this adds no second GTK major version.
 gtk = "0.18"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# xdg-desktop-portal consent: ScreenCast for Wayland titles (#886).
+# tokio feature reuses the tokio already here under async-process / ACP SDK.
+ashpd = {version = "0.13", features = ["tokio", "screencast"]}
+
 [target.'cfg(windows)'.dependencies]
 # ShellExecuteW opens a file with the default application as a wide-string
 # parameter. The previous `cmd /C start` arm re-parsed `&` and `%` (#255).

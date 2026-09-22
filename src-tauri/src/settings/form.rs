@@ -459,6 +459,8 @@ pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 #[cfg(target_os = "macos")]
 pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
+#[cfg(target_os = "linux")]
+pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
@@ -1272,10 +1274,11 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.".to_string()),
             status: None,
         },
+        #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
             label: "Screen Recording".to_string(),
-            writes: BoolField::UseScreenRecording,
+            writes: BoolField::UseWindowTitles,
             frozen: false,
             help: Some("Reads window titles.".to_string()),
             comment: None,
@@ -1296,7 +1299,18 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     ];
 
     #[cfg(target_os = "linux")]
-    let consent_rows: Vec<FormRow> = Vec::new();
+    let consent_rows = vec![
+        FormRow::Checkbox {
+            id: CONSENT_PORTAL_SCREENCAST_ID.to_string(),
+            label: "Screen Cast".to_string(),
+            writes: BoolField::UseWindowTitles,
+            frozen: false,
+            help: Some("For Wayland window titles and similar metadata.".to_string()),
+            comment: None,
+            disclosure: Some("xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are already readable without a grant.".to_string()),
+            status: None,
+        },
+    ];
 
     vec![
         FormSection {
@@ -1317,7 +1331,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                 writes: TextField::ExcludedApplications,
                 help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
                 editable: true,
-                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata, eventual Capture). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
+                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
             }],
         },
         FormSection {
@@ -2383,7 +2397,7 @@ mod tests {
             );
             assert_eq!(
                 description.bool_write(CONSENT_SCREEN_RECORDING_ID),
-                Some(BoolField::UseScreenRecording)
+                Some(BoolField::UseWindowTitles)
             );
 
             let input_monitoring = consent
@@ -2441,15 +2455,24 @@ mod tests {
 
             #[cfg(target_os = "linux")]
             {
+                assert_eq!(consent.rows.len(), 1);
+                let portal_screencast = consent
+                    .rows
+                    .iter()
+                    .find(|r| {
+                        matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_PORTAL_SCREENCAST_ID)
+                    })
+                    .expect("PortalScreenCast checkbox exists");
+
                 assert!(
-                    consent.rows.is_empty(),
-                    "Linux has no grant to offer a row for, so it declares none (#250), got {:?}",
-                    consent.rows
+                    matches!(portal_screencast, FormRow::Checkbox { label, .. } if label == "Screen Cast"),
+                    "Linux ScreenCast checkbox label must be 'Screen Cast', got {:?}",
+                    portal_screencast
                 );
+
                 assert!(
-                    comment.contains("no permission is requested")
-                        || comment.contains("no permission requested"),
-                    "Linux prose must say nothing is requested, got {comment:?}"
+                    comment.contains("portal") || comment.contains("Portal"),
+                    "Linux prose must mention the portal, got {comment:?}"
                 );
                 assert!(
                     comment.contains("window") || comment.contains("Window"),
@@ -2461,8 +2484,8 @@ mod tests {
             {
                 assert_eq!(
                     consent.rows.len(),
-                    2,
-                    "Windows still declares the rows; #250 is about Linux"
+                    1,
+                    "Windows has only Accessibility; WindowTitles is macOS+Linux only"
                 );
                 let listed = crate::consent::process_listed_as();
                 assert!(

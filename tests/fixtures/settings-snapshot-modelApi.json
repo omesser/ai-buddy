@@ -497,7 +497,7 @@
               "type": "Checkbox",
               "id": "consent_screen_recording",
               "label": "Screen Recording",
-              "writes": "UseScreenRecording",
+              "writes": "UseWindowTitles",
               "frozen": false,
               "help": "Reads window titles.",
               "comment": null,
@@ -530,7 +530,7 @@
               "writes": "ExcludedApplications",
               "help": "One app name per line. Those windows stay out of MCP sensing.",
               "editable": true,
-              "disclosure": "Applications on this list never appear in MCP sensing tool results (window metadata, eventual Capture). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list."
+              "disclosure": "Applications on this list never appear in MCP sensing tool results (window metadata). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list."
             }
           ],
           "comment": null,

@@ -89,6 +89,7 @@ pub fn dock_bounds() -> Option<(Rect, DockSource)> {
     if let Some(bounds) = core_dock_rect().and_then(horizontal) {
         return Some((bounds, DockSource::CoreDock));
     }
+    #[cfg(not(target_os = "linux"))]
     if !crate::consent::wanted(crate::consent::CapabilityId::Accessibility) {
         return None;
     }
