@@ -109,6 +109,11 @@ static WANT_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static WANT_PORTAL_SCREENSHOT: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_os = "linux")]
+static GRANTED_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
+static GRANTED_PORTAL_SCREENSHOT: AtomicBool = AtomicBool::new(false);
+
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
 #[cfg(not(target_os = "linux"))]
@@ -312,28 +317,112 @@ mod windows {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    /// xdg-desktop-portal ScreenCast grant check. Returns false until a live
-    /// portal session is implemented (when Capture ships).
+    use super::{GRANTED_PORTAL_SCREENCAST, GRANTED_PORTAL_SCREENSHOT};
+    use std::sync::atomic::Ordering;
+
+    /// xdg-desktop-portal ScreenCast grant check. Returns true after a successful
+    /// portal session creation. Process-local: a restart clears the grant, but that
+    /// is honest (the portal has no query API and Settings flip-on is the prompt).
     pub fn portal_screencast_granted() -> bool {
-        false
+        GRANTED_PORTAL_SCREENCAST.load(Ordering::Relaxed)
     }
 
-    /// xdg-desktop-portal Screenshot grant check. Returns false until a live
-    /// portal session is implemented (when Capture ships).
+    /// xdg-desktop-portal Screenshot grant check. Returns true after a successful
+    /// portal request. Process-local: same as ScreenCast above.
     pub fn portal_screenshot_granted() -> bool {
-        false
-    }
-
-    /// Request xdg-desktop-portal ScreenCast permission. Opens the desktop's
-    /// portal dialog when Settings flips the row on. Stub until Capture ships.
-    pub fn request_portal_screencast() {
-        eprintln!("ai-buddy: ScreenCast portal prompt not yet implemented");
+        GRANTED_PORTAL_SCREENSHOT.load(Ordering::Relaxed)
     }
 
     /// Request xdg-desktop-portal Screenshot permission. Opens the desktop's
-    /// portal dialog when Settings flips the row on. Stub until Capture ships.
+    /// portal dialog when Settings flips the row on. Screenshot is lighter than
+    /// ScreenCast (one request, not a session), so it is preferred when either
+    /// would satisfy the consent requirement.
     pub fn request_portal_screenshot() {
-        eprintln!("ai-buddy: Screenshot portal prompt not yet implemented");
+        let runtime = match tokio::runtime::Builder::new_current_thread().build() {
+            Ok(r) => r,
+            Err(why) => {
+                eprintln!("ai-buddy: portal screenshot runtime failed: {why}");
+                return;
+            }
+        };
+
+        runtime.block_on(async {
+            match screenshot_request().await {
+                Ok(_) => {
+                    GRANTED_PORTAL_SCREENSHOT.store(true, Ordering::Relaxed);
+                }
+                Err(why) => {
+                    eprintln!("ai-buddy: portal screenshot request failed: {why}");
+                }
+            }
+        });
+    }
+
+    /// Request xdg-desktop-portal ScreenCast permission. Opens the desktop's
+    /// portal dialog when Settings flips the row on. Creates a minimal session
+    /// (no frames, no PipeWire connection) to show the consent dialog.
+    pub fn request_portal_screencast() {
+        let runtime = match tokio::runtime::Builder::new_current_thread().build() {
+            Ok(r) => r,
+            Err(why) => {
+                eprintln!("ai-buddy: portal screencast runtime failed: {why}");
+                return;
+            }
+        };
+
+        runtime.block_on(async {
+            match screencast_request().await {
+                Ok(_) => {
+                    GRANTED_PORTAL_SCREENCAST.store(true, Ordering::Relaxed);
+                }
+                Err(why) => {
+                    eprintln!("ai-buddy: portal screencast request failed: {why}");
+                }
+            }
+        });
+    }
+
+    async fn screenshot_request() -> ashpd::Result<()> {
+        use ashpd::desktop::screenshot::Screenshot;
+
+        let response = Screenshot::request()
+            .interactive(true)
+            .modal(true)
+            .send()
+            .await?
+            .response()?;
+
+        eprintln!("ai-buddy: screenshot granted, URI: {}", response.uri());
+        Ok(())
+    }
+
+    async fn screencast_request() -> ashpd::Result<()> {
+        use ashpd::desktop::screencast::{CursorMode, PersistMode, Screencast, SourceType};
+
+        let proxy = Screencast::new().await?;
+        let session = proxy.create_session(Default::default()).await?;
+
+        proxy
+            .select_sources(
+                &session,
+                ashpd::desktop::screencast::SelectSourcesOptions::default()
+                    .cursor_mode(CursorMode::Hidden)
+                    .sources(SourceType::Monitor | SourceType::Window)
+                    .multiple(false)
+                    .persist_mode(PersistMode::DoNot),
+            )
+            .await?;
+
+        let response = proxy
+            .start(&session, None, Default::default())
+            .await?
+            .response()?;
+
+        eprintln!(
+            "ai-buddy: screencast granted, {} stream(s)",
+            response.streams().len()
+        );
+        Ok(())
     }
 }
 
