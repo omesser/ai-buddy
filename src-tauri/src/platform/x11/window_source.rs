@@ -10,6 +10,8 @@ use x11rb::rust_connection::RustConnection;
 
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 
+use crate::mcp_resources::WindowTitle;
+
 /// The X11 window manager's view of the desktop.
 pub struct X11WindowSource {
     /// Where the usable part of each display comes from, and the Dock's true
@@ -77,6 +79,53 @@ fn visible_windows() -> Vec<WindowRect> {
     }
 
     result
+}
+
+/// Owner plus title, same walk and order as `visible_windows`. `_NET_WM_NAME`
+/// first, `WM_NAME` if the EWMH name is missing.
+pub fn visible_window_titles() -> Vec<WindowTitle> {
+    let Some(conn) = super::connection::connection() else {
+        return Vec::new();
+    };
+    visible_windows()
+        .into_iter()
+        .map(|window| WindowTitle {
+            title: window_title(conn, window.id as Window),
+            owner: window.owner,
+        })
+        .collect()
+}
+
+fn window_title(conn: &RustConnection, window: Window) -> String {
+    if let Some(atoms) = super::atoms::atoms() {
+        if let Some(name) = property_text(conn, window, atoms.net_wm_name, atoms.utf8_string) {
+            return name;
+        }
+    }
+    property_text(conn, window, AtomEnum::WM_NAME, AtomEnum::STRING).unwrap_or_default()
+}
+
+fn property_text(
+    conn: &RustConnection,
+    window: Window,
+    property: impl Into<xproto::Atom>,
+    type_: impl Into<xproto::Atom>,
+) -> Option<String> {
+    let reply = xproto::get_property(conn, false, window, property, type_, 0, 1024)
+        .ok()?
+        .reply()
+        .ok()?;
+    if reply.format != 8 || reply.value.is_empty() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&reply.value)
+        .trim_end_matches('\0')
+        .to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 /// Read _NET_CLIENT_LIST_STACKING: windows in stacking order, bottom to top.

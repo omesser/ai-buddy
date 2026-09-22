@@ -18,4 +18,4 @@ pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::WindowsActivitySource;
 pub(super) use settings_raise::raise_settings_window;
 
-pub(super) use window_source::WindowsWindowSource;
+pub(super) use window_source::{visible_window_titles, WindowsWindowSource};

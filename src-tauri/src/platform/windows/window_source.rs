@@ -5,11 +5,13 @@
 use std::sync::Mutex;
 
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+
+use crate::mcp_resources::WindowTitle;
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
-    GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
+    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
 };
 
 use super::process::window_owner;
@@ -77,6 +79,28 @@ fn visible_windows() -> Vec<WindowRect> {
     }
 
     windows.into_inner().unwrap()
+}
+
+/// Owner plus title, same walk and order as `visible_windows`. Title is
+/// `GetWindowText` only — never used as an owner fallback.
+pub fn visible_window_titles() -> Vec<WindowTitle> {
+    visible_windows()
+        .into_iter()
+        .map(|window| WindowTitle {
+            title: window_title(window.id as HWND),
+            owner: window.owner,
+        })
+        .collect()
+}
+
+fn window_title(hwnd: HWND) -> String {
+    let mut buf = [0u16; 512];
+    // SAFETY: hwnd is an EnumWindows window still valid for this read.
+    let len = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+    if len <= 0 {
+        return String::new();
+    }
+    String::from_utf16_lossy(&buf[..len as usize])
 }
 
 /// EnumWindows callback that collects visible application windows.

@@ -213,6 +213,14 @@ Two transports, two distinct axes:
 | `remember` | Memory | Write one fact under a heading |
 | `list_instances` | Identity | List Character Instances and their names |
 
+**Three readonly resources** (`resources/list`, `resources/read`; no write, no subscribe):
+
+| URI | What it is |
+|---|---|
+| `ai-buddy://windows` | Visible windows, frontmost first. Owner plus title when Screen Recording (or the platform equivalent) allows; otherwise owner only. Same excluded applications as `list_windows`. |
+| `ai-buddy://memory` | The Memory Manifest file every Character Instance shares. |
+| `ai-buddy://action-log` | The current Action Log file only. Rotated siblings are not this resource. A large current file is tailed to complete JSONL lines. |
+
 **Explicitly not served:** mouse/keyboard/Executor tools (ADR-0003). No click, no type, no input events by design.
 
 ## Platform Support

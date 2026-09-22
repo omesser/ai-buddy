@@ -3,9 +3,9 @@
 //! `CGWindowListCopyWindowInfo` is the one macOS API that hands over the shape
 //! of the desktop for free. It reports bounds, owning application and window
 //! level to any process; only `kCGWindowName` — the title — is withheld until
-//! Screen Recording is granted, and this module never asks for it — settings
-//! does (#148). That is what makes the Spatial Layer work on first run, before
-//! the user has agreed to anything.
+//! Screen Recording is granted. Geometry never reads that key. The MCP titles
+//! resource does, from the same dictionary, so a grant reaches a Harness
+//! without putting a title on `WindowRect`.
 
 use objc2::runtime::AnyObject;
 use objc2_core_foundation::{CFDictionary, CGRect};
@@ -15,6 +15,8 @@ use objc2_core_graphics::{
 use objc2_foundation::{ns_string, NSArray, NSDictionary, NSNumber, NSString};
 
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+
+use crate::mcp_resources::WindowTitle;
 
 /// The macOS window server's view of the desktop.
 pub struct MacosWindowSource {
@@ -56,6 +58,16 @@ impl WindowSource for MacosWindowSource {
 /// The overlay is a layer-3 panel `snapshot` already drops. Excluding our
 /// process took Chat (#362) and Settings with it.
 fn visible_windows() -> Vec<WindowRect> {
+    walk_visible(window)
+}
+
+/// Owner plus title, same walk and order as `visible_windows`. Empty title
+/// when Screen Recording is off: macOS leaves `kCGWindowName` blank.
+pub fn visible_window_titles() -> Vec<WindowTitle> {
+    walk_visible(window_title)
+}
+
+fn walk_visible<T>(map: impl Fn(&NSDictionary<NSString, AnyObject>) -> Option<T>) -> Vec<T> {
     let options =
         CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
     let Some(list) = CGWindowListCopyWindowInfo(options, 0) else {
@@ -68,7 +80,7 @@ fn visible_windows() -> Vec<WindowRect> {
     let entries: &NSArray<NSDictionary<NSString, AnyObject>> =
         unsafe { &*std::ptr::from_ref(&*list).cast() };
 
-    entries.iter().filter_map(|e| window(&e)).collect()
+    entries.iter().filter_map(|e| map(&e)).collect()
 }
 
 /// One window-list entry, or `None` for entries we cannot or should not use.
@@ -102,6 +114,19 @@ fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
             .ok()?
             .to_string(),
         layer: number(entry, ns_string!("kCGWindowLayer"))?.as_i32(),
+    })
+}
+
+fn window_title(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowTitle> {
+    let geometry = window(entry)?;
+    let title = entry
+        .objectForKey(ns_string!("kCGWindowName"))
+        .and_then(|value| value.downcast::<NSString>().ok())
+        .map(|name| name.to_string())
+        .unwrap_or_default();
+    Some(WindowTitle {
+        owner: geometry.owner,
+        title,
     })
 }
 

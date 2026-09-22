@@ -57,7 +57,8 @@ pub type WindowId = u64;
 pub const DOCK_PERCH_ID: WindowId = WindowId::MAX;
 
 /// One visible window: which one it is, where it is, who owns it, and how high
-/// it stacks. No title: titles need Screen Recording consent, and v1 asks for nothing.
+/// it stacks. No title: titles need Screen Recording and live on the MCP
+/// resource, never here. The Spatial Layer stays title-free by construction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowRect {
     /// The window server's own id, carried all the way to the Engine. Geometry

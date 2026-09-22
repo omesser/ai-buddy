@@ -20,4 +20,5 @@ pub use overlay_panel::configure_overlay;
 pub use pointer::{double_click_interval_ms, primary_button_down, secondary_button_down};
 pub use sensing::MacosActivitySource;
 pub use tray::{seed_status_item_position, tune_tray_icon};
+pub(super) use window_source::visible_window_titles;
 pub use window_source::MacosWindowSource;

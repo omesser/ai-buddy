@@ -1282,7 +1282,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads window titles.".to_string()),
             comment: None,
-            disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles would reach MCP sensing tools; not used in v1.".to_string()),
+            disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]

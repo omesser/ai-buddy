@@ -283,7 +283,7 @@ model, and no waiting.
 polls `CGWindowListCopyWindowInfo` at 10Hz while the sprite is still, and at the Engine tick
 (16 ms) while it is riding a moving Perch, which returns window bounds,
 owning application name, and layer with no permission prompt. Window titles require
-Screen Recording consent and are not used in v1.
+Screen Recording consent and are a readonly MCP resource, never a field on `WindowRect`.
 
 Window level is a platform concept and stays in the Shell. The Shell drops every window
 above or below the ordinary application level while assembling the snapshot, so the menu
