@@ -496,7 +496,8 @@ fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSe
 #[derive(serde::Serialize)]
 struct SettingsSnapshot {
     form: settings::form::FormDescription,
-    view: settings::SettingsView,
+    /// Keyed by form row id, which is what `src/settings.js` indexes (#875).
+    view: std::collections::BTreeMap<String, settings::RowValue>,
 }
 
 #[tauri::command]
@@ -505,9 +506,17 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
         .try_state::<SettingsState>()
         .ok_or("settings: asked for before the shell was ready")?;
     let session = settings_session(&app, &state);
+    let view = session.view();
+    // The one caller that can fill the API key row's placeholder. `current()`
+    // leaves it blank because the status is a store read, and the view has it
+    // from the cache that keeps become-key off Keychain. #875.
+    let live = settings::form::Live {
+        api_key_placeholder: view.api_key_placeholder(),
+        ..settings::form::Live::current()
+    };
     Ok(SettingsSnapshot {
-        form: settings::form::describe(),
-        view: session.view(),
+        form: settings::form::describe_with(&live),
+        view: view.row_values(),
     })
 }
 
@@ -527,6 +536,9 @@ enum SettingsEventPayload {
         press: String,
         #[serde(default)]
         draft: Option<DirectorDraftWire>,
+        /// New reads the name and Character beside it from here (#875).
+        #[serde(default)]
+        fields: std::collections::HashMap<String, String>,
     },
     Pick {
         pick: String,
@@ -600,7 +612,7 @@ mod settings_event_tests {
         let payload: SettingsEventPayload =
             serde_json::from_str(json).expect("press payload should deserialize");
         match payload {
-            SettingsEventPayload::Press { press, draft } => {
+            SettingsEventPayload::Press { press, draft, .. } => {
                 assert_eq!(press, "apply");
                 assert!(draft.is_none());
             }
@@ -614,7 +626,7 @@ mod settings_event_tests {
         let payload: SettingsEventPayload =
             serde_json::from_str(json).expect("press with draft should deserialize");
         match payload {
-            SettingsEventPayload::Press { press, draft } => {
+            SettingsEventPayload::Press { press, draft, .. } => {
                 assert_eq!(press, "director_apply");
                 assert_eq!(
                     draft.expect("draft").harness.as_deref(),
@@ -622,6 +634,38 @@ mod settings_event_tests {
                 );
             }
             _ => panic!("expected Press variant"),
+        }
+    }
+
+    #[test]
+    fn press_with_fields_deserializes_from_js() {
+        let json = r#"{"press":"spawn","fields":{"new_name":"Nim","new_character":"ghost"}}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("press with fields should deserialize");
+        match payload {
+            SettingsEventPayload::Press { press, fields, .. } => {
+                assert_eq!(press, "spawn");
+                assert_eq!(fields.get("new_name").map(String::as_str), Some("Nim"));
+                assert_eq!(
+                    fields.get("new_character").map(String::as_str),
+                    Some("ghost")
+                );
+            }
+            _ => panic!("expected Press variant"),
+        }
+    }
+
+    #[test]
+    fn dismiss_deserializes_from_js() {
+        let json = r#"{"dismiss": "instances", "value": "bmo-1"}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("dismiss payload should deserialize");
+        match payload {
+            SettingsEventPayload::Dismiss { dismiss, value } => {
+                assert_eq!(dismiss, "instances");
+                assert_eq!(value, "bmo-1");
+            }
+            _ => panic!("expected Dismiss variant"),
         }
     }
 
@@ -657,6 +701,154 @@ mod settings_event_tests {
             }
             _ => panic!("expected Pick variant with fills"),
         }
+    }
+
+    #[derive(Default)]
+    struct Recorded {
+        ran: std::cell::RefCell<Vec<String>>,
+        fails: bool,
+    }
+
+    impl Recorded {
+        fn note(&self, what: &str) -> Result<(), String> {
+            self.ran.borrow_mut().push(what.to_string());
+            if self.fails {
+                return Err("the store said no".to_string());
+            }
+            Ok(())
+        }
+
+        fn ran(&self) -> Vec<String> {
+            self.ran.borrow().clone()
+        }
+    }
+
+    impl Operations for Recorded {
+        fn open_memory(&self) -> Result<(), String> {
+            self.note("open_memory")
+        }
+
+        fn wipe_memory(&self) -> Result<(), String> {
+            self.note("wipe_memory")
+        }
+
+        fn spawn(&self, character: String, name: String) {
+            let _ = self.note(&format!("spawn {character} as {name}"));
+        }
+
+        fn dismiss(&self, id: String) {
+            let _ = self.note(&format!("dismiss {id}"));
+        }
+    }
+
+    fn one_instance() -> settings::SettingsView {
+        settings::SettingsView::from_parts(
+            &settings::Settings::default(),
+            std::path::Path::new("/tmp/memory.md"),
+            None,
+            Vec::new(),
+            vec![settings::InstanceRow {
+                id: "bmo-1".to_string(),
+                name: "BMO".to_string(),
+                character: "bmo".to_string(),
+                prompt: String::new(),
+            }],
+            (false, String::new(), String::new()),
+            None,
+        )
+    }
+
+    fn no_fields() -> std::collections::HashMap<String, String> {
+        std::collections::HashMap::new()
+    }
+
+    /// A press handed to the page reaches nothing that acts on it. #875.
+    #[test]
+    fn opening_and_wiping_memory_run_here_and_do_not_cross_to_the_page() {
+        use settings::form::RowOperation;
+
+        let session = Recorded::default();
+        assert_eq!(
+            run_operation(&session, &RowOperation::OpenMemory, &no_fields()),
+            Ok(SettingsEventResponse::Nothing)
+        );
+        assert_eq!(
+            run_operation(&session, &RowOperation::WipeMemory, &no_fields()),
+            Ok(SettingsEventResponse::Refresh)
+        );
+        assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
+    }
+
+    /// `DirectorDraft` carries neither the name nor the Character, so they
+    /// ride the Composite's own fields. #875.
+    #[test]
+    fn new_spawns_under_the_name_and_character_the_page_shows() {
+        use settings::form::RowOperation;
+
+        let session = Recorded::default();
+        let fields = std::collections::HashMap::from([
+            (settings::form::NEW_NAME_ID.to_string(), "Nim".to_string()),
+            (
+                settings::form::NEW_CHARACTER_ID.to_string(),
+                "ghost".to_string(),
+            ),
+        ]);
+        assert_eq!(
+            run_operation(&session, &RowOperation::Spawn, &fields),
+            Ok(SettingsEventResponse::Nothing)
+        );
+        assert_eq!(session.ran(), ["spawn ghost as Nim"]);
+    }
+
+    #[test]
+    fn dismiss_reaches_the_roster_and_a_stale_press_does_not() {
+        let session = Recorded::default();
+        let view = one_instance();
+
+        assert_eq!(
+            dismiss_press(&session, &view, "instances", "bmo-1"),
+            SettingsEventResponse::Nothing
+        );
+        assert_eq!(session.ran(), ["dismiss bmo-1"]);
+
+        // A buddy the roster let go while the list was on screen.
+        assert_eq!(
+            dismiss_press(&session, &view, "instances", "ghost-1"),
+            SettingsEventResponse::Nothing
+        );
+        assert_eq!(session.ran(), ["dismiss bmo-1"]);
+    }
+
+    /// The clipboard is the page's, because WebKit gives `writeText` the
+    /// click's own turn and this command has already spent it (#855).
+    #[test]
+    fn the_clipboard_operations_still_cross_to_the_page() {
+        use settings::form::RowOperation;
+
+        let session = Recorded::default();
+        assert_eq!(
+            run_operation(&session, &RowOperation::CopyByoSnippet, &no_fields()),
+            Ok(SettingsEventResponse::Run {
+                operation: "copy_byo_snippet".to_string()
+            })
+        );
+        assert!(session.ran().is_empty());
+    }
+
+    /// A failed wipe is the user's to see. Answering Refresh would redraw the
+    /// same Memory file and read as a wipe that worked.
+    #[test]
+    fn a_refused_wipe_answers_with_the_reason() {
+        use settings::form::RowOperation;
+
+        let session = Recorded {
+            fails: true,
+            ..Recorded::default()
+        };
+        assert_eq!(
+            run_operation(&session, &RowOperation::WipeMemory, &no_fields()),
+            Err("the store said no".to_string())
+        );
     }
 
     #[test]
@@ -728,6 +920,7 @@ fn settings_event(
     let view = session.view();
     let description = settings::form::describe();
 
+    let mut pressed: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let (event, draft) = match payload {
         SettingsEventPayload::SetBool { set_bool, value } => (
             controller::Event::SetBool {
@@ -743,7 +936,12 @@ fn settings_event(
             },
             settings::DirectorDraft::live(&view, &description),
         ),
-        SettingsEventPayload::Press { press, draft: wire } => {
+        SettingsEventPayload::Press {
+            press,
+            draft: wire,
+            fields,
+        } => {
+            pressed = fields;
             let mut draft = settings::DirectorDraft::live(&view, &description);
             if let Some(wire) = wire {
                 if let Some(value) = wire.director_base_url {
@@ -801,10 +999,7 @@ fn settings_event(
             )
         }
         SettingsEventPayload::Dismiss { dismiss, value } => {
-            return Err(format!(
-                "dismiss not yet implemented: {} {}",
-                dismiss, value
-            ));
+            return Ok(dismiss_press(&session, &view, &dismiss, &value));
         }
     };
 
@@ -837,7 +1032,88 @@ fn settings_event(
                 value: value.to_string(),
             })
         }
-        controller::Outcome::Run(op) => Ok(SettingsEventResponse::Run {
+        controller::Outcome::Run(op) => run_operation(&session, &op, &pressed),
+    }
+}
+
+/// What a button press performs, so that `run_operation` can be tested.
+///
+/// `SettingsSession` is the real one. It needs a live `AppHandle`, which a
+/// unit test has not got, and the bug #875 closes is a press that reached no
+/// method at all — which is what a test with no seam here cannot see.
+trait Operations {
+    fn open_memory(&self) -> Result<(), String>;
+    fn wipe_memory(&self) -> Result<(), String>;
+    fn spawn(&self, character: String, name: String);
+    fn dismiss(&self, id: String);
+}
+
+impl Operations for settings::SettingsSession {
+    fn open_memory(&self) -> Result<(), String> {
+        settings::SettingsSession::open_memory(self)
+    }
+
+    fn wipe_memory(&self) -> Result<(), String> {
+        settings::SettingsSession::wipe_memory(self)
+    }
+
+    fn spawn(&self, character: String, name: String) {
+        settings::SettingsSession::spawn(self, character, name);
+    }
+
+    fn dismiss(&self, id: String) {
+        settings::SettingsSession::dismiss(self, id);
+    }
+}
+
+/// Dismiss the Instance a list press names.
+///
+/// Not a `RowOperation`: the press names a row of the list rather than the
+/// form, and only the roster can say whether that Instance is still there.
+/// The page draws from a snapshot, so a stale press does nothing rather than
+/// sending an op under an id nothing answers to. #875.
+fn dismiss_press(
+    session: &dyn Operations,
+    view: &settings::SettingsView,
+    row: &str,
+    id: &str,
+) -> SettingsEventResponse {
+    if row == settings::form::INSTANCES_ID && view.instance(id).is_some() {
+        session.dismiss(id.to_string());
+    }
+    SettingsEventResponse::Nothing
+}
+
+/// Run what #706 keeps in Rust, and hand the page only what it owns.
+///
+/// The two clipboard writes cross because WebKit gives `writeText` the click's
+/// own turn and nothing else. Everything else is a `SettingsSession` method,
+/// and the page has no case for one it is handed instead (#875).
+fn run_operation(
+    session: &dyn Operations,
+    op: &settings::form::RowOperation,
+    fields: &std::collections::HashMap<String, String>,
+) -> Result<SettingsEventResponse, String> {
+    use settings::form::RowOperation;
+    let field = |id: &str| fields.get(id).cloned().unwrap_or_default();
+    match op {
+        RowOperation::OpenMemory => session
+            .open_memory()
+            .map(|()| SettingsEventResponse::Nothing),
+        // The file is gone, so the window redraws from what is left.
+        RowOperation::WipeMemory => session
+            .wipe_memory()
+            .map(|()| SettingsEventResponse::Refresh),
+        // Nothing to redraw yet: the frame loop owns the roster and pushes
+        // `settings-refresh` on the tick that spawns the Instance.
+        RowOperation::Spawn => {
+            session.spawn(
+                field(settings::form::NEW_CHARACTER_ID),
+                field(settings::form::NEW_NAME_ID),
+            );
+            Ok(SettingsEventResponse::Nothing)
+        }
+        _ => Ok(SettingsEventResponse::Run {
             operation: op.as_str().to_string(),
         }),
     }

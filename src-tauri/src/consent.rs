@@ -41,6 +41,17 @@ pub struct ConsentRow {
     pub granted: bool,
 }
 
+impl ConsentRow {
+    /// The settings form row id this grant is drawn as.
+    ///
+    /// Derived from the title rather than listed beside it: the form builds
+    /// its checkbox ids the same way, and a grant added to one list and not
+    /// the other would otherwise draw the wrong state.
+    pub fn row_id(&self) -> String {
+        format!("consent_{}", self.title.to_lowercase().replace(' ', "_"))
+    }
+}
+
 /// How settings learns a grant and how it asks. Tests inject a fake; macOS
 /// talks to TCC; everywhere else is Null.
 pub trait Probe: Send + Sync {
