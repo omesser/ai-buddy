@@ -9,9 +9,13 @@
 
 // `values` carries one scalar per row id, so a list of Instances or excluded
 // applications arrives as lines, the way the AppKit block shows them. An array
-// is taken as already split.
+// is taken as already split. The live snapshot sends InstanceRow objects at
+// `instances` (#892); those print as Name (character).
 function listItems(value) {
-  return Array.isArray(value) ? value : String(value ?? "").split("\n").filter(Boolean);
+  const items = Array.isArray(value) ? value : String(value ?? "").split("\n").filter(Boolean);
+  return items.map((item) =>
+    item && typeof item === "object" ? `${item.name} (${item.character})` : item,
+  );
 }
 
 export function controls(tab, values) {
