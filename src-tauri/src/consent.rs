@@ -159,7 +159,10 @@ struct LinuxPortal;
 #[cfg(target_os = "windows")]
 struct WindowsProbe;
 
-#[cfg(any(test, not(any(target_os = "macos", target_os = "linux", target_os = "windows"))))]
+#[cfg(any(
+    test,
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows"))
+))]
 impl Probe for Null {
     fn granted(&self, _: CapabilityId) -> bool {
         false

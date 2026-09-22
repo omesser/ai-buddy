@@ -896,7 +896,12 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
                 )
             }
         },
-        || crate::consent::usable(crate::consent::CapabilityId::WindowTitles, crate::consent::live()),
+        || {
+            crate::consent::usable(
+                crate::consent::CapabilityId::WindowTitles,
+                crate::consent::live(),
+            )
+        },
     );
 
     (source, cache)

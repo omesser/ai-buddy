@@ -89,7 +89,7 @@ fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
 /// Owner plus title, same walk and order as `visible_windows`. Title is
 /// `GetWindowText` only — never used as an owner fallback.
 pub fn visible_window_titles() -> Vec<WindowTitle> {
-    visible_windows()
+    visible_windows(true)
         .into_iter()
         .map(|window| WindowTitle {
             title: window_title(window.id as HWND),
