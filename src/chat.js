@@ -626,6 +626,11 @@ async function start() {
         // only part the user can act on (ADR-0008).
         turn.them.remove();
         note(outcome.note);
+      } else if (outcome.action === "preempted") {
+        // The question stays in the log, and this is what closes it: a log
+        // that simply stops reads as one still waiting for an answer.
+        turn.them.remove();
+        note(outcome.note);
       } else if (outcome.action === "silent") {
         turn.them.remove();
       } else {

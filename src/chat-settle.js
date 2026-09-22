@@ -4,6 +4,24 @@
 
 export const MISSING_ANSWER = "No answer came back.";
 
+// Keyed by the words `director::happened_cell` writes. The cause leads the
+// sentence because "your question was dropped" reads as a bug, where "you
+// poked me before that answer landed" reads as what the user just did.
+const PREEMPTED_BY = {
+  "spoken to": "You asked something else",
+  poked: "You poked me",
+  thrown: "You threw me",
+  summoned: "You summoned me",
+  grabbed: "You picked me up",
+  perched: "I perched",
+  ambient: "My next thought started",
+};
+
+export function preemptedNote(cause) {
+  const clause = PREEMPTED_BY[cause] ?? "Something else started";
+  return `${clause} before that answer landed, so I dropped it.`;
+}
+
 export function createChatTurns() {
   const waiting = [];
 
@@ -47,9 +65,13 @@ export function createChatTurns() {
           note: `The Harness reported an error: ${payload.error}`,
         };
       }
-      // Empty is not "no answer" when a leftover caret sits behind Speech
-      // already in the log, or when the Shell named the settle as superseded.
-      if (turn.alreadyHasSpeechAhead || payload.superseded) {
+      // The Shell naming the wake is a fact about this settle, so it is read
+      // first. `alreadyHasSpeechAhead` is only a shape heuristic, and all it
+      // owes a leftover caret is silence instead of a wrong missing answer.
+      if (payload.superseded_by) {
+        return { action: "preempted", turn, note: preemptedNote(payload.superseded_by) };
+      }
+      if (turn.alreadyHasSpeechAhead) {
         return { action: "silent", turn };
       }
       return { action: "missing", turn, note: MISSING_ANSWER };
