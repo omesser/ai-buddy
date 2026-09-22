@@ -87,8 +87,10 @@ pub struct SettingsView {
     /// all of that again before it did anything (#273).
     pub development_switches: HashMap<String, bool>,
     pub development_texts: HashMap<String, String>,
-    /// Consent checkbox values keyed by form row id, so `settings.js` can read
-    /// `values[row.id]` directly. Separate from the nested `consent` array.
+    /// Consent checkbox values keyed by form row id, flattened into top-level
+    /// JSON keys so `settings.js` can read `values[row.id]` directly. Without
+    /// flatten, the nested map makes `values["consent_window_titles"]` undefined.
+    #[serde(flatten)]
     pub consent_checkboxes: HashMap<String, bool>,
     /// Live OS grants, not a file field. The window rereads them on become-key.
     pub consent: Vec<ConsentRow>,
@@ -2665,6 +2667,122 @@ mod tests {
                     .get(form::CONSENT_PORTAL_SCREENCAST_ID),
                 Some(&settings.use_window_titles),
                 "Screen Cast checkbox value must match settings.use_window_titles"
+            );
+        }
+    }
+
+    /// Consent checkboxes must serialize as top-level JSON keys for webview binding.
+    /// settings.js reads `values["consent_window_titles"]`, not nested map access.
+    /// This test proves the serialized JSON has the top-level key, not just that
+    /// the Rust HashMap contains it.
+    #[test]
+    fn consent_checkboxes_serialize_as_toplevel_json_keys() {
+        let mut settings = Settings::default();
+        settings.use_window_titles = true;
+        #[cfg(not(target_os = "linux"))]
+        {
+            settings.use_accessibility = true;
+        }
+
+        let view = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (false, String::new(), String::new()),
+            None,
+        );
+
+        let json_str = serde_json::to_string(&view).expect("SettingsView must serialize");
+        let json: serde_json::Value =
+            serde_json::from_str(&json_str).expect("Serialized JSON must parse");
+
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                json.get("consent_window_titles"),
+                Some(&serde_json::Value::Bool(true)),
+                "Windows: JSON must have top-level consent_window_titles: true, got {:?}",
+                json.get("consent_window_titles")
+            );
+            assert_eq!(
+                json.get("consent_accessibility"),
+                Some(&serde_json::Value::Bool(true)),
+                "Windows: JSON must have top-level consent_accessibility: true"
+            );
+            assert!(
+                json.get("consent_checkboxes").is_none(),
+                "consent_checkboxes must be flattened, not nested"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                json.get("consent_screen_recording"),
+                Some(&serde_json::Value::Bool(true)),
+                "macOS: JSON must have top-level consent_screen_recording: true"
+            );
+            assert_eq!(
+                json.get("consent_accessibility"),
+                Some(&serde_json::Value::Bool(true)),
+                "macOS: JSON must have top-level consent_accessibility: true"
+            );
+            assert!(
+                json.get("consent_checkboxes").is_none(),
+                "consent_checkboxes must be flattened, not nested"
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                json.get("consent_screen_cast"),
+                Some(&serde_json::Value::Bool(true)),
+                "Linux: JSON must have top-level consent_screen_cast: true"
+            );
+            assert!(
+                json.get("consent_checkboxes").is_none(),
+                "consent_checkboxes must be flattened, not nested"
+            );
+        }
+
+        // Verify false values also serialize correctly at top level
+        settings.use_window_titles = false;
+        let view_off = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (false, String::new(), String::new()),
+            None,
+        );
+        let json_str_off = serde_json::to_string(&view_off).expect("SettingsView must serialize");
+        let json_off: serde_json::Value =
+            serde_json::from_str(&json_str_off).expect("Serialized JSON must parse");
+
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                json_off.get("consent_window_titles"),
+                Some(&serde_json::Value::Bool(false)),
+                "Windows: JSON must have top-level consent_window_titles: false when off"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                json_off.get("consent_screen_recording"),
+                Some(&serde_json::Value::Bool(false)),
+                "macOS: JSON must have top-level consent_screen_recording: false when off"
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                json_off.get("consent_screen_cast"),
+                Some(&serde_json::Value::Bool(false)),
+                "Linux: JSON must have top-level consent_screen_cast: false when off"
             );
         }
     }
