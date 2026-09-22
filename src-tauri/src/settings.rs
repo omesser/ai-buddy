@@ -2677,12 +2677,12 @@ mod tests {
     /// the Rust HashMap contains it.
     #[test]
     fn consent_checkboxes_serialize_as_toplevel_json_keys() {
-        let mut settings = Settings::default();
-        settings.use_window_titles = true;
-        #[cfg(not(target_os = "linux"))]
-        {
-            settings.use_accessibility = true;
-        }
+        let mut settings = Settings {
+            use_window_titles: true,
+            #[cfg(not(target_os = "linux"))]
+            use_accessibility: true,
+            ..Settings::default()
+        };
 
         let view = SettingsView::from_parts(
             &settings,
