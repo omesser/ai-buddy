@@ -719,8 +719,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
     fn can_read_titles() -> bool {
-        crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
-            && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
+        crate::consent::usable(crate::consent::CapabilityId::WindowTitles, crate::consent::live())
     }
 
     let source = macos::MacosWindowSource::new(
@@ -770,8 +769,7 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
     fn can_read_titles() -> bool {
-        crate::consent::wanted(crate::consent::CapabilityId::WindowTitles)
-            && crate::consent::live().granted(crate::consent::CapabilityId::WindowTitles)
+        crate::consent::usable(crate::consent::CapabilityId::WindowTitles, crate::consent::live())
     }
 
     let source = x11::X11WindowSource::new(

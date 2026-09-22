@@ -568,6 +568,65 @@ mod tests {
     }
 
     #[test]
+    fn windows_without_titles_are_not_dropped() {
+        use crate::window_source::{
+            Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry,
+        };
+
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows: vec![
+                    WindowRect {
+                        id: 1,
+                        bounds: Rect {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 800.0,
+                            height: 600.0,
+                        },
+                        owner: "Finder".to_string(),
+                        title: None,
+                        layer: 0,
+                    },
+                    WindowRect {
+                        id: 2,
+                        bounds: Rect {
+                            x: 100.0,
+                            y: 200.0,
+                            width: 1200.0,
+                            height: 800.0,
+                        },
+                        owner: "System Preferences".to_string(),
+                        title: None,
+                        layer: 0,
+                    },
+                ],
+                dock: None,
+            },
+        };
+
+        let result = list_windows(&source, &DenyList::default());
+
+        assert_eq!(
+            result.windows.len(),
+            2,
+            "consent on + missing title keys must not drop windows"
+        );
+        assert!(result.windows[0].title.is_none());
+        assert!(result.windows[1].title.is_none());
+    }
+
+    #[test]
     fn describe_screen_includes_titles_in_parentheses() {
         use crate::window_source::{
             Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry,

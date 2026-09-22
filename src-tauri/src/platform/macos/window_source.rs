@@ -108,9 +108,8 @@ fn window(entry: &NSDictionary<NSString, AnyObject>, can_read_titles: bool) -> O
 
     let title = if can_read_titles {
         entry
-            .objectForKey(ns_string!("kCGWindowName"))?
-            .downcast::<NSString>()
-            .ok()
+            .objectForKey(ns_string!("kCGWindowName"))
+            .and_then(|obj| obj.downcast::<NSString>().ok())
             .map(|s| s.to_string())
             .filter(|s| !s.is_empty())
     } else {
