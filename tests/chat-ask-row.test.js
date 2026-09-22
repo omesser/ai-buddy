@@ -34,28 +34,23 @@ function fnBody(name) {
   assert.fail(`${name} has no matching close`);
 }
 
-test("the options sit beside the question, not inside it", () => {
+test("asked and elicited still mount the options under the question", () => {
   for (const name of ["asked", "elicited"]) {
-    const body = fnBody(name);
-    assert.doesNotMatch(
-      body,
-      /body\.append\(\s*buttons\s*\)/,
-      `${name} puts the buttons inside .said, which wraps anywhere and eats spaces`,
-    );
+    const src = fnBody(name);
     assert.match(
-      body,
-      /row\.append\([^)]*\bbuttons\b/,
-      `${name} has to mount the options on the row so they do not inherit .said`,
+      src,
+      /body\.append\(\s*buttons\s*\)/,
+      `${name} keeps the answers under the question, not as a third row sibling`,
     );
   }
 });
 
-test("ask option buttons keep their words and do not shrink off the line", () => {
+test("ask options stack one per line and keep their words", () => {
   const options = ruleBlock(".row.ask .options");
   assert.match(
     options,
-    /flex-wrap:\s*wrap/,
-    "a long Allow-and-remember option wraps onto the next line instead of crushing Yes and No",
+    /flex-direction:\s*column/,
+    "the Harness lists one answer per line; a wrapping row drops No under Yes",
   );
 
   const button = ruleBlock(".row.ask button");

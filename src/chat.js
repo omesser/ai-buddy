@@ -236,9 +236,8 @@ function asked(ask) {
     });
     buttons.append(button);
   }
-  // Beside `.said`, not inside it: wrap-anywhere inherited there shrinks a
-  // button to one character, and Yes and No become circles. #908.
-  row.append(label, body, buttons);
+  body.append(buttons);
+  row.append(label, body);
   asks.set(ask.request, buttons);
   return add(row);
 }
@@ -285,7 +284,8 @@ function elicited(form) {
     });
   });
   buttons.append(decline);
-  row.append(label, body, buttons);
+  body.append(buttons);
+  row.append(label, body);
   asks.set(form.request, buttons);
   return add(row);
 }
