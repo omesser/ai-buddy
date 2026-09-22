@@ -68,9 +68,9 @@ pub const CAPABILITIES: &[Capability] = &[
     },
     Capability {
         id: CapabilityId::WindowTitles,
-        title: "Screen Recording",
+        title: "Window titles",
         buys: "Window titles and similar metadata.",
-        costs: "macOS Screen Recording, which can see the screen.",
+        costs: "macOS Screen Recording. The buddy reads window titles and similar metadata; it does not capture the screen.",
     },
     Capability {
         id: CapabilityId::InputMonitoring,
@@ -787,18 +787,16 @@ mod tests {
             #[cfg(target_os = "macos")]
             {
                 assert_eq!(rows[1].id, CapabilityId::WindowTitles);
-                assert_eq!(rows[1].title, "Screen Recording");
-                assert!(
-                    rows[1].buys.contains("title"),
-                    "Screen Recording has to say titles are what it buys, got {:?}",
-                    rows[1].buys
+                assert_eq!(
+                    serde_json::to_value(&rows[1]).expect("the consent row serializes"),
+                    serde_json::json!({
+                        "id": "WindowTitles",
+                        "title": "Window titles",
+                        "buys": "Window titles and similar metadata.",
+                        "costs": "macOS Screen Recording. The buddy reads window titles and similar metadata; it does not capture the screen.",
+                        "granted": false,
+                    })
                 );
-                assert!(
-                    rows[1].costs.contains("Screen Recording"),
-                    "Screen Recording has to name the macOS grant, got {:?}",
-                    rows[1].costs
-                );
-                assert!(!rows[1].granted);
             }
 
             #[cfg(target_os = "windows")]

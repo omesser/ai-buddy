@@ -503,12 +503,12 @@
             {
               "type": "Checkbox",
               "id": "consent_screen_recording",
-              "label": "Screen Recording",
+              "label": "Window titles",
               "writes": "UseWindowTitles",
               "frozen": false,
-              "help": "Reads window titles.",
+              "help": "Requires macOS Screen Recording.",
               "comment": null,
-              "disclosure": "Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.",
+              "disclosure": "macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.",
               "status": null
             },
             {

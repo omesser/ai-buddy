@@ -1283,12 +1283,12 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
-            label: "Screen Recording".to_string(),
+            label: "Window titles".to_string(),
             writes: BoolField::UseWindowTitles,
             frozen: false,
-            help: Some("Reads window titles.".to_string()),
+            help: Some("Requires macOS Screen Recording.".to_string()),
             comment: None,
-            disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.".to_string()),
+            disclosure: Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.".to_string()),
             status: None,
         },
         #[cfg(target_os = "windows")]
@@ -2594,13 +2594,13 @@ mod tests {
                 )
                 .expect("Accessibility checkbox exists");
 
-            let screen_recording = consent
+            let window_titles = consent
                 .rows
                 .iter()
                 .find(
                     |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_SCREEN_RECORDING_ID),
                 )
-                .expect("Screen Recording checkbox exists");
+                .expect("Window titles checkbox exists");
 
             match accessibility {
                 FormRow::Checkbox { label, help, .. } => {
@@ -2613,15 +2613,21 @@ mod tests {
                 _ => panic!("Accessibility row must be a checkbox"),
             }
 
-            match screen_recording {
-                FormRow::Checkbox { label, help, .. } => {
-                    assert_eq!(label, "Screen Recording");
-                    assert!(
-                        help.as_ref().is_some_and(|h| h.contains("title")),
-                        "Screen Recording help should mention titles"
+            match window_titles {
+                FormRow::Checkbox {
+                    label,
+                    help,
+                    disclosure,
+                    ..
+                } => {
+                    assert_eq!(label, "Window titles");
+                    assert_eq!(help.as_deref(), Some("Requires macOS Screen Recording."));
+                    assert_eq!(
+                        disclosure.as_deref(),
+                        Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.")
                     );
                 }
-                _ => panic!("Screen Recording row must be a checkbox"),
+                _ => panic!("Window titles row must be a checkbox"),
             }
 
             // The compiler pins each of these to *a* bool; only the test pins it
