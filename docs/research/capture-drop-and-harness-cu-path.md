@@ -51,10 +51,10 @@ capability is delivered as an MCP server the user installs.
 |---|---|---|
 | Claude Code (interactive) | **harness-native** on macOS, Pro/Max only, requires interactive session | Anthropic docs |
 | Claude Code (ACP) | **no** — gated by interactive-session requirement; ACP uses SDK print mode | `harness-tools-under-acp-probe.md` |
-    50|| Codex | **harness-native** under research; not yet confirmed | — |
-| Cursor Cloud Agents | **harness-native** — cursor-gpt-computer-use skill, cloud VM only | Cursor docs |
+    50|| Codex | **harness-native** — Computer Use plugin; host owns capture (macOS/Windows) | https://developers.openai.com/codex/computer-use |
+| Cursor Cloud Agents | **harness-native** — computer use in isolated cloud VM | Cursor docs |
 | Cursor Local Agents | **MCP attach** — no native CU; user attaches MCP server | Cursor MCP docs |
-| Hermes | **no** standard desktop CU; browser automation opt-in exists (CDP-gated) | Hermes ACP docs |
+| Hermes | **harness-native** — `computer_use` toolset routes to cua-driver (MCP stdio) | https://hermes-agent.nousresearch.com/docs/user-guide/features/computer-use |
 | OpenCode | **MCP attach** — no native desktop tool listed | OpenCode tools docs |
 | ACP spec itself | **no** standard `computer_use` capability defined | agentclientprotocol.com |
 
@@ -62,16 +62,23 @@ capability is delivered as an MCP server the user installs.
 v1. The protocol defines `fs.*`, `terminal.*`, and `elicitation.*`, but no
     60|desktop-control surface. Each harness decides its own path.
 
-**Fact** — Cursor Cloud Agents have harness-native computer use through the
-cursor-gpt-computer-use skill, which runs in the cloud VM. Cursor local agents
-have no native CU and rely on MCP attachment.
+**Fact** — Cursor Cloud Agents have harness-native computer use (each agent runs
+in an isolated VM with full desktop environment). Cursor local agents have no
+native CU and rely on MCP attachment. Codex has harness-native Computer Use as a
+plugin (macOS/Windows).
+
+**Fact** — Hermes `computer_use` toolset routes to cua-driver over MCP stdio.
+This is a first-party integration where Hermes installs and manages cua-driver
+   70|as the backend for its computer_use tools. Note: Hermes ACP mode uses a curated
+toolset that may omit computer_use depending on session configuration.
 
 **Inference** — Since no portable ACP computer-use capability exists, the only
 multi-harness path for desktop control is an MCP driver the user attaches to
 whichever harness they run. That is the architectural niche cua-driver and the
-community MCPs fill.
+community MCPs fill. Hermes uniquely integrates cua-driver as a first-party
+backend.
 
-    70|## MCP driver comparison
+## MCP driver comparison
 
 Three MCP servers provide Anthropic-style computer-use tools (mouse, keyboard,
 screenshots) that work across multiple harnesses. Comparison as of 2026-09-22.
@@ -85,9 +92,10 @@ transport).
 **Fact** — **First-party integration docs** exist for Claude Code, Codex,
     80|Cursor, and OpenCode: https://cua.ai/docs/how-to-guides/driver/connect-your-agent
 
-**Fact** — **Hermes integration:** Hermes' native `computer_use` mode routes to
-cua-driver when available. This is a first-party integration documented by the
-Hermes project.
+**Fact** — **Hermes integration:** Hermes' built-in `computer_use` toolset routes
+to cua-driver over MCP stdio. Hermes pre-installs cua-driver and manages its
+lifecycle. This is a first-party integration:
+https://hermes-agent.nousresearch.com/docs/user-guide/features/computer-use
 
 **Fact** — **Accessibility APIs first, screenshots optional:** Uses macOS
 Accessibility (AX), Windows UI Automation (UIA), and Linux AT-SPI. Screenshots
@@ -142,12 +150,11 @@ Hermes option.
 accessibility-first design, making it a strong runner-up for macOS users who
 prefer AX over pixels. Its single-platform focus limits broader recommendation.
 
-### Optional footnote: zavora-ai/computer-use-macos
+### Optional footnote: zavora-ai/computer-use-mcp
 
-**Assumption** — zavora-ai/computer-use-macos was mentioned in decision context
-as a community cross-OS MCP option. Repository URL could not be verified as of
-2026-09-22 (404). Not selected as primary or runner-up. Noted for completeness
-in case it emerges later or the correct URL is found.
+**Fact** — https://github.com/zavora-ai/computer-use-mcp is another community
+MCP. Not selected as primary or runner-up for this comparison. Noted for
+completeness.
 
    140|## User-facing meaning
 
@@ -160,8 +167,9 @@ never takes screenshots itself, and never embeds OCR or vision models for deskto
 sensing. The Local Gate (ADR-0005) is unneeded because nothing asks for Capture.
 
 **Agent CU is still available:** When a user runs a CU-capable harness (e.g.
-   150|Cursor Cloud Agent with cursor-gpt-computer-use, interactive Claude Code on
-macOS) or attaches an MCP server like cua-driver, that agent has desktop control.
+   150|Cursor Cloud Agent, Codex with Computer Use plugin, Hermes with computer_use
+toolset, interactive Claude Code on macOS) or attaches an MCP server like
+cua-driver, that agent has desktop control.
 The control comes from the harness or MCP server the user chose, not from
 ai-buddy.
 
@@ -236,10 +244,6 @@ The following are **next steps** this note identifies, but does not implement:
 4. **Evaluate zavora-ai and any other late-emerging MCPs.** Community MCP
    landscape changes. The comparison here is 2026-09-22; future notes can
    revisit if new cross-platform or better-integrated options emerge.
-
-5. **Clarify Codex harness-native CU status.** The table marks it "under
-   research." A separate probe or vendor-doc check can settle whether Codex has
-   native desktop tools or relies on MCP like Cursor local.
    220|
 ## Gaps and open questions
 
@@ -251,19 +255,24 @@ MCP on Windows/Linux.
 first-party level. Verification: search Hermes docs/repo for references to these
 MCP servers.
 
-**Assumption** — zavora-ai repository URL (github.com/zavora-ai/computer-use-macos)
-   230|returned 404 as of 2026-09-22. May be renamed, moved, private, or not yet
-public. Ranked as optional footnote; correct URL verification pending.
-
 **Fact** — cua-driver MCP tools are documented at the URL cited. Verified
 2026-09-22: https://cua.ai/docs/reference/cua-driver/mcp-tools resolves.
 
 **Fact** — Hermes computer_use routing to cua-driver is first-party. Verified
-2026-09-22 from Hermes documentation describing cua-driver as the native
-computer-use backend.
+2026-09-22: https://hermes-agent.nousresearch.com/docs/user-guide/features/computer-use
+documents the integration and states "The built-in `computer_use` toolset is the
+recommended Hermes integration. It speaks MCP over stdio to `cua-driver`".
 
-**Fact** — Cursor Cloud Agents have harness-native CU via
-   240|cursor-gpt-computer-use skill. Verified 2026-09-22 from Cursor docs.
+**Fact** — zavora-ai/computer-use-mcp repository exists. Verified 2026-09-22:
+https://github.com/zavora-ai/computer-use-mcp resolves (200).
+
+**Fact** — Codex Computer Use plugin exists. Verified 2026-09-22:
+https://developers.openai.com/codex/computer-use documents "Computer Use plugin"
+for ChatGPT/Codex on macOS and Windows where host grants permissions.
+
+**Fact** — Cursor Cloud Agents have harness-native computer use (isolated VM with
+   240|full desktop environment). Verified 2026-09-22: cursor.com/docs/cloud-agent and
+cursor.com/blog/agent-computer-use.
 
 **Fact** — ACP v1 has no computer_use client capability. Verified 2026-09-22:
 https://agentclientprotocol.com/protocol/v1/initialization lists `fs.*`,
