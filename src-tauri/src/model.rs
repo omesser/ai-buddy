@@ -81,6 +81,26 @@ const DEFAULT_MODEL: &str = "gpt-4o-mini";
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
 
+/// What a host that marks its reasoning is capped at instead (#606 §C).
+///
+/// The wire carries one number covering thought and answer together on every
+/// path we speak, and no server can be told not to count thinking, so a cap
+/// sized for a two-line reply is one a reasoning model hits mid-thought.
+/// #598 measured a median burn of 479 tokens against a 512 cap. Anything
+/// derived from the reply cap brings that back — five times a hosted 80 is
+/// 400 — so this is absolute, and the same local or hosted.
+///
+/// It is not a reply length. What it guards is a runaway turn on a hosted
+/// key: a model that loops instead of concluding would bill until the
+/// timeout. 8192 is an order of magnitude above the measured burn, which is
+/// the room a long reasoning turn wants, and matches what the endpoints in
+/// scope already allow reasoning by default. A turn still going at 8192 is
+/// stuck rather than thinking, and the Action Log says so.
+///
+/// `AI_BUDDY_DIRECTOR_MAX_TOKENS` outranks it: a number the user typed is an
+/// instruction, not a default to improve on.
+const THINK_CEILING: u32 = 8192;
+
 /// What an unset reasoning-effort row sends. Not "send nothing":
 /// omitting the field is still reachable when a server refuses it
 /// and the session drops it.
@@ -290,11 +310,13 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         model: settings.model.clone(),
         timeout: timeout_for(),
         max_tokens: max_tokens_for(local),
+        cap_pinned: crate::dev_flags::director_max_tokens().is_some(),
         effort: effort_for(),
         session: Mutex::new(Session::default()),
         streams: AtomicBool::new(true),
         takes_effort: AtomicBool::new(true),
         takes_max_tokens: AtomicBool::new(true),
+        marks_thinking: AtomicBool::new(false),
         agent: ureq::agent(),
     })
 }
@@ -561,6 +583,14 @@ pub struct Endpoint {
     model: String,
     timeout: Duration,
     max_tokens: u32,
+    /// Did `max_tokens` come from `AI_BUDDY_DIRECTOR_MAX_TOKENS` or the
+    /// settings row, rather than from the built-in default? A pinned cap is
+    /// the one thing `THINK_CEILING` does not overrule. Decided here, not at
+    /// the read site, for the reason `effort` and `timeout` are: the endpoint
+    /// is rebuilt on a settings change (`completer_retargets`), so this is as
+    /// fresh as they are, and `wire_budget` stays a function of the endpoint
+    /// rather than of whatever `dev_flags` holds at the moment it is called.
+    cap_pinned: bool,
     /// How hard to ask this host to think, verbatim. Baked in here so a
     /// settings change reaches a running Director through `completer_retargets`.
     /// Never empty: `effort_for` has already turned unset into `low`.
@@ -579,6 +609,13 @@ pub struct Endpoint {
     /// drops: a refusal retries with `max_completion_tokens`. Optimistic
     /// because Ollama has no such field and would silently answer with no cap.
     takes_max_tokens: AtomicBool,
+    /// Has a turn against this host ever marked its reasoning? Same
+    /// probe-then-remember shape as `streams`, with the polarity the other
+    /// way round: pessimistic, and it only ever rises. The first turn against
+    /// an unknown host therefore sends today's single combined number and
+    /// behaves exactly as it does today (#606 §C, acceptance box 5); a host
+    /// that marked once is given think room on top from the next turn on.
+    marks_thinking: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are use-once
     /// Agents, so each wake would throw away the pooled connection.
     agent: ureq::Agent,
@@ -760,7 +797,7 @@ impl Endpoint {
             &self.model,
             session,
             responses,
-            self.max_tokens,
+            self.wire_budget(),
             wire,
             effort,
             &self.effort,
@@ -823,10 +860,30 @@ impl Endpoint {
                     .limit(STREAM_LIMIT)
                     .reader();
                 match read_stream(reader, abandoned, think) {
-                    Ok(streamed) => self.reply_from(url, streamed),
+                    Ok((streamed, marked)) => {
+                        // Evidence, like the three dropped fields above it:
+                        // this host marked its reasoning, so the next turn
+                        // gets think room on top of the reply budget.
+                        if marked {
+                            self.marks_thinking.store(true, Ordering::SeqCst);
+                        }
+                        self.reply_from(url, streamed)
+                    }
                     Err(error) => Err(Unsent::Failed(format!("{url}: {error}"))),
                 }
             }
+        }
+    }
+
+    /// The one number the wire carries, in the order the three cases settle.
+    /// A cap the user pinned is sent verbatim; a host seen to mark its
+    /// reasoning is given `THINK_CEILING` instead of a reply-sized cap; every
+    /// other host sends `max_tokens`, which is what it sent before #606.
+    fn wire_budget(&self) -> u32 {
+        if self.cap_pinned || !self.marks_thinking.load(Ordering::SeqCst) {
+            self.max_tokens
+        } else {
+            THINK_CEILING
         }
     }
 
@@ -859,7 +916,10 @@ impl Endpoint {
     /// Action Log copy for a capped turn. Names the model, the cap, and the
     /// setting that moves it. The four #606 rows call for different settings.
     fn out_of_budget(&self, url: &str, what: &Truncation) -> String {
-        let cap = self.max_tokens;
+        // The number this turn was actually sent, which is the ceiling on a
+        // host that marks and `max_tokens` on every other. Naming the field
+        // would tell a user to raise a knob that was not what stopped them.
+        let cap = self.wire_budget();
         let happened = match what {
             Truncation::ThinkingOnly => {
                 format!("spent all {cap} tokens thinking and wrote no reply")
@@ -1454,7 +1514,7 @@ fn read_stream(
     reader: impl std::io::Read,
     abandoned: impl Fn() -> bool,
     thought: impl Fn(&str),
-) -> Result<Streamed, String> {
+) -> Result<(Streamed, bool), String> {
     let mut thinking = String::new();
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
     // The Chat surface keeps no thought of its own, so the last line stays
@@ -1463,7 +1523,10 @@ fn read_stream(
     if crate::acp_wire::thinking_line(&thinking).is_some() {
         thought("");
     }
-    ended
+    // Whether this turn marked, for the caller to remember on the host. Any
+    // marked chunk counts, including whitespace the strip never drew: the
+    // question is whether the server types reasoning apart, not what it said.
+    ended.map(|ended| (ended, !thinking.is_empty()))
 }
 
 /// The frame loop itself, split out so every ending (a marker, a cut body,
@@ -2331,11 +2394,13 @@ pub(crate) mod tests {
             model: "gemma4".to_string(),
             timeout: TIMEOUT,
             max_tokens: HOSTED_MAX_TOKENS,
+            cap_pinned: false,
             effort: DEFAULT_EFFORT.to_string(),
             session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
             takes_effort: AtomicBool::new(true),
             takes_max_tokens: AtomicBool::new(true),
+            marks_thinking: AtomicBool::new(false),
             agent: ureq::agent(),
         }
     }
@@ -2629,13 +2694,20 @@ pub(crate) mod tests {
     /// How a whole stream ended, and every line the thought strip was told to draw.
     fn streamed_with_thoughts(sse: &str) -> (Streamed, Vec<String>) {
         let drawn = std::cell::RefCell::new(Vec::new());
-        let ended = read_stream(
+        let (ended, _) = read_stream(
             std::io::Cursor::new(sse),
             || false,
             |line| drawn.borrow_mut().push(line.to_string()),
         )
         .unwrap();
         (ended, drawn.into_inner())
+    }
+
+    /// Did this stream mark its reasoning? The bit `post` remembers on the host.
+    fn streamed_marked(sse: &str) -> bool {
+        read_stream(std::io::Cursor::new(sse), || false, |_| {})
+            .unwrap()
+            .1
     }
 
     #[test]
@@ -2694,7 +2766,7 @@ pub(crate) mod tests {
             sent: 0,
         };
         assert_eq!(
-            read_stream(dribble, || false, |_| {}).unwrap(),
+            read_stream(dribble, || false, |_| {}).unwrap().0,
             Streamed::Complete("stroll\nhey".to_string())
         );
     }
@@ -2785,6 +2857,87 @@ pub(crate) mod tests {
                     .map(str::to_string)
                     .to_vec()
             )
+        );
+    }
+
+    /// Probe then remember, the shape `streams` and `takes_effort` already
+    /// have, with the polarity the other way round: pessimistic, and it only
+    /// ever rises. A host is given room to think only after a turn has been
+    /// seen to mark, so the first turn against an unknown host is today's wire
+    /// and #606 acceptance box 5 holds without a special case.
+    #[test]
+    fn a_host_that_marks_its_reasoning_stops_being_capped_at_a_reply_length() {
+        let marked = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let unmarked = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert!(streamed_marked(marked));
+        assert!(
+            !streamed_marked(unmarked),
+            "content is not a reasoning mark, whatever it reads like"
+        );
+
+        let endpoint = Endpoint {
+            max_tokens: LOCAL_MAX_TOKENS,
+            ..local_endpoint()
+        };
+        assert_eq!(
+            endpoint.wire_budget(),
+            512,
+            "an unknown host is sent today's single combined number"
+        );
+        endpoint.marks_thinking.store(true, Ordering::SeqCst);
+        assert_eq!(
+            endpoint.wire_budget(),
+            8192,
+            "and a host that marks is no longer capped at a reply length"
+        );
+        assert_eq!(
+            endpoint.max_tokens, LOCAL_MAX_TOKENS,
+            "the built-in cap itself never moved"
+        );
+    }
+
+    /// The ceiling is a default, and a pinned cap outranks a default. A user
+    /// who types a number and watches 8192 go out instead has been ignored.
+    #[test]
+    fn a_pinned_cap_outranks_the_ceiling_even_on_a_host_that_marks() {
+        let endpoint = Endpoint {
+            max_tokens: 300,
+            cap_pinned: true,
+            ..local_endpoint()
+        };
+        endpoint.marks_thinking.store(true, Ordering::SeqCst);
+        assert_eq!(endpoint.wire_budget(), 300);
+    }
+
+    /// One number per turn, so the Action Log names the one this turn was
+    /// sent. Telling a capped user to raise a knob that was not what stopped
+    /// them is the failure this row is guarding against.
+    #[test]
+    fn a_capped_marked_host_logs_the_ceiling_it_was_sent() {
+        let endpoint = Endpoint {
+            max_tokens: LOCAL_MAX_TOKENS,
+            ..local_endpoint()
+        };
+        endpoint.marks_thinking.store(true, Ordering::SeqCst);
+        let url = "http://127.0.0.1:1234/v1/chat/completions";
+
+        let Err(Unsent::Truncated(why)) =
+            endpoint.reply_from(url, Streamed::Truncated(Truncation::ThinkingOnly))
+        else {
+            panic!("a budget spent entirely on thinking has nothing to show");
+        };
+        assert!(
+            why.contains("spent all 8192 tokens thinking"),
+            "the ceiling is what it burned, not the 512 it was never sent: {why}"
         );
     }
 
@@ -3044,7 +3197,7 @@ pub(crate) mod tests {
             asked.get() > 3
         };
         assert_eq!(
-            read_stream(Endless, abandoned, |_| {}).unwrap(),
+            read_stream(Endless, abandoned, |_| {}).unwrap().0,
             Streamed::Abandoned
         );
     }
@@ -3809,6 +3962,39 @@ pub(crate) mod tests {
             assert_eq!(max_tokens_for(false), 11);
             std::env::remove_var(TIMEOUT_SECS);
             std::env::remove_var(MAX_TOKENS);
+        });
+    }
+
+    /// The pin travels with the endpoint rather than being re-read at the
+    /// send, so a marked host built while a cap was exported still honours
+    /// it. `completer_retargets` rebuilds the endpoint when the setting
+    /// changes, which is how `effort` and `timeout` stay fresh too.
+    #[test]
+    fn an_exported_cap_pins_the_endpoint_against_the_ceiling() {
+        with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let loose = endpoint_from(&resolve("http://localhost:11434", "gemma4", None))
+                .expect("a local endpoint needs no key");
+            loose.marks_thinking.store(true, Ordering::SeqCst);
+            assert_eq!(
+                loose.wire_budget(),
+                8192,
+                "nothing pinned, so a host that marks gets the ceiling"
+            );
+
+            std::env::set_var(MAX_TOKENS, "300");
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let pinned = endpoint_from(&resolve("http://localhost:11434", "gemma4", None))
+                .expect("a local endpoint needs no key");
+            pinned.marks_thinking.store(true, Ordering::SeqCst);
+            assert_eq!(
+                pinned.wire_budget(),
+                300,
+                "the number the user typed is an instruction, not a default"
+            );
+
+            std::env::remove_var(MAX_TOKENS);
+            crate::dev_flags::seed(&crate::settings::Settings::default());
         });
     }
 
