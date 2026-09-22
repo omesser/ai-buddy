@@ -2703,8 +2703,8 @@ mod tests {
             {
                 assert_eq!(
                     consent.rows.len(),
-                    1,
-                    "Windows has only Accessibility; WindowTitles is macOS+Linux only"
+                    2,
+                    "Windows has Accessibility and WindowTitles"
                 );
                 let listed = crate::consent::process_listed_as();
                 assert!(

@@ -880,21 +880,24 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    let source = windows::WindowsWindowSource::new({
-        let cache = cache.clone();
-        let app_clone = app.clone();
-        move || {
-            if due(&refreshed) {
-                *cache.0.lock().unwrap() = read_displays(&app_clone);
-            }
+    let source = windows::WindowsWindowSource::new(
+        {
+            let cache = cache.clone();
+            let app_clone = app.clone();
+            move || {
+                if due(&refreshed) {
+                    *cache.0.lock().unwrap() = read_displays(&app_clone);
+                }
 
-            let displays = cache.read();
-            (
-                displays.usable_frames,
-                displays.dock.map(|(bounds, _)| bounds),
-            )
-        }
-    });
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
+            }
+        },
+        || crate::consent::usable(crate::consent::CapabilityId::WindowTitles, crate::consent::live()),
+    );
 
     (source, cache)
 }
