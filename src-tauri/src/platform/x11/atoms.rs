@@ -110,31 +110,6 @@ pub(super) fn window_class(conn: &RustConnection, window: xproto::Window) -> Opt
     parse_wm_class(&reply.value)
 }
 
-/// Read _NET_WM_NAME to get the window's title.
-pub(super) fn window_title(conn: &RustConnection, window: xproto::Window) -> Option<String> {
-    let atoms = atoms()?;
-    let reply = xproto::get_property(
-        conn,
-        false,
-        window,
-        atoms.net_wm_name,
-        xproto::AtomEnum::ANY,
-        0,
-        1024,
-    )
-    .ok()?
-    .reply()
-    .ok()?;
-
-    if reply.format == 8 && !reply.value.is_empty() {
-        String::from_utf8(reply.value)
-            .ok()
-            .filter(|s| !s.is_empty())
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

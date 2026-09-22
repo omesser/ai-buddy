@@ -100,7 +100,7 @@ pub fn visible_window_titles() -> Vec<WindowTitle> {
         .collect()
 }
 
-fn window_title(conn: &RustConnection, window: Window) -> String {
+pub(super) fn window_title(conn: &RustConnection, window: Window) -> String {
     if let Some(atoms) = super::atoms::atoms() {
         if let Some(name) = property_text(conn, window, atoms.net_wm_name, atoms.utf8_string) {
             return name;
@@ -195,7 +195,12 @@ fn window_rect(conn: &RustConnection, window: Window, can_read_titles: bool) -> 
 
     let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
     let title = if can_read_titles {
-        super::atoms::window_title(conn, window)
+        let title_str = window_title(conn, window);
+        if title_str.is_empty() {
+            None
+        } else {
+            Some(title_str)
+        }
     } else {
         None
     };

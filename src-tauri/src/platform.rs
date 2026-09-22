@@ -685,17 +685,28 @@ pub fn activity_source() -> impl ActivitySource {
     windows::WindowsActivitySource
 }
 
-/// Window titles for the MCP resource. Not on `WindowSource`: the Spatial
-/// Layer stays title-free, and this walk is the titles listing only.
+/// Window titles for the MCP resource, gated behind WindowTitles consent.
 #[cfg(target_os = "macos")]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if !crate::consent::usable(
+        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::live(),
+    ) {
+        return Vec::new();
+    }
     macos::visible_window_titles()
 }
 
-/// Titles from `_NET_WM_NAME` / `WM_NAME`. Empty on a Wayland session with
-/// no X server, which is the supported stub.
+/// Titles from `_NET_WM_NAME` / `WM_NAME`, gated behind WindowTitles consent.
+/// Empty on a Wayland session with no X server, which is the supported stub.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if !crate::consent::usable(
+        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::live(),
+    ) {
+        return Vec::new();
+    }
     if x11_answers() {
         x11::visible_window_titles()
     } else {
@@ -703,10 +714,16 @@ pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     }
 }
 
-/// Titles from `GetWindowText`. Owner is still the process image, never
-/// the title, matching the geometry path.
+/// Titles from `GetWindowText`, gated behind WindowTitles consent.
+/// Owner is still the process image, never the title, matching the geometry path.
 #[cfg(not(unix))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if !crate::consent::usable(
+        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::live(),
+    ) {
+        return Vec::new();
+    }
     windows::visible_window_titles()
 }
 
@@ -1321,5 +1338,31 @@ mod tests {
             resolve_double_click_interval(os_double_click_interval_ms()),
             "cached public value must equal resolve of the raw OS read"
         );
+    }
+
+    /// MCP titles resource must gate on WindowTitles consent. Without grant,
+    /// no titles leak (even on X11 where _NET_WM_NAME is technically consent-free
+    /// at the protocol level).
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn mcp_window_titles_require_consent() {
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, false);
+        let without_wanted = list_window_titles();
+        assert!(
+            without_wanted.is_empty(),
+            "list_window_titles must return empty when WindowTitles is not wanted"
+        );
+
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, true);
+        #[cfg(target_os = "linux")]
+        {
+            crate::consent::GRANTED_WINDOW_TITLES
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            let without_granted = list_window_titles();
+            assert!(
+                without_granted.is_empty(),
+                "list_window_titles must return empty when WindowTitles is wanted but not granted"
+            );
+        }
     }
 }
