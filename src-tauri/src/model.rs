@@ -58,8 +58,7 @@ pub(crate) const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// `pub(crate)` so the settings window can name the row it owns.
 pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
-/// Model API timeout, in seconds, and the reply cap, in tokens.
-/// The cap still has a local default that differs from the hosted one.
+/// Model API timeout, in seconds, and the turn ceiling, in tokens.
 /// `pub(crate)` so the settings window can name the frozen row.
 pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
 pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
@@ -508,7 +507,7 @@ pub(crate) fn timeout_placeholder() -> String {
     TIMEOUT.as_secs().to_string()
 }
 
-/// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
+/// What an empty turn-ceiling field means, in tokens. See `timeout_placeholder`.
 /// Both numbers, because the second is the one a reasoning model meets.
 pub(crate) fn max_tokens_placeholder() -> String {
     format!("{TURN_CEILING} ({THINK_CEILING} once the host marks thinking)")
@@ -1210,7 +1209,7 @@ const PING: &str = "Reply with the single word pong and nothing else.";
 /// `scripts/probe-model.sh` is the face of this.
 pub fn run_probe() -> i32 {
     // No settings file on this path. `dev_flags::seed` is where the exported
-    // timeout and reply cap are read.
+    // timeout and turn ceiling are read.
     crate::dev_flags::seed(&crate::settings::Settings::default());
     let Some(endpoint) = endpoint() else {
         eprintln!(

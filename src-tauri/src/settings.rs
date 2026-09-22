@@ -718,7 +718,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_model
             .as_ref()
             .is_some_and(|model| model != &settings.director_model)
-        // The timeout and the reply cap are baked into the Endpoint by
+        // The timeout and the turn ceiling are baked into the Endpoint by
         // `model::endpoint_from`, so a change to either only reaches the
         // Director through a rebuild.
         || patch
@@ -1083,7 +1083,7 @@ impl SettingsSession {
         let move_harness = harness_retargets(&settings, &patch);
         let reload_chat = chat_surface_reloads(&settings, &patch);
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
-        // the live timeout and reply cap.
+        // the live timeout and turn ceiling.
         apply_and_seed(&mut settings, patch);
         #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
@@ -1666,7 +1666,7 @@ pub struct Settings {
     /// Model API timeout, in seconds. Empty means unset, as on the two above.
     /// A Harness turn is `harness_turn_timeout_secs` (#690).
     pub director_timeout_secs: String,
-    /// Reply cap, in tokens. Empty means unset, as on the two above.
+    /// Turn ceiling, in tokens. Empty means unset, as on the two above.
     pub director_max_tokens: String,
     /// How hard to ask the model to think, sent verbatim on both inference
     /// paths. Empty means unset, and unset sends `low` — not nothing, which

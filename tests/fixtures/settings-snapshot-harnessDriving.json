@@ -663,7 +663,7 @@
             {
               "type": "TextField",
               "id": "director_max_tokens",
-              "label": "Reply cap, in tokens",
+              "label": "Turn ceiling, in tokens",
               "placeholder": "1024 (8192 once the host marks thinking)",
               "writes": "DirectorMaxTokens",
               "help": "A runaway guard, not a reply length. HTTP endpoint only.",
@@ -708,7 +708,7 @@
             }
           ],
           "comment": "Also for development and testing. Leave empty for the default.",
-          "disclosure": "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for 30 seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the buddy or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+          "disclosure": "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for 30 seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the buddy or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
           "status": null
         },
         {
