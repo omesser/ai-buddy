@@ -9,7 +9,11 @@
   "synced": "2026-09-14",
   "vendored_into": ".agents/skills (skills), .agents/agents (agents)",
   "not_vendored": ["docs", "assets", "automations", ".cursor-plugin"],
-  "_skills": "The skill directories under .agents/skills this file owns. Anything else there is this repository's own and is never touched by the sync.",
+  "_excluded": "Names upstream ships that this sync deliberately does not vendor. Generated from EXCLUDED in scripts/sync-pstack.sh.",
+  "excluded": {
+    "tdd": "Collision. The Matt Pocock engineering set ships a tdd too, and its implement skill calls it by name, so that one wins. .agents/skills is flat and holds one of the two. See .agents/mattpocock/UPSTREAM.json."
+  },
+  "_skills": "The skill directories under .agents/skills this file owns. Anything else there belongs to the Matt Pocock sync or to this repository and is never touched by this sync.",
   "skills": [
     "architect",
     "arena",
@@ -52,7 +56,6 @@
     "setup-pstack",
     "show-me-your-work",
     "swarm",
-    "tdd",
     "teach",
     "technical-writing",
     "typescript-best-practices",

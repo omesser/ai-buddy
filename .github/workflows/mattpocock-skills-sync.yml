@@ -1,8 +1,8 @@
-name: pstack Sync
+name: Matt Pocock Skills Sync
 
-# `.agents/pstack/` is a copy of `cursor/plugins@main:pstack`, and a copy only
-# stays useful while someone refreshes it. This does that once a week and opens
-# a pull request when upstream actually moved.
+# `.agents/mattpocock/` is a copy of `mattpocock/skills@main:skills/engineering`,
+# and a copy only stays useful while someone refreshes it. This does that once a
+# week and opens a pull request when upstream actually moved.
 #
 # It never merges. Every pull request here goes through review, and a bot that
 # lands third-party markdown into an agent's instructions unreviewed is the one
@@ -10,9 +10,12 @@ name: pstack Sync
 
 on:
   schedule:
-    # Mondays, 06:00 UTC. Early enough in the week that a sync lands before the
-    # work that might use it.
-    - cron: '0 6 * * 1'
+    # Mondays, 06:30 UTC — half an hour behind the pstack sync, deliberately.
+    # `scripts/sync-mattpocock.sh` reserves every name `.agents/pstack/UPSTREAM.json`
+    # claims, so it should read a pstack lock file that is already current.
+    # Running the two in the other order would only delay a collision by a week,
+    # but there is no reason to choose the worse order.
+    - cron: '30 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -33,10 +36,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node
-        # The drift test runs here rather than as a check on the pull request:
-        # a pull request opened with GITHUB_TOKEN does not trigger
-        # `on: pull_request`, so PR Tests never fires for it. The full suite
-        # does still run — the last step dispatches it at the branch, and
+        # The layout and ownership tests run here rather than as checks on the
+        # pull request: a pull request opened with GITHUB_TOKEN does not trigger
+        # `on: pull_request`, so PR Tests never fires for it. The full suite does
+        # still run — the last step dispatches it at the branch, and
         # `workflow_dispatch` is the exception GitHub carves out of that
         # suppression — but a dispatched run reports against the branch, not
         # against the pull request. Testing here is what makes the branch
@@ -49,12 +52,12 @@ jobs:
         id: before
         run: |
           sed -n 's/.*"commit": *"\([^"]*\)".*/before=\1/p' \
-            .agents/pstack/UPSTREAM.json >> "$GITHUB_OUTPUT"
+            .agents/mattpocock/UPSTREAM.json >> "$GITHUB_OUTPUT"
 
       - name: Re-vendor from upstream
         # The same script a human runs locally. One code path, so a sync done
         # by hand and a sync done here cannot produce different trees.
-        run: scripts/sync-pstack.sh --fetch
+        run: scripts/sync-mattpocock.sh --fetch
 
       - name: Decide whether upstream moved
         id: changes
@@ -67,11 +70,10 @@ jobs:
           fi
 
       - name: Layout and ownership tests
-        # Ownership joined the layout test when the Matt Pocock skills were
-        # vendored into the same flat directory. This sync rewrites its own name
-        # list from whatever upstream ships, so an upstream that adds a name the
-        # other sync already owns would claim it here and clobber it on disk.
-        # That is the failure the ownership test names.
+        # Ownership is the one that matters here. `.agents/skills` is flat and
+        # shared with the pstack sync, so an upstream that adds a name pstack
+        # already owns is the failure this catches. The script skips such a name
+        # rather than clobbering it, and this proves the skip happened.
         if: steps.changes.outputs.moved == 'true'
         run: node --test tests/skills-layout.test.js tests/skills-ownership.test.js
 
@@ -79,10 +81,8 @@ jobs:
         if: steps.changes.outputs.moved == 'true'
         id: push
         run: |
-          after=$(sed -n 's/.*"commit": *"\([^"]*\)".*/\1/p' .agents/pstack/UPSTREAM.json)
-          version=$(sed -n 's/.*"plugin_version": *"\([^"]*\)".*/\1/p' .agents/pstack/UPSTREAM.json)
+          after=$(sed -n 's/.*"commit": *"\([^"]*\)".*/\1/p' .agents/mattpocock/UPSTREAM.json)
           echo "after=$after" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -93,8 +93,8 @@ jobs:
           git add .agents
           # Captured from the index, before the commit. The checkout is shallow,
           # so neither `HEAD~1` nor a merge base is available afterwards.
-          git diff --cached --stat | tail -40 > /tmp/pstack-diffstat.txt
-          git commit -m "chore(pstack): Sync vendored skills to ${after:0:12}"
+          git diff --cached --stat | tail -40 > /tmp/mattpocock-diffstat.txt
+          git commit -m "chore(mattpocock): Sync vendored skills to ${after:0:12}"
           # `--force-with-lease` rather than `--force`: the sync branch is
           # shared, and a concurrent push should lose this race rather than be
           # silently clobbered. The lease needs an explicit expectation because
@@ -105,27 +105,29 @@ jobs:
           git push --force-with-lease="refs/heads/$BRANCH:$lease" \
             origin "HEAD:$BRANCH"
         env:
-          BRANCH: chore/pstack-sync
+          BRANCH: chore/mattpocock-sync
 
       - name: Open or update the pull request
         if: steps.changes.outputs.moved == 'true'
         run: |
           # The diff summary and the compare link are the point: a reviewer
-          # should see what moved without opening 124 files.
+          # should see what moved without opening every file.
           {
             echo '## Why'
             echo
-            echo '`.agents/pstack/` tracks `cursor/plugins@main:pstack`, and upstream moved.'
+            echo '`.agents/mattpocock/` tracks `mattpocock/skills@main:skills/engineering`, and upstream moved.'
             echo
             echo '## What changed'
             echo
-            echo "Vendored commit \`$BEFORE\` to \`$AFTER\`, plugin version \`$VERSION\`."
+            echo "Vendored commit \`$BEFORE\` to \`$AFTER\`."
             echo
-            echo "Upstream range: https://github.com/cursor/plugins/compare/$BEFORE...$AFTER"
+            echo "Upstream range: https://github.com/mattpocock/skills/compare/$BEFORE...$AFTER"
             echo
             echo '```'
-            cat /tmp/pstack-diffstat.txt
+            cat /tmp/mattpocock-diffstat.txt
             echo '```'
+            echo
+            echo 'Check the `excluded` block in `.agents/mattpocock/UPSTREAM.json` against the job log. A skill upstream added under a name pstack already owns is skipped, not vendored, and the log line says which.'
             echo
             echo '## How to verify'
             echo
@@ -133,14 +135,14 @@ jobs:
             echo
             echo "That dispatched run is a standalone run, not a status check: no \`PR Tests\` tick will appear on this pull request, however green the suite came out. Read it before approving: https://github.com/$GH_REPO/actions/workflows/tests.yml?query=branch%3A${BRANCH//\//%2F}"
             echo
-            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`, which is why the suite has to be dispatched and why it cannot report here. If the dispatch itself failed, this job logged an error and the branch carries only the drift test above — run `node --test tests/` and `pre-commit run --all-files` locally before approving.'
+            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`, which is why the suite has to be dispatched and why it cannot report here. If the dispatch itself failed, this job logged an error and the branch carries only the two tests above — run `node --test tests/` and `pre-commit run --all-files` locally before approving.'
             echo
             echo 'Read `docs/agents/vendored-skills.md` before approving a change to a playbook this repository overrules.'
-          } > /tmp/pstack-pr.md
+          } > /tmp/mattpocock-pr.md
 
-          title="chore(pstack): Sync vendored skills to ${AFTER:0:12}"
+          title="chore(mattpocock): Sync vendored skills to ${AFTER:0:12}"
           if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
-            gh pr edit "$BRANCH" --title "$title" --body-file /tmp/pstack-pr.md
+            gh pr edit "$BRANCH" --title "$title" --body-file /tmp/mattpocock-pr.md
           else
             # No label. Every string in docs/agents/triage-labels.md is an
             # issue triage role — `needs-triage` reads "maintainer needs to
@@ -148,16 +150,15 @@ jobs:
             # arrives needing review, which is what the architect gate is for.
             # No auto-merge is armed, here or anywhere.
             gh pr create --base "$GITHUB_BASE" --head "$BRANCH" \
-              --title "$title" --body-file /tmp/pstack-pr.md
+              --title "$title" --body-file /tmp/mattpocock-pr.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GITHUB_BASE: main
-          BRANCH: chore/pstack-sync
+          BRANCH: chore/mattpocock-sync
           BEFORE: ${{ steps.before.outputs.before }}
           AFTER: ${{ steps.push.outputs.after }}
-          VERSION: ${{ steps.push.outputs.version }}
 
       - name: Dispatch the full test suite at the sync branch
         # Guarded on the same `moved` output as the push: a run of this workflow
@@ -171,8 +172,8 @@ jobs:
         run: |
           gh workflow run tests.yml --ref "$BRANCH" ||
             echo "::error::Could not dispatch PR Tests for $BRANCH." \
-              "The sync pull request stands, verified only by the drift test."
+              "The sync pull request stands, verified only by the two tests above."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          BRANCH: chore/pstack-sync
+          BRANCH: chore/mattpocock-sync

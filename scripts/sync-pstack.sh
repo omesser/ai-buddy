@@ -22,6 +22,32 @@ cd "$root"
 SKILLS=.agents/skills
 META=.agents/pstack/UPSTREAM.json
 
+# Names upstream ships that this sync deliberately does not vendor, one
+# `name|reason` per line. The same list drives the skip and the `excluded`
+# block written into the lock file, so the behaviour and the record of it
+# cannot drift apart. Keep reasons free of double quotes; they are written
+# into JSON verbatim.
+#
+# This narrows what the sync owns. It never widens it: an excluded name is one
+# this script stops claiming, so it also stops being eligible for deletion.
+EXCLUDED='tdd|Collision. The Matt Pocock engineering set ships a tdd too, and its implement skill calls it by name, so that one wins. .agents/skills is flat and holds one of the two. See .agents/mattpocock/UPSTREAM.json.'
+
+excluded_names() {
+  printf '%s\n' "$EXCLUDED" | cut -d'|' -f1 | sort
+}
+
+# The `excluded` object body for the lock file, one JSON member per line.
+excluded_json() {
+  local first=1 name reason
+  while IFS='|' read -r name reason; do
+    [ -n "$name" ] || continue
+    [ "$first" -eq 1 ] || echo ','
+    printf '    "%s": "%s"' "$name" "$reason"
+    first=0
+  done <<< "$EXCLUDED"
+  echo
+}
+
 # The vendored names, one per line, read back out of the lock file.
 vendored_names() {
   awk '
@@ -43,13 +69,27 @@ if [ "${1:-}" = "--fetch" ]; then
   up=$tmp/plugins/pstack
 
   before=$(vendored_names | sort)
-  after=$(find "$up/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+  # What upstream ships is what gets vendored: this listing drives the rsync
+  # below, and the lock file's list is a record of the last sync rather than a
+  # whitelist gating this one. That is why `EXCLUDED` has to exist — dropping a
+  # name from the lock file would not keep it out, it would just be rsynced back
+  # over ours on the next fetch and re-listed.
+  shipped=$(find "$up/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+  after=$(comm -23 <(echo "$shipped") <(excluded_names))
 
-  # Dropped upstream. Only names this script put there are eligible, so a
-  # repo-owned skill cannot be removed by an upstream deletion.
+  # Announce a skipped name rather than letting it vanish from the index with
+  # no reason recorded.
+  comm -12 <(echo "$shipped") <(excluded_names) | while read -r skipped; do
+    [ -n "$skipped" ] || continue
+    echo "skipping $skipped (excluded; see the excluded block in $META)"
+  done
+
+  # Dropped upstream, or newly excluded. Only names this script put there are
+  # eligible, so neither a repo-owned skill nor one the other sync owns can be
+  # removed here.
   comm -23 <(echo "$before") <(echo "$after") | while read -r gone; do
     [ -n "$gone" ] || continue
-    echo "removing $gone (gone from upstream)"
+    echo "removing $gone (gone from upstream or excluded)"
     rm -rf "${SKILLS:?}/$gone"
   done
 
@@ -82,7 +122,11 @@ if [ "${1:-}" = "--fetch" ]; then
     echo "  \"synced\": \"$(date -u +%Y-%m-%d)\","
     echo '  "vendored_into": ".agents/skills (skills), .agents/agents (agents)",'
     echo '  "not_vendored": ["docs", "assets", "automations", ".cursor-plugin"],'
-    echo '  "_skills": "The skill directories under .agents/skills this file owns. Anything else there is this repository'"'"'s own and is never touched by the sync.",'
+    echo '  "_excluded": "Names upstream ships that this sync deliberately does not vendor. Generated from EXCLUDED in scripts/sync-pstack.sh.",'
+    echo '  "excluded": {'
+    excluded_json
+    echo '  },'
+    echo '  "_skills": "The skill directories under .agents/skills this file owns. Anything else there belongs to the Matt Pocock sync or to this repository and is never touched by this sync.",'
     echo '  "skills": ['
     echo "$after" | sed '$ !s/.*/    "&",/; $ s/.*/    "&"/'
     echo '  ]'
