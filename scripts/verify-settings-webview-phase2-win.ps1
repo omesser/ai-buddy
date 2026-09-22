@@ -5,12 +5,10 @@
   #715 Phase 2 Windows Settings-webview smoke.
 
 .DESCRIPTION
-  Four checks against the default Settings webview: window opens as a webview,
+  Four checks against the Settings webview: window opens as a webview,
   all five tabs are present and driven, Presence Sound round-trips to
   %APPDATA%\ai-buddy\settings.json, z-order is GetTopWindow plus GW_HWNDNEXT
   (Settings HWND before each overlay HWND). 04-zorder.png is illustration.
-
-  Does not replace scripts/verify-settings-win.ps1 (native Win32 children).
 
 .NOTES
   Never assign $PID / $pid: it is Constant+AllScope. Use ProcessId /
@@ -159,7 +157,6 @@ function Get-MonitorMap {
 function Find-SettingsHwnd([uint32]$TargetProcessId) {
   $script:foundHwnd = [IntPtr]::Zero
   $script:foundClass = ''
-  $script:sawNative = $false
   $cb = [Phase2Win+EnumProc]{
     param($h, $l)
     $processId = [uint32]0
@@ -170,7 +167,6 @@ function Find-SettingsHwnd([uint32]$TargetProcessId) {
     [void][Phase2Win]::GetClassName($h, $cls, 256)
     [void][Phase2Win]::GetWindowText($h, $title, 256)
     $c = $cls.ToString(); $t = $title.ToString()
-    if ($c -eq 'AiBuddySettings') { $script:sawNative = $true }
     if ($t -eq 'Settings') {
       $script:foundHwnd = $h
       $script:foundClass = $c
@@ -454,7 +450,6 @@ foreach ($m in $monitors) {
 
 Get-Process ai-buddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep 1
-Remove-Item Env:AI_BUDDY_SETTINGS_NATIVE -ErrorAction SilentlyContinue
 $env:AI_BUDDY_OPEN_SETTINGS = '1'
 $env:AI_BUDDY_CAPTURABLE = '1'
 Log "Launch $Bin tip=$tip"
@@ -463,7 +458,6 @@ $targetProcessId = [uint32]$proc.Id
 Start-Sleep 6
 
 $hwnd = Wait-SettingsHwnd $targetProcessId
-if ($script:sawNative) { $Report.notes += 'Native AiBuddySettings present' }
 $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" -ErrorAction SilentlyContinue |
   Where-Object { $_.Name -match 'msedgewebview2|WebView2' }
 if ($kids) {
@@ -492,11 +486,8 @@ if ($hwnd -eq [IntPtr]::Zero) {
 }
 Log-WindowVsMonitors $hwnd $monitors
 
-if ($script:foundClass -eq 'AiBuddySettings') {
-  Fail-Check1 'Opened native AiBuddySettings, not the webview (Tauri Window)' '01-FAIL-native.png' $targetProcessId $hwnd
-}
 if ($script:foundClass -and $script:foundClass -ne 'Tauri Window') {
-  $Report.notes += "unexpected_class=$($script:foundClass)"
+  Fail-Check1 "Opened class '$($script:foundClass)', not Tauri Window" '01-FAIL-class.png' $targetProcessId $hwnd
 }
 
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction SilentlyContinue
@@ -511,7 +502,7 @@ $Report.checks['1_window_opens'] = 'PASS'
 if ($Report.webviewConfirmed) {
   Log 'CHECK1 PASS (webview)'
 } else {
-  $Report.notes += 'WebView2 child process not observed; HWND class was still not native'
+  $Report.notes += 'WebView2 child process not observed; HWND class was still Tauri Window'
   Log 'CHECK1 PASS (Tauri Window; WebView2 process not listed)'
 }
 
@@ -580,7 +571,6 @@ try {
   }
   Stop-Target $targetProcessId
   Start-Sleep 2
-  Remove-Item Env:AI_BUDDY_SETTINGS_NATIVE -ErrorAction SilentlyContinue
   $env:AI_BUDDY_OPEN_SETTINGS = '1'
   $proc = Start-Process -FilePath $Bin -WorkingDirectory $Root -PassThru
   $targetProcessId = [uint32]$proc.Id

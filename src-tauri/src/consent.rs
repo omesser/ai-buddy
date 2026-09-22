@@ -708,6 +708,22 @@ mod tests {
         assert!(!process_listed_as().is_empty());
     }
 
+    /// Pins the assembled Privacy pane sentence, which nothing else covers.
+    ///
+    /// The name is a sample, not a discovered value. `pane_intro` formats
+    /// whatever it is handed, so this passes wherever it runs. What TCC really
+    /// lists comes from `process_listed_as`, and `process_listed_as_is_not_empty`
+    /// is what covers that. `settings::form::Live::current` builds the Privacy
+    /// section comment from this sentence (#871).
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_pane_intro_wraps_the_listed_name_in_the_pane_copy() {
+        assert_eq!(
+            pane_intro("Terminal"),
+            "Checking a box asks macOS for the permission. macOS lists this app as Terminal, under Privacy & Security."
+        );
+    }
+
     /// A wanted closure that says yes still produces no rows: Linux has no
     /// grant to emit, and the empty vec is the catalog, not a mock of TCC (#250).
     #[test]

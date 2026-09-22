@@ -24,7 +24,7 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
 
     // SAFETY: hwnd is the live Settings HWND from Tauri. HWND_TOPMOST and
     // these flags are the documented z-order insert; BringWindowToTop and
-    // SetForegroundWindow are the same pair native Settings already calls.
+    // SetForegroundWindow order it front inside that band.
     unsafe {
         if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SETTINGS_RAISE_POS_FLAGS) == 0 {
             return Err("Failed to insert Settings into the topmost band".to_string());

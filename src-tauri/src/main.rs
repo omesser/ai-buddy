@@ -17,9 +17,6 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
-// The settings window is unix-only and Windows stubs platform::show_settings,
-// so nothing there calls into the form these three modules build. #247.
-//
 // ponytail: module-wide, though only part of each module is dead on Windows.
 // The ceiling is that dead code added inside them goes unwarned there; narrow
 // it to `mod form` and the view types when a Windows-only item first lands.
@@ -846,65 +843,37 @@ fn settings_event(
 }
 
 /// Open the Settings window. Native Shell furniture, so this runs on the
-/// toolkit main thread. Webview is the default. `AI_BUDDY_SETTINGS_NATIVE=1`
-/// opens a native renderer instead.
+/// toolkit main thread.
 #[tauri::command]
 fn show_settings(app: tauri::AppHandle) {
-    let Some(state) = app.try_state::<SettingsState>() else {
+    if app.try_state::<SettingsState>().is_none() {
         eprintln!("settings: opened before the shell was ready");
         return;
-    };
+    }
 
-    if settings::settings_is_webview() {
-        // Same clone-then-post as `open_chat`: the closure takes the handle,
-        // `run_on_main_thread` still borrows `app`.
-        let handle = app.clone();
-        if let Err(why) = app.run_on_main_thread(move || {
-            let window = match handle.get_webview_window("settings") {
-                Some(window) => {
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                    window
-                }
-                None => match build_settings(&handle) {
-                    Ok(window) => window,
-                    Err(why) => {
-                        eprintln!("settings webview: {why}");
-                        return;
-                    }
-                },
-            };
-            if let Err(why) = platform::raise_settings_window(&window) {
-                eprintln!("settings webview raise: {why}");
+    // Same clone-then-post as `open_chat`: the closure takes the handle,
+    // `run_on_main_thread` still borrows `app`.
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || {
+        let window = match handle.get_webview_window("settings") {
+            Some(window) => {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+                window
             }
-        }) {
-            eprintln!("settings webview: {why}");
+            None => match build_settings(&handle) {
+                Ok(window) => window,
+                Err(why) => {
+                    eprintln!("settings webview: {why}");
+                    return;
+                }
+            },
+        };
+        if let Err(why) = platform::raise_settings_window(&window) {
+            eprintln!("settings webview raise: {why}");
         }
-        return;
-    }
-
-    let session = settings_session(&app, &state);
-
-    // On Linux, if MainContext is already owned (menu/tray on the GTK main
-    // thread), idle_add_local_once defers create until after this event.
-    // A sync wait or inline create deadlocks.
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let ctx = gtk::glib::MainContext::default();
-        if ctx.is_owner() {
-            gtk::glib::idle_add_local_once(move || {
-                platform::show_settings(session);
-            });
-        } else {
-            ctx.invoke(move || {
-                platform::show_settings(session);
-            });
-        }
-    }
-
-    #[cfg(not(all(unix, not(target_os = "macos"))))]
-    if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
-        eprintln!("settings: {why}");
+    }) {
+        eprintln!("settings webview: {why}");
     }
 }
 
@@ -1081,8 +1050,7 @@ fn build_chat(
         .build()
 }
 
-/// Build the Settings webview window. Default path; native is
-/// `AI_BUDDY_SETTINGS_NATIVE=1`.
+/// Build the Settings webview window.
 fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")

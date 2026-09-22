@@ -11,9 +11,9 @@ Project-local control skill for **ai-buddy**, a Tauri desktop mascot whose prima
 
 | Axis | Finding |
 |---|---|
-| **Surface** | Desktop overlay mascot (macOS / Linux X11 / Windows). Secondary: native Settings window, Chat surface (Summon), tray menu. |
+| **Surface** | Desktop overlay mascot (macOS / Linux X11 / Windows). Secondary: Settings webview, Chat surface (Summon), tray menu. |
 | **Run** | `cargo run -p ai-buddy` from repo root (or `target/release/ai-buddy` / `target/debug/ai-buddy` after build). Offline by default (Static Director). |
-| **Drive** | Prefer existing scripts: `scripts/verify-overlay.sh` (macOS), `scripts/verify-overlay-x11.sh` (Linux X11 under a WM), `scripts/verify-overlay-win.ps1`, `scripts/verify-settings-win.ps1`, `scripts/verify-settings-linux.sh`, `scripts/verify-settings-zorder-x11.sh`, `scripts/probe-harness.sh`, `scripts/test_verify_overlay_diagnostics.sh`. Plus `cargo test` / `node --test tests/*.test.js`. Poke and Summon are CLI-native on macOS: `cargo run -p ai-buddy-verify -- poke` / `-- summon` (ADR-0027 stone 2) — do not hand-roll a click with the bash helpers for those two verbs. |
+| **Drive** | Prefer existing scripts: `scripts/verify-overlay.sh` (macOS), `scripts/verify-overlay-x11.sh` (Linux X11 under a WM), `scripts/verify-overlay-win.ps1`, `scripts/verify-settings-webview-phase2-win.ps1`, `scripts/verify-settings-zorder-x11.sh`, `scripts/verify-settings-keyboard-webview.sh`, `scripts/probe-harness.sh`, `scripts/test_verify_overlay_diagnostics.sh`. Plus `cargo test` / `node --test tests/*.test.js`. Poke and Summon are CLI-native on macOS: `cargo run -p ai-buddy-verify -- poke` / `-- summon` (ADR-0027 stone 2) — do not hand-roll a click with the bash helpers for those two verbs. |
 | **Observe** | Overlay logs (`AI_BUDDY_TRACE_FRAMES=1`, `AI_BUDDY_TRACE_HITTEST=1`), `.verify/` stamp dirs, screenshots when capturable, exit codes, `verbs: …Poke` / `verbs: …Summon` lines. |
 | **Isolate** | **Refuse double-drive on one display.** Two instances share the same window list / hit-test path (`AI_BUDDY_INSTANCES` is multi-buddy in *one* process, not two agents). Kill only the PID this run started. |
 
@@ -87,13 +87,13 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 | macOS Poke (gesture verb) | `cargo run -p ai-buddy-verify -- poke` — real click, asserts `verbs:.*Poke` |
 | macOS Summon (gesture verb) | `cargo run -p ai-buddy-verify -- summon` — real double-click, asserts `verbs:.*Summon` |
 | Windows overlay | `.agents/skills/verify-ai-buddy/helpers/drive-overlay-win.ps1` |
-| Windows Settings | `scripts/verify-settings-win.ps1` (copy `$Out` into evidence after) |
-| Linux Settings | `scripts/verify-settings-linux.sh` (GTK webview, AT-SPI) |
+| Windows Settings | `scripts/verify-settings-webview-phase2-win.ps1` (copy `$Out` into evidence after) |
 | Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (proves webview stacks above overlay) |
 | Harness ACP (no sprite) | `AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh` |
 | macOS Keychain diagnostic unit | `scripts/test_verify_overlay_diagnostics.sh` |
-| macOS Settings window | `scripts/verify-settings-macos.sh` (needs an Accessibility grant) |
-| macOS Settings row matcher unit | `scripts/test_verify_settings_row_live.sh` |
+| macOS Settings keyboard | `scripts/verify-settings-keyboard-webview.sh` (needs an Accessibility grant) |
+| macOS Settings select | `scripts/verify-settings-webview-select-macos.sh` |
+| macOS Settings clipboard | `scripts/verify-settings-webview-clipboard-macos.sh` |
 | Core + renderer units | `.agents/skills/verify-ai-buddy/helpers/doctor.sh --units` |
 
 Stable handles: log patterns (`frame: N Perched`, `verbs:.*Poke`, `verbs:.*Summon`, `EWMH configured`), X11 WM_CLASS `Ai-buddy`, EWMH `_NET_WM_STATE_ABOVE` + `_NET_WM_STATE_SKIP_TASKBAR`. Prefer those over click coordinates when asserting.

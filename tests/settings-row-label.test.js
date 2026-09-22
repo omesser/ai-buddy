@@ -1,8 +1,8 @@
 // A row's name reaches the accessibility tree once, because its control sits
 // inside its label. WebKit publishes a label holding nothing but text as two
-// nodes carrying the same string, and verify-settings-macos.sh reads the line
-// after the name as the row's control, so the copy answered for the field and
-// three rows a user can edit read as frozen (#706).
+// nodes carrying the same string, and a dump that takes the next line as the
+// row's control would then treat the copy as the field, so three rows a user
+// can edit would read as frozen (#706).
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

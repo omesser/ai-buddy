@@ -89,14 +89,13 @@ x11rb = {version = "0.14", features = ["allow-unsafe-code", "randr", "xfixes", "
 raw-window-handle = "0.6"
 # Cast atom arrays to bytes for X11 property changes.
 bytemuck = "1.16"
-# GTK 3 for native Linux settings window. Tauri 2's WebKitGTK uses GTK 3,
+# GTK 3 for overlay raise, pointer interval, and WebKitGTK. Tauri 2 uses GTK 3,
 # so this adds no second GTK major version.
 gtk = "0.18"
 
 [target.'cfg(windows)'.dependencies]
 # ShellExecuteW opens a file with the default application as a wide-string
 # parameter. The previous `cmd /C start` arm re-parsed `&` and `%` (#255).
-# Native Win32 settings window: controls, tabs, fonts.
 # Job Object for Harness process tree teardown: grandchildren die with us.
 # Extended startup info for create-time job association (#517).
 windows-sys = {version = "0.61", features = [
@@ -104,16 +103,12 @@ windows-sys = {version = "0.61", features = [
   "Win32_Graphics_Gdi",
   "Win32_Security",
   "Win32_Storage_FileSystem",
-  "Win32_System_DataExchange",
   "Win32_System_Diagnostics_ToolHelp",
-  "Win32_System_Memory",
   "Win32_System_Pipes",
   "Win32_System_JobObjects",
-  "Win32_System_LibraryLoader",
   "Win32_System_Power",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
-  "Win32_UI_Controls",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging"
@@ -135,35 +130,11 @@ objc2-app-kit = {version = "0.3", features = [
   # no title — so nothing here is gated by Screen Recording.
   "NSWorkspace",
   "NSRunningApplication",
-  # Native settings window. SPEC gives the webview to the sprite and chat, not
-  # to checkboxes.
-  "NSBox",
-  "NSButton",
-  "NSButtonCell",
-  "NSCell",
-  "NSControl",
-  "NSTextField",
-  "NSSecureTextField",
-  "NSText",
-  "NSTextView",
-  "NSPopUpButton",
-  "NSMenu",
-  "NSMenuItem",
-  "NSScrollView",
-  "NSTabView",
-  "NSTabViewItem",
-  "NSView",
-  "NSColor",
-  "NSFont",
-  "NSAlert",
   "NSImage",
   "NSStatusItem",
   "NSStatusBarButton",
-  "NSEvent",
-  "block2"
+  "NSEvent"
 ]}
-# Local monitor for Command-drag on the Settings background. #460.
-block2 = {version = "0.6", default-features = false, features = ["alloc"]}
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call
 # directly rather than pulling anything new in. The alternative is hand-written

@@ -31,8 +31,7 @@ fail() {
   failures=$((failures + 1))
 }
 
-# Inline: shellcheck cannot see that trap calls a function (same as
-# verify-settings-macos.sh).
+# Inline: shellcheck cannot see that trap calls a function.
 trap '[ -n "$app_pid" ] && kill "$app_pid" 2> /dev/null; [ "${lock_held:-0}" -eq 1 ] && rmdir /tmp/ai-buddy-settings-overlay.lock 2> /dev/null' EXIT
 
 [ -x "$bin" ] || {

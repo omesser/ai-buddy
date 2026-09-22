@@ -72,13 +72,6 @@ pub fn run(repo_root: &Path, report: &mut RunReport) {
         &summary,
     );
 
-    report.say("prove-units: test_verify_settings_row_live.sh");
-    let mut settings = Command::new("bash");
-    settings
-        .arg("scripts/test_verify_settings_row_live.sh")
-        .current_dir(repo_root);
-    suite(report, "settings-row-live", &mut settings, &dest, &summary);
-
     write_gui_gap(&dest);
 }
 

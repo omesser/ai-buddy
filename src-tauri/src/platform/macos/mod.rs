@@ -11,7 +11,6 @@ mod input_events;
 mod overlay_panel;
 mod pointer;
 mod sensing;
-mod settings_window;
 mod tray;
 mod window_source;
 
@@ -20,7 +19,5 @@ pub use input_events::{spawn_listener as spawn_event_tap, EventTap};
 pub use overlay_panel::configure_overlay;
 pub use pointer::{double_click_interval_ms, primary_button_down, secondary_button_down};
 pub use sensing::MacosActivitySource;
-pub use settings_window::refresh_if_showing as refresh_settings;
-pub use settings_window::show as show_settings;
 pub use tray::{seed_status_item_position, tune_tray_icon};
 pub use window_source::MacosWindowSource;

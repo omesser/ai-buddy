@@ -10,7 +10,6 @@ import { test } from "node:test";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const axSrc = readFileSync(join(root, "scripts/ax-settings-win.ps1"), "utf8");
-const verifySrc = readFileSync(join(root, "scripts/verify-settings-win.ps1"), "utf8");
 const phase2Src = readFileSync(
   join(root, "scripts/verify-settings-webview-phase2-win.ps1"),
   "utf8",
@@ -79,14 +78,11 @@ function matches(el, conds) {
 }
 
 const finder = extractFunction(axSrc, "Find-SettingsWindow");
-const nativeCut = finder.indexOf("if ($null -ne $native)");
-assert.ok(nativeCut > 0, "native return must split the finder");
-const nativeArm = finder.slice(0, nativeCut);
-const webviewArm = finder.slice(nativeCut);
+assert.doesNotMatch(finder, /AiBuddySettings/);
 
-const webviewConds = parsePropertyConditions(webviewArm);
+const webviewConds = parsePropertyConditions(finder);
 const webviewByVar = new Map(webviewConds.map((c) => [c.var, c]));
-const webviewAnds = parseAndConditionArgs(webviewArm, "webviewCond");
+const webviewAnds = parseAndConditionArgs(finder, "webviewCond");
 
 const noPidAnd = webviewAnds.find((args) => !args.includes("pidCond"));
 const withPidAnd = webviewAnds.find((args) => args.includes("pidCond"));
@@ -117,14 +113,6 @@ const otherTauri = {
   controlType: "Window",
 };
 
-test("native AiBuddySettings class match runs before the webview fallback", () => {
-  assert.match(nativeArm, /ClassNameProperty/);
-  assert.match(nativeArm, /"AiBuddySettings"/);
-  assert.doesNotMatch(nativeArm, /Tauri Window/);
-  assert.ok(nativeArm.indexOf("FindFirst") >= 0);
-  assert.ok(webviewArm.indexOf("FindFirst") >= 0);
-});
-
 test("webview AndCondition requires ClassName Tauri Window, Name Settings, and ControlType Window", () => {
   const props = webviewUnconditional.map((c) => c.property).sort();
   assert.deepEqual(props, ["ClassNameProperty", "ControlTypeProperty", "NameProperty"]);
@@ -150,30 +138,16 @@ test("Name-only is insufficient: the Windows Settings app is not a match", () =>
   assert.equal(matches(otherTauri, webviewUnconditional), false);
 });
 
-test("optional ProcessId is AND-ed onto both arms and is not named Pid", () => {
+test("optional ProcessId is AND-ed onto the finder and is not named Pid", () => {
   assert.match(axSrc, /\[Parameter\(Position=1\)\]\s*\[int\]\$ProcessId = 0/);
   assert.doesNotMatch(axSrc, /param\([^)]*\$Pid\b/s);
 
-  const nativeAnds = parseAndConditionArgs(nativeArm, "nativeCond");
-  assert.ok(
-    nativeAnds.some((args) => args.includes("pidCond")),
-    "native arm must And ProcessId when known",
-  );
   assert.deepEqual(withPidAnd.slice(0, 3), noPidAnd);
   assert.equal(withPidAnd.at(-1), "pidCond");
 
   const pidCond = webviewByVar.get("pidCond");
   assert.equal(pidCond.property, "ProcessIdProperty");
   assert.equal(pidCond.value, "$ProcessId");
-});
-
-test("verify-settings-win.ps1 webview path also requires Tauri Window class and Settings title", () => {
-  const nativeIdx = verifySrc.indexOf('$className -eq "AiBuddySettings"');
-  const tauriIdx = verifySrc.indexOf('$className -eq "Tauri Window"');
-  assert.ok(nativeIdx >= 0, "verify script still prefers AiBuddySettings");
-  assert.ok(tauriIdx > nativeIdx, "webview fallback comes after native class match");
-  const tauriBlock = verifySrc.slice(tauriIdx, tauriIdx + 800);
-  assert.match(tauriBlock, /\$txt\.ToString\(\) -eq "Settings"/);
 });
 
 test("FromHandle helper is the multi-monitor UIA entry, not RootElement", () => {
@@ -186,15 +160,10 @@ test("FromHandle helper is the multi-monitor UIA entry, not RootElement", () => 
   assert.match(finder, /multi-monitor/);
 });
 
-test("phase2 webview smoke does not replace native verify-settings-win.ps1", () => {
-  assert.match(phase2Src, /Does not replace scripts\/verify-settings-win\.ps1/);
-  assert.match(verifySrc, /AiBuddySettings/);
-});
-
-test("native verify pins AI_BUDDY_SETTINGS_NATIVE; phase2 relies on the webview default", () => {
-  assert.match(verifySrc, /AI_BUDDY_SETTINGS_NATIVE\s*=\s*"1"/);
+test("phase2 relies on the webview default", () => {
   assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_WEBVIEW/);
-  assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_NATIVE\s*=/);
+  assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_NATIVE/);
+  assert.doesNotMatch(phase2Src, /AiBuddySettings/);
 });
 
 test("phase2 smoke never assigns $PID and uses ProcessId names", () => {
