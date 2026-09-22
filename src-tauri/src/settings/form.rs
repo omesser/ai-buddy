@@ -468,6 +468,8 @@ pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
 #[cfg(target_os = "linux")]
 pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
+#[cfg(target_os = "windows")]
+pub const CONSENT_WINDOW_TITLES_ID: &str = "consent_window_titles";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
@@ -1291,6 +1293,17 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             help: Some("Reads window titles.".to_string()),
             comment: None,
             disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.".to_string()),
+            status: None,
+        },
+        #[cfg(target_os = "windows")]
+        FormRow::Checkbox {
+            id: CONSENT_WINDOW_TITLES_ID.to_string(),
+            label: "Window Titles".to_string(),
+            writes: BoolField::UseWindowTitles,
+            frozen: false,
+            help: Some("Reads window titles.".to_string()),
+            comment: None,
+            disclosure: Some("Window Titles lets ai-buddy read other applications' window titles via GetWindowText. No system permission prompt appears — Windows allows this by default. Titles reach a readonly MCP resource when this setting is on; list_windows still reports owner and bounds only.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]

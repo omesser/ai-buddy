@@ -2470,10 +2470,13 @@ mod tests {
                 ["Accessibility", "Screen Recording", "Input Monitoring"]
             );
             #[cfg(target_os = "windows")]
-            assert_eq!(
-                view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                ["Accessibility"]
-            );
+            {
+                assert_eq!(
+                    view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
+                    ["Accessibility", "Window Titles"]
+                );
+                assert!(!view.consent[1].granted);
+            }
             assert!(
                 view.consent[0].granted,
                 "the checkbox follows settings intent, not the OS grant"
