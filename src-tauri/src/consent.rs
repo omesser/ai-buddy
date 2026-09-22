@@ -104,7 +104,7 @@ static GRANTED_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(target_os = "windows"))]
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
         #[cfg(not(target_os = "linux"))]
@@ -113,12 +113,7 @@ pub fn wanted(id: CapabilityId) -> bool {
         CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.load(Ordering::Relaxed),
         #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.load(Ordering::Relaxed),
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub fn wanted(id: CapabilityId) -> bool {
-    match id {
+        #[cfg(target_os = "linux")]
         CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.load(Ordering::Relaxed),
     }
 }
