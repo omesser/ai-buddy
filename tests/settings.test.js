@@ -373,3 +373,78 @@ test("handleEvent returns clearKey object for clear_key response", async () => {
 
   delete globalThis.window;
 });
+
+test("director_actions renders to footer when one exists", async () => {
+  const { render } = await import("../src/settings.js");
+
+  const mockFooter = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [],
+  };
+
+  const mockRoot = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [],
+  };
+
+  globalThis.document = {
+    getElementById(id) {
+      return id === "set-footer" ? mockFooter : null;
+    },
+    createElement(tag) {
+      const node = {
+        tagName: tag,
+        id: "",
+        textContent: "",
+        dataset: {},
+        attributes: {},
+        children: [],
+        setAttribute(name, value) {
+          node.attributes[name] = value;
+          if (name.startsWith("data-")) {
+            const key = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            node.dataset[key] = value;
+          }
+        },
+        append(...nodes) {
+          node.children.push(...nodes);
+        },
+        addEventListener() {},
+        closest() {
+          return null;
+        },
+        getRootNode() {
+          return node;
+        },
+      };
+      return node;
+    },
+  };
+
+  const tab = MODEL_API.form.tabs.find((t) => t.title === "AI");
+  render(mockRoot, tab, MODEL_API.values);
+
+  const footerHasDirectorActions = mockFooter.children.some(
+    (node) => node.dataset && node.dataset.row === "director_actions",
+  );
+
+  assert.ok(
+    mockFooter.children.length > 0,
+    `footer should have children, got ${mockFooter.children.length} children`,
+  );
+  assert.ok(footerHasDirectorActions, "director_actions should be in footer when footer element exists");
+
+  delete globalThis.document;
+});

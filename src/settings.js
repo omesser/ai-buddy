@@ -298,7 +298,10 @@ function directorDraft(root) {
 
 export function render(root, tab, values, emit = () => {}) {
   root.replaceChildren();
-  const footer = document.getElementById("set-footer");
+  const footer =
+    typeof document !== "undefined" && typeof document.getElementById === "function"
+      ? document.getElementById("set-footer")
+      : null;
   if (footer) footer.replaceChildren();
 
   for (const section of tab.sections) {
@@ -308,7 +311,11 @@ export function render(root, tab, values, emit = () => {}) {
     if (section.disclosure) node.append(disclosure(section.disclosure));
     for (const row of section.rows) {
       if (row.type === "Composite" && row.id === "director_actions") {
-        if (footer) footer.append(drawRow(row, values, emit));
+        if (footer) {
+          footer.append(drawRow(row, values, emit));
+        } else {
+          node.append(drawRow(row, values, emit));
+        }
       } else {
         node.append(drawRow(row, values, emit));
       }
