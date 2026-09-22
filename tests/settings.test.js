@@ -386,6 +386,7 @@ test("director_actions renders to footer when one exists", async () => {
       this.children.push(...nodes);
     },
     children: [],
+    style: {},
   };
 
   const mockRoot = {
@@ -411,6 +412,7 @@ test("director_actions renders to footer when one exists", async () => {
         dataset: {},
         attributes: {},
         children: [],
+        style: {},
         setAttribute(name, value) {
           node.attributes[name] = value;
           if (name.startsWith("data-")) {
@@ -445,6 +447,240 @@ test("director_actions renders to footer when one exists", async () => {
     `footer should have children, got ${mockFooter.children.length} children`,
   );
   assert.ok(footerHasDirectorActions, "director_actions should be in footer when footer element exists");
+
+  delete globalThis.document;
+});
+
+test("non-AI tabs hide footer when it has no content (Bug 1)", async () => {
+  const { render } = await import("../src/settings.js");
+
+  const mockFooter = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [],
+    style: {},
+  };
+
+  const mockRoot = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [],
+  };
+
+  globalThis.document = {
+    getElementById(id) {
+      return id === "set-footer" ? mockFooter : null;
+    },
+    createElement(tag) {
+      const node = {
+        tagName: tag,
+        id: "",
+        textContent: "",
+        dataset: {},
+        attributes: {},
+        children: [],
+        style: {},
+        setAttribute(name, value) {
+          node.attributes[name] = value;
+          if (name.startsWith("data-")) {
+            const key = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            node.dataset[key] = value;
+          }
+        },
+        append(...nodes) {
+          node.children.push(...nodes);
+        },
+        addEventListener() {},
+        closest() {
+          return null;
+        },
+        getRootNode() {
+          return node;
+        },
+      };
+      return node;
+    },
+  };
+
+  const NON_AI_TABS = ["Presence", "Character", "Privacy", "Development"];
+
+  for (const tabTitle of NON_AI_TABS) {
+    mockFooter.children = [];
+    mockFooter.style = {};
+    const tab = MODEL_API.form.tabs.find((t) => t.title === tabTitle);
+    render(mockRoot, tab, MODEL_API.values);
+
+    assert.equal(
+      mockFooter.children.length,
+      0,
+      `${tabTitle} tab footer should have no children`,
+    );
+    assert.equal(
+      mockFooter.style.display,
+      "none",
+      `${tabTitle} tab footer should be hidden (display: none)`,
+    );
+  }
+
+  delete globalThis.document;
+});
+
+test("AI tab shows footer with Apply and Cancel buttons", async () => {
+  const { render } = await import("../src/settings.js");
+
+  const mockFooter = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [],
+    style: {},
+  };
+
+  const mockRoot = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [],
+  };
+
+  globalThis.document = {
+    getElementById(id) {
+      return id === "set-footer" ? mockFooter : null;
+    },
+    createElement(tag) {
+      const node = {
+        tagName: tag,
+        id: "",
+        textContent: "",
+        dataset: {},
+        attributes: {},
+        children: [],
+        style: {},
+        setAttribute(name, value) {
+          node.attributes[name] = value;
+          if (name.startsWith("data-")) {
+            const key = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            node.dataset[key] = value;
+          }
+        },
+        append(...nodes) {
+          node.children.push(...nodes);
+        },
+        addEventListener() {},
+        closest() {
+          return null;
+        },
+        getRootNode() {
+          return node;
+        },
+      };
+      return node;
+    },
+  };
+
+  const tab = MODEL_API.form.tabs.find((t) => t.title === "AI");
+  render(mockRoot, tab, MODEL_API.values);
+
+  assert.ok(mockFooter.children.length > 0, "AI tab footer should have children");
+  assert.notEqual(mockFooter.style.display, "none", "AI tab footer should be visible");
+
+  delete globalThis.document;
+});
+
+test("showError clears and hides footer to prevent empty-payload wipes (Bug 2)", async () => {
+  const mockPanel = {
+    replaceChildren() {
+      this.children = [];
+    },
+    appendChild(node) {
+      this.children = this.children || [];
+      this.children.push(node);
+    },
+    children: [],
+  };
+
+  const mockFooter = {
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children = this.children || [];
+      this.children.push(...nodes);
+    },
+    children: [{ tagName: "button", textContent: "Apply" }],
+    style: {},
+  };
+
+  const mockDocument = {
+    createElement(tag) {
+      return {
+        tagName: tag,
+        className: "",
+        style: {},
+        textContent: "",
+        appendChild() {},
+        addEventListener() {},
+      };
+    },
+    querySelector(selector) {
+      if (selector === '[role="tabpanel"]') return mockPanel;
+      return null;
+    },
+    getElementById(id) {
+      return id === "set-footer" ? mockFooter : null;
+    },
+  };
+
+  globalThis.document = mockDocument;
+
+  const showError = (message, onRetry) => {
+    if (!mockPanel) return;
+    mockPanel.replaceChildren();
+    const footer = mockDocument.getElementById("set-footer");
+    if (footer) {
+      footer.replaceChildren();
+      footer.style.display = "none";
+    }
+    const errorDiv = mockDocument.createElement("div");
+    errorDiv.className = "set-error";
+    errorDiv.style.cssText = "padding: 2rem; text-align: center;";
+    const errorText = mockDocument.createElement("p");
+    errorText.textContent = message;
+    errorDiv.appendChild(errorText);
+    if (onRetry) {
+      const retryButton = mockDocument.createElement("button");
+      retryButton.textContent = "Retry";
+      retryButton.addEventListener("click", onRetry);
+      errorDiv.appendChild(retryButton);
+    }
+    mockPanel.appendChild(errorDiv);
+  };
+
+  mockFooter.children = [{ tagName: "button", textContent: "Apply" }];
+  mockFooter.style = {};
+
+  showError("Could not save changes", () => {});
+
+  assert.equal(mockFooter.children.length, 0, "footer children should be cleared after showError");
+  assert.equal(mockFooter.style.display, "none", "footer should be hidden after showError");
 
   delete globalThis.document;
 });

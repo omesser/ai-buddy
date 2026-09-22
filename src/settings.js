@@ -322,6 +322,10 @@ export function render(root, tab, values, emit = () => {}) {
     }
     root.append(node);
   }
+
+  if (footer) {
+    footer.style.display = footer.children.length > 0 ? "" : "none";
+  }
 }
 
 // Process a settings_event response into an outcome the page can act on.
@@ -427,6 +431,11 @@ if (typeof document !== "undefined") {
   function showError(message, onRetry) {
     if (!panel) return;
     panel.replaceChildren();
+    const footer = document.getElementById("set-footer");
+    if (footer) {
+      footer.replaceChildren();
+      footer.style.display = "none";
+    }
     const errorDiv = document.createElement("div");
     errorDiv.className = "set-error";
     errorDiv.style.cssText = "padding: 2rem; text-align: center;";
