@@ -75,20 +75,27 @@ pub(crate) const BLANK: &str = "AI_BUDDY_DIRECTOR_BLANK";
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
-/// Hosted replies are two lines (80 tokens). A local reasoning model can
-/// spend that budget thinking, so this cap is 512. `reasoning_effort`
-/// is the other half; this number is no longer the one under pressure.
-const LOCAL_MAX_TOKENS: u32 = 512;
-const HOSTED_MAX_TOKENS: u32 = 80;
+/// What one HTTP Completer turn is capped at when nothing else decides.
+///
+/// A safeguard against a model that will not stop, not a budget tuned to a
+/// surface. Nothing downstream needs it smaller: the Speech bubble draws six
+/// lines of whatever arrives (`src/bubble.js`) and the Chat transcript
+/// scrolls. So there is one number for every wake, the same local or hosted.
+///
+/// It replaced 80 hosted and 512 local (#606). That split was there because a
+/// local reasoning model spends a reply-sized cap thinking, which is what
+/// `THINK_CEILING` solves properly, and because 80 was cutting a typed
+/// question off mid-answer. A higher floor costs a runaway turn more tokens
+/// before the guard trips, which is the trade this number is.
+const TURN_CEILING: u32 = 1024;
 
 /// What a host that marks its reasoning is capped at instead (#606 §C).
 ///
 /// The wire carries one number covering thought and answer together on every
 /// path we speak, and no server can be told not to count thinking, so a cap
-/// sized for a two-line reply is one a reasoning model hits mid-thought.
-/// #598 measured a median burn of 479 tokens against a 512 cap. Anything
-/// derived from the reply cap brings that back — five times a hosted 80 is
-/// 400 — so this is absolute, and the same local or hosted.
+/// sized for an answer is one a reasoning model hits mid-thought. #598
+/// measured a median burn of 479 tokens against a 512 cap. Anything derived
+/// from `TURN_CEILING` brings that back, so this is absolute.
 ///
 /// It is not a reply length. What it guards is a runaway turn on a hosted
 /// key: a model that loops instead of concluding would bill until the
@@ -309,7 +316,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         url: completions_url(&settings.base_url),
         model: settings.model.clone(),
         timeout: timeout_for(),
-        max_tokens: max_tokens_for(local),
+        max_tokens: max_tokens_for(),
         cap_pinned: crate::dev_flags::director_max_tokens().is_some(),
         effort: effort_for(),
         session: Mutex::new(Session::default()),
@@ -482,17 +489,12 @@ fn timeout_for() -> Duration {
     crate::dev_flags::director_timeout_secs().map_or(TIMEOUT, Duration::from_secs)
 }
 
-fn max_tokens_for(local: bool) -> u32 {
-    // As with the timeout, decided in `dev_flags::seed`. A zero cap is unset
-    // there: a reply with no room to answer in is not a value to keep.
-    if let Some(cap) = crate::dev_flags::director_max_tokens() {
-        return cap;
-    }
-    if local {
-        LOCAL_MAX_TOKENS
-    } else {
-        HOSTED_MAX_TOKENS
-    }
+/// The cap a turn goes out with, before `wire_budget` hands a host that
+/// marks its thinking the ceiling instead. No argument: the guard does not
+/// vary. As with the timeout, decided in `dev_flags::seed`. A zero cap is
+/// unset there: a reply with no room to answer in is not a value to keep.
+fn max_tokens_for() -> u32 {
+    crate::dev_flags::director_max_tokens().unwrap_or(TURN_CEILING)
 }
 
 /// The reasoning effort in force. Decided in `dev_flags::seed`, as the
@@ -507,8 +509,9 @@ pub(crate) fn timeout_placeholder() -> String {
 }
 
 /// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
+/// Both numbers, because the second is the one a reasoning model meets.
 pub(crate) fn max_tokens_placeholder() -> String {
-    format!("{HOSTED_MAX_TOKENS} ({LOCAL_MAX_TOKENS} for a local server)")
+    format!("{TURN_CEILING} ({THINK_CEILING} once the host marks thinking)")
 }
 
 /// What an empty reasoning-effort field means. One default here: the ask does
@@ -2400,7 +2403,7 @@ pub(crate) mod tests {
             url: url.to_string(),
             model: "gemma4".to_string(),
             timeout: TIMEOUT,
-            max_tokens: HOSTED_MAX_TOKENS,
+            max_tokens: TURN_CEILING,
             cap_pinned: false,
             effort: DEFAULT_EFFORT.to_string(),
             session: Mutex::new(Session::default()),
@@ -2911,13 +2914,13 @@ pub(crate) mod tests {
         );
 
         let endpoint = Endpoint {
-            max_tokens: LOCAL_MAX_TOKENS,
+            max_tokens: TURN_CEILING,
             ..local_endpoint()
         };
         assert_eq!(
             endpoint.wire_budget(),
-            512,
-            "an unknown host is sent today's single combined number"
+            1024,
+            "an unknown host is sent the flat guard and nothing else"
         );
         endpoint.marks_thinking.store(true, Ordering::SeqCst);
         assert_eq!(
@@ -2926,8 +2929,8 @@ pub(crate) mod tests {
             "and a host that marks is no longer capped at a reply length"
         );
         assert_eq!(
-            endpoint.max_tokens, LOCAL_MAX_TOKENS,
-            "the built-in cap itself never moved"
+            endpoint.max_tokens, TURN_CEILING,
+            "the built-in guard itself never moved"
         );
     }
 
@@ -2950,7 +2953,7 @@ pub(crate) mod tests {
     #[test]
     fn a_capped_marked_host_logs_the_ceiling_it_was_sent() {
         let endpoint = Endpoint {
-            max_tokens: LOCAL_MAX_TOKENS,
+            max_tokens: TURN_CEILING,
             ..local_endpoint()
         };
         endpoint.marks_thinking.store(true, Ordering::SeqCst);
@@ -2963,7 +2966,7 @@ pub(crate) mod tests {
         };
         assert!(
             why.contains("spent all 8192 tokens thinking"),
-            "the ceiling is what it burned, not the 512 it was never sent: {why}"
+            "the ceiling is what it burned, not the 1024 it was never sent: {why}"
         );
     }
 
@@ -3043,7 +3046,7 @@ pub(crate) mod tests {
     #[test]
     fn a_truncation_follows_the_best_effort_table() {
         let endpoint = Endpoint {
-            max_tokens: LOCAL_MAX_TOKENS,
+            max_tokens: TURN_CEILING,
             ..local_endpoint()
         };
         let url = "http://127.0.0.1:1234/v1/chat/completions";
@@ -3053,7 +3056,7 @@ pub(crate) mod tests {
             panic!("a budget spent entirely on thinking has nothing to show");
         };
         assert!(
-            why.contains("spent all 512 tokens thinking") && why.contains(MAX_TOKENS),
+            why.contains("spent all 1024 tokens thinking") && why.contains(MAX_TOKENS),
             "the log line names the cap and the knob: {why}"
         );
 
@@ -3247,7 +3250,7 @@ pub(crate) mod tests {
             "gpt-4o-mini",
             &session,
             false,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
@@ -3258,7 +3261,7 @@ pub(crate) mod tests {
             "grok-4.6",
             &session,
             true,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
@@ -3270,7 +3273,7 @@ pub(crate) mod tests {
             "gpt-4o-mini",
             &session,
             false,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
@@ -3293,7 +3296,7 @@ pub(crate) mod tests {
             "gpt-oss-20b",
             &session,
             false,
-            LOCAL_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Stream,
             true,
             DEFAULT_EFFORT,
@@ -3305,7 +3308,7 @@ pub(crate) mod tests {
             "gpt-oss-20b",
             &session,
             false,
-            LOCAL_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
@@ -3320,7 +3323,7 @@ pub(crate) mod tests {
             "grok-4.6",
             &session,
             true,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Whole,
             true,
             DEFAULT_EFFORT,
@@ -3347,7 +3350,7 @@ pub(crate) mod tests {
                 "gpt-oss-20b",
                 &session,
                 false,
-                LOCAL_MAX_TOKENS,
+                TURN_CEILING,
                 Wire::Stream,
                 true,
                 level,
@@ -3359,7 +3362,7 @@ pub(crate) mod tests {
                 "grok-4.6",
                 &session,
                 true,
-                HOSTED_MAX_TOKENS,
+                TURN_CEILING,
                 Wire::Whole,
                 true,
                 level,
@@ -3431,27 +3434,27 @@ pub(crate) mod tests {
             "gpt-4o-mini",
             &session,
             false,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
             true,
         );
-        assert_eq!(asked["max_tokens"], 80);
+        assert_eq!(asked["max_tokens"], 1024);
         assert!(asked.get("max_completion_tokens").is_none());
 
         let renamed = request_body(
             "o3-mini",
             &session,
             false,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
             false,
         );
         assert_eq!(
-            renamed["max_completion_tokens"], 80,
+            renamed["max_completion_tokens"], 1024,
             "the retry still carries a cap, under the name the spec prefers"
         );
         assert!(
@@ -3463,14 +3466,14 @@ pub(crate) mod tests {
             "grok-4.6",
             &session,
             true,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
             true,
         );
         assert_eq!(
-            responses["max_output_tokens"], 80,
+            responses["max_output_tokens"], 1024,
             "the Responses path spells the cap its own way and is not guarded"
         );
     }
@@ -3485,14 +3488,14 @@ pub(crate) mod tests {
             "grok-4.6",
             &session,
             true,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
             true,
         );
         assert_eq!(body["input"], "wave");
-        assert_eq!(body["max_output_tokens"], 80);
+        assert_eq!(body["max_output_tokens"], 1024);
         assert_eq!(body["store"], false);
         assert_eq!(body["reasoning"]["effort"], "low");
         assert!(body.get("messages").is_none());
@@ -3518,7 +3521,7 @@ pub(crate) mod tests {
             "grok-4.6",
             &session,
             true,
-            HOSTED_MAX_TOKENS,
+            TURN_CEILING,
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
@@ -3988,13 +3991,13 @@ pub(crate) mod tests {
             };
             crate::dev_flags::seed(&file);
             assert_eq!(timeout_for(), Duration::from_secs(45));
-            assert_eq!(max_tokens_for(false), 300);
+            assert_eq!(max_tokens_for(), 300);
 
             std::env::set_var(TIMEOUT_SECS, "7");
             std::env::set_var(MAX_TOKENS, "11");
             crate::dev_flags::seed(&file);
             assert_eq!(timeout_for(), Duration::from_secs(7));
-            assert_eq!(max_tokens_for(false), 11);
+            assert_eq!(max_tokens_for(), 11);
             std::env::remove_var(TIMEOUT_SECS);
             std::env::remove_var(MAX_TOKENS);
         });
@@ -4065,13 +4068,24 @@ pub(crate) mod tests {
         });
     }
 
-    /// Under the env lock because both functions read the live `dev_flags`
-    /// values, which another test in this binary sets and clears.
+    /// One guard for every wake and every host. Nothing about the surface
+    /// the reply lands on, or about where the server runs, moves this number.
+    /// `THINK_CEILING` and a pinned cap are the only two things that do, and
+    /// each has its own test above. Under the env lock because
+    /// `max_tokens_for` reads the live `dev_flags` values another test in
+    /// this binary sets and clears.
     #[test]
-    fn a_cold_local_model_gets_token_room_a_hosted_one_does_not_need() {
+    fn one_runaway_guard_caps_every_wake_on_every_host() {
         with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
             assert_eq!(timeout_for(), TIMEOUT, "timeout no longer splits on URL");
-            assert!(max_tokens_for(true) > max_tokens_for(false));
+            assert_eq!(max_tokens_for(), 1024, "and the cap no longer does either");
+
+            for base in ["http://localhost:11434", "https://api.openai.com"] {
+                let endpoint = endpoint_from(&resolve(base, "gemma4", Some("sk-test")))
+                    .expect("a key was given");
+                assert_eq!(endpoint.wire_budget(), 1024, "{base}");
+            }
         });
     }
 
@@ -5013,7 +5027,7 @@ pub(crate) mod tests {
             blank: false,
         };
         let endpoint = Endpoint {
-            max_tokens: LOCAL_MAX_TOKENS,
+            max_tokens: TURN_CEILING,
             ..local_endpoint()
         };
 
@@ -5029,7 +5043,7 @@ pub(crate) mod tests {
         assert_eq!(turn["text"], "prowl\nMine now, and the");
         let why = turn["truncated"].as_str().unwrap_or_default();
         assert!(
-            why.contains("gemma4") && why.contains("512") && why.contains(MAX_TOKENS),
+            why.contains("gemma4") && why.contains("1024") && why.contains(MAX_TOKENS),
             "the line names the model, the cap and the knob: {why}"
         );
     }
