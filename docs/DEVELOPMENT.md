@@ -81,8 +81,6 @@ Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo 
 |---|---|
 | `AI_BUDDY_TRACE_FRAMES=1` | Log every frame state to stderr: `Grounded pos(x,y)`, `Dragged`, `Perched`, etc. |
 | `AI_BUDDY_TRACE_WINDOWS=1` | Log window count and first 3 window bounds on first read (Windows only). |
-| `AI_BUDDY_SETTINGS_NATIVE=1` | Open the native Settings window. Default is the webview. Wins over `AI_BUDDY_SETTINGS_WEBVIEW`. |
-| `AI_BUDDY_SETTINGS_WEBVIEW=1` | Still selects the webview. Redundant after the Step 8 default flip (#706). |
 
 ## Verifying the Overlay
 
@@ -100,12 +98,11 @@ node --test tests/*.test.js     # Renderer interpolation
 scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
 scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
-scripts/verify-settings-macos.sh  # macOS: Settings via Accessibility, not CI
-scripts/verify-settings-webview-select-macos.sh  # macOS: webview <select> above overlay (#849)
-scripts/verify-settings-keyboard-webview.sh  # macOS: keyboard-only Settings webview (#848)
-scripts/verify-settings-webview-clipboard-macos.sh  # macOS: webview Copy writes the pasteboard (#855)
-scripts/verify-settings-linux.sh  # Linux: Settings via AT-SPI, not CI
-scripts/verify-settings-win.ps1   # Windows: Settings via UI Automation, not CI
+scripts/verify-settings-webview-select-macos.sh  # macOS: <select> above overlay (#849)
+scripts/verify-settings-keyboard-webview.sh  # macOS: keyboard-only Settings (#848)
+scripts/verify-settings-webview-clipboard-macos.sh  # macOS: Copy writes the pasteboard (#855)
+scripts/verify-settings-webview-phase2-win.ps1  # Windows: webview window, tabs, Sound, z-order
+scripts/verify-settings-zorder-x11.sh  # Linux: Settings above overlay
 scripts/verify-anchor-taskbar-win.ps1  # Windows: no auto-open Settings (Q1), taskbar click opens Settings (Q2)
 scripts/bench-rss-macos.sh      # macOS: resident set over a run, per process
 scripts/bench-rss-linux.sh      # Linux: RSS baseline (requires working display)
@@ -114,35 +111,19 @@ scripts/bench-rss-windows.ps1   # Windows: RSS baseline
 
 Each overlay script checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
 
-Settings opens as the webview. `AI_BUDDY_SETTINGS_NATIVE=1` opens the AppKit, Win32, or GTK window instead. `AI_BUDDY_SETTINGS_WEBVIEW=1` still selects the webview. When both are set, native wins.
+Settings is the webview (`src/settings.html`). CI does not run the live sittings. `verify-settings-keyboard-webview.sh` drives Tab, Space, Enter, and Escape; it writes a six-row pass/fail table and stills under `.verify/`. `verify-settings-webview-clipboard-macos.sh` clicks Copy on the BYO row and checks `pbpaste`. `verify-settings-webview-select-macos.sh` opens the AI-source `<select>` above the overlay. `verify-settings-webview-phase2-win.ps1` is the Windows smoke (window, tabs, Sound round-trip, z-order). `verify-settings-zorder-x11.sh` measures X11 stacking. `scripts/ax-settings.swift`, `scripts/ax-settings-win.ps1`, and `scripts/ax-settings-linux.py` are the AX / UIA / AT-SPI helpers those sittings call.
 
-`verify-settings-macos.sh` drives the AppKit Settings window through Accessibility and exports `AI_BUDDY_SETTINGS_NATIVE=1`. `verify-settings-keyboard-webview.sh` launches with `AI_BUDDY_SETTINGS_WEBVIEW=1` and drives Tab, Space, Enter, and Escape on that window; it writes a six-row pass/fail table and stills under `.verify/`. `verify-settings-webview-clipboard-macos.sh` clicks Copy on the BYO row of that webview and checks `pbpaste`. `verify-settings-linux.sh` drives the GTK Settings window through AT-SPI via `scripts/ax-settings-linux.py` and also exports `AI_BUDDY_SETTINGS_NATIVE=1`. `verify-settings-win.ps1` drives the Win32 Settings window through UI Automation via `scripts/ax-settings-win.ps1` and exports `AI_BUDDY_SETTINGS_NATIVE=1`. CI does not run any of them.
-
-Build the debug binary, then run the script from the repo root:
+Build the debug binary, then run from the repo root:
 
 ```sh
 cargo build -p ai-buddy
-./scripts/verify-settings-macos.sh
-./scripts/verify-settings-linux.sh
-.\scripts\verify-settings-win.ps1  # PowerShell
+./scripts/verify-settings-keyboard-webview.sh
+.\scripts\verify-settings-webview-phase2-win.ps1
 ```
 
-The script looks for `target/debug/ai-buddy`. Set `AI_BUDDY_VERIFY_BIN` to use another binary. Set `AI_BUDDY_VERIFY_HARNESS` to pick a Harness other than `claude`.
+The scripts look for `target/debug/ai-buddy`. Set `AI_BUDDY_VERIFY_BIN` to use another binary.
 
-Grant Accessibility to the terminal or IDE that runs the script (System Settings > Privacy & Security > Accessibility on macOS). Without that grant the macOS helper exits before it dumps the window. On Linux, AT-SPI must be available (atspi2, pyatspi). On Windows, UI Automation is built-in.
-
-PASS means the AI tab order is `AI > AI source > Model / API > Last user turn`, the HTTP rows are live on Model API, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
-
-`verify-settings-linux.sh` drives the GTK Settings window through AT-SPI (Linux Accessibility). CI does not run it. Same smoke tests as the macOS script: section order, HTTP row freeze/unfreeze on source switch, runtime state changes without relaunch. The AT-SPI driver is `scripts/ax-settings-linux.py`, invoked from the shell script.
-
-Build and run:
-
-```sh
-cargo build -p ai-buddy
-./scripts/verify-settings-linux.sh
-```
-
-Needs `pyatspi` (`python3-pyatspi` on Debian/Ubuntu), an X11 session, and a built binary. Set `AI_BUDDY_VERIFY_BIN` to use another binary, `AI_BUDDY_VERIFY_HARNESS` to pick a Harness other than `claude`. AT-SPI combo box manipulation may not be reliable on all GTK3 configurations; the script skips freeze checks gracefully when unavailable.
+Grant Accessibility to the terminal or IDE that runs a macOS sitting (System Settings > Privacy & Security > Accessibility). Without that grant the helper exits before it dumps the window. On Windows, UI Automation is built-in.
 
 The bench-rss scripts measure rather than check: they sample the app and its
 webview helpers and print RSS and peak memory. Brief by default (settle ~3s,

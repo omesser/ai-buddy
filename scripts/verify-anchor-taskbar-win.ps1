@@ -93,17 +93,21 @@ Start-Sleep -Milliseconds 8000
 Info "Startup settled"
 
 # Q1: Assert Settings window does NOT exist
-$settingsHwnd = [IntPtr]::Zero
-$windows = [AnchorVerify]::FindWindowsByPid($appPid)
-foreach ($hwnd in $windows) {
-  $sb = New-Object System.Text.StringBuilder(256)
-  [AnchorVerify]::GetClassName($hwnd, $sb, 256) | Out-Null
-  $className = $sb.ToString()
-  if ($className -eq "AiBuddySettings") {
-    $settingsHwnd = $hwnd
-    break
+function Find-SettingsHwnd($windows) {
+  foreach ($hwnd in $windows) {
+    $cls = New-Object System.Text.StringBuilder(256)
+    $txt = New-Object System.Text.StringBuilder(256)
+    [AnchorVerify]::GetClassName($hwnd, $cls, 256) | Out-Null
+    [AnchorVerify]::GetWindowText($hwnd, $txt, 256) | Out-Null
+    if ($cls.ToString() -eq "Tauri Window" -and $txt.ToString() -eq "Settings") {
+      return $hwnd
+    }
   }
+  return [IntPtr]::Zero
 }
+
+$windows = [AnchorVerify]::FindWindowsByPid($appPid)
+$settingsHwnd = Find-SettingsHwnd $windows
 
 if ($settingsHwnd -ne [IntPtr]::Zero) {
   Fail "Q1 FAIL: Settings window auto-opened on startup (hwnd=$settingsHwnd)"
@@ -149,17 +153,8 @@ Pass "PostMessage succeeded"
 Start-Sleep -Milliseconds 1000
 
 # Assert Settings window now exists
-$settingsHwnd = [IntPtr]::Zero
 $windows = [AnchorVerify]::FindWindowsByPid($appPid)
-foreach ($hwnd in $windows) {
-  $sb = New-Object System.Text.StringBuilder(256)
-  [AnchorVerify]::GetClassName($hwnd, $sb, 256) | Out-Null
-  $className = $sb.ToString()
-  if ($className -eq "AiBuddySettings") {
-    $settingsHwnd = $hwnd
-    break
-  }
-}
+$settingsHwnd = Find-SettingsHwnd $windows
 
 if ($settingsHwnd -eq [IntPtr]::Zero) {
   Fail "Q2 FAIL: Settings window did not open after PostMessage WM_ACTIVATE with WA_CLICKACTIVE"

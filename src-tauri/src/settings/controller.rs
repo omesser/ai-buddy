@@ -2,11 +2,6 @@
 //!
 //! `form.rs` draws the form; this returns the `Outcome` for a row id and value.
 
-// Windows and x11 still use frozen copies, so nothing calls this on those CI
-// legs and `-D warnings` would error. Stay out of `cfg` so the tests run on
-// every platform; #706 step 4 gives it a caller everywhere.
-#![allow(dead_code)]
-
 use crate::settings::form::{FormDescription, RowOperation};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsView};
 

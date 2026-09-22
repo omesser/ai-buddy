@@ -2040,8 +2040,6 @@ pub(crate) mod tests {
             (MODEL, model),
             (ENABLED, enabled),
             (crate::harness::VAR, harness),
-            (crate::settings::SETTINGS_NATIVE, None),
-            (crate::settings::SETTINGS_WEBVIEW, None),
         ];
         wanted.extend(
             crate::dev_flags::test_vars()

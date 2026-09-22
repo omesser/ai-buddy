@@ -35,25 +35,6 @@ function Find-SettingsWindow {
         if ($null -ne $fromHandle) { return $fromHandle }
     }
 
-    $nativeCond = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::ClassNameProperty,
-        "AiBuddySettings"
-    )
-    if ($ProcessId -gt 0) {
-        $pidCond = New-Object System.Windows.Automation.PropertyCondition(
-            [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
-            $ProcessId
-        )
-        $nativeCond = New-Object System.Windows.Automation.AndCondition($nativeCond, $pidCond)
-    }
-    # RootElement descendant search can hang on multi-monitor (#715). Prefer
-    # Get-AutomationElementFromHandle when HWND is already known.
-    $native = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
-        [System.Windows.Automation.TreeScope]::Descendants,
-        $nativeCond
-    )
-    if ($null -ne $native) { return $native }
-
     $classCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
         "Tauri Window"
@@ -76,7 +57,8 @@ function Find-SettingsWindow {
     } else {
         $webviewCond = New-Object System.Windows.Automation.AndCondition($classCond, $nameCond, $typeCond)
     }
-    # Same hang risk as the native arm: desktop-wide Descendants on RootElement.
+    # RootElement descendant search can hang on multi-monitor (#715). Prefer
+    # Get-AutomationElementFromHandle when HWND is already known.
     return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $webviewCond

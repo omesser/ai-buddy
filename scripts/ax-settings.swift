@@ -7,9 +7,8 @@
 // wrong row. Coordinates appear nowhere; controls are pressed by name.
 
 // Needs an Accessibility grant for whatever runs it (System Settings > Privacy
-// & Security > Accessibility). Callers: verify-settings-macos.sh,
-// verify-settings-webview-select-macos.sh, verify-settings-keyboard-webview.sh,
-// verify-settings-webview-clipboard-macos.sh.
+// & Security > Accessibility). Callers: verify-settings-webview-select-macos.sh,
+// verify-settings-keyboard-webview.sh, verify-settings-webview-clipboard-macos.sh.
 
 import AppKit
 import ApplicationServices

@@ -1,5 +1,5 @@
 // Alt-drag gate: modifier on background begins drag; controls keep the press.
-// Ports move_drag.rs via .closest("input, select, button, summary, pre").
+// `.closest("input, select, button, summary, pre")` is the page's hit test.
 
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
@@ -55,8 +55,7 @@ function tagged(tag) {
 
 describe("the gate covers every control this page renders", () => {
   // A checkbox row is a <label> wrapping its input, so the label's box is the
-  // whole row. Alt-dragging it used to move the window, which the native gate
-  // cannot do: move_drag.rs gates macOS on an NSControl hit-test.
+  // whole row. Alt-dragging it used to move the window.
   test("a checkbox row's label keeps the press", () => {
     assert.equal(shouldBeginDrag(tagged("label")), false);
   });

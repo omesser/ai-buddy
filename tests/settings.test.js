@@ -1,6 +1,6 @@
-// scripts/verify-settings-macos.sh asks a live accessibility dump which rows
-// are the user's to edit for the AI source in force. `controls()` is the same
-// flat list in render order, so the same questions are asked of the fixtures.
+// A live accessibility dump asks which rows are the user's to edit for the AI
+// source in force. `controls()` is the same flat list in render order, so the
+// same questions are asked of the fixtures.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

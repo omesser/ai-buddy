@@ -253,12 +253,6 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
 }
 
-/// Open the native settings window. Main thread only.
-#[cfg(target_os = "macos")]
-pub fn show_settings(session: crate::settings::SettingsSession) {
-    macos::show_settings(session)
-}
-
 /// Raise the Settings webview above the overlay. Main thread only.
 ///
 /// NSStatusWindowLevel sits above the overlay's NSFloatingWindowLevel, so tray-open is not a no-op.
@@ -289,20 +283,6 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
     Ok(())
 }
 
-/// Redraw the settings window from the live roster. Main thread only.
-#[cfg(target_os = "macos")]
-pub fn refresh_settings(app: &tauri::AppHandle) {
-    if crate::settings::settings_is_webview() {
-        if let Some(window) = app.get_webview_window("settings") {
-            if let Err(why) = window.emit("settings-refresh", ()) {
-                eprintln!("settings webview refresh: {why}");
-            }
-            return;
-        }
-    }
-    macos::refresh_settings()
-}
-
 /// Nudge the menu bar icon toward the clock on first launch. Main thread only.
 #[cfg(target_os = "macos")]
 pub fn seed_tray_position() {
@@ -315,15 +295,9 @@ pub fn tune_tray_icon(tray: &tauri::tray::TrayIcon) -> Result<(), tauri::Error> 
     macos::tune_tray_icon(tray)
 }
 
-/// Open the native GTK settings window on Linux. Main thread only.
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn show_settings(session: crate::settings::SettingsSession) {
-    x11::show_settings(session)
-}
-
 /// Raise the Settings webview above the overlay. Main thread only.
 ///
-/// Native GTK Settings uses keep_above so it shares `_NET_WM_STATE_ABOVE` with the overlay (#799).
+/// The overlay is `_NET_WM_STATE_ABOVE`. Settings keep_above shares that band (#799).
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     use gtk::prelude::*;
@@ -340,26 +314,6 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
     Ok(())
 }
 
-/// Redraw the GTK settings window from the live roster. Main thread only.
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn refresh_settings(app: &tauri::AppHandle) {
-    if crate::settings::settings_is_webview() {
-        if let Some(window) = app.get_webview_window("settings") {
-            if let Err(why) = window.emit("settings-refresh", ()) {
-                eprintln!("settings webview refresh: {why}");
-            }
-            return;
-        }
-    }
-    x11::refresh_settings()
-}
-
-/// Open the native settings window on Windows. Main thread only.
-#[cfg(not(unix))]
-pub fn show_settings(session: crate::settings::SettingsSession) {
-    windows::show_settings(session)
-}
-
 /// Raise the Settings webview above the overlay. Main thread only.
 ///
 /// The overlay is HWND_TOPMOST. A normal window cannot stack above that band.
@@ -368,18 +322,13 @@ pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String
     windows::raise_settings_window(window)
 }
 
-/// Redraw the settings window from the live roster. Main thread only.
-#[cfg(not(unix))]
+/// Push a fresh snapshot to the Settings webview. Main thread only.
 pub fn refresh_settings(app: &tauri::AppHandle) {
-    if crate::settings::settings_is_webview() {
-        if let Some(window) = app.get_webview_window("settings") {
-            if let Err(why) = window.emit("settings-refresh", ()) {
-                eprintln!("settings webview refresh: {why}");
-            }
-            return;
+    if let Some(window) = app.get_webview_window("settings") {
+        if let Err(why) = window.emit("settings-refresh", ()) {
+            eprintln!("settings webview refresh: {why}");
         }
     }
-    windows::refresh_settings()
 }
 
 /// Hand a file the user owns to whatever the desktop opens it with.

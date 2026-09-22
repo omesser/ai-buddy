@@ -40,7 +40,7 @@ impl RowOperation {
     /// Step 5's `settings_event` command serializes `Outcome::Run` by calling
     /// this rather than exposing Debug text. The string matches the enum name
     /// in snake_case, which is what serde would derive, but explicit is cheaper
-    /// than a serde derive on an enum the native renderers also import.
+    /// than a serde derive on an enum the page does not need to round-trip.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Spawn => "spawn",
@@ -153,7 +153,7 @@ pub enum FormRow {
         frozen: bool,
         /// Committed by Apply rather than on every blur.
         ///
-        /// Declared here so neither renderer decides it for itself. The
+        /// Declared here so the page cannot decide it for itself. The
         /// Director's four controls only mean anything together: committing
         /// one at a time points the Completer at a host and model that were
         /// never meant to go together, and every commit drops the in-flight
@@ -261,9 +261,9 @@ impl Eq for Shortcut {}
 
 /// One tab of the settings form, holding the sections that belong together.
 ///
-/// The grouping is data here rather than a layout decision in each renderer,
-/// so AppKit's `NSTabView` and GTK's `gtk::Notebook` cannot disagree about
-/// which heading sits where.
+/// The grouping is data here rather than a layout decision in the page,
+/// so the webview tabs cannot disagree with the form about which heading sits
+/// where.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormTab {
     pub title: String,
@@ -347,12 +347,6 @@ impl FormDescription {
     }
 
     /// The boolean field the checkbox with this id writes.
-    ///
-    /// For a renderer holding an id and needing the field — AppKit reaches a
-    /// control through the tag the click carries, not through the row.
-    // GTK captures the field where it builds the control, and Windows builds
-    // no settings window, so the binary's dead-code lint sees no caller there.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn bool_write(&self, id: &str) -> Option<BoolField> {
         self.sections()
             .flat_map(|section| &section.rows)
@@ -412,13 +406,6 @@ impl FormDescription {
     /// The row a composite popup is a shortcut for, and how to read its
     /// titles. `None` for every other control, popups included: a row that
     /// writes a field of its own answers `text_write` instead.
-    ///
-    /// For a renderer holding an id and needing the shortcut — AppKit reaches
-    /// it through the tag the pick carries, Win32 through the child id.
-    // GTK captures the shortcut where it builds the radio, so the binary's
-    // dead-code lint sees no caller there — the same reason `bool_write`
-    // carries this.
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub fn shortcut(&self, id: &str) -> Option<Shortcut> {
         self.sections()
             .flat_map(|section| &section.rows)
@@ -972,10 +959,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
 ///
-/// All three renderers draw these rows — AppKit from the start, GTK since
-/// #467, Win32 since #468 — and all three commit them on Apply, the same
-/// batch as the HTTP endpoint (#663). `control_id_to_form_id` maps a Win32
-/// child id back to its row (#461).
+/// The page draws these rows and commits them on Apply, the same batch as
+/// the HTTP endpoint (#663).
 fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {

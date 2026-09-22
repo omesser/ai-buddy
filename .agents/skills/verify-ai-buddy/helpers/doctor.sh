@@ -79,7 +79,7 @@ case "$OS" in
     fi
     ;;
   MINGW* | MSYS* | CYGWIN* | Windows_NT)
-    pass "Windows host — use drive-overlay-win.ps1 / verify-settings-win.ps1"
+    pass "Windows host — use drive-overlay-win.ps1 / verify-settings-webview-phase2-win.ps1"
     ;;
   *)
     echo "  WARN  unknown OS $OS"
@@ -110,11 +110,6 @@ if [ "$UNITS" = "1" ]; then
     pass "scripts/test_verify_overlay_diagnostics.sh"
   else
     fail "scripts/test_verify_overlay_diagnostics.sh"
-  fi
-  if bash scripts/test_verify_settings_row_live.sh > /dev/null; then
-    pass "scripts/test_verify_settings_row_live.sh"
-  else
-    fail "scripts/test_verify_settings_row_live.sh"
   fi
 fi
 

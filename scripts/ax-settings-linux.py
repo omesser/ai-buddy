@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Drives and reads the Linux Settings window through AT-SPI.
 
-Why this exists: the Settings window is native GTK, so the only way to check it
-from outside was a screenshot, and a screenshot has to be looked at by a person
-(or a model) to mean anything. Every question the verification actually asks -
-is this row frozen, do the sections come in this order, does this label say
-"AI brain" - is a string or a boolean the AT-SPI tree already holds. Reading it
-turns a ten-minute click-and-look session into a second of text, and the
-assertions become greppable instead of visual.
+Why this exists: every question the verification actually asks - is this row
+frozen, do the sections come in this order, does this label say "AI brain" -
+is a string or a boolean the AT-SPI tree already holds. Reading it turns a
+ten-minute click-and-look session into a second of text, and the assertions
+become greppable instead of visual.
 
 Why not other UI automation: AT-SPI is the native Linux accessibility protocol
-for GTK applications. Other tools either don't work with GTK3 or require
+for GTK and WebKitGTK. Other tools either don't work with GTK3 or require
 extensive setup.
 
 Usage:
@@ -53,8 +51,8 @@ def find_settings_window():
                 continue
             for win_idx in range(app.childCount):
                 win = app.getChildAtIndex(win_idx)
-                # Prefer the GTK Settings notebook over overlay/WebKit frames
-                # that share the same window title 'ai-buddy'.
+                # Prefer the Settings notebook over overlay frames that share
+                # the same window title 'ai-buddy'.
                 if has_ai_tab(win):
                     return win
         return None

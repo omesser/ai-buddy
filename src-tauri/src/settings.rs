@@ -7,7 +7,6 @@
 
 pub mod controller;
 pub mod form;
-pub mod move_drag;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -27,23 +26,6 @@ use crate::consent::{self, CapabilityId, ConsentRow};
 use crate::dev_flags;
 use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
-
-/// Escape hatch to a native renderer until Step 9 deletes them (#706).
-pub(crate) const SETTINGS_NATIVE: &str = "AI_BUDDY_SETTINGS_NATIVE";
-/// Kept so scripts that already export it still select the webview.
-pub(crate) const SETTINGS_WEBVIEW: &str = "AI_BUDDY_SETTINGS_WEBVIEW";
-
-/// Settings opens as the webview unless native is requested.
-///
-/// `NATIVE=1` is the hatch. `WEBVIEW=1` is still webview. Both on: native
-/// wins, so a dogfood escape is one export even when a script sets WEBVIEW.
-pub(crate) fn settings_is_webview() -> bool {
-    if model::env_switch(SETTINGS_NATIVE).unwrap_or(false) {
-        false
-    } else {
-        model::env_switch(SETTINGS_WEBVIEW).unwrap_or(true)
-    }
-}
 
 /// One running buddy, as settings lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -561,23 +543,12 @@ impl SettingsView {
     /// What the popup with this id shows right now, or `None` for one whose
     /// value the form does not hold.
     ///
-    /// A renderer asks before it commits a pick: AppKit sends the action for a
-    /// click on the item already selected, and on the source popup that write
-    /// is lossy — it restates a Custom command line as the bare word `custom`
-    /// (#452). Here rather than in the window, so a second renderer that needs
-    /// the same guard does not answer the question differently.
-    ///
-    /// GTK needs none of it: a click on the active radio of a group emits no
-    /// `toggled`. Win32 reads it to draw rather than to guard — it fills a
-    /// popup from the row's `options` and selects the value in force from
-    /// here (#468).
+    /// A pick already showing this value is a no-op. On the source popup a
+    /// restated Custom command line would otherwise collapse to the bare word
+    /// `custom` (#452).
     ///
     /// The last two are shortcut pickers, which rest on the title for what
     /// the field below them holds rather than on a value of their own (#670).
-    // The Linux lane is the one that asks for none of it, and the binary's
-    // dead-code lint sees no caller there — the same reason `form::bool_write`
-    // carries this.
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub fn popup_value(&self, id: &str) -> Option<String> {
         match id {
             form::CHARACTER_ID => Some(self.character.clone()),
@@ -1018,7 +989,7 @@ fn retarget_payload(settings: &Settings, store: &dyn SecretStore) -> Result<Sett
     })
 }
 
-/// Everything the native settings window needs to read and write.
+/// Everything Settings needs to read and write.
 pub struct SettingsSession {
     pub settings: Arc<Mutex<Settings>>,
     pub path: PathBuf,
@@ -1966,24 +1937,6 @@ mod tests {
             "ai-buddy-settings-{n}-{:?}.json",
             std::thread::current().id()
         ))
-    }
-
-    /// #706 Step 8: webview unless native is requested. NATIVE outranks WEBVIEW.
-    #[test]
-    fn settings_opens_as_webview_unless_native_is_requested() {
-        model::tests::with_env(None, None, None, || {
-            assert!(settings_is_webview(), "unset is the webview");
-
-            std::env::set_var(SETTINGS_WEBVIEW, "1");
-            assert!(settings_is_webview(), "WEBVIEW=1 is still the webview");
-
-            std::env::remove_var(SETTINGS_WEBVIEW);
-            std::env::set_var(SETTINGS_NATIVE, "1");
-            assert!(!settings_is_webview(), "NATIVE=1 is native");
-
-            std::env::set_var(SETTINGS_WEBVIEW, "1");
-            assert!(!settings_is_webview(), "NATIVE wins when both are on");
-        });
     }
 
     /// A missing file is first-run, not an error: that is how every new user starts.
@@ -3102,50 +3055,6 @@ mod tests {
             assert_eq!(patch.director_base_url.as_deref(), Some(""));
             assert_eq!(patch.director_model.as_deref(), Some(""));
         });
-    }
-
-    /// #530: so a window built this instant draws with the reset, and #279:
-    /// reopening one that is already up does not.
-    ///
-    /// Read out of the source rather than exercised, because none of the three
-    /// windows can be constructed in a test — each wants its platform's main
-    /// thread, and two of the three do not compile on a Mac at all. What is
-    /// left worth pinning is the call itself: this turns red on a revert to
-    /// `refresh` on any platform, which is the whole of the bug.
-    #[test]
-    fn every_settings_window_is_built_with_the_director_reset() {
-        let platform = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/platform");
-        for (file, built, reopened) in [
-            (
-                "macos/settings_window.rs",
-                "controller.draw(true);",
-                "existing.refresh();",
-            ),
-            (
-                "windows/settings_window.rs",
-                "window.set_session(session, true);",
-                "existing.set_session(session, false);",
-            ),
-            (
-                "x11/settings_window.rs",
-                "window.set_session(session, true);",
-                "existing.set_session(session, false);",
-            ),
-        ] {
-            let source = fs::read_to_string(platform.join(file))
-                .unwrap_or_else(|why| panic!("{file} is readable: {why}"));
-            assert!(
-                source.contains(built),
-                "{file}: a window built this instant has to draw with the \
-                 Director reset, or it stages its own empty fields (#530). \
-                 Expected `{built}`"
-            );
-            assert!(
-                source.contains(reopened),
-                "{file}: reopening a window that is already up has to keep \
-                 what the user left staged (#279). Expected `{reopened}`"
-            );
-        }
     }
 
     #[test]

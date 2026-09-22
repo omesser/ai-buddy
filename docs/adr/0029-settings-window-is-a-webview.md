@@ -1,5 +1,7 @@
 # Settings is one webview on the Chat surface's tokens
 
+**Status:** Accepted. Step 9 shipped; the three native renderers are gone.
+
 ## Context
 
 Settings has been three native renderers of one form description:

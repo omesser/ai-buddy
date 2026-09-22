@@ -285,9 +285,9 @@ Pass "Overlays built and frame loop running"
 # close it once rather than risk clicking through it. ---
 Start-Sleep -Milliseconds 500
 foreach ($h in [Smoke]::WindowsForPid($AppPid)) {
-  $cn = New-Object System.Text.StringBuilder(256)
-  [Smoke]::GetClassName($h, $cn, 256) | Out-Null
-  if ($cn.ToString() -eq "AiBuddySettings") {
+  $tb = New-Object System.Text.StringBuilder(256)
+  [Smoke]::GetWindowText($h, $tb, 256) | Out-Null
+  if ($tb.ToString() -eq "Settings") {
     [Smoke]::PostMessage($h, [Smoke]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     Warn "Settings auto-opened; dismissed it once"
     Start-Sleep -Milliseconds 300
@@ -355,19 +355,17 @@ function OpenChat-Point($overlay, $sprite) {
 }
 
 # The Chat surface: a PID-owned window that is neither a full-display overlay
-# nor the tiny anchor nor the native Settings window. Chat is built at 420x560.
+# nor the tiny anchor nor Settings. Chat is built at 420x560.
 function Find-Chat {
   foreach ($h in [Smoke]::WindowsForPid($AppPid)) {
-    $cn = New-Object System.Text.StringBuilder(256)
-    [Smoke]::GetClassName($h, $cn, 256) | Out-Null
-    if ($cn.ToString() -eq "AiBuddySettings") { continue }
+    $tb = New-Object System.Text.StringBuilder(256)
+    [Smoke]::GetWindowText($h, $tb, 256) | Out-Null
+    if ($tb.ToString() -eq "Settings") { continue }
     $r = New-Object Smoke+RECT
     if (-not [Smoke]::GetWindowRect($h, [ref]$r)) { continue }
     $w = $r.Right - $r.Left; $ht = $r.Bottom - $r.Top
     if ($w -ge 800 -and $ht -ge 600) { continue }   # overlay
     if ($w -lt 300 -or $ht -lt 300) { continue }    # anchor / stray chrome
-    $tb = New-Object System.Text.StringBuilder(256)
-    [Smoke]::GetWindowText($h, $tb, 256) | Out-Null
     return [PSCustomObject]@{ Hwnd = $h; Title = $tb.ToString(); W = $w; H = $ht }
   }
   return $null

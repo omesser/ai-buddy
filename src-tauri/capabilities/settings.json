@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The Settings surface when opened as a webview needs to listen for settings-refresh events that fire when the roster changes while the window is open (the frame loop push path at frame_loop.rs:710), and to emit settings_event commands when a row is edited. The start-dragging permission is for alt-drag: the page checks modifier held and event.target rather than dragging the whole window unconditionally, so a drag from a text field still selects. The webview is the default; AI_BUDDY_SETTINGS_NATIVE=1 opens a native renderer instead. The close permission is for the Escape key: without it close() is denied and Escape does nothing. Copy on the BYO row uses navigator.clipboard in the page, so this file grants no clipboard plugin.",
+  "description": "The Settings surface needs to listen for settings-refresh events that fire when the roster changes while the window is open (the frame loop push path at frame_loop.rs:710), and to emit settings_event commands when a row is edited. The start-dragging permission is for alt-drag: the page checks modifier held and event.target rather than dragging the whole window unconditionally, so a drag from a text field still selects. The close permission is for the Escape key: without it close() is denied and Escape does nothing. Copy on the BYO row uses navigator.clipboard in the page, so this file grants no clipboard plugin.",
   "windows": [
     "settings"
   ],

@@ -24,7 +24,7 @@ Preconditions:
 - **Force visible for screenshot proofs.** `export AI_BUDDY_CAPTURABLE=1` then run the platform `drive-overlay-*` helper. Screenshots in the stamp dir should include the sprite when the capture tool honors capturable windows.
 - **Force hidden (macOS).** `AI_BUDDY_CAPTURABLE=0 scripts/verify-overlay.sh` path: inspector / sharing type should show exclusion (`sharing=0` style checks in the macOS script's default expectations may assume exclusion historically — read the current script comments; default product is capturable, env overrides for tests).
 - **Windows.** `scripts/verify-overlay-win.ps1` asserts `WDA_EXCLUDEFROMCAPTURE` behavior per its checks; copy `$Out` into evidence.
-- **Settings smoke (Windows).** `scripts/verify-settings-win.ps1` for the Settings window chrome (not capturable-specific alone).
+- **Settings smoke (Windows).** `scripts/verify-settings-webview-phase2-win.ps1` for the Settings window chrome (not capturable-specific alone).
 - **Proof.** Record env value, platform, and either a screenshot with/without sprite or the platform property the script already asserts. Put artifacts under `$AI_BUDDY_VERIFY_EVIDENCE/capturable/`.
 
 ## Gotchas
