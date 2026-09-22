@@ -1274,6 +1274,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.".to_string()),
             status: None,
         },
+        #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
             label: "Screen Recording".to_string(),
