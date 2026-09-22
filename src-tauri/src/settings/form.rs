@@ -3361,50 +3361,41 @@ mod tests {
         ));
     }
 
+    /// #902: `byo_section` does not read the settings document, so asserting
+    /// these rows must not write one either. A leftover `Settings::save` of
+    /// defaults onto `memory::data_dir()` was wiping the configured Harness
+    /// whenever this module's tests ran.
     #[test]
-    fn the_byo_token_ui_is_always_present_after_gate5_fix() {
-        let data_dir = ai_buddy_core::memory::data_dir();
-        let settings_path = crate::settings::settings_path(&data_dir);
+    fn describing_the_form_does_not_rewrite_the_user_settings_file() {
+        let path = crate::settings::settings_path(&ai_buddy_core::memory::data_dir());
+        let before = std::fs::read(&path).ok();
 
-        // After gate 5 fix: all harnesses get 6 rows. Token field and button
-        // are hidden via platform refresh when byo_token is empty, but the
-        // form always emits them so switching to Hermes mid-session works.
-        for harness in HARNESS_PRESETS {
-            let settings = crate::settings::Settings {
-                byo_harness: harness.to_string(),
-                ..Default::default()
-            };
-            settings.save(&settings_path).expect("save settings");
-
-            let description = describe();
-            let section = description
-                .sections()
-                .find(|s| s.heading == BYO_HEADING)
-                .expect("the Harness registration section");
-
-            assert_eq!(
-                section.rows.len(),
-                6,
-                "{harness} should always have 6 rows (gate 5 fix)"
-            );
-
-            let has_token_row = section
+        let description = describe_with(&fixture_live(false, false));
+        let section = description
+            .sections()
+            .find(|s| s.heading == BYO_HEADING)
+            .expect("the Harness registration section");
+        assert!(
+            section
                 .rows
                 .iter()
-                .any(|row| matches!(row, FormRow::InspectBlock { id, .. } if id == BYO_TOKEN_ID));
-            let has_copy_token_button = section.rows.iter().any(|row| {
-                matches!(row, FormRow::Composite { controls, .. } if controls.iter().any(|c| matches!(c, CompositeControl::Button { id, .. } if id == BYO_COPY_TOKEN_ID)))
-            });
+                .any(|row| matches!(row, FormRow::InspectBlock { id, .. } if id == BYO_TOKEN_ID)),
+            "the token InspectBlock is always present"
+        );
+        assert!(
+            section.rows.iter().any(|row| {
+                matches!(row, FormRow::Composite { controls, .. } if controls.iter().any(|c| {
+                    matches!(c, CompositeControl::Button { id, .. } if id == BYO_COPY_TOKEN_ID)
+                }))
+            }),
+            "the copy token button is always present"
+        );
 
-            assert!(
-                has_token_row,
-                "{harness} should have the token InspectBlock (always present)"
-            );
-            assert!(
-                has_copy_token_button,
-                "{harness} should have the copy token button (always present)"
-            );
-        }
+        let after = std::fs::read(&path).ok();
+        assert_eq!(
+            before, after,
+            "describing the form must not create or rewrite the user settings document"
+        );
     }
 
     /// The button is wired, not just drawn: a control with no operation behind
