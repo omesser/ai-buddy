@@ -2682,9 +2682,10 @@ fn main() {
                 settings.use_screen_recording,
             );
             #[cfg(target_os = "linux")]
-            if settings.use_accessibility || settings.use_screen_recording {
-                consent::set_wanted(consent::CapabilityId::PortalScreenCast, true);
-            }
+            consent::set_wanted(
+                consent::CapabilityId::PortalScreenCast,
+                settings.use_portal_screencast,
+            );
             #[cfg(target_os = "macos")]
             consent::set_wanted(
                 consent::CapabilityId::InputMonitoring,

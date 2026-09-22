@@ -118,6 +118,11 @@ pub fn wanted(id: CapabilityId) -> bool {
     }
 }
 
+/// Whether the capability is both wanted and granted. Capture will gate on this.
+pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
+    wanted(id) && probe.granted(id)
+}
+
 pub fn set_wanted(id: CapabilityId, on: bool) {
     match id {
         #[cfg(not(target_os = "linux"))]
@@ -967,6 +972,28 @@ mod tests {
 
         let nothing = Fake::granting(&[]);
         assert!(!nothing.granted(CapabilityId::PortalScreenCast));
+    }
+
+    /// Usable requires both wanted and granted. Capture will gate on this,
+    /// not wanted alone.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn usable_requires_both_wanted_and_granted() {
+        let probe = Fake::granting(&[CapabilityId::PortalScreenCast]);
+
+        set_wanted(CapabilityId::PortalScreenCast, false);
+        assert!(probe.granted(CapabilityId::PortalScreenCast));
+        assert!(!wanted(CapabilityId::PortalScreenCast));
+        assert!(!usable(CapabilityId::PortalScreenCast, &probe));
+
+        set_wanted(CapabilityId::PortalScreenCast, true);
+        assert!(wanted(CapabilityId::PortalScreenCast));
+        assert!(usable(CapabilityId::PortalScreenCast, &probe));
+
+        let nothing = Fake::granting(&[]);
+        assert!(!nothing.granted(CapabilityId::PortalScreenCast));
+        assert!(wanted(CapabilityId::PortalScreenCast));
+        assert!(!usable(CapabilityId::PortalScreenCast, &nothing));
     }
 
     #[test]

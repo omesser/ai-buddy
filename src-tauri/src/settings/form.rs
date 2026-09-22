@@ -459,6 +459,8 @@ pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 #[cfg(target_os = "macos")]
 pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
+#[cfg(target_os = "linux")]
+pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_portal_screencast";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
@@ -1296,7 +1298,18 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     ];
 
     #[cfg(target_os = "linux")]
-    let consent_rows: Vec<FormRow> = Vec::new();
+    let consent_rows = vec![
+        FormRow::Checkbox {
+            id: CONSENT_PORTAL_SCREENCAST_ID.to_string(),
+            label: "Screen Cast".to_string(),
+            writes: BoolField::UsePortalScreenCast,
+            frozen: false,
+            help: Some("For screen recording and streaming when Capture ships.".to_string()),
+            comment: None,
+            disclosure: Some("xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are already readable without a grant.".to_string()),
+            status: None,
+        },
+    ];
 
     vec![
         FormSection {

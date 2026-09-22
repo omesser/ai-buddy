@@ -1076,6 +1076,8 @@ impl SettingsSession {
         let prompt_sr = patch.use_screen_recording == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
+        #[cfg(target_os = "linux")]
+        let prompt_portal_screencast = patch.use_portal_screencast == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
@@ -1090,9 +1092,7 @@ impl SettingsSession {
         #[cfg(target_os = "macos")]
         consent::set_wanted(CapabilityId::InputMonitoring, settings.use_input_monitoring);
         #[cfg(target_os = "linux")]
-        if settings.use_accessibility || settings.use_screen_recording {
-            consent::set_wanted(CapabilityId::PortalScreenCast, true);
-        }
+        consent::set_wanted(CapabilityId::PortalScreenCast, settings.use_portal_screencast);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -1164,7 +1164,7 @@ impl SettingsSession {
             self.enable_consent(CapabilityId::ScreenRecording);
         }
         #[cfg(target_os = "linux")]
-        if prompt_ax || prompt_sr {
+        if prompt_portal_screencast {
             self.enable_consent(CapabilityId::PortalScreenCast);
         }
         #[cfg(target_os = "macos")]
@@ -1267,6 +1267,7 @@ pub struct SettingsPatch {
     pub use_accessibility: Option<bool>,
     pub use_screen_recording: Option<bool>,
     pub use_input_monitoring: Option<bool>,
+    pub use_portal_screencast: Option<bool>,
     /// Throw the conversation in flight away and open a fresh one on the same
     /// Completer. Not a file field either: a session boundary is a moment, not
     /// a setting, and nothing about it survives the restart (#679).
@@ -1308,6 +1309,9 @@ pub enum BoolField {
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
+    /// Linux only: xdg-desktop-portal ScreenCast for Capture when it ships.
+    #[cfg(target_os = "linux")]
+    UsePortalScreenCast,
 }
 
 /// A text field of `SettingsPatch`, as the form row writing it names it.
@@ -1368,6 +1372,8 @@ impl SettingsPatch {
             BoolField::UseScreenRecording => self.use_screen_recording = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
+            #[cfg(target_os = "linux")]
+            BoolField::UsePortalScreenCast => self.use_portal_screencast = Some(value),
         }
     }
 
@@ -1461,6 +1467,7 @@ impl fmt::Debug for SettingsPatch {
             .field("use_accessibility", &self.use_accessibility)
             .field("use_screen_recording", &self.use_screen_recording)
             .field("use_input_monitoring", &self.use_input_monitoring)
+            .field("use_portal_screencast", &self.use_portal_screencast)
             .finish()
     }
 }
@@ -1595,6 +1602,9 @@ impl Settings {
         if let Some(value) = patch.use_input_monitoring {
             self.use_input_monitoring = value;
         }
+        if let Some(value) = patch.use_portal_screencast {
+            self.use_portal_screencast = value;
+        }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
     }
@@ -1625,7 +1635,7 @@ impl Settings {
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => self.use_input_monitoring,
             #[cfg(target_os = "linux")]
-            CapabilityId::PortalScreenCast => self.use_accessibility || self.use_screen_recording,
+            CapabilityId::PortalScreenCast => self.use_portal_screencast,
         }
     }
 }
@@ -1739,6 +1749,10 @@ pub struct Settings {
     /// document round-trips on every platform.
     #[serde(default)]
     pub use_input_monitoring: bool,
+    /// Linux only: use xdg-desktop-portal ScreenCast for Capture when it ships.
+    /// Off does not revoke the portal session while running.
+    #[serde(default)]
+    pub use_portal_screencast: bool,
     /// Whether the first-run gesture tour has been shown. Once only, persisted
     /// per-app rather than per-Instance: a second buddy spawned later sees
     /// this flag set.
@@ -1781,6 +1795,7 @@ impl Default for Settings {
             use_accessibility: false,
             use_screen_recording: false,
             use_input_monitoring: false,
+            use_portal_screencast: false,
             first_run_tour_shown: false,
         }
     }
@@ -2396,11 +2411,20 @@ mod tests {
             assert!(!view.consent[1].granted);
         }
         #[cfg(target_os = "linux")]
-        assert!(
-            view.consent.is_empty(),
-            "Linux has no grant to emit, got {:?}",
-            view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
-        );
+        {
+            assert_eq!(view.consent.len(), 1);
+            assert_eq!(view.consent[0].title, "Screen Cast");
+            assert!(!view.consent[0].granted);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            view.consent_listed_as = "Cursor".into();
+            assert!(
+                view.consent_intro().contains("Cursor"),
+                "the pane has to name the TCC row, got {:?}",
+                view.consent_intro()
+            );
+        }
     }
 
     /// The document field the native checkbox writes. `SettingsSession::apply`
@@ -2433,16 +2457,32 @@ mod tests {
     #[test]
     fn unchecking_consent_stops_using_it_without_a_file_grant() {
         let mut settings = Settings::default();
-        settings.apply(SettingsPatch {
-            use_accessibility: Some(true),
-            ..SettingsPatch::default()
-        });
-        assert!(settings.use_accessibility);
-        settings.apply(SettingsPatch {
-            use_accessibility: Some(false),
-            ..SettingsPatch::default()
-        });
-        assert!(!settings.use_accessibility);
+        #[cfg(not(target_os = "linux"))]
+        {
+            settings.apply(SettingsPatch {
+                use_accessibility: Some(true),
+                ..SettingsPatch::default()
+            });
+            assert!(settings.use_accessibility);
+            settings.apply(SettingsPatch {
+                use_accessibility: Some(false),
+                ..SettingsPatch::default()
+            });
+            assert!(!settings.use_accessibility);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            settings.apply(SettingsPatch {
+                use_portal_screencast: Some(true),
+                ..SettingsPatch::default()
+            });
+            assert!(settings.use_portal_screencast);
+            settings.apply(SettingsPatch {
+                use_portal_screencast: Some(false),
+                ..SettingsPatch::default()
+            });
+            assert!(!settings.use_portal_screencast);
+        }
         let view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/memory.md"),
@@ -2452,16 +2492,9 @@ mod tests {
             (false, String::new(), String::new()),
             None,
         );
-        #[cfg(not(target_os = "linux"))]
         assert!(
             !view.consent[0].granted,
             "unchecking has to show off even if the OS still holds the grant"
-        );
-        #[cfg(target_os = "linux")]
-        assert!(
-            view.consent.is_empty(),
-            "Linux has no consent row to uncheck, got {:?}",
-            view.consent.iter().map(|row| row.title).collect::<Vec<_>>()
         );
     }
 
