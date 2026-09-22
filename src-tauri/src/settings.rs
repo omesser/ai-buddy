@@ -1443,7 +1443,6 @@ impl SettingsPatch {
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
-            #[cfg(not(target_os = "windows"))]
             BoolField::UseWindowTitles => self.use_window_titles = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
