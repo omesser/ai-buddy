@@ -21,9 +21,6 @@ pub enum CapabilityId {
     /// Linux only: xdg-desktop-portal ScreenCast for screen recording/streaming.
     #[cfg(target_os = "linux")]
     PortalScreenCast,
-    /// Linux only: xdg-desktop-portal Screenshot for taking screenshots.
-    #[cfg(target_os = "linux")]
-    PortalScreenshot,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,19 +80,14 @@ pub const CAPABILITIES: &[Capability] = &[
         id: CapabilityId::PortalScreenCast,
         title: "Screen Cast",
         buys: "Screen recording and streaming for Capture when it ships.",
-        costs: "xdg-desktop-portal ScreenCast permission. Your desktop will prompt when you enable this.",
-    },
-    Capability {
-        id: CapabilityId::PortalScreenshot,
-        title: "Screenshot",
-        buys: "Taking screenshots for Capture when it ships.",
-        costs: "xdg-desktop-portal Screenshot permission. Your desktop will prompt when you enable this.",
+        costs: "xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs.",
     },
 ];
 
 /// Tests that do not care about the live OS, and the fallback when a platform
 /// has no consent system. Was Linux's answer when X11 sensing was consent-free;
 /// the portal Probe replaced it once Capture needed a grant.
+#[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
 pub struct Null;
 
 #[cfg(not(target_os = "linux"))]
@@ -106,13 +98,9 @@ static WANT_SCREEN_RECORDING: AtomicBool = AtomicBool::new(false);
 static WANT_INPUT_MONITORING: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static WANT_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "linux")]
-static WANT_PORTAL_SCREENSHOT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "linux")]
 static GRANTED_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "linux")]
-static GRANTED_PORTAL_SCREENSHOT: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
@@ -132,7 +120,6 @@ pub fn wanted(id: CapabilityId) -> bool {
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
         CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.load(Ordering::Relaxed),
-        CapabilityId::PortalScreenshot => WANT_PORTAL_SCREENSHOT.load(Ordering::Relaxed),
     }
 }
 
@@ -146,8 +133,6 @@ pub fn set_wanted(id: CapabilityId, on: bool) {
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.store(on, Ordering::Relaxed),
         #[cfg(target_os = "linux")]
         CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.store(on, Ordering::Relaxed),
-        #[cfg(target_os = "linux")]
-        CapabilityId::PortalScreenshot => WANT_PORTAL_SCREENSHOT.store(on, Ordering::Relaxed),
     }
 }
 
@@ -157,6 +142,7 @@ struct Macos;
 #[cfg(target_os = "linux")]
 struct LinuxPortal;
 
+#[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
 impl Probe for Null {
     fn granted(&self, _: CapabilityId) -> bool {
         false
@@ -189,14 +175,12 @@ impl Probe for LinuxPortal {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
             CapabilityId::PortalScreenCast => linux::portal_screencast_granted(),
-            CapabilityId::PortalScreenshot => linux::portal_screenshot_granted(),
         }
     }
 
     fn prompt(&self, id: CapabilityId) {
         match id {
             CapabilityId::PortalScreenCast => linux::request_portal_screencast(),
-            CapabilityId::PortalScreenshot => linux::request_portal_screenshot(),
         }
     }
 }
@@ -317,7 +301,7 @@ mod windows {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::{GRANTED_PORTAL_SCREENCAST, GRANTED_PORTAL_SCREENSHOT};
+    use super::GRANTED_PORTAL_SCREENCAST;
     use std::sync::atomic::Ordering;
 
     /// xdg-desktop-portal ScreenCast grant check. Returns true after a successful
@@ -325,37 +309,6 @@ mod linux {
     /// is honest (the portal has no query API and Settings flip-on is the prompt).
     pub fn portal_screencast_granted() -> bool {
         GRANTED_PORTAL_SCREENCAST.load(Ordering::Relaxed)
-    }
-
-    /// xdg-desktop-portal Screenshot grant check. Returns true after a successful
-    /// portal request. Process-local: same as ScreenCast above.
-    pub fn portal_screenshot_granted() -> bool {
-        GRANTED_PORTAL_SCREENSHOT.load(Ordering::Relaxed)
-    }
-
-    /// Request xdg-desktop-portal Screenshot permission. Opens the desktop's
-    /// portal dialog when Settings flips the row on. Screenshot is lighter than
-    /// ScreenCast (one request, not a session), so it is preferred when either
-    /// would satisfy the consent requirement.
-    pub fn request_portal_screenshot() {
-        let runtime = match tokio::runtime::Builder::new_current_thread().build() {
-            Ok(r) => r,
-            Err(why) => {
-                eprintln!("ai-buddy: portal screenshot runtime failed: {why}");
-                return;
-            }
-        };
-
-        runtime.block_on(async {
-            match screenshot_request().await {
-                Ok(_) => {
-                    GRANTED_PORTAL_SCREENSHOT.store(true, Ordering::Relaxed);
-                }
-                Err(why) => {
-                    eprintln!("ai-buddy: portal screenshot request failed: {why}");
-                }
-            }
-        });
     }
 
     /// Request xdg-desktop-portal ScreenCast permission. Opens the desktop's
@@ -382,22 +335,8 @@ mod linux {
         });
     }
 
-    async fn screenshot_request() -> ashpd::Result<()> {
-        use ashpd::desktop::screenshot::Screenshot;
-
-        let response = Screenshot::request()
-            .interactive(true)
-            .modal(true)
-            .send()
-            .await?
-            .response()?;
-
-        eprintln!("ai-buddy: screenshot granted, URI: {}", response.uri());
-        Ok(())
-    }
-
     async fn screencast_request() -> ashpd::Result<()> {
-        use ashpd::desktop::screencast::{CursorMode, PersistMode, Screencast, SourceType};
+        use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
 
         let proxy = Screencast::new().await?;
         let session = proxy.create_session(Default::default()).await?;
@@ -408,20 +347,15 @@ mod linux {
                 ashpd::desktop::screencast::SelectSourcesOptions::default()
                     .cursor_mode(CursorMode::Hidden)
                     .sources(SourceType::Monitor | SourceType::Window)
-                    .multiple(false)
-                    .persist_mode(PersistMode::DoNot),
+                    .multiple(false),
             )
             .await?;
 
-        let response = proxy
+        let _response = proxy
             .start(&session, None, Default::default())
             .await?
             .response()?;
 
-        eprintln!(
-            "ai-buddy: screencast granted, {} stream(s)",
-            response.streams().len()
-        );
         Ok(())
     }
 }

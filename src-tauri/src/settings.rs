@@ -1083,10 +1083,16 @@ impl SettingsSession {
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and reply cap.
         apply_and_seed(&mut settings, patch);
+        #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
+        #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::ScreenRecording, settings.use_screen_recording);
         #[cfg(target_os = "macos")]
         consent::set_wanted(CapabilityId::InputMonitoring, settings.use_input_monitoring);
+        #[cfg(target_os = "linux")]
+        if settings.use_accessibility || settings.use_screen_recording {
+            consent::set_wanted(CapabilityId::PortalScreenCast, true);
+        }
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -1149,11 +1155,17 @@ impl SettingsSession {
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
         }
+        #[cfg(not(target_os = "linux"))]
         if prompt_ax {
             self.enable_consent(CapabilityId::Accessibility);
         }
+        #[cfg(not(target_os = "linux"))]
         if prompt_sr {
             self.enable_consent(CapabilityId::ScreenRecording);
+        }
+        #[cfg(target_os = "linux")]
+        if prompt_ax || prompt_sr {
+            self.enable_consent(CapabilityId::PortalScreenCast);
         }
         #[cfg(target_os = "macos")]
         if prompt_im {
@@ -1606,10 +1618,14 @@ impl Settings {
 
     pub fn wants_consent(&self, id: CapabilityId) -> bool {
         match id {
+            #[cfg(not(target_os = "linux"))]
             CapabilityId::Accessibility => self.use_accessibility,
+            #[cfg(not(target_os = "linux"))]
             CapabilityId::ScreenRecording => self.use_screen_recording,
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => self.use_input_monitoring,
+            #[cfg(target_os = "linux")]
+            CapabilityId::PortalScreenCast => self.use_accessibility || self.use_screen_recording,
         }
     }
 }

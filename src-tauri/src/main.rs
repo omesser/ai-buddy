@@ -2671,14 +2671,20 @@ fn main() {
             // Before anything reads a development switch: the frame loop and
             // the overlay panel load them from `dev_flags`, not the env.
             dev_flags::seed(&settings);
+            #[cfg(not(target_os = "linux"))]
             consent::set_wanted(
                 consent::CapabilityId::Accessibility,
                 settings.use_accessibility,
             );
+            #[cfg(not(target_os = "linux"))]
             consent::set_wanted(
                 consent::CapabilityId::ScreenRecording,
                 settings.use_screen_recording,
             );
+            #[cfg(target_os = "linux")]
+            if settings.use_accessibility || settings.use_screen_recording {
+                consent::set_wanted(consent::CapabilityId::PortalScreenCast, true);
+            }
             #[cfg(target_os = "macos")]
             consent::set_wanted(
                 consent::CapabilityId::InputMonitoring,
