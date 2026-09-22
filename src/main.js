@@ -5,7 +5,6 @@
 import { arrived, interpolate, onDisplay } from "./interpolate.js";
 import {
   createBubbleMachine,
-  forOverlay,
   wrapText,
   placeBubble,
 } from "./bubble.js";
@@ -370,15 +369,15 @@ async function start() {
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
 
-        // One overlay owns each Instance's bubble (`bubble_owner`). Speech hides
-        // on its reading timer, not on the next frame, so the overlay that just
-        // lost ownership drops its bubble once, on the change.
-        const owned = forOverlay(sprite);
+        // One overlay owns each Instance's bubble (`bubble_owner`), and the
+        // Shell sends the line, the indicator and the cue to that one only.
+        // Speech hides on its reading timer, not on the next frame, so the
+        // overlay that just lost ownership drops its bubble once, on the change.
         if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideAllNow();
 
         view.previous = view.latest;
         view.latest = {
-          ...owned,
+          ...sprite,
           visible: payload.visible,
           fade_ms: payload.fade_ms,
           // Whether a cue may be heard as well as seen. Settings and Do Not
@@ -389,9 +388,9 @@ async function start() {
         // Dialogue rides one tick and `latest` keeps only the newest placement,
         // so an Engine outpacing the display would lose pulses before `draw`
         // read them. The machine latches the pulse here, where every delivery is seen.
-        view.bubbles.event(owned);
+        view.bubbles.event(sprite);
         // A cue is the same shape of pulse, latched in the same place. It reads
-        // `latest` rather than `owned` for the two answers that belong to the
+        // `latest` rather than `sprite` for the two answers that belong to the
         // desktop: whether the Character is on screen, and whether it may be heard.
         view.cues.event(view.latest);
 

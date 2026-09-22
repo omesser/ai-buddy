@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::director::{self, Context, Happened, Wake};
 use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
-use ai_buddy_core::engine::{BehaviorProposal, Cue, State, Verb};
+use ai_buddy_core::engine::{BehaviorProposal, State, Verb};
 use ai_buddy_core::input::press_target;
 use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use ai_buddy_core::roster::{InstanceId, Roster};
@@ -1756,27 +1756,7 @@ pub(crate) fn run_frame_loop(
                 // Addressed, not emitted to all: an untargeted listener would draw the last display's rects.
                 let sprites = placed
                     .iter()
-                    .map(|instance| {
-                        let local = instance.sprite.in_overlay(*display);
-                        SpritePlacement {
-                            id: &instance.id,
-                            character: &instance.character,
-                            x: local.x,
-                            y: local.y,
-                            width: instance.width,
-                            height: instance.height,
-                            animation: &instance.animation,
-                            frame_index: instance.frame_index,
-                            mirror: instance.mirror,
-                            dialogue: instance.dialogue.clone(),
-                            thinking: instance.thinking,
-                            // Every overlay draws the art; one draws the
-                            // bubble (#178, `bubble_owner`), and `forOverlay`
-                            // strips the rest from the ones that lost.
-                            bubble: instance.owner == Some(index),
-                            cue: instance.cue.map(Cue::name),
-                        }
-                    })
+                    .map(|instance| SpritePlacement::new(instance, *display, index))
                     .collect();
 
                 let placement = Placement {
