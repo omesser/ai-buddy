@@ -12,15 +12,14 @@ pub enum CapabilityId {
     /// macOS only: reading Dock bounds and window geometry.
     #[cfg(not(target_os = "linux"))]
     Accessibility,
-    /// macOS only: reading window titles and screen contents.
-    #[cfg(not(target_os = "linux"))]
-    ScreenRecording,
+    /// Reading window titles and similar metadata. macOS uses TCC Screen Recording;
+    /// Linux uses xdg-desktop-portal ScreenCast (Wayland). Both backends serve the
+    /// product capability: window titles, not pixel capture.
+    #[cfg(not(target_os = "windows"))]
+    WindowTitles,
     /// macOS only: the idle event tap (#721).
     #[cfg(target_os = "macos")]
     InputMonitoring,
-    /// Linux only: xdg-desktop-portal ScreenCast for screen recording/streaming.
-    #[cfg(target_os = "linux")]
-    PortalScreenCast,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,7 +59,7 @@ pub const CAPABILITIES: &[Capability] = &[
     },
     #[cfg(not(target_os = "linux"))]
     Capability {
-        id: CapabilityId::ScreenRecording,
+        id: CapabilityId::WindowTitles,
         title: "Screen Recording",
         buys: "Window titles and similar metadata.",
         costs: "macOS Screen Recording, which can see the screen.",
@@ -77,7 +76,7 @@ pub const CAPABILITIES: &[Capability] = &[
 #[cfg(target_os = "linux")]
 pub const CAPABILITIES: &[Capability] = &[
     Capability {
-        id: CapabilityId::PortalScreenCast,
+        id: CapabilityId::WindowTitles,
         title: "Screen Cast",
         buys: "Wayland window titles and similar metadata.",
         costs: "xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs.",
@@ -92,15 +91,13 @@ pub struct Null;
 
 #[cfg(not(target_os = "linux"))]
 static WANT_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
-#[cfg(not(target_os = "linux"))]
-static WANT_SCREEN_RECORDING: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_os = "windows"))]
+static WANT_WINDOW_TITLES: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static WANT_INPUT_MONITORING: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "linux")]
-static WANT_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "linux")]
-static GRANTED_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
+static GRANTED_WINDOW_TITLES: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
@@ -110,12 +107,10 @@ pub fn wanted(id: CapabilityId) -> bool {
     match id {
         #[cfg(not(target_os = "linux"))]
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.load(Ordering::Relaxed),
-        #[cfg(not(target_os = "linux"))]
-        CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.load(Ordering::Relaxed),
+        #[cfg(not(target_os = "windows"))]
+        CapabilityId::WindowTitles => WANT_WINDOW_TITLES.load(Ordering::Relaxed),
         #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.load(Ordering::Relaxed),
-        #[cfg(target_os = "linux")]
-        CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.load(Ordering::Relaxed),
     }
 }
 
@@ -130,12 +125,10 @@ pub fn set_wanted(id: CapabilityId, on: bool) {
     match id {
         #[cfg(not(target_os = "linux"))]
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.store(on, Ordering::Relaxed),
-        #[cfg(not(target_os = "linux"))]
-        CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.store(on, Ordering::Relaxed),
+        #[cfg(not(target_os = "windows"))]
+        CapabilityId::WindowTitles => WANT_WINDOW_TITLES.store(on, Ordering::Relaxed),
         #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.store(on, Ordering::Relaxed),
-        #[cfg(target_os = "linux")]
-        CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.store(on, Ordering::Relaxed),
     }
 }
 
@@ -159,7 +152,7 @@ impl Probe for Macos {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
             CapabilityId::Accessibility => macos::accessibility_granted(),
-            CapabilityId::ScreenRecording => macos::screen_recording_granted(),
+            CapabilityId::WindowTitles => macos::screen_recording_granted(),
             CapabilityId::InputMonitoring => macos::input_monitoring_granted(),
         }
     }
@@ -167,7 +160,7 @@ impl Probe for Macos {
     fn prompt(&self, id: CapabilityId) {
         match id {
             CapabilityId::Accessibility => macos::request_accessibility(),
-            CapabilityId::ScreenRecording => macos::request_screen_recording(),
+            CapabilityId::WindowTitles => macos::request_screen_recording(),
             CapabilityId::InputMonitoring => macos::request_input_monitoring(),
         }
     }
@@ -177,13 +170,13 @@ impl Probe for Macos {
 impl Probe for LinuxPortal {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
-            CapabilityId::PortalScreenCast => linux::portal_screencast_granted(),
+            CapabilityId::WindowTitles => linux::portal_screencast_granted(),
         }
     }
 
     fn prompt(&self, id: CapabilityId) {
         match id {
-            CapabilityId::PortalScreenCast => linux::request_portal_screencast(),
+            CapabilityId::WindowTitles => linux::request_portal_screencast(),
         }
     }
 }
@@ -304,14 +297,14 @@ mod windows {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::GRANTED_PORTAL_SCREENCAST;
+    use super::GRANTED_WINDOW_TITLES;
     use std::sync::atomic::Ordering;
 
     /// xdg-desktop-portal ScreenCast grant check. Returns true after a successful
     /// portal session creation. Process-local: a restart clears the grant, but that
     /// is honest (the portal has no query API and Settings flip-on is the prompt).
     pub fn portal_screencast_granted() -> bool {
-        GRANTED_PORTAL_SCREENCAST.load(Ordering::Relaxed)
+        GRANTED_WINDOW_TITLES.load(Ordering::Relaxed)
     }
 
     /// Request xdg-desktop-portal ScreenCast permission. Opens the desktop's
@@ -329,7 +322,7 @@ mod linux {
         runtime.block_on(async {
             match screencast_request().await {
                 Ok(_) => {
-                    GRANTED_PORTAL_SCREENCAST.store(true, Ordering::Relaxed);
+                    GRANTED_WINDOW_TITLES.store(true, Ordering::Relaxed);
                 }
                 Err(why) => {
                     eprintln!("ai-buddy: portal screencast request failed: {why}");
@@ -689,7 +682,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
+            assert_eq!(rows[0].id, CapabilityId::WindowTitles);
             assert_eq!(rows[0].title, "Screen Cast");
             assert!(
                 rows[0].buys.contains("Wayland") || rows[0].buys.contains("title"),
@@ -722,7 +715,7 @@ mod tests {
             );
             assert!(!rows[0].granted);
 
-            assert_eq!(rows[1].id, CapabilityId::ScreenRecording);
+            assert_eq!(rows[1].id, CapabilityId::WindowTitles);
             assert_eq!(rows[1].title, "Screen Recording");
             assert!(
                 rows[1].buys.contains("title"),
@@ -771,7 +764,7 @@ mod tests {
             assert_eq!(all_off.len(), 1);
             assert!(!all_off[0].granted);
 
-            let portal_on = rows(|id| id == CapabilityId::PortalScreenCast);
+            let portal_on = rows(|id| id == CapabilityId::WindowTitles);
             assert!(portal_on[0].granted);
         }
         #[cfg(not(target_os = "linux"))]
@@ -789,19 +782,19 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             let probe = Fake::granting(&[]);
-            enable(CapabilityId::PortalScreenCast, &probe);
+            enable(CapabilityId::WindowTitles, &probe);
             assert_eq!(
                 *probe.prompted.lock().expect("prompt log"),
-                [CapabilityId::PortalScreenCast]
+                [CapabilityId::WindowTitles]
             );
         }
         #[cfg(not(target_os = "linux"))]
         {
             let probe = Fake::granting(&[]);
-            enable(CapabilityId::ScreenRecording, &probe);
+            enable(CapabilityId::WindowTitles, &probe);
             assert_eq!(
                 *probe.prompted.lock().expect("prompt log"),
-                [CapabilityId::ScreenRecording]
+                [CapabilityId::WindowTitles]
             );
         }
     }
@@ -812,8 +805,8 @@ mod tests {
     fn enabling_a_granted_capability_does_not_prompt() {
         #[cfg(target_os = "linux")]
         {
-            let probe = Fake::granting(&[CapabilityId::PortalScreenCast]);
-            enable(CapabilityId::PortalScreenCast, &probe);
+            let probe = Fake::granting(&[CapabilityId::WindowTitles]);
+            enable(CapabilityId::WindowTitles, &probe);
             assert!(probe.prompted.lock().expect("prompt log").is_empty());
         }
         #[cfg(not(target_os = "linux"))]
@@ -896,7 +889,7 @@ mod tests {
     fn linux_rows_are_portal_capabilities() {
         let rows = rows(|_| false);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
+        assert_eq!(rows[0].id, CapabilityId::WindowTitles);
         assert!(
             !rows[0].costs.contains("macOS"),
             "Linux rows must not mention macOS, got {:?}",
@@ -914,16 +907,16 @@ mod tests {
         let probe = Null;
         #[cfg(target_os = "linux")]
         {
-            assert!(!probe.granted(CapabilityId::PortalScreenCast));
-            probe.prompt(CapabilityId::PortalScreenCast);
-            assert!(!probe.granted(CapabilityId::PortalScreenCast));
+            assert!(!probe.granted(CapabilityId::WindowTitles));
+            probe.prompt(CapabilityId::WindowTitles);
+            assert!(!probe.granted(CapabilityId::WindowTitles));
         }
         #[cfg(not(target_os = "linux"))]
         {
             assert!(!probe.granted(CapabilityId::Accessibility));
-            assert!(!probe.granted(CapabilityId::ScreenRecording));
-            probe.prompt(CapabilityId::ScreenRecording);
-            assert!(!probe.granted(CapabilityId::ScreenRecording));
+            assert!(!probe.granted(CapabilityId::WindowTitles));
+            probe.prompt(CapabilityId::WindowTitles);
+            assert!(!probe.granted(CapabilityId::WindowTitles));
         }
     }
 
@@ -964,7 +957,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn linux_live_probe_is_portal_not_null() {
         let probe = live();
-        assert!(!probe.granted(CapabilityId::PortalScreenCast));
+        assert!(!probe.granted(CapabilityId::WindowTitles));
     }
 
     /// The fake portal grants what it was told to grant. Settings can flip
@@ -973,11 +966,11 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn fake_portal_grants_what_it_was_constructed_with() {
-        let granted = Fake::granting(&[CapabilityId::PortalScreenCast]);
-        assert!(granted.granted(CapabilityId::PortalScreenCast));
+        let granted = Fake::granting(&[CapabilityId::WindowTitles]);
+        assert!(granted.granted(CapabilityId::WindowTitles));
 
         let nothing = Fake::granting(&[]);
-        assert!(!nothing.granted(CapabilityId::PortalScreenCast));
+        assert!(!nothing.granted(CapabilityId::WindowTitles));
     }
 
     /// Usable requires both wanted and granted. #886 will gate on this,
@@ -985,21 +978,21 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn usable_requires_both_wanted_and_granted() {
-        let probe = Fake::granting(&[CapabilityId::PortalScreenCast]);
+        let probe = Fake::granting(&[CapabilityId::WindowTitles]);
 
-        set_wanted(CapabilityId::PortalScreenCast, false);
-        assert!(probe.granted(CapabilityId::PortalScreenCast));
-        assert!(!wanted(CapabilityId::PortalScreenCast));
-        assert!(!usable(CapabilityId::PortalScreenCast, &probe));
+        set_wanted(CapabilityId::WindowTitles, false);
+        assert!(probe.granted(CapabilityId::WindowTitles));
+        assert!(!wanted(CapabilityId::WindowTitles));
+        assert!(!usable(CapabilityId::WindowTitles, &probe));
 
-        set_wanted(CapabilityId::PortalScreenCast, true);
-        assert!(wanted(CapabilityId::PortalScreenCast));
-        assert!(usable(CapabilityId::PortalScreenCast, &probe));
+        set_wanted(CapabilityId::WindowTitles, true);
+        assert!(wanted(CapabilityId::WindowTitles));
+        assert!(usable(CapabilityId::WindowTitles, &probe));
 
         let nothing = Fake::granting(&[]);
-        assert!(!nothing.granted(CapabilityId::PortalScreenCast));
-        assert!(wanted(CapabilityId::PortalScreenCast));
-        assert!(!usable(CapabilityId::PortalScreenCast, &nothing));
+        assert!(!nothing.granted(CapabilityId::WindowTitles));
+        assert!(wanted(CapabilityId::WindowTitles));
+        assert!(!usable(CapabilityId::WindowTitles, &nothing));
     }
 
     #[test]

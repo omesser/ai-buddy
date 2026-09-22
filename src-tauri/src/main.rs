@@ -2676,15 +2676,10 @@ fn main() {
                 consent::CapabilityId::Accessibility,
                 settings.use_accessibility,
             );
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(target_os = "windows"))]
             consent::set_wanted(
-                consent::CapabilityId::ScreenRecording,
-                settings.use_screen_recording,
-            );
-            #[cfg(target_os = "linux")]
-            consent::set_wanted(
-                consent::CapabilityId::PortalScreenCast,
-                settings.use_portal_screencast,
+                consent::CapabilityId::WindowTitles,
+                settings.use_window_titles,
             );
             #[cfg(target_os = "macos")]
             consent::set_wanted(
