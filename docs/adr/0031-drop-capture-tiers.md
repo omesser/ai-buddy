@@ -6,9 +6,9 @@
 
 ADR-0005 defined three sensing tiers: Free (OS metadata without consent), On-Demand Capture (single screenshot with per-act consent), and Ambient Capture (periodic sampling under mandatory Local Gate with explicit consent). ADR-0005 deferred the two Capture tiers to post-v1, leaving Free sensing as the only tier shipped.
 
-The "ask Harness for screenshot after consent" hook described in ADR-0005 was never wired. As of 2026-09, the ACP attach has no standard desktop-control capability ([`docs/research/harness-tools-under-acp-probe.md`](../research/harness-tools-under-acp-probe.md)), so even a consented Capture would have no path to an attached harness unless the user connects a separate MCP server for it.
+The "ask Harness for screenshot after consent" hook described in ADR-0005 was never wired. As of September 2026, research found the ACP attach has no standard desktop-control capability, so even a consented Capture would have no path to an attached harness unless the user connects a separate MCP server for it.
 
-Computer use for agents — including desktop pixel access and control — belongs outside ai-buddy: in harness-native capabilities (Claude Code on macOS/Windows, Codex Computer Use plugin, Cursor Cloud Agents, Hermes computer_use toolset) or in multi-harness MCP drivers such as cua-driver. See [`docs/research/capture-drop-and-harness-cu-path.md`](../research/capture-drop-and-harness-cu-path.md) for the full multi-harness landscape.
+Computer use for agents — including desktop pixel access and control — belongs outside ai-buddy: in harness-native capabilities (Claude Code on macOS/Windows, Codex Computer Use plugin, Cursor Cloud Agents, Hermes computer_use toolset) or in multi-harness MCP drivers such as cua-driver. September 2026 research evaluated the multi-harness computer-use landscape and recommended cua-driver as the primary cross-platform option.
 
 Dropping Capture means ai-buddy never embeds, ships, or owns screenshot capability. It does not mean agents the user runs can never see pixels — a user running a CU-capable harness or attaching a computer-use MCP server (like cua-driver) can still grant that agent desktop control, just not through ai-buddy's own code.
 
@@ -47,4 +47,4 @@ The "ask Harness for screenshot after consent" path in ADR-0005 is withdrawn. No
 
 - ADR-0005: [Tiered sensing, consent for every Capture, a mandatory Local Gate, and the sprite as privacy indicator](./0005-sensing-posture.md) (superseded by this ADR)
 - ADR-0003: [ai-buddy ships no Executor; the Harness owns desktop control](./0003-no-executor-harness-owns-desktop-control.md)
-- Research: [Capture drop and the harness computer-use path](../research/capture-drop-and-harness-cu-path.md)
+- Research (September 2026): computer-use landscape evaluation and cua-driver recommendation
