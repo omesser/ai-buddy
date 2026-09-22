@@ -1379,11 +1379,10 @@ pub enum BoolField {
     /// not gated: the file carries it anywhere.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     Capturable,
-    // The consent rows. Linux and macOS both offer WindowTitles; Accessibility
-    // is macOS-only. The patch fields are not gated; the file carries them. #250.
+    // The consent rows. All three platforms offer WindowTitles; Accessibility
+    // is macOS and Windows. The patch fields are not gated; the file carries them. #250.
     #[cfg(not(target_os = "linux"))]
     UseAccessibility,
-    #[cfg(not(target_os = "windows"))]
     UseWindowTitles,
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
