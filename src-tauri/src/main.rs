@@ -660,6 +660,88 @@ mod settings_event_tests {
         }
     }
 
+    /// Every press, recorded rather than performed.
+    #[derive(Default)]
+    struct Recorded {
+        ran: std::cell::RefCell<Vec<String>>,
+        fails: bool,
+    }
+
+    impl Recorded {
+        fn note(&self, what: &str) -> Result<(), String> {
+            self.ran.borrow_mut().push(what.to_string());
+            if self.fails {
+                return Err("the store said no".to_string());
+            }
+            Ok(())
+        }
+
+        fn ran(&self) -> Vec<String> {
+            self.ran.borrow().clone()
+        }
+    }
+
+    impl Operations for Recorded {
+        fn open_memory(&self) -> Result<(), String> {
+            self.note("open_memory")
+        }
+
+        fn wipe_memory(&self) -> Result<(), String> {
+            self.note("wipe_memory")
+        }
+    }
+
+    /// The Privacy tab's two buttons reloaded the snapshot and did nothing,
+    /// because `settings_event` handed the operation to a page with no case
+    /// for it. #875.
+    #[test]
+    fn opening_and_wiping_memory_run_here_and_do_not_cross_to_the_page() {
+        use settings::form::RowOperation;
+
+        let session = Recorded::default();
+        assert_eq!(
+            run_operation(&session, &RowOperation::OpenMemory),
+            Ok(SettingsEventResponse::Nothing)
+        );
+        assert_eq!(
+            run_operation(&session, &RowOperation::WipeMemory),
+            Ok(SettingsEventResponse::Refresh)
+        );
+        assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
+    }
+
+    /// The clipboard is the page's, because WebKit gives `writeText` the
+    /// click's own turn and this command has already spent it (#855).
+    #[test]
+    fn the_clipboard_operations_still_cross_to_the_page() {
+        use settings::form::RowOperation;
+
+        let session = Recorded::default();
+        assert_eq!(
+            run_operation(&session, &RowOperation::CopyByoSnippet),
+            Ok(SettingsEventResponse::Run {
+                operation: "copy_byo_snippet".to_string()
+            })
+        );
+        assert!(session.ran().is_empty());
+    }
+
+    /// A failed wipe is the user's to see. Answering Refresh would redraw the
+    /// same Memory file and read as a wipe that worked.
+    #[test]
+    fn a_refused_wipe_answers_with_the_reason() {
+        use settings::form::RowOperation;
+
+        let session = Recorded {
+            fails: true,
+            ..Recorded::default()
+        };
+        assert_eq!(
+            run_operation(&session, &RowOperation::WipeMemory),
+            Err("the store said no".to_string())
+        );
+    }
+
     #[test]
     fn response_nothing_serializes() {
         let response = SettingsEventResponse::Nothing;
@@ -838,7 +920,50 @@ fn settings_event(
                 value: value.to_string(),
             })
         }
-        controller::Outcome::Run(op) => Ok(SettingsEventResponse::Run {
+        controller::Outcome::Run(op) => run_operation(&session, &op),
+    }
+}
+
+/// What a button press performs, so that `run_operation` can be tested.
+///
+/// `SettingsSession` is the real one. It needs a live `AppHandle`, which a
+/// unit test has not got, and the bug #875 closes is a press that reached no
+/// method at all - which is exactly what a test with no seam here cannot see.
+trait Operations {
+    fn open_memory(&self) -> Result<(), String>;
+    fn wipe_memory(&self) -> Result<(), String>;
+}
+
+impl Operations for settings::SettingsSession {
+    fn open_memory(&self) -> Result<(), String> {
+        settings::SettingsSession::open_memory(self)
+    }
+
+    fn wipe_memory(&self) -> Result<(), String> {
+        settings::SettingsSession::wipe_memory(self)
+    }
+}
+
+/// Run what #706 keeps in Rust, and hand the page only what it owns.
+///
+/// The two clipboard writes cross because WebKit gives `writeText` the click's
+/// own turn and nothing else. Everything else is a `SettingsSession` method,
+/// and forwarding those to a page with no case for them is why Open in editor
+/// and Wipe reloaded the snapshot and did nothing (#875).
+fn run_operation(
+    session: &dyn Operations,
+    op: &settings::form::RowOperation,
+) -> Result<SettingsEventResponse, String> {
+    use settings::form::RowOperation;
+    match op {
+        RowOperation::OpenMemory => session
+            .open_memory()
+            .map(|()| SettingsEventResponse::Nothing),
+        // The file is gone, so the window redraws from what is left.
+        RowOperation::WipeMemory => session
+            .wipe_memory()
+            .map(|()| SettingsEventResponse::Refresh),
+        _ => Ok(SettingsEventResponse::Run {
             operation: op.as_str().to_string(),
         }),
     }

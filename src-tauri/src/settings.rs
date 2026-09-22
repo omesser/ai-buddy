@@ -1289,18 +1289,14 @@ impl SettingsSession {
         (set, fingerprint, error)
     }
 
-    /// #875: the four operations the page renders a button for and never
-    /// runs. `settings_event` hands `Outcome::Run` to JavaScript, which acts
-    /// on the two clipboard operations and drops the rest, and a Dismiss press
-    /// is answered "dismiss not yet implemented". #706 puts opening and wiping
-    /// Memory, spawning and dismissing in Rust on purpose, so these wait for
-    /// the caller they never got rather than leaving with the renderers.
-    #[allow(dead_code)]
+    /// Hand the Memory file to whatever the desktop opens it with.
+    ///
+    /// In Rust rather than in the page, because #706 keeps the file system
+    /// out of JavaScript. `settings_event` is its caller.
     pub fn open_memory(&self) -> Result<(), String> {
         crate::platform::open_path(&self.memory_path)
     }
 
-    #[allow(dead_code)]
     pub fn wipe_memory(&self) -> Result<(), String> {
         MemoryManifest::new(&self.memory_path)
             .wipe()
