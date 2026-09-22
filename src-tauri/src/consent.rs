@@ -749,23 +749,39 @@ mod tests {
             {
                 assert_eq!(rows.len(), 3);
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
             {
-                assert_eq!(rows.len(), 1);
+                assert_eq!(rows.len(), 2);
             }
 
             assert_eq!(rows[0].id, CapabilityId::Accessibility);
             assert_eq!(rows[0].title, "Accessibility");
-            assert!(
-                rows[0].buys.contains("Dock"),
-                "Accessibility has to say what the Dock grant buys, got {:?}",
-                rows[0].buys
-            );
-            assert!(
-                rows[0].costs.contains("Accessibility"),
-                "Accessibility has to name the macOS grant, got {:?}",
-                rows[0].costs
-            );
+            #[cfg(target_os = "macos")]
+            {
+                assert!(
+                    rows[0].buys.contains("Dock"),
+                    "Accessibility has to say what the Dock grant buys, got {:?}",
+                    rows[0].buys
+                );
+                assert!(
+                    rows[0].costs.contains("Accessibility"),
+                    "Accessibility has to name the macOS grant, got {:?}",
+                    rows[0].costs
+                );
+            }
+            #[cfg(target_os = "windows")]
+            {
+                assert!(
+                    rows[0].buys.contains("taskbar"),
+                    "Accessibility has to say what the taskbar grant buys, got {:?}",
+                    rows[0].buys
+                );
+                assert!(
+                    rows[0].costs.contains("Automation"),
+                    "Accessibility has to name the Windows grant, got {:?}",
+                    rows[0].costs
+                );
+            }
             assert!(!rows[0].granted);
 
             #[cfg(target_os = "macos")]
@@ -780,6 +796,23 @@ mod tests {
                 assert!(
                     rows[1].costs.contains("Screen Recording"),
                     "Screen Recording has to name the macOS grant, got {:?}",
+                    rows[1].costs
+                );
+                assert!(!rows[1].granted);
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                assert_eq!(rows[1].id, CapabilityId::WindowTitles);
+                assert_eq!(rows[1].title, "Window Titles");
+                assert!(
+                    rows[1].buys.contains("title"),
+                    "WindowTitles has to say titles are what it buys, got {:?}",
+                    rows[1].buys
+                );
+                assert!(
+                    rows[1].costs.contains("No system permission required"),
+                    "WindowTitles has to say no system permission required, got {:?}",
                     rows[1].costs
                 );
                 assert!(!rows[1].granted);
@@ -828,7 +861,13 @@ mod tests {
             let rows = rows(|id| id == CapabilityId::Accessibility);
             assert!(rows[0].granted);
             #[cfg(target_os = "macos")]
-            assert!(!rows[1].granted);
+            {
+                assert!(!rows[1].granted);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                assert!(!rows[1].granted);
+            }
         }
     }
 
