@@ -9,13 +9,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum CapabilityId {
+    /// macOS only: reading Dock bounds and window geometry.
+    #[cfg(not(target_os = "linux"))]
     Accessibility,
+    /// macOS only: reading window titles and screen contents.
+    #[cfg(not(target_os = "linux"))]
     ScreenRecording,
-    /// macOS only: the idle event tap (#721). Windows and Linux have no such
-    /// grant, and a variant nothing there constructs is a `dead_code` warning
-    /// those jobs deny.
+    /// macOS only: the idle event tap (#721).
     #[cfg(target_os = "macos")]
     InputMonitoring,
+    /// Linux only: xdg-desktop-portal ScreenCast for screen recording/streaming.
+    #[cfg(target_os = "linux")]
+    PortalScreenCast,
+    /// Linux only: xdg-desktop-portal Screenshot for taking screenshots.
+    #[cfg(target_os = "linux")]
+    PortalScreenshot,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,13 +52,16 @@ pub trait Probe: Send + Sync {
     fn prompt(&self, id: CapabilityId);
 }
 
+#[cfg(not(target_os = "linux"))]
 pub const CAPABILITIES: &[Capability] = &[
+    #[cfg(not(target_os = "linux"))]
     Capability {
         id: CapabilityId::Accessibility,
         title: "Accessibility",
         buys: "Exact Dock geometry, so the sprite does not walk into the Dock.",
         costs: "macOS Accessibility. The buddy reads the Dock's bounds; it does not control your computer.",
     },
+    #[cfg(not(target_os = "linux"))]
     Capability {
         id: CapabilityId::ScreenRecording,
         title: "Screen Recording",
@@ -66,41 +77,81 @@ pub const CAPABILITIES: &[Capability] = &[
     },
 ];
 
-/// Linux, and tests that do not care about the live OS.
-///
-/// On Linux this is the answer, not a stub: sensing is consent-free, so nothing may report a grant.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+pub const CAPABILITIES: &[Capability] = &[
+    Capability {
+        id: CapabilityId::PortalScreenCast,
+        title: "Screen Cast",
+        buys: "Screen recording and streaming for Capture when it ships.",
+        costs: "xdg-desktop-portal ScreenCast permission. Your desktop will prompt when you enable this.",
+    },
+    Capability {
+        id: CapabilityId::PortalScreenshot,
+        title: "Screenshot",
+        buys: "Taking screenshots for Capture when it ships.",
+        costs: "xdg-desktop-portal Screenshot permission. Your desktop will prompt when you enable this.",
+    },
+];
+
+/// Tests that do not care about the live OS, and the fallback when a platform
+/// has no consent system. Was Linux's answer when X11 sensing was consent-free;
+/// the portal Probe replaced it once Capture needed a grant.
 pub struct Null;
 
+#[cfg(not(target_os = "linux"))]
 static WANT_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_os = "linux"))]
 static WANT_SCREEN_RECORDING: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static WANT_INPUT_MONITORING: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
+static WANT_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
+static WANT_PORTAL_SCREENSHOT: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
+        #[cfg(not(target_os = "linux"))]
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.load(Ordering::Relaxed),
+        #[cfg(not(target_os = "linux"))]
         CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.load(Ordering::Relaxed),
+        #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.load(Ordering::Relaxed),
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn wanted(id: CapabilityId) -> bool {
+    match id {
+        CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.load(Ordering::Relaxed),
+        CapabilityId::PortalScreenshot => WANT_PORTAL_SCREENSHOT.load(Ordering::Relaxed),
     }
 }
 
 pub fn set_wanted(id: CapabilityId, on: bool) {
     match id {
+        #[cfg(not(target_os = "linux"))]
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.store(on, Ordering::Relaxed),
+        #[cfg(not(target_os = "linux"))]
         CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.store(on, Ordering::Relaxed),
         #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.store(on, Ordering::Relaxed),
+        #[cfg(target_os = "linux")]
+        CapabilityId::PortalScreenCast => WANT_PORTAL_SCREENCAST.store(on, Ordering::Relaxed),
+        #[cfg(target_os = "linux")]
+        CapabilityId::PortalScreenshot => WANT_PORTAL_SCREENSHOT.store(on, Ordering::Relaxed),
     }
 }
 
 #[cfg(target_os = "macos")]
 struct Macos;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+struct LinuxPortal;
+
 impl Probe for Null {
     fn granted(&self, _: CapabilityId) -> bool {
         false
@@ -124,6 +175,23 @@ impl Probe for Macos {
             CapabilityId::Accessibility => macos::request_accessibility(),
             CapabilityId::ScreenRecording => macos::request_screen_recording(),
             CapabilityId::InputMonitoring => macos::request_input_monitoring(),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Probe for LinuxPortal {
+    fn granted(&self, id: CapabilityId) -> bool {
+        match id {
+            CapabilityId::PortalScreenCast => linux::portal_screencast_granted(),
+            CapabilityId::PortalScreenshot => linux::portal_screenshot_granted(),
+        }
+    }
+
+    fn prompt(&self, id: CapabilityId) {
+        match id {
+            CapabilityId::PortalScreenCast => linux::request_portal_screencast(),
+            CapabilityId::PortalScreenshot => linux::request_portal_screenshot(),
         }
     }
 }
@@ -239,6 +307,33 @@ mod windows {
             .next_back()
             .unwrap_or(&name)
             .to_string()
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    /// xdg-desktop-portal ScreenCast grant check. Returns false until a live
+    /// portal session is implemented (when Capture ships).
+    pub fn portal_screencast_granted() -> bool {
+        false
+    }
+
+    /// xdg-desktop-portal Screenshot grant check. Returns false until a live
+    /// portal session is implemented (when Capture ships).
+    pub fn portal_screenshot_granted() -> bool {
+        false
+    }
+
+    /// Request xdg-desktop-portal ScreenCast permission. Opens the desktop's
+    /// portal dialog when Settings flips the row on. Stub until Capture ships.
+    pub fn request_portal_screencast() {
+        eprintln!("ai-buddy: ScreenCast portal prompt not yet implemented");
+    }
+
+    /// Request xdg-desktop-portal Screenshot permission. Opens the desktop's
+    /// portal dialog when Settings flips the row on. Stub until Capture ships.
+    pub fn request_portal_screenshot() {
+        eprintln!("ai-buddy: Screenshot portal prompt not yet implemented");
     }
 }
 
@@ -439,28 +534,16 @@ mod macos {
 }
 
 pub fn rows(wanted: impl Fn(CapabilityId) -> bool) -> Vec<ConsentRow> {
-    // Linux has no grant to emit. Mapping CAPABILITIES here would reprint the
-    // TCC titles the form already omits (#250 leftover after #538). The const
-    // is still named so clippy -D warnings does not treat the catalog as dead.
-    #[cfg(target_os = "linux")]
-    {
-        let _ = wanted;
-        let _ = CAPABILITIES;
-        Vec::new()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        CAPABILITIES
-            .iter()
-            .map(|cap| ConsentRow {
-                id: cap.id,
-                title: cap.title,
-                buys: cap.buys,
-                costs: cap.costs,
-                granted: wanted(cap.id),
-            })
-            .collect()
-    }
+    CAPABILITIES
+        .iter()
+        .map(|cap| ConsentRow {
+            id: cap.id,
+            title: cap.title,
+            buys: cap.buys,
+            costs: cap.costs,
+            granted: wanted(cap.id),
+        })
+        .collect()
 }
 
 pub fn enable(id: CapabilityId, probe: &dyn Probe) {
@@ -487,12 +570,13 @@ pub fn pane_intro(listed_as: &str) -> String {
     )
 }
 
-/// Linux-specific intro: no consent system, names what is read without a grant.
+/// Linux-specific intro: xdg-desktop-portal for Capture when it ships.
 ///
-/// It carries the whole section, which has no rows: the prose has to say why the other platforms' checkboxes are not there.
+/// Checkboxes are named after portal capabilities: ScreenCast and Screenshot.
+/// No macOS-specific vocabulary (TCC, Privacy & Security, Accessibility).
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
-    "On Linux there is nothing to turn on: no permission is requested. Window positions are read to keep the buddy visible."
+    "Checking a box prompts via xdg-desktop-portal. Window positions are already readable without a grant."
         .to_string()
 }
 
@@ -533,7 +617,11 @@ pub fn live() -> &'static dyn Probe {
     {
         &Macos
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        &LinuxPortal
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         &Null
     }
@@ -570,60 +658,94 @@ mod tests {
 
     /// The window prints this catalog. Dropping a row makes that grant unreachable: nothing else names the trade.
     #[test]
-    #[cfg(not(target_os = "linux"))]
     fn the_catalog_names_each_capability_and_its_trade() {
         let rows = rows(|_| false);
-        // Input Monitoring is the third row on macOS and exists nowhere else.
-        assert_eq!(rows.len(), if cfg!(target_os = "macos") { 3 } else { 2 });
 
-        assert_eq!(rows[0].id, CapabilityId::Accessibility);
-        assert_eq!(rows[0].title, "Accessibility");
-        assert!(
-            rows[0].buys.contains("Dock"),
-            "Accessibility has to say what the Dock grant buys, got {:?}",
-            rows[0].buys
-        );
-        assert!(
-            rows[0].costs.contains("Accessibility"),
-            "Accessibility has to name the macOS grant, got {:?}",
-            rows[0].costs
-        );
-        assert!(!rows[0].granted);
-
-        assert_eq!(rows[1].id, CapabilityId::ScreenRecording);
-        assert_eq!(rows[1].title, "Screen Recording");
-        assert!(
-            rows[1].buys.contains("title"),
-            "Screen Recording has to say titles are what it buys, got {:?}",
-            rows[1].buys
-        );
-        assert!(
-            rows[1].costs.contains("Screen Recording"),
-            "Screen Recording has to name the macOS grant, got {:?}",
-            rows[1].costs
-        );
-        assert!(!rows[1].granted);
-
-        #[cfg(target_os = "macos")]
+        #[cfg(target_os = "linux")]
         {
-            assert_eq!(rows[2].id, CapabilityId::InputMonitoring);
-            assert_eq!(rows[2].title, "Input Monitoring");
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
+            assert_eq!(rows[0].title, "Screen Cast");
             assert!(
-                rows[2].buys.contains("mouse"),
-                "Input Monitoring has to say hearing the mouse is what it buys, got {:?}",
-                rows[2].buys
+                rows[0].buys.contains("recording") || rows[0].buys.contains("Capture"),
+                "ScreenCast has to say what recording buys, got {:?}",
+                rows[0].buys
             );
             assert!(
-                rows[2].costs.contains("Input Monitoring"),
-                "Input Monitoring has to name the macOS grant, got {:?}",
-                rows[2].costs
+                rows[0].costs.contains("portal") || rows[0].costs.contains("ScreenCast"),
+                "ScreenCast has to name the portal, got {:?}",
+                rows[0].costs
+            );
+            assert!(!rows[0].granted);
+
+            assert_eq!(rows[1].id, CapabilityId::PortalScreenshot);
+            assert_eq!(rows[1].title, "Screenshot");
+            assert!(
+                rows[1].buys.contains("screenshot") || rows[1].buys.contains("Capture"),
+                "Screenshot has to say what screenshots buy, got {:?}",
+                rows[1].buys
             );
             assert!(
-                rows[2].costs.contains("never what you type"),
-                "the row has to say the tap is mouse-only, got {:?}",
-                rows[2].costs
+                rows[1].costs.contains("portal") || rows[1].costs.contains("Screenshot"),
+                "Screenshot has to name the portal, got {:?}",
+                rows[1].costs
             );
-            assert!(!rows[2].granted);
+            assert!(!rows[1].granted);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(rows.len(), if cfg!(target_os = "macos") { 3 } else { 2 });
+
+            assert_eq!(rows[0].id, CapabilityId::Accessibility);
+            assert_eq!(rows[0].title, "Accessibility");
+            assert!(
+                rows[0].buys.contains("Dock"),
+                "Accessibility has to say what the Dock grant buys, got {:?}",
+                rows[0].buys
+            );
+            assert!(
+                rows[0].costs.contains("Accessibility"),
+                "Accessibility has to name the macOS grant, got {:?}",
+                rows[0].costs
+            );
+            assert!(!rows[0].granted);
+
+            assert_eq!(rows[1].id, CapabilityId::ScreenRecording);
+            assert_eq!(rows[1].title, "Screen Recording");
+            assert!(
+                rows[1].buys.contains("title"),
+                "Screen Recording has to say titles are what it buys, got {:?}",
+                rows[1].buys
+            );
+            assert!(
+                rows[1].costs.contains("Screen Recording"),
+                "Screen Recording has to name the macOS grant, got {:?}",
+                rows[1].costs
+            );
+            assert!(!rows[1].granted);
+
+            #[cfg(target_os = "macos")]
+            {
+                assert_eq!(rows[2].id, CapabilityId::InputMonitoring);
+                assert_eq!(rows[2].title, "Input Monitoring");
+                assert!(
+                    rows[2].buys.contains("mouse"),
+                    "Input Monitoring has to say hearing the mouse is what it buys, got {:?}",
+                    rows[2].buys
+                );
+                assert!(
+                    rows[2].costs.contains("Input Monitoring"),
+                    "Input Monitoring has to name the macOS grant, got {:?}",
+                    rows[2].costs
+                );
+                assert!(
+                    rows[2].costs.contains("never what you type"),
+                    "the row has to say the tap is mouse-only, got {:?}",
+                    rows[2].costs
+                );
+                assert!(!rows[2].granted);
+            }
         }
     }
 
@@ -631,32 +753,61 @@ mod tests {
     /// user turned off here must show as off or they cannot stop the buddy
     /// using it.
     #[test]
-    #[cfg(not(target_os = "linux"))]
     fn rows_report_wanted_capabilities() {
-        let rows = rows(|id| id == CapabilityId::Accessibility);
-        assert!(rows[0].granted);
-        assert!(!rows[1].granted);
+        #[cfg(target_os = "linux")]
+        {
+            let rows = rows(|id| id == CapabilityId::PortalScreenCast);
+            assert!(rows[0].granted);
+            assert!(!rows[1].granted);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let rows = rows(|id| id == CapabilityId::Accessibility);
+            assert!(rows[0].granted);
+            assert!(!rows[1].granted);
+        }
     }
 
     /// Flipping on is what decision 9 allows: the system prompt at that
     /// moment, never at launch.
     #[test]
     fn enabling_an_ungranted_capability_prompts() {
-        let probe = Fake::granting(&[]);
-        enable(CapabilityId::ScreenRecording, &probe);
-        assert_eq!(
-            *probe.prompted.lock().expect("prompt log"),
-            [CapabilityId::ScreenRecording]
-        );
+        #[cfg(target_os = "linux")]
+        {
+            let probe = Fake::granting(&[]);
+            enable(CapabilityId::PortalScreenCast, &probe);
+            assert_eq!(
+                *probe.prompted.lock().expect("prompt log"),
+                [CapabilityId::PortalScreenCast]
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let probe = Fake::granting(&[]);
+            enable(CapabilityId::ScreenRecording, &probe);
+            assert_eq!(
+                *probe.prompted.lock().expect("prompt log"),
+                [CapabilityId::ScreenRecording]
+            );
+        }
     }
 
     /// Already granted: a second prompt is noise, and on macOS can look
     /// like the app is asking again for something the user already gave.
     #[test]
     fn enabling_a_granted_capability_does_not_prompt() {
-        let probe = Fake::granting(&[CapabilityId::Accessibility]);
-        enable(CapabilityId::Accessibility, &probe);
-        assert!(probe.prompted.lock().expect("prompt log").is_empty());
+        #[cfg(target_os = "linux")]
+        {
+            let probe = Fake::granting(&[CapabilityId::PortalScreenshot]);
+            enable(CapabilityId::PortalScreenshot, &probe);
+            assert!(probe.prompted.lock().expect("prompt log").is_empty());
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let probe = Fake::granting(&[CapabilityId::Accessibility]);
+            enable(CapabilityId::Accessibility, &probe);
+            assert!(probe.prompted.lock().expect("prompt log").is_empty());
+        }
     }
 
     /// A `cargo run` from Cursor is listed as Cursor, not ai-buddy. The
@@ -724,38 +875,58 @@ mod tests {
         );
     }
 
-    /// A wanted closure that says yes still produces no rows: Linux has no
-    /// grant to emit, and the empty vec is the catalog, not a mock of TCC (#250).
+    /// Linux rows are portal capabilities, not TCC. The catalog is the real
+    /// rows settings shows, not a mock (#250).
     #[test]
     #[cfg(target_os = "linux")]
-    fn linux_rows_are_empty_whether_wanted_or_not() {
-        assert_eq!(rows(|_| true), Vec::new());
-        assert_eq!(rows(|_| false), Vec::new());
+    fn linux_rows_are_portal_capabilities() {
+        let rows = rows(|_| false);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
+        assert_eq!(rows[1].id, CapabilityId::PortalScreenshot);
+        assert!(
+            !rows[0].costs.contains("macOS"),
+            "Linux rows must not mention macOS, got {:?}",
+            rows[0].costs
+        );
+        assert!(
+            !rows[1].costs.contains("Accessibility"),
+            "Linux rows must not mention Accessibility, got {:?}",
+            rows[1].costs
+        );
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))]
     fn the_null_probe_grants_nothing_and_prompts_for_nothing() {
-        let probe = live();
-        assert!(!probe.granted(CapabilityId::Accessibility));
-        assert!(!probe.granted(CapabilityId::ScreenRecording));
-        probe.prompt(CapabilityId::ScreenRecording);
-        assert!(!probe.granted(CapabilityId::ScreenRecording));
+        let probe = Null;
+        #[cfg(target_os = "linux")]
+        {
+            assert!(!probe.granted(CapabilityId::PortalScreenCast));
+            assert!(!probe.granted(CapabilityId::PortalScreenshot));
+            probe.prompt(CapabilityId::PortalScreenCast);
+            assert!(!probe.granted(CapabilityId::PortalScreenCast));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(!probe.granted(CapabilityId::Accessibility));
+            assert!(!probe.granted(CapabilityId::ScreenRecording));
+            probe.prompt(CapabilityId::ScreenRecording);
+            assert!(!probe.granted(CapabilityId::ScreenRecording));
+        }
     }
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn linux_pane_intro_is_tcc_free_and_explains_consent() {
+    fn linux_pane_intro_is_portal_specific_not_tcc() {
         let prose = linux_pane_intro();
         assert!(!prose.is_empty(), "Linux prose must not be empty");
         assert!(
-            prose.contains("no permission is requested")
-                || prose.contains("no permission requested"),
-            "Linux prose must say nothing is requested, got {prose:?}"
+            prose.contains("portal"),
+            "Linux prose must mention the portal, got {prose:?}"
         );
         assert!(
             prose.contains("window") || prose.contains("Window"),
-            "Linux prose must name what is read (window positions), got {prose:?}"
+            "Linux prose must name what is readable without a grant, got {prose:?}"
         );
         assert!(
             !prose.contains("Accessibility"),
@@ -769,6 +940,35 @@ mod tests {
             !prose.contains("Privacy & Security"),
             "Linux prose must not mention macOS Privacy & Security, got {prose:?}"
         );
+        assert!(
+            !prose.contains("macOS"),
+            "Linux prose must not mention macOS, got {prose:?}"
+        );
+    }
+
+    /// Linux uses the portal probe, not Null. Null is tests-only or
+    /// platforms with no consent system. First run grants nothing.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_live_probe_is_portal_not_null() {
+        let probe = live();
+        assert!(!probe.granted(CapabilityId::PortalScreenCast));
+        assert!(!probe.granted(CapabilityId::PortalScreenshot));
+    }
+
+    /// The fake portal grants what it was told to grant. Settings can flip
+    /// rows on and off, and the consent model stays testable without a live
+    /// portal or a window server.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn fake_portal_grants_what_it_was_constructed_with() {
+        let granted = Fake::granting(&[CapabilityId::PortalScreenCast]);
+        assert!(granted.granted(CapabilityId::PortalScreenCast));
+        assert!(!granted.granted(CapabilityId::PortalScreenshot));
+
+        let nothing = Fake::granting(&[]);
+        assert!(!nothing.granted(CapabilityId::PortalScreenCast));
+        assert!(!nothing.granted(CapabilityId::PortalScreenshot));
     }
 
     #[test]
