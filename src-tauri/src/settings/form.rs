@@ -1365,7 +1365,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     ]
 }
 
-fn development_sections() -> Vec<FormSection> {
+fn development_sections(live: &Live) -> Vec<FormSection> {
     let rows = vec![
         flag_row(
             TRACE_FRAMES_ID,
@@ -1500,7 +1500,7 @@ fn development_sections() -> Vec<FormSection> {
             heading: "Harness attachment".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project. Empty is the data folder. Session file and Action Log stay in the data folder.",
+                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
                 crate::harness::TURN_TIMEOUT.as_secs()
             )),
             status: None,
@@ -1541,11 +1541,11 @@ fn development_sections() -> Vec<FormSection> {
                 FormRow::TextField {
                     id: HARNESS_CWD_ID.to_string(),
                     label: Some(harness_cwd_label),
-                    placeholder: "the data folder".to_string(),
+                    placeholder: live.attach_cwd.clone(),
                     writes: TextField::HarnessCwd,
                     frozen: harness_cwd_frozen,
                     batched: false,
-                    help: Some("The directory the Harness treats as the project. Empty is the data folder. Session file and Action Log stay in the data folder.".to_string()),
+                    help: Some("The directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.".to_string()),
                     disclosure: None,
                     status: harness_cwd_status,
                 },
@@ -1557,11 +1557,12 @@ fn development_sections() -> Vec<FormSection> {
 /// Describe the settings form. The AppKit and Linux GTK windows build from this.
 /// What the description reads from the running process rather than the file.
 ///
-/// A value rather than three calls inside the builders, because none of the
-/// three can be pinned otherwise: `harness::driving` is a process global no
-/// test can set for the whole binary, and the consent intro names the process
+/// A value rather than four calls inside the builders, because none of the
+/// four can be pinned otherwise: `harness::driving` is a process global no
+/// test can set for the whole binary, the consent intro names the process
 /// Privacy will list, which is the responsible parent and so differs per
-/// machine. A fixture compared byte for byte needs all three chosen (#706).
+/// machine, and the attach directory differs per machine again. A fixture
+/// compared byte for byte needs all four chosen (#706).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Live {
     /// A Harness is answering, so the three HTTP rows drive nothing (ADR-0008).
@@ -1571,6 +1572,8 @@ pub struct Live {
     /// The whole intro rather than the process name, because Linux has no
     /// consent system and says something else entirely (#250).
     pub consent_intro: String,
+    /// Where a blank Working directory row runs, for its placeholder (#913).
+    pub attach_cwd: String,
 }
 
 impl Live {
@@ -1583,6 +1586,7 @@ impl Live {
             driving: crate::harness::driving(),
             configured: crate::harness::attached().is_some(),
             consent_intro,
+            attach_cwd: crate::harness::attach_cwd_placeholder(),
         }
     }
 }
@@ -1611,7 +1615,7 @@ pub fn describe_with(live: &Live) -> FormDescription {
         },
         FormTab {
             title: "Development".to_string(),
-            sections: development_sections(),
+            sections: development_sections(live),
         },
     ];
     // Only the buttons: every writing row carries the field it writes.
@@ -1641,6 +1645,11 @@ mod tests {
     const FIXTURE_CONSENT_INTRO: &str =
         "Checking a box asks macOS for the permission. macOS lists this app as ai-buddy, under Privacy & Security.";
 
+    /// A path, because `memory::data_dir` answers with this machine's
+    /// Application Support and a fixture compared byte for byte cannot hold
+    /// one. Shaped like the macOS answer the fixtures otherwise carry.
+    const FIXTURE_ATTACH_CWD: &str = "/Users/buddy/Library/Application Support/ai-buddy";
+
     /// The fixtures hold the macOS form. Linux builds two tabs deliberately
     /// smaller: no capture-exclusion row and no consent rows, because there is
     /// nothing there to grant (#250). Windows builds Privacy one row smaller
@@ -1660,6 +1669,7 @@ mod tests {
             driving,
             configured,
             consent_intro: FIXTURE_CONSENT_INTRO.to_string(),
+            attach_cwd: FIXTURE_ATTACH_CWD.to_string(),
         }
     }
 

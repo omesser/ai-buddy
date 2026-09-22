@@ -196,6 +196,15 @@ fn attach_cwd_display(cwd: &Result<AttachCwd, CwdError>) -> String {
     }
 }
 
+/// Where the Harness runs when the Working directory row is blank, for that
+/// row's placeholder. Resolved rather than described, so the row shows the
+/// path instead of leaving the user to know it (#913). Reads
+/// `AI_BUDDY_HARNESS_CWD` first, because a row the environment owns runs
+/// somewhere else again.
+pub(crate) fn attach_cwd_placeholder() -> String {
+    attach_cwd_display(&AttachCwd::resolve(&crate::model::env_or_file(CWD, "")))
+}
+
 impl AttachCwd {
     fn resolve(raw: &str) -> Result<Self, CwdError> {
         let trimmed = raw.trim();
@@ -2485,6 +2494,29 @@ mod tests {
                 "env outranks the file row"
             );
             std::env::remove_var(CWD);
+        });
+    }
+
+    /// The Working directory row shows this path instead of naming the data
+    /// folder in words (#913). A placeholder that stopped resolving would put
+    /// a path on screen that the attach does not use.
+    #[test]
+    fn working_directory_placeholder_is_the_path_a_blank_row_runs_in() {
+        crate::model::tests::with_env(None, None, None, || {
+            assert_eq!(
+                attach_cwd_placeholder(),
+                ai_buddy_core::memory::data_dir().display().to_string()
+            );
+
+            let from_env = std::env::temp_dir().join("from-env");
+            std::env::set_var(CWD, from_env.as_os_str());
+            let owned = attach_cwd_placeholder();
+            std::env::remove_var(CWD);
+            assert_eq!(
+                owned,
+                from_env.display().to_string(),
+                "a row the environment owns shows where it actually runs"
+            );
         });
     }
 
