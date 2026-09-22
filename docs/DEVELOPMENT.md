@@ -535,7 +535,7 @@ Two transport axes (do not conflate):
 - `speak` — Make the Character speak dialogue
 - `play_behavior` — Play a named Behavior
 - `list_windows` — List visible windows with bounds and owner
-- `describe_screen` — Describe screen (v1: window metadata only; Capture deferred)
+- `describe_screen` — Describe screen (window metadata only; Capture dropped, ADR-0031)
 - `recall` — Read everything Memory holds
 - `remember` — Write one fact under a heading
 - `list_instances` — List Character Instances and their names
@@ -597,7 +597,7 @@ A Harness the popup does not list (a hand-edited command, `custom`) gets the bar
 
 ### What it can but doesn't
 
-- **Richer sensing (Capture)** — *deferred*. `describe_screen` v1 is window metadata only; pixels/OCR/vision are not shipped. When added, they gate behind user consent (sensing permissions already exist for window geometry).
+- **Richer sensing (Capture)** — *dropped* ([ADR-0031](./adr/0031-drop-capture-tiers.md)). `describe_screen` is window metadata only; ai-buddy never takes screenshots, never analyzes pixels, and never embeds OCR/vision. Agents needing pixel access use harness-native computer use or attach an MCP server like cua-driver.
 - **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; ai-buddy ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
 - **MCP sampling, progress, SSE push** — *out of scope today*. The server is sync request/response; no `notifications/progress`, no server-initiated push. Sampling requires long-lived connections the current thread-per-request model doesn't hold.
 - **Resources / prompts** — *not served*. MCP resources and prompt templates are not exposed; the protocol layer stops at tools.

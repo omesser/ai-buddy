@@ -1,5 +1,10 @@
 # Tiered sensing, consent for every Capture, a mandatory Local Gate, and the sprite as privacy indicator
 
+**Status:** Superseded by [ADR-0031](./0031-drop-capture-tiers.md). Capture tiers (Ambient,
+On-Demand) and Local Gate are dropped. Free sensing remains as specified below.
+
+---
+
 Sensing is tiered: a **Free** tier needing no permissions (frontmost app name,
 window geometry, time, idle duration, recent Behaviors) which is all v1 ships
 with; an **Ambient** tier (window titles, and a Capture the Character asks for

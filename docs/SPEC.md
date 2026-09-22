@@ -5,8 +5,9 @@ Decisions and their rejected alternatives are recorded in [DESIGN.md](../DESIGN.
 and in [docs/adr/](./adr/). This document does not re-argue them.
 
 Scope is v1 as cut in DESIGN.md: Spatial Layer, Character Packages, Director on the
-free sensing tier, MCP server, Harness attach, chat, Memory. Voice, Ambient and
-On-Demand Capture, and the Windows implementation are deferred.
+free sensing tier, MCP server, Harness attach, chat, Memory. Voice and the Windows
+implementation are deferred. Ambient Capture, On-Demand Capture, and Local Gate are
+dropped (not deferred) per [ADR-0031](./adr/0031-drop-capture-tiers.md).
 
 ## Problem Statement
 
@@ -431,7 +432,8 @@ ai-buddy exposes an MCP server. Tool surface, by responsibility:
 
 - **Expression** — make the buddy speak; play a named Behavior.
 - **Sensing** — list visible windows with bounds and owning application; describe what is
-  on screen (v1: window metadata only, since Capture is deferred).
+  on screen (window metadata only; Capture is dropped per
+  [ADR-0031](./adr/0031-drop-capture-tiers.md)).
 - **Memory** — recall; remember.
 - **Identity** — list Character Instances and their names.
 
@@ -580,8 +582,6 @@ Deferred to a later version, decided but not built:
 
 - Voice: hotkey push-to-talk, wake word, transcription. Transcription will be a trait
   with Apple `SpeechAnalyzer` on macOS 26+ and `whisper.cpp` elsewhere.
-- Ambient Capture and On-Demand Capture, the Local Gate, on-device OCR, and Screen
-  Recording consent. The sprite-as-privacy-indicator rule lands with them.
 - Window titles as Director context.
 - Publishing the Character Package format and authoring documentation. The format is
   first-class internally and stays undocumented until v2.
@@ -593,8 +593,11 @@ Decided against, not merely deferred:
 - An undo system for desktop actions.
 - A provider abstraction layer over harnesses.
 - Per-Instance memory. May become configurable later; not built now.
-- Ambient screenshots without a mandatory Local Gate, and any Capture the user did not
-  permit for that Capture. ADR-0005.
+- Ambient Capture, On-Demand Capture, and the Local Gate. ai-buddy never takes screenshots,
+  never analyzes screen pixels, and never embeds OCR or vision models. Agents that need
+  pixel access or desktop control use harness-native computer use or attach an MCP server
+  like cua-driver. [ADR-0031](./adr/0031-drop-capture-tiers.md) supersedes
+  [ADR-0005](./adr/0005-sensing-posture.md).
 - Desktop-level or dynamically restacked z-order, and peeking out from behind windows.
 - Window side and bottom collision.
 - Interaction verbs beyond the five.

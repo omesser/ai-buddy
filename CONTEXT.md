@@ -226,22 +226,19 @@ _Avoid_: Memory log, transcript, audit trail
 
 ### Sensing
 
-**Ambient Capture**:
-A Capture the Character asks for while the user works, taken only after they
-say yes. Never sampled on a cadence: the cadence bounds the asking. ADR-0005.
-_Avoid_: Monitoring, watching, background scan, sampling
+**Free sensing**:
+OS metadata the buddy can query without permissions: frontmost app name, window
+geometry, time, idle duration, recent Behaviors. The only sensing tier ai-buddy
+ships. Exposed via MCP tools `list_windows` and `describe_screen`. ADR-0031.
+_Avoid_: Ambient sensing, monitoring
 
-**On-Demand Capture**:
-A single capture taken in direct response to a user act — a Poke, a call, a
-chat message. An act that names the screen is its own permission for it.
-ADR-0005.
-_Avoid_: Manual capture, triggered scan
-
-**Local Gate**:
-The mandatory on-device filter every consented Capture passes through before
-anything may reach the Director. Discards unchanged and uninteresting frames.
-Not a substitute for consent.
-_Avoid_: Preprocessor, filter, throttle
+**Ambient Capture, On-Demand Capture, Local Gate**:
+Dropped. ai-buddy never takes screenshots, never analyzes screen pixels, and
+never embeds OCR or vision models for desktop content awareness. Agents that
+need pixel access or desktop control use harness-native computer use (Cursor
+Cloud Agents, Codex Computer Use plugin, Hermes computer_use toolset) or attach
+an MCP server like cua-driver. ADR-0031 supersedes ADR-0005.
+_Avoid_: Saying these are "upcoming" or "deferred"
 
 ### Interaction verbs
 
