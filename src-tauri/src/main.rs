@@ -496,7 +496,8 @@ fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSe
 #[derive(serde::Serialize)]
 struct SettingsSnapshot {
     form: settings::form::FormDescription,
-    view: settings::SettingsView,
+    /// Keyed by form row id, which is what `src/settings.js` indexes (#875).
+    view: std::collections::BTreeMap<String, settings::RowValue>,
 }
 
 #[tauri::command]
@@ -507,7 +508,7 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
     let session = settings_session(&app, &state);
     Ok(SettingsSnapshot {
         form: settings::form::describe(),
-        view: session.view(),
+        view: session.view().row_values(),
     })
 }
 

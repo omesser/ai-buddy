@@ -433,6 +433,9 @@ pub const DIRECTOR_BASE_URL_PICK_ID: &str = "director_base_url_pick";
 pub const DIRECTOR_MODEL_ID: &str = "director_model";
 pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
 pub const CLEAR_KEY_ID: &str = "clear_key";
+/// What `src/settings.js` appends to a `SecureField`'s row id to read its
+/// placeholder. The row's own value is always empty (ADR-0010).
+pub const PLACEHOLDER_SUFFIX: &str = "_placeholder";
 pub const NEW_SESSION_ID: &str = "new_session";
 pub const APPLY_ID: &str = "director_apply";
 pub const CANCEL_ID: &str = "director_cancel";
@@ -1732,6 +1735,195 @@ mod tests {
         });
     }
 
+    /// Every row id the page looks a value up by, on the tabs these fixtures
+    /// pin. A button carries no value; a `SecureField` carries two, its own
+    /// and the placeholder beside it.
+    fn value_row_ids(
+        description: &FormDescription,
+        skip: &[&str],
+    ) -> std::collections::BTreeSet<String> {
+        let mut ids = std::collections::BTreeSet::new();
+        for tab in &description.tabs {
+            if skip.contains(&tab.title.as_str()) {
+                continue;
+            }
+            for row in tab.sections.iter().flat_map(|section| section.rows.iter()) {
+                match row {
+                    FormRow::SecureField { id, .. } => {
+                        ids.insert(id.clone());
+                        ids.insert(format!("{id}{PLACEHOLDER_SUFFIX}"));
+                    }
+                    FormRow::Composite { controls, .. } => {
+                        for control in controls {
+                            match control {
+                                CompositeControl::Button { .. } => {}
+                                CompositeControl::TextField { id, .. }
+                                | CompositeControl::Popup { id, .. } => {
+                                    ids.insert(id.clone());
+                                }
+                            }
+                        }
+                    }
+                    FormRow::Checkbox { id, .. }
+                    | FormRow::TextField { id, .. }
+                    | FormRow::InspectBlock { id, .. }
+                    | FormRow::InspectPath { id }
+                    | FormRow::Popup { id, .. }
+                    | FormRow::Multiline { id, .. }
+                    | FormRow::List { id, .. } => {
+                        ids.insert(id.clone());
+                    }
+                }
+            }
+        }
+        ids
+    }
+
+    /// A row whose value is this machine's rather than the file's. The hotkey
+    /// reads in the words the OS gives the keys, so a fixture taken on macOS
+    /// cannot hold what a Windows build prints (#194). The key set is still
+    /// pinned everywhere; only the text is not.
+    #[cfg(target_os = "macos")]
+    const OS_SPECIFIC_VALUES: &[&str] = &[];
+    #[cfg(not(target_os = "macos"))]
+    const OS_SPECIFIC_VALUES: &[&str] = &[HOTKEY_ID];
+
+    /// The snippet a packaged macOS build generates. Literals, because
+    /// `byo_rows` reads the running executable's path and the loopback port
+    /// the MCP server took, neither of which a committed fixture can hold.
+    const FIXTURE_BYO_SNIPPET: &str =
+        "claude mcp add ai-buddy -- /Applications/ai-buddy.app/Contents/MacOS/ai-buddy --mcp";
+    const FIXTURE_BYO_STEPS: &str = "Run the line above in a terminal, then start claude.";
+    const FIXTURE_MEMORY_PATH: &str = "/Users/fixture/Library/Application Support/ai-buddy/memory";
+
+    /// The view behind the values fixtures, in the same two states the
+    /// description fixtures pin.
+    fn fixture_view(driving: bool) -> crate::settings::SettingsView {
+        let settings = crate::settings::Settings {
+            director_enabled: true,
+            ambient_wakes: true,
+            sound: true,
+            hide_in_fullscreen: true,
+            capturable: true,
+            trace_director: true,
+            character: "bmo".to_string(),
+            excluded_applications: vec!["Keynote".to_string(), "zoom.us".to_string()],
+            director_base_url: "https://api.openai.com".to_string(),
+            director_model: "gpt-4o-mini".to_string(),
+            director_timeout_secs: "30".to_string(),
+            director_max_tokens: "1024".to_string(),
+            director_reasoning_effort: "medium".to_string(),
+            director_wake_secs: "180".to_string(),
+            harness_auth_retry_secs: "30".to_string(),
+            harness_turn_timeout_secs: "300".to_string(),
+            harness: if driving {
+                "claude".to_string()
+            } else {
+                String::new()
+            },
+            #[cfg(not(target_os = "linux"))]
+            use_accessibility: true,
+            ..crate::settings::Settings::default()
+        };
+        let harness = driving.then(|| crate::harness::HarnessInspect {
+            name: "claude".to_string(),
+            session_id: Some("01J8ZC6K9QF3TSN4PYRWX2HDAB".to_string()),
+            alive: true,
+            ..crate::harness::HarnessInspect::default()
+        });
+        let instances = vec![
+            crate::settings::InstanceRow {
+                id: "bmo-1".to_string(),
+                name: "BMO".to_string(),
+                character: "bmo".to_string(),
+                prompt: String::new(),
+            },
+            crate::settings::InstanceRow {
+                id: "ghost-1".to_string(),
+                name: "Boo".to_string(),
+                character: "ghost".to_string(),
+                prompt: "boo".to_string(),
+            },
+        ];
+        crate::settings::SettingsView {
+            byo_snippet: FIXTURE_BYO_SNIPPET.to_string(),
+            byo_steps: FIXTURE_BYO_STEPS.to_string(),
+            byo_token: String::new(),
+            ..crate::settings::SettingsView::from_parts(
+                &settings,
+                std::path::Path::new(FIXTURE_MEMORY_PATH),
+                Some("Ambient wake for bmo, 3 behaviors, 412 tokens.".to_string()),
+                vec!["bmo".to_string(), "ghost".to_string()],
+                instances,
+                (true, "\u{2026}4f2a".to_string(), String::new()),
+                harness,
+            )
+        }
+    }
+
+    /// The other half of the interface: `tests/settings.test.js` renders the
+    /// description above against these, so a row the view has no value for
+    /// draws blank on the live page and green in the tests. Generated from
+    /// the view rather than written by hand, which is how the two stopped
+    /// agreeing in the first place (#875).
+    #[test]
+    fn both_ai_sources_produce_the_committed_values_fixtures() {
+        const FIXTURES: [(&str, &str, bool); 2] = [
+            (
+                "settings-values-modelApi.json",
+                include_str!("../../../tests/fixtures/settings-values-modelApi.json"),
+                false,
+            ),
+            (
+                "settings-values-harnessDriving.json",
+                include_str!("../../../tests/fixtures/settings-values-harnessDriving.json"),
+                true,
+            ),
+        ];
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe();
+            let every = value_row_ids(&description, &[]);
+            let mut pinned = value_row_ids(&description, UNPINNED_TABS);
+            pinned.retain(|id| !OS_SPECIFIC_VALUES.contains(&id.as_str()));
+            let keep = |value: serde_json::Value| -> serde_json::Value {
+                let object = value.as_object().expect("the fixture is an object").clone();
+                object
+                    .into_iter()
+                    .filter(|(key, _)| pinned.contains(key))
+                    .collect::<serde_json::Map<_, _>>()
+                    .into()
+            };
+            for (name, committed, driving) in FIXTURES {
+                let values = fixture_view(driving).row_values();
+                assert_eq!(
+                    values
+                        .keys()
+                        .cloned()
+                        .collect::<std::collections::BTreeSet<_>>(),
+                    every,
+                    "{name}: the value map and the form no longer name the same rows"
+                );
+                let expected =
+                    keep(serde_json::from_str(committed).expect("the fixture has to be JSON"));
+                let actual =
+                    keep(serde_json::to_value(&values).expect("the values have to serialize"));
+                if actual != expected {
+                    let dump = std::env::temp_dir().join(name);
+                    let _ = std::fs::write(
+                        &dump,
+                        serde_json::to_string_pretty(&actual).unwrap_or_default(),
+                    );
+                    panic!(
+                        "tests/fixtures/{name} no longer matches SettingsView::row_values. \
+                         What the view produces now is at {}; diff it, and commit it \
+                         with the change that moved it.",
+                        dump.display()
+                    );
+                }
+            }
+        });
+    }
+
     #[test]
     fn form_description_can_be_sent_to_another_thread() {
         fn assert_send<T: Send>() {}
@@ -2334,7 +2526,7 @@ mod tests {
 
         let from_catalog: Vec<String> = crate::consent::rows(|_| false)
             .iter()
-            .map(|row| format!("consent_{}", row.title.to_lowercase().replace(' ', "_")))
+            .map(crate::consent::ConsentRow::row_id)
             .collect();
 
         assert_eq!(ids, from_catalog);

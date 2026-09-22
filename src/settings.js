@@ -7,15 +7,13 @@
 // emits `set_text` rather than a verb of its own because `FormRow::SecureField`
 // writes a `TextField`.
 
-// `values` carries one scalar per row id, so a list of Instances or excluded
-// applications arrives as lines, the way the AppKit block shows them. An array
-// is taken as already split. The live snapshot sends InstanceRow objects at
-// `instances` (#892); those print as Name (character).
+// `values` is keyed by form row id and carries one scalar per row, except the
+// Instances list, which carries the rows themselves. A list item draws as
+// Name (character) and dismisses by id: the printed line is ambiguous between
+// two buddies of the same name and Character. #875.
 function listItems(value) {
-  const items = Array.isArray(value) ? value : String(value ?? "").split("\n").filter(Boolean);
-  return items.map((item) =>
-    item && typeof item === "object" ? `${item.name} (${item.character})` : item,
-  );
+  const items = Array.isArray(value) ? value : [];
+  return items.map((item) => ({ label: `${item.name} (${item.character})`, id: item.id }));
 }
 
 export function controls(tab, values) {
@@ -52,8 +50,8 @@ export function controls(tab, values) {
           break;
         case "List":
           for (const item of listItems(values[row.id])) {
-            push("statictext", row.id, item, item, false);
-            push("button", row.id, row.dismiss_label, item, false);
+            push("statictext", row.id, item.label, item.label, false);
+            push("button", row.id, row.dismiss_label, item.label, false);
           }
           break;
         case "Composite":
@@ -227,9 +225,13 @@ function drawRow(row, values, emit) {
     case "List": {
       const list = el("ul", { class: "set-list" });
       for (const item of listItems(values[row.id])) {
-        const dismiss = el("button", { type: "button", text: row.dismiss_label, "data-item": item });
-        dismiss.addEventListener("click", () => emit({ dismiss: row.id, value: item }));
-        list.append(el("li", {}, el("span", { text: item }), dismiss));
+        const dismiss = el("button", {
+          type: "button",
+          text: row.dismiss_label,
+          "data-item": item.label,
+        });
+        dismiss.addEventListener("click", () => emit({ dismiss: row.id, value: item.id }));
+        list.append(el("li", {}, el("span", { text: item.label }), dismiss));
       }
       return el(
         "div",

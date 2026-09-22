@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { controls } from "../src/settings.js";
+import { controls, render } from "../src/settings.js";
 
 // Two files per state. The description keeps the `settings-snapshot-` name and
 // the bare `FormDescription` shape that the Rust side's own fixture has, so
@@ -206,29 +206,8 @@ test("Checkbox, TextField, SecureField, Popup and InspectBlock keep their kind",
   });
 });
 
-test("a List is one row and one dismiss button per item", () => {
+test("a List is one row and one dismiss button per Instance, labelled Name (character)", () => {
   const instances = tab(MODEL_API, "Character").filter((control) => control.id === "instances");
-
-  assert.deepEqual(instances, [
-    { role: "statictext", id: "instances", label: "BMO (bmo)", value: "BMO (bmo)", frozen: false },
-    { role: "button", id: "instances", label: "Dismiss", value: "BMO (bmo)", frozen: false },
-    { role: "statictext", id: "instances", label: "Boo (ghost)", value: "Boo (ghost)", frozen: false },
-    { role: "button", id: "instances", label: "Dismiss", value: "Boo (ghost)", frozen: false },
-  ]);
-});
-
-test("a List of Instance rows labels each Name (character)", () => {
-  const values = {
-    ...MODEL_API.values,
-    instances: [
-      { id: "bmo-1", name: "BMO", character: "bmo", prompt: "" },
-      { id: "ghost-1", name: "Boo", character: "ghost", prompt: "boo" },
-    ],
-  };
-  const instances = controls(
-    MODEL_API.form.tabs.find((candidate) => candidate.title === "Character"),
-    values,
-  ).filter((control) => control.id === "instances");
 
   assert.deepEqual(instances, [
     { role: "statictext", id: "instances", label: "BMO (bmo)", value: "BMO (bmo)", frozen: false },
@@ -258,6 +237,9 @@ test("an InspectPath is a path and nothing else", () => {
   });
 });
 
+// The name field starts empty because it is the user's to type. The Character
+// popup carries the Character in force, which is the only one `describe()`
+// offers it, and it is what New spawns under (#875).
 test("a Composite spreads into one control per member, its text field included", () => {
   const spawn = tab(MODEL_API, "Character").filter((control) =>
     ["new_name", "new_character", "spawn"].includes(control.id),
@@ -265,9 +247,98 @@ test("a Composite spreads into one control per member, its text field included",
 
   assert.deepEqual(spawn, [
     { role: "textfield", id: "new_name", label: null, value: "", frozen: false },
-    { role: "popup", id: "new_character", label: null, value: "", frozen: false },
+    { role: "popup", id: "new_character", label: null, value: "bmo", frozen: false },
     { role: "button", id: "spawn", label: "New", value: null, frozen: false },
   ]);
+});
+
+// The page indexes `values` by row id and the Rust view used to serialize by
+// field name, so these rows drew blank however the file was set. One literal
+// per shape the reconciliation has to get right. #875.
+test("a row whose id is not its field name still draws the value the snapshot carries", () => {
+  const presence = tab(MODEL_API, "Presence");
+  assert.equal(byId(presence, "hotkey").value, "Control-Option-Command-B");
+  assert.equal(byId(presence, "launch").value, false);
+  assert.equal(byId(presence, "capturable").value, true);
+
+  const ai = tab(MODEL_API, "AI");
+  assert.equal(byId(ai, "director").value, true);
+  assert.equal(byId(ai, "ambient").value, true);
+  assert.equal(byId(ai, "director_wake_secs").value, "180");
+  assert.equal(byId(ai, "payload").value, "Ambient wake for bmo, 3 behaviors, 412 tokens.");
+
+  const privacy = tab(MODEL_API, "Privacy");
+  assert.equal(byId(privacy, "excluded").value, "Keynote\nzoom.us");
+  assert.equal(byId(privacy, "consent_accessibility").value, true);
+
+  assert.equal(byId(tab(MODEL_API, "Development"), "director_timeout_secs").value, "30");
+});
+
+// `render()` needs a DOM. These nodes carry what the assertions read and
+// nothing else, and the click handler is kept so a press can be driven.
+function stubDocument() {
+  globalThis.document = {
+    getElementById: () => null,
+    createElement(tag) {
+      const node = {
+        tagName: tag,
+        id: "",
+        textContent: "",
+        value: "",
+        dataset: {},
+        attributes: {},
+        children: [],
+        style: {},
+        handlers: {},
+        setAttribute(name, value) {
+          node.attributes[name] = value;
+        },
+        append(...nodes) {
+          node.children.push(...nodes);
+        },
+        addEventListener(name, handler) {
+          node.handlers[name] = handler;
+        },
+        closest: () => null,
+        getRootNode: () => node,
+      };
+      return node;
+    },
+  };
+}
+
+function drawn(title, emit) {
+  const root = {
+    children: [],
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+  };
+  stubDocument();
+  render(root, MODEL_API.form.tabs.find((candidate) => candidate.title === title), MODEL_API.values, emit);
+  const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
+  return root.children.flatMap(walk);
+}
+
+test("a secure row takes its placeholder from the key status beside it", () => {
+  const key = drawn("AI").find((node) => node.attributes.type === "password");
+  assert.equal(key.attributes.placeholder, "Set: \u20264f2a");
+});
+
+// The line is ambiguous between two buddies of one name and Character, and
+// `SettingsSession::dismiss` takes an id. #875.
+test("Dismiss names the Instance by id, not by the line it draws", () => {
+  const emitted = [];
+  const buttons = drawn("Character", (payload) => emitted.push(payload)).filter(
+    (node) => node.tagName === "button" && node.textContent === "Dismiss",
+  );
+
+  assert.equal(buttons.length, 2);
+  buttons[1].handlers.click();
+  assert.deepEqual(emitted, [{ dismiss: "instances", value: "ghost-1" }]);
 });
 
 // No DOM in this suite, so which elements `render()` builds can only be read

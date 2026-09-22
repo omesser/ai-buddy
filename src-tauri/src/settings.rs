@@ -8,7 +8,7 @@
 pub mod controller;
 pub mod form;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -49,6 +49,7 @@ pub struct SettingsView {
     pub sound: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
+    pub launch_at_login: bool,
     pub hide_hotkey: String,
     pub excluded_applications: Vec<String>,
     pub character: String,
@@ -90,6 +91,20 @@ pub struct SettingsView {
     pub consent: Vec<ConsentRow>,
     /// The name Privacy & Security will show for this process.
     pub consent_listed_as: String,
+}
+
+/// One row's value, in the three shapes the page draws.
+///
+/// Untagged, so a checkbox reads a bare `true` and a text row a bare string,
+/// which is what `src/settings.js` indexes out of `values`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum RowValue {
+    Bool(bool),
+    Text(String),
+    /// The Instances list. Objects rather than printed lines, because Dismiss
+    /// has to name an Instance by its id and a line throws the id away (#875).
+    Instances(Vec<InstanceRow>),
 }
 
 /// The Development switches, by row id, as the window must draw them.
@@ -475,6 +490,7 @@ impl SettingsView {
             sound: settings.sound,
             hidden: settings.hidden,
             hide_in_fullscreen: settings.hide_in_fullscreen,
+            launch_at_login: settings.launch_at_login,
             hide_hotkey: display_hotkey(&settings.hide_hotkey),
             excluded_applications: settings.excluded_applications.clone(),
             character: settings.character.clone(),
@@ -503,38 +519,120 @@ impl SettingsView {
         }
     }
 
-    /// One name per line, the same text the excluded-applications field edits.
+    /// Every value the page draws, by the form row id it asks for.
     ///
-    /// #875: no caller since the renderers went. `src/settings.js` indexes
-    /// `values` by form row id, and this view serializes by field name, so the
-    /// page asks for `excluded` and finds `excluded_applications`. Kept
-    /// because this is still the text the row has to draw.
-    #[allow(dead_code)]
-    pub fn excluded_text(&self) -> String {
-        self.excluded_applications.join("\n")
+    /// The page indexes `values` by row id and the fields above are named for
+    /// the file they came from, so the two vocabularies overlapped only by
+    /// accident and most of the form drew blank. This is the one place they
+    /// are reconciled, and `form.rs`'s fixture test pins the key set against
+    /// `describe()` so a new row cannot be forgotten. #875.
+    ///
+    /// A `SecureField` answers under `<id>_placeholder` too: its own value is
+    /// always empty, because the secret never leaves the store (ADR-0010).
+    pub fn row_values(&self) -> BTreeMap<String, RowValue> {
+        let text = |value: &str| RowValue::Text(value.to_string());
+        let popup = |id: &str| RowValue::Text(self.popup_value(id).unwrap_or_default());
+        let mut values = BTreeMap::from([
+            (
+                form::DND_ID.to_string(),
+                RowValue::Bool(self.do_not_disturb),
+            ),
+            (form::SOUND_ID.to_string(), RowValue::Bool(self.sound)),
+            (form::HIDDEN_ID.to_string(), RowValue::Bool(self.hidden)),
+            (
+                form::FULLSCREEN_ID.to_string(),
+                RowValue::Bool(self.hide_in_fullscreen),
+            ),
+            (
+                form::LAUNCH_ID.to_string(),
+                RowValue::Bool(self.launch_at_login),
+            ),
+            (form::HOTKEY_ID.to_string(), text(&self.hide_hotkey)),
+            (form::CHARACTER_ID.to_string(), text(&self.character)),
+            (
+                form::INSTANCES_ID.to_string(),
+                RowValue::Instances(self.instances.clone()),
+            ),
+            (form::NEW_NAME_ID.to_string(), text("")),
+            // The spawn popup carries no options of its own, so the Character
+            // in force is the one it can offer (#875).
+            (form::NEW_CHARACTER_ID.to_string(), text(&self.character)),
+            (
+                form::DIRECTOR_ID.to_string(),
+                RowValue::Bool(self.director_enabled),
+            ),
+            (
+                form::AMBIENT_ID.to_string(),
+                RowValue::Bool(self.ambient_wakes),
+            ),
+            (form::HARNESS_ID.to_string(), text(&self.harness)),
+            (
+                form::HARNESS_STATE_ID.to_string(),
+                text(&self.harness_state),
+            ),
+            (form::BYO_HARNESS_ID.to_string(), text(&self.byo_harness)),
+            (form::BYO_SNIPPET_ID.to_string(), text(&self.byo_snippet)),
+            (form::BYO_TOKEN_ID.to_string(), text(&self.byo_token)),
+            (form::BYO_STEPS_ID.to_string(), text(&self.byo_steps)),
+            (
+                form::DIRECTOR_BASE_URL_PICK_ID.to_string(),
+                popup(form::DIRECTOR_BASE_URL_PICK_ID),
+            ),
+            (
+                form::DIRECTOR_BASE_URL_ID.to_string(),
+                text(&self.director_base_url),
+            ),
+            (
+                form::DIRECTOR_MODEL_ID.to_string(),
+                text(&self.director_model),
+            ),
+            (form::DIRECTOR_API_KEY_ID.to_string(), text("")),
+            (
+                format!("{}{}", form::DIRECTOR_API_KEY_ID, form::PLACEHOLDER_SUFFIX),
+                RowValue::Text(self.api_key_placeholder()),
+            ),
+            (
+                form::PAYLOAD_ID.to_string(),
+                text(self.last_payload.as_deref().unwrap_or_default()),
+            ),
+            (
+                form::DIRECTOR_REASONING_EFFORT_PICK_ID.to_string(),
+                popup(form::DIRECTOR_REASONING_EFFORT_PICK_ID),
+            ),
+            (
+                form::EXCLUDED_ID.to_string(),
+                RowValue::Text(self.excluded_text()),
+            ),
+            (form::MEMORY_PATH_ID.to_string(), text(&self.memory_path)),
+        ]);
+        // These three are keyed by row id already, which is how one window
+        // filled a tab's worth of rows from a single map (#273).
+        values.extend(
+            self.development_switches
+                .iter()
+                .map(|(id, on)| (id.clone(), RowValue::Bool(*on))),
+        );
+        values.extend(
+            self.development_texts
+                .iter()
+                .map(|(id, value)| (id.clone(), RowValue::Text(value.clone()))),
+        );
+        values.extend(
+            self.consent
+                .iter()
+                .map(|row| (row.row_id(), RowValue::Bool(row.granted))),
+        );
+        values
     }
 
-    /// The Instances list as the window prints it: name, then Character.
-    ///
-    /// #875: no caller, and the page has no substitute. `values["instances"]`
-    /// reaches it as `InstanceRow` objects, so every row of the live list
-    /// draws `[object Object]`.
-    #[allow(dead_code)]
-    pub fn instance_lines(&self) -> Vec<String> {
-        self.instances
-            .iter()
-            .map(|row| format!("{} ({})", row.name, row.character))
-            .collect()
+    /// One name per line, the same text the excluded-applications field edits.
+    pub fn excluded_text(&self) -> String {
+        self.excluded_applications.join("\n")
     }
 
     /// What the key field shows when it is empty. The placeholder, not the
     /// value: a fingerprint sitting in the field would be committed as a key
     /// on the next blur.
-    ///
-    /// #875: no caller. `settings.js` reads `director_api_key_placeholder`
-    /// and nothing writes it, so the live field says nothing where it should
-    /// say "Not set" or name the override.
-    #[allow(dead_code)]
     pub fn api_key_placeholder(&self) -> String {
         if model::env_override(model::API_KEY).is_some() {
             // The variable's key is the one `resolve` hands the Completer, so
@@ -2373,7 +2471,7 @@ mod tests {
         assert_eq!(view.last_payload.as_deref(), Some("You are Nim."));
         assert_eq!(view.installed, ["bmo", "nim"]);
         assert_eq!(view.instances[0].name, "Nim");
-        assert_eq!(view.instance_lines(), ["Nim (nim)"]);
+        assert_eq!(view.instances[0].character, "nim");
         assert!(!view.api_key_set);
         #[cfg(not(target_os = "linux"))]
         {
@@ -2502,11 +2600,12 @@ mod tests {
             (false, String::new(), String::new()),
             None,
         );
-        assert_eq!(view.instance_lines(), ["Trump (Trump)"]);
-        assert!(
-            view.instance_lines()
+        assert_eq!(
+            view.instances
                 .iter()
-                .all(|line| !line.contains("Cat")),
+                .map(|row| row.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Trump"],
             "Cat must not remain after it was dismissed"
         );
     }
