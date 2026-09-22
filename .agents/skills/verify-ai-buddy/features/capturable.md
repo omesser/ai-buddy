@@ -11,7 +11,7 @@ By default the buddy appears in screenshots and screen shares. Settings → Hide
 
 ## How to get to it (user POV)
 
-- Open Settings (tray / platform menu) → Hide → toggle "Appear in screenshots and screen shares".
+- Open Settings (tray / platform menu) → Presence → Hide → toggle "Appear in screenshots and screen shares". (Requires app restart to take effect.)
 - Or export `AI_BUDDY_CAPTURABLE=0` or `=1` before launch for a one-process override (CI / verify scripts).
 
 ## Driving it with verify-overlay helpers
