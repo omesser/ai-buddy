@@ -22,4 +22,4 @@ pub use sensing::X11ActivitySource;
 
 pub(super) use connection::connection;
 pub(super) use settings_raise::raise_settings_ewmh_above;
-pub(super) use window_source::X11WindowSource;
+pub(super) use window_source::{visible_window_titles, X11WindowSource};

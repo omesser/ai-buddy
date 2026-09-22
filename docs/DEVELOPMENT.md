@@ -593,14 +593,15 @@ A Harness the popup does not list (a hand-edited command, `custom`) gets the bar
 - Bearer auth on every request (`Authorization: Bearer <token>`)
 - Loopback-only binding; remote connections refused by design (ADR-0010)
 - Request/response; no notifications from server to client
-- DenyList applied to `list_windows` and `describe_screen` (filters password managers, redacts password fields)
+- DenyList applied to `list_windows`, `describe_screen`, and the `ai-buddy://windows` resource (filters password managers, redacts password fields)
+- Three readonly MCP resources: `ai-buddy://windows`, `ai-buddy://memory`, `ai-buddy://action-log`
 
 ### What it can but doesn't
 
 - **Richer sensing (Capture)** — *deferred*. `describe_screen` v1 is window metadata only; pixels/OCR/vision are not shipped. When added, they gate behind user consent (sensing permissions already exist for window geometry).
 - **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; ai-buddy ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
 - **MCP sampling, progress, SSE push** — *out of scope today*. The server is sync request/response; no `notifications/progress`, no server-initiated push. Sampling requires long-lived connections the current thread-per-request model doesn't hold.
-- **Resources / prompts** — *not served*. MCP resources and prompt templates are not exposed; the protocol layer stops at tools.
+- **Prompts** — *not served*. MCP prompt templates are not exposed. Resources are: Memory, the Action Log, and window titles.
 - **Non-loopback MCP** — *by design no* (ADR-0010). The bearer token authorizes moving the buddy; an off-host endpoint would post it there. The bind is `127.0.0.1` only; LAN/WAN addresses are refused.
 - **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; ai-buddy branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit ai-buddy gates on. A future Hermes setting the bit would take the loopback path with no change here.
 

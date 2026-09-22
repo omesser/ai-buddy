@@ -5,15 +5,16 @@
 //! — however it is reached, sidecar or `--mcp-stdio` — and relays back here
 //! rather than answering, because the tools have to be dispatched where the
 //! `Roster` lives, and the `Roster` lives on the frame-loop thread. This file
-//! is therefore only a transport and a gate:
-//! every `tools/call` is handed to the frame loop over `calls` and answered
-//! from there.
+//! is therefore a transport and a gate: every `tools/call` is handed to the
+//! frame loop over `calls`. Readonly resources are answered here — Memory
+//! and the Action Log are files, and window titles are a platform walk that
+//! is not `WindowSource`.
 //!
 //! Streamable HTTP without the streaming half. The spec lets a server answer a
 //! POST with `application/json` instead of an SSE stream, and nothing here
-//! needs a server-initiated message — seven synchronous tools, no sampling, no
-//! progress. That is why this is 200 lines of `std` rather than axum and hyper
-//! in a desktop app's tree.
+//! needs a server-initiated message — seven synchronous tools, three readonly
+//! resources, no sampling, no progress. That is why this is `std` rather than
+//! axum and hyper in a desktop app's tree.
 //!
 //! Three things keep it off the network, and they are the ones ADR-0018's
 //! credential rules imply for a listener rather than a client:
@@ -37,6 +38,8 @@ use std::time::Duration;
 use ai_buddy_core::dispatch::{list_tools, DispatchError, ErrorCode};
 use serde_json::{json, Value};
 
+use crate::mcp_resources;
+
 /// How long a `tools/call` waits for the frame loop before it is answered with
 /// an error. Longer than any tick, short enough that a Harness gets a refusal
 /// rather than a hung turn if the loop is gone.
@@ -47,8 +50,8 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 const BODY_LIMIT: usize = 1024 * 1024;
 
 /// The MCP protocol version claimed when the client names none. A client that
-/// names one gets it echoed: every version in the wild carries `tools/list`
-/// and `tools/call` unchanged, which is the whole of what is served here.
+/// names one gets it echoed: every version in the wild carries `tools/list`,
+/// `tools/call`, `resources/list` and `resources/read` unchanged.
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
 /// One `tools/call` on its way to the frame loop, and the channel it is
@@ -291,7 +294,7 @@ pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<Stri
                 .get("protocolVersion")
                 .and_then(Value::as_str)
                 .unwrap_or(PROTOCOL_VERSION),
-            "capabilities": {"tools": {}},
+            "capabilities": {"tools": {}, "resources": {}},
             "serverInfo": {"name": "ai-buddy", "version": env!("CARGO_PKG_VERSION")},
         })),
         "ping" => Ok(json!({})),
@@ -306,6 +309,8 @@ pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<Stri
                 .collect::<Vec<_>>(),
         })),
         "tools/call" => Ok(call_tool(&params, calls)),
+        "resources/list" => Ok(list_resources()),
+        "resources/read" => read_resource(&params),
         _ => Err((-32601, format!("unknown method: {method}"))),
     };
 
@@ -313,6 +318,47 @@ pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<Stri
         Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string(),
         Err((code, message)) => error_body(&id, code, &message),
     })
+}
+
+fn list_resources() -> Value {
+    json!({
+        "resources": mcp_resources::catalog()
+            .into_iter()
+            .map(|resource| json!({
+                "uri": resource.uri,
+                "name": resource.name,
+                "description": resource.description,
+                "mimeType": resource.mime_type,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn read_resource(params: &Value) -> Result<Value, (i64, String)> {
+    let uri = params
+        .get("uri")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let resource = mcp_resources::catalog()
+        .into_iter()
+        .find(|resource| resource.uri == uri)
+        .ok_or_else(|| (-32602, format!("unknown resource: {uri}")))?;
+    let text = match uri {
+        mcp_resources::WINDOWS_URI => mcp_resources::window_titles_text(
+            crate::platform::list_window_titles(),
+            &mcp_resources::live_denylist(),
+        ),
+        mcp_resources::MEMORY_URI => mcp_resources::memory_text(),
+        mcp_resources::ACTION_LOG_URI => mcp_resources::action_log_text(),
+        _ => return Err((-32602, format!("unknown resource: {uri}"))),
+    };
+    Ok(json!({
+        "contents": [{
+            "uri": resource.uri,
+            "mimeType": resource.mime_type,
+            "text": text,
+        }],
+    }))
 }
 
 /// A `tools/call`, dispatched on the frame loop and reported the way MCP wants
@@ -460,6 +506,94 @@ mod tests {
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         assert_eq!(value["result"]["protocolVersion"], json!("2024-11-05"));
         assert_eq!(value["result"]["serverInfo"]["name"], json!("ai-buddy"));
+    }
+
+    #[test]
+    fn initialize_advertises_tools_and_resources() {
+        let (tx, _rx) = mpsc::channel();
+        let text = handle(
+            &json!({"jsonrpc": "2.0", "id": 5, "method": "initialize"}),
+            &tx,
+        )
+        .expect("a request is answered");
+        let value: Value = serde_json::from_str(&text).expect("valid JSON");
+        assert_eq!(
+            value["result"]["capabilities"],
+            json!({"tools": {}, "resources": {}})
+        );
+    }
+
+    #[test]
+    fn resources_list_names_the_three_stable_uris() {
+        let (tx, _rx) = mpsc::channel();
+        let text = handle(
+            &json!({"jsonrpc": "2.0", "id": 6, "method": "resources/list"}),
+            &tx,
+        )
+        .expect("a request is answered");
+        let value: Value = serde_json::from_str(&text).expect("valid JSON");
+        let uris: Vec<&str> = value["result"]["resources"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .map(|r| r["uri"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            uris,
+            vec![
+                "ai-buddy://windows",
+                "ai-buddy://memory",
+                "ai-buddy://action-log"
+            ]
+        );
+    }
+
+    fn read_resource(uri: &str) -> Value {
+        let (tx, _rx) = mpsc::channel();
+        let text = handle(
+            &json!({
+                "jsonrpc": "2.0", "id": 7, "method": "resources/read",
+                "params": {"uri": uri},
+            }),
+            &tx,
+        )
+        .expect("a request is answered");
+        serde_json::from_str(&text).expect("valid JSON")
+    }
+
+    #[test]
+    fn resources_read_returns_text_for_each_catalog_uri() {
+        for uri in [
+            "ai-buddy://windows",
+            "ai-buddy://memory",
+            "ai-buddy://action-log",
+        ] {
+            let value = read_resource(uri);
+            assert!(value.get("error").is_none(), "read {uri} failed: {value}");
+            let content = &value["result"]["contents"][0];
+            assert_eq!(content["uri"], json!(uri));
+            assert!(content["mimeType"].is_string(), "{uri} needs a mime type");
+            assert!(content["text"].is_string(), "{uri} needs text");
+        }
+    }
+
+    #[test]
+    fn resources_read_rejects_an_unknown_uri() {
+        let value = read_resource("ai-buddy://nope");
+        assert!(value.get("result").is_none(), "unknown URI succeeded");
+        assert_eq!(value["error"]["code"], json!(-32602));
+    }
+
+    #[test]
+    fn resources_write_is_an_unknown_method() {
+        let (tx, _rx) = mpsc::channel();
+        let text = handle(
+            &json!({"jsonrpc": "2.0", "id": 8, "method": "resources/write"}),
+            &tx,
+        )
+        .expect("a request is answered");
+        let value: Value = serde_json::from_str(&text).expect("valid JSON");
+        assert_eq!(value["error"]["code"], json!(-32601));
     }
 
     fn request(method: &str, authorization: Option<&str>, origin: bool, body: &str) -> Request {

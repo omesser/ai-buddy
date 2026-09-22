@@ -28,6 +28,7 @@ mod dev_flags;
 mod frame_loop;
 mod harness;
 mod mcp_http;
+mod mcp_resources;
 mod menu;
 mod model;
 mod package;
@@ -2810,6 +2811,7 @@ fn main() {
             // decide what to put in `session/new`'s `mcpServers` and the
             // preflight thread can reach that within a tick of this line.
             let (mcp_tx, mcp_rx) = mpsc::channel();
+            mcp_resources::publish_excluded(&settings.excluded_applications);
             mcp_http::serve(mcp_tx);
             let forward_to = app.handle().clone();
             quit_harness_on_interrupt();

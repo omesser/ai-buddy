@@ -685,6 +685,31 @@ pub fn activity_source() -> impl ActivitySource {
     windows::WindowsActivitySource
 }
 
+/// Window titles for the MCP resource. Not on `WindowSource`: the Spatial
+/// Layer stays title-free, and this walk is the titles listing only.
+#[cfg(target_os = "macos")]
+pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    macos::visible_window_titles()
+}
+
+/// Titles from `_NET_WM_NAME` / `WM_NAME`. Empty on a Wayland session with
+/// no X server, which is the supported stub.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if x11_answers() {
+        x11::visible_window_titles()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Titles from `GetWindowText`. Owner is still the process image, never
+/// the title, matching the geometry path.
+#[cfg(not(unix))]
+pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    windows::visible_window_titles()
+}
+
 /// Where window geometry comes from. Usable frames via Tauri: CoreGraphics
 /// reports the Dock as covering the whole display. Main thread only: asking
 /// AppKit from the frame loop appears to work and is not allowed to.

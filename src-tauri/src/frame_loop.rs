@@ -20,11 +20,11 @@ use tauri::{Emitter, Manager};
 use super::session_log;
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, mcp_http, menu,
-    model, note_happened, open_chat, overlay_label, paced, place_overlays, platform,
-    publish_instances, push_chat_opening, push_chat_openings, remember_instances, spawn_live,
-    switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
-    FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
+    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, mcp_http,
+    mcp_resources, menu, model, note_happened, open_chat, overlay_label, paced, place_overlays,
+    platform, publish_instances, push_chat_opening, push_chat_openings, remember_instances,
+    spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun,
+    Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
     SpritePlacement, Traced, TrayHandle, CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT,
     MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
@@ -840,6 +840,7 @@ pub(crate) fn run_frame_loop(
                     .map(|live| live.id.clone())
                     .unwrap_or_default();
                 let settings_now = settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
+                mcp_resources::publish_excluded(&settings_now.excluded_applications);
                 let rules_now = rules.lock().ok();
                 let description = describe_menu(
                     &installed,
