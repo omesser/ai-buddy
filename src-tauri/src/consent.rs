@@ -121,7 +121,7 @@ pub fn wanted(id: CapabilityId) -> bool {
 
 /// Whether the capability is both wanted and granted. Capture/Wayland titles will gate on it.
 #[cfg(not(target_os = "windows"))]
-#[cfg_attr(target_os = "linux", allow(dead_code))]
+#[allow(dead_code)]
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
