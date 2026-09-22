@@ -2067,6 +2067,22 @@ fn chat_ready(
 /// One overlay per display. A spanning window is invisible off its Space, so
 /// a seam needs both overlays. Idempotent as displays move; every display is
 /// attempted even after one fails, or the rest of the desktop would go blank.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OverlayTarget {
+    Display(Rect),
+    Inactive,
+}
+
+#[cfg(test)]
+fn overlay_targets(displays: &[Rect], _existing: usize) -> Vec<OverlayTarget> {
+    displays
+        .iter()
+        .copied()
+        .map(OverlayTarget::Display)
+        .collect()
+}
+
 fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), String> {
     let mut failed = Vec::new();
 
@@ -3385,6 +3401,21 @@ mod tests {
             rush_reaction: CursorReaction::default(),
             source: None,
         }
+    }
+
+    #[test]
+    fn display_loss_keeps_the_unassigned_overlay_inactive() {
+        let primary = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+
+        assert_eq!(
+            overlay_targets(&[primary], 2),
+            vec![OverlayTarget::Display(primary), OverlayTarget::Inactive]
+        );
     }
 
     /// Production change that would fail this: leaving `bmo` on a Timber Wolf
