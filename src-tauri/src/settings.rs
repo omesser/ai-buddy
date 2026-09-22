@@ -1072,7 +1072,9 @@ impl SettingsSession {
         if let Some(raw) = patch.director_api_key.as_deref() {
             self.remember_written_key(raw);
         }
+        #[cfg(not(target_os = "linux"))]
         let prompt_ax = patch.use_accessibility == Some(true);
+        #[cfg(not(target_os = "linux"))]
         let prompt_sr = patch.use_screen_recording == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
@@ -1092,7 +1094,10 @@ impl SettingsSession {
         #[cfg(target_os = "macos")]
         consent::set_wanted(CapabilityId::InputMonitoring, settings.use_input_monitoring);
         #[cfg(target_os = "linux")]
-        consent::set_wanted(CapabilityId::PortalScreenCast, settings.use_portal_screencast);
+        consent::set_wanted(
+            CapabilityId::PortalScreenCast,
+            settings.use_portal_screencast,
+        );
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -2051,6 +2056,7 @@ mod tests {
             use_accessibility: true,
             use_screen_recording: false,
             use_input_monitoring: true,
+            use_portal_screencast: false,
             first_run_tour_shown: false,
         };
         settings.save(&path).expect("save");
@@ -2361,6 +2367,7 @@ mod tests {
             use_accessibility: true,
             use_screen_recording: false,
             use_input_monitoring: false,
+            use_portal_screencast: false,
             first_run_tour_shown: false,
         };
         let view = SettingsView::from_parts(

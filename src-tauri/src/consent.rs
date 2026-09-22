@@ -119,6 +119,7 @@ pub fn wanted(id: CapabilityId) -> bool {
 }
 
 /// Whether the capability is both wanted and granted. Capture will gate on this.
+#[cfg(not(target_os = "windows"))]
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
