@@ -1168,7 +1168,6 @@ impl SettingsSession {
         }
         #[cfg(not(target_os = "linux"))]
         let prompt_ax = patch.use_accessibility == Some(true);
-        #[cfg(not(target_os = "windows"))]
         let prompt_wt = patch.use_window_titles == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
@@ -1248,7 +1247,6 @@ impl SettingsSession {
         if prompt_ax {
             self.enable_consent(CapabilityId::Accessibility);
         }
-        #[cfg(not(target_os = "windows"))]
         if prompt_wt {
             self.enable_consent(CapabilityId::WindowTitles);
         }
@@ -2542,6 +2540,19 @@ mod tests {
             assert!(!settings.use_accessibility);
         }
         #[cfg(target_os = "linux")]
+        {
+            settings.apply(SettingsPatch {
+                use_window_titles: Some(true),
+                ..SettingsPatch::default()
+            });
+            assert!(settings.use_window_titles);
+            settings.apply(SettingsPatch {
+                use_window_titles: Some(false),
+                ..SettingsPatch::default()
+            });
+            assert!(!settings.use_window_titles);
+        }
+        #[cfg(target_os = "windows")]
         {
             settings.apply(SettingsPatch {
                 use_window_titles: Some(true),
