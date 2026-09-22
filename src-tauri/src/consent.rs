@@ -708,16 +708,19 @@ mod tests {
         assert!(!process_listed_as().is_empty());
     }
 
-    /// The Privacy pane's intro names the process TCC will list, which is the
-    /// responsible parent for a `cargo run` and ai-buddy for a packaged build.
-    /// `settings::form::Live::current` builds the section comment from this,
-    /// and it was `SettingsView::consent_intro` that used to be asked (#871).
+    /// Pins the assembled Privacy pane sentence, which nothing else covers.
+    ///
+    /// The name is a sample, not a discovered value. `pane_intro` formats
+    /// whatever it is handed, so this passes wherever it runs. What TCC really
+    /// lists comes from `process_listed_as`, and `process_listed_as_is_not_empty`
+    /// is what covers that. `settings::form::Live::current` builds the Privacy
+    /// section comment from this sentence (#871).
     #[test]
     #[cfg(target_os = "macos")]
-    fn macos_pane_intro_names_the_process_tcc_lists() {
+    fn macos_pane_intro_wraps_the_listed_name_in_the_pane_copy() {
         assert_eq!(
-            pane_intro("Cursor"),
-            "Checking a box asks macOS for the permission. macOS lists this app as Cursor, under Privacy & Security."
+            pane_intro("Terminal"),
+            "Checking a box asks macOS for the permission. macOS lists this app as Terminal, under Privacy & Security."
         );
     }
 
