@@ -1597,11 +1597,18 @@ fn read_event(payload: &str) -> Event {
         // Two names for one field. `reasoning_content` (llama.cpp, oMLX,
         // SGLang, LM Studio for R1) and `reasoning` (vLLM, Ollama, gpt-oss).
         // Responses types reasoning apart. Read the summary, not both streams.
-        // Anthropic `thinking_delta` is marked reasoning for a later PR.
+        // Anthropic types it apart too, one key along from `text_delta`. The
+        // `content_block_start` that opens the run carries no text, so the
+        // deltas are the whole of it.
         thought: chunk["reasoning_content"]
             .as_str()
             .or_else(|| chunk["reasoning"].as_str())
             .or_else(|| typed("response.reasoning_summary_text.delta"))
+            .or_else(|| {
+                (value["delta"]["type"] == "thinking_delta")
+                    .then(|| value["delta"]["thinking"].as_str())
+                    .flatten()
+            })
             .map(str::to_string),
         // Responses ends a capped reply with `response.incomplete` and no
         // `[DONE]`. Without that name the body looks cut. Anthropic names
@@ -1641,7 +1648,9 @@ fn content_from_body(body: &str) -> Result<String, String> {
         }
     }
     // Anthropic `/v1/messages`. `thinking` blocks are marked reasoning, not
-    // the answer; a later PR routes them. Text blocks are the reply.
+    // the answer. They are not drawn: a whole body arrives after the turn is
+    // over, and the strip holds only the line a running turn is writing, which
+    // the end of that turn takes away (ADR-0025). Text blocks are the reply.
     if let Some(blocks) = value["content"].as_array() {
         let mut text = String::new();
         for block in blocks {
@@ -2748,6 +2757,25 @@ pub(crate) mod tests {
             read(r#"{"type":"response.reasoning_summary_text.delta","delta":"hmm"}"#),
             (Some("hmm".to_string()), None)
         );
+        // Anthropic types it apart one key along from its `text_delta`.
+        assert_eq!(
+            read(
+                r#"{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}"#
+            ),
+            (Some("hmm".to_string()), None)
+        );
+        assert_eq!(
+            read(
+                r#"{"type":"content_block_start","content_block":{"type":"thinking","thinking":""}}"#
+            ),
+            (None, None),
+            "the frame that opens the run carries neither half"
+        );
+        assert_eq!(
+            read(r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"stroll"}}"#),
+            (None, Some("stroll".to_string())),
+            "and its sibling name is still the reply"
+        );
         assert_eq!(
             read(r#"{"choices":[{"delta":{"content":"stroll"}}]}"#),
             (None, Some("stroll".to_string())),
@@ -2982,19 +3010,28 @@ pub(crate) mod tests {
     }
 
     /// Anthropic `/v1/messages` names the cap `stop_reason: "max_tokens"`.
-    /// Thinking deltas are not routed here; empty text at that stop is
-    /// ThinkingOnly, never Speech.
+    /// Empty text at that stop is ThinkingOnly, never Speech, and the
+    /// thinking the budget went on was on the strip while it was being spent
+    /// — the second half of #606's thinking-only row.
     #[test]
     fn an_anthropic_max_tokens_stop_is_a_truncation() {
         let thinking_only = concat!(
+            "data: {\"type\":\"content_block_start\",\"index\":0,\
+             \"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\n",
             "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\
-             \"thinking\":\"hmm\"}}\n\n",
+             \"thinking\":\"the user\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\
+             \"thinking\":\" waved\\nso\"}}\n\n",
             "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n",
         );
         assert_eq!(
-            streamed(thinking_only),
-            Streamed::Truncated(Truncation::ThinkingOnly),
-            "thinking_delta is not content, so a cap here is the thinking-only row"
+            streamed_with_thoughts(thinking_only),
+            (
+                Streamed::Truncated(Truncation::ThinkingOnly),
+                ["the user", "so", ""].map(str::to_string).to_vec()
+            ),
+            "thinking_delta is drawn and is not content, so a cap here is the \
+             thinking-only row"
         );
 
         let parseable = concat!(
