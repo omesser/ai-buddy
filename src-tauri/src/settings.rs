@@ -1314,7 +1314,7 @@ pub enum BoolField {
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
-    /// Linux only: xdg-desktop-portal ScreenCast for Capture when it ships.
+    /// Linux only: xdg-desktop-portal ScreenCast for Wayland titles (#886).
     #[cfg(target_os = "linux")]
     UsePortalScreenCast,
 }
@@ -1754,7 +1754,7 @@ pub struct Settings {
     /// document round-trips on every platform.
     #[serde(default)]
     pub use_input_monitoring: bool,
-    /// Linux only: use xdg-desktop-portal ScreenCast for Capture when it ships.
+    /// Linux only: use xdg-desktop-portal ScreenCast for Wayland titles (#886).
     /// Off does not revoke the portal session while running.
     #[serde(default)]
     pub use_portal_screencast: bool,

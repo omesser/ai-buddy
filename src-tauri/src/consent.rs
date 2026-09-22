@@ -62,7 +62,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability {
         id: CapabilityId::ScreenRecording,
         title: "Screen Recording",
-        buys: "Window titles, and Capture when it ships.",
+        buys: "Window titles and similar metadata.",
         costs: "macOS Screen Recording, which can see the screen.",
     },
     #[cfg(target_os = "macos")]
@@ -79,14 +79,14 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability {
         id: CapabilityId::PortalScreenCast,
         title: "Screen Cast",
-        buys: "Screen recording and streaming for Capture when it ships.",
+        buys: "Wayland window titles and similar metadata.",
         costs: "xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs.",
     },
 ];
 
 /// Tests that do not care about the live OS, and the fallback when a platform
 /// has no consent system. Was Linux's answer when X11 sensing was consent-free;
-/// the portal Probe replaced it once Capture needed a grant.
+/// the portal Probe replaced it once Wayland titles needed a grant.
 #[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
 pub struct Null;
 
@@ -105,7 +105,7 @@ static GRANTED_PORTAL_SCREENCAST: AtomicBool = AtomicBool::new(false);
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
 #[cfg(not(target_os = "windows"))]
-#[cfg_attr(target_os = "linux", allow(dead_code))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]  // #886
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
         #[cfg(not(target_os = "linux"))]
@@ -119,9 +119,9 @@ pub fn wanted(id: CapabilityId) -> bool {
     }
 }
 
-/// Whether the capability is both wanted and granted. Capture/Wayland titles will gate on it.
+/// Whether the capability is both wanted and granted. #886 will gate on it.
 #[cfg(not(target_os = "windows"))]
-#[allow(dead_code)]
+#[allow(dead_code)]  // #886
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
@@ -595,9 +595,9 @@ pub fn pane_intro(listed_as: &str) -> String {
     )
 }
 
-/// Linux-specific intro: xdg-desktop-portal for Capture when it ships.
+/// Linux-specific intro: xdg-desktop-portal for Wayland window titles.
 ///
-/// Checkboxes are named after portal capabilities: ScreenCast and Screenshot.
+/// Checkboxes are named after portal capabilities: ScreenCast.
 /// No macOS-specific vocabulary (TCC, Privacy & Security, Accessibility).
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
@@ -692,8 +692,8 @@ mod tests {
             assert_eq!(rows[0].id, CapabilityId::PortalScreenCast);
             assert_eq!(rows[0].title, "Screen Cast");
             assert!(
-                rows[0].buys.contains("recording") || rows[0].buys.contains("Capture"),
-                "ScreenCast has to say what recording buys, got {:?}",
+                rows[0].buys.contains("Wayland") || rows[0].buys.contains("title"),
+                "ScreenCast has to say what Wayland titles buy, got {:?}",
                 rows[0].buys
             );
             assert!(
@@ -980,7 +980,7 @@ mod tests {
         assert!(!nothing.granted(CapabilityId::PortalScreenCast));
     }
 
-    /// Usable requires both wanted and granted. Capture will gate on this,
+    /// Usable requires both wanted and granted. #886 will gate on this,
     /// not wanted alone.
     #[test]
     #[cfg(target_os = "linux")]

@@ -1304,7 +1304,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             label: "Screen Cast".to_string(),
             writes: BoolField::UsePortalScreenCast,
             frozen: false,
-            help: Some("For screen recording and streaming when Capture ships.".to_string()),
+            help: Some("For Wayland window titles and similar metadata.".to_string()),
             comment: None,
             disclosure: Some("xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are already readable without a grant.".to_string()),
             status: None,
@@ -1330,7 +1330,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                 writes: TextField::ExcludedApplications,
                 help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
                 editable: true,
-                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata, eventual Capture). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
+                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
             }],
         },
         FormSection {
