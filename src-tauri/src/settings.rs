@@ -2425,8 +2425,7 @@ mod tests {
         }
         #[cfg(target_os = "macos")]
         {
-            view.consent_listed_as = "Cursor".into();
-            let intro = consent::pane_intro(&view.consent_listed_as);
+            let intro = consent::pane_intro("Cursor");
             assert!(
                 intro.contains("Cursor"),
                 "the pane has to name the TCC row, got {:?}",
