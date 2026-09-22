@@ -1162,7 +1162,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     fn windows_capabilities_catalog_includes_window_titles() {
         let rows = rows(|_| false);
-        assert!(rows.len() >= 1, "Windows should have at least WindowTitles");
+        assert!(!rows.is_empty(), "Windows should have at least WindowTitles");
 
         let titles_row = rows
             .iter()
