@@ -1425,7 +1425,7 @@ fn development_sections() -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone, and the wire carries one number for thinking and reply both. Left empty it is reply-sized, except against a host that has marked its thinking, which gets room to think instead; a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone, and the wire carries one number for thinking and reply both. Left empty it is reply-sized, except against a host that has marked its thinking, which gets room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,
