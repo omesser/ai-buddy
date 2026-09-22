@@ -1,0 +1,86 @@
+name: mattpocock Skills Sync
+
+# Periodically pull the latest skills from mattpocock/skills into this repo
+
+on:
+  schedule:
+    # Every Wednesday 07:00 UTC
+    - cron: '0 7 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: lts/*
+
+      - name: Record current state
+        id: before
+        run: |
+          echo "before=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Pull latest skills
+        run: |
+          # Ensure we have a fresh copy of the external repo
+          git clone --depth=1 https://github.com/mattpocock/skills.git .agents/skills-source
+          # Overwrite local skills with the new version
+          rm -rf .agents/skills
+          mv .agents/skills-source/skills .agents/skills
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test layout
+        if: steps.changes.outputs.moved == 'true'
+        run: node --test tests/skills-layout.test.js
+
+      - name: Push sync branch
+        if: steps.changes.outputs.moved == 'true'
+        id: push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agents/skills
+          git commit -m "chore(skills): Sync to mattpocock skills"
+          BRANCH="chore/mattpocock-skills-sync"
+          git push --force-with-lease="origin:$BRANCH"
+        env:
+          BRANCH: chore/mattpocock-skills-sync
+
+      - name: Create or update PR
+        if: steps.changes.outputs.moved == 'true'
+        run: |
+          BRANCH="chore/mattpocock-skills-sync"
+          TITLE="chore(skills): Sync to mattpocock skills"
+          if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
+            gh pr edit "$BRANCH" --title "$TITLE" --body "Sync of external skills from mattpocock/skills."
+          else
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "Sync of external skills from mattpocock/skills."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dispatch tests on sync branch
+        if: steps.changes.outputs.moved == 'true'
+        run: |
+          gh workflow run tests.yml --ref chore/mattpocock-skills-sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
