@@ -40,17 +40,21 @@ ai-buddy `launch()` today (src-tauri/src/harness.rs):
 
 ## Call: self-contained vs declare for each dependency
 
+**Locked decisions (Oded, 2026-09-23):** Node/npx and Harness CLIs declared, not bundled. WebView as recommended (Linux declared). GStreamer optional. libfuse for AppImage only (prefer type 2 with bundled runtime when we ship that path). X11/Wayland is environment, not dependency. MCP stdio binary: do not bundle; challenge need; optional download at best. Failure UX: sticky inline (copy-pasteable), not toast. Named presets: goose yes (#930), copilot not needed, antigravity+others V2.
+
 ### Node.js + npx
 
-**Call: Declare.**
+**Call: Declare. LOCKED (Oded, 2026-09-23).**
 
-Accept external dep for Claude/Codex/Pi presets. Install Node (https://nodejs.org/), ensure npx on PATH. Loud failure shipped (#831).
+Accept external dep for Claude/Codex/Pi presets. Install Node (https://nodejs.org/), ensure npx on PATH. Loud failure shipped (#831). Not bundling. README lists Node as requirement for harnesses that need it.
 
 **Reasoning:** (1) Three of seven named presets need it; four do not. (2) Bundling Node is 50–100MB+, licenses, and update cadence. (3) Many users already have Node. (4) Preferring first-party ACP (hermes, opencode, grok, cursor-agent) over npx adapters is product/UX, not shipping Node.
 
-**Optional spike:** Bundle Node + pinned claude-agent-acp / codex-acp / pi-acp trees. Size/license table. Eliminates network/npx cold start. Only if "install Node" is unacceptable compromise.
+**npx alternatives spike (V2 deferred):** First-party Claude/Codex ACP binaries if/when Anthropic/OpenAI ship them to replace Zed npm adapters. Good future spike; not V1.
 
 **Do not:** Vendor acpx. Wrong layer (measured: acpx still calls npx for Claude/Codex/Pi adapters; does not remove Node dep). See architect comment 2026-09-17.
+
+**Issue #928 closed not planned.**
 
 ### Harness CLIs on PATH
 
