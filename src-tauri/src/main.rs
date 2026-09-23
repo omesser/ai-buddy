@@ -91,9 +91,8 @@ fn overlay_label(index: usize) -> String {
     format!("overlay-{index}")
 }
 
-/// The Chat surface belonging to `id`. Outside `overlay-` on purpose:
-/// `place_overlays` closes every `overlay-{n}` past the display count, so a
-/// Chat surface sharing that prefix would shut when a display is unplugged.
+/// The Chat surface belonging to `id`. Outside `overlay-` on purpose: those
+/// labels belong exclusively to the display overlay pool.
 fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
@@ -1407,9 +1406,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     }
 }
 
-/// Shut the Chat surface belonging to `id`, if it has one. Nothing else
-/// closes a `chat-*`: they sit outside the `overlay-` namespace
-/// `place_overlays` sweeps. Main thread only, for `open_chat`'s reason.
+/// Shut the Chat surface belonging to `id`, if it has one. Nothing else closes
+/// a `chat-*`; the label namespace stays separate from the display overlay
+/// pool. Main thread only, for `open_chat`'s reason.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
@@ -2067,44 +2066,45 @@ fn chat_ready(
 /// One overlay per display. A spanning window is invisible off its Space, so
 /// a seam needs both overlays. Idempotent as displays move; every display is
 /// attempted even after one fails, or the rest of the desktop would go blank.
-#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OverlayTarget {
     Display(Rect),
     Inactive,
 }
 
-#[cfg(test)]
-fn overlay_targets(displays: &[Rect], _existing: usize) -> Vec<OverlayTarget> {
-    displays
-        .iter()
-        .copied()
-        .map(OverlayTarget::Display)
+fn overlay_targets(displays: &[Rect], existing: usize) -> Vec<OverlayTarget> {
+    (0..displays.len().max(existing))
+        .map(|index| {
+            displays
+                .get(index)
+                .copied()
+                .map_or(OverlayTarget::Inactive, OverlayTarget::Display)
+        })
         .collect()
 }
 
 fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), String> {
     let mut failed = Vec::new();
+    let existing = (0..)
+        .take_while(|index| app.get_webview_window(&overlay_label(*index)).is_some())
+        .count();
 
-    for (index, display) in displays.iter().enumerate() {
+    for (index, target) in overlay_targets(displays, existing).into_iter().enumerate() {
         let label = overlay_label(index);
-        let placed = match app.get_webview_window(&label) {
-            Some(window) => cover_display(&window, *display).map_err(|why| why.to_string()),
-            None => build_overlay(app, &label, *display).map_err(|why| why.to_string()),
+        let placed = match (app.get_webview_window(&label), target) {
+            (Some(window), OverlayTarget::Display(display)) => cover_display(&window, display)
+                .and_then(|()| window.show())
+                .map_err(|why| why.to_string()),
+            (None, OverlayTarget::Display(display)) => {
+                build_overlay(app, &label, display).map_err(|why| why.to_string())
+            }
+            (Some(window), OverlayTarget::Inactive) => {
+                eprintln!("overlay: {label} has no display left to cover");
+                window.hide().map_err(|why| why.to_string())
+            }
+            (None, OverlayTarget::Inactive) => Ok(()),
         };
         if let Err(why) = placed {
-            failed.push(format!("{label}: {why}"));
-        }
-    }
-
-    // Labels are handed out in order, so the first missing one ends the set.
-    for index in displays.len().. {
-        let label = overlay_label(index);
-        let Some(window) = app.get_webview_window(&label) else {
-            break;
-        };
-        eprintln!("overlay: {label} has no display left to cover");
-        if let Err(why) = window.close() {
             failed.push(format!("{label}: {why}"));
         }
     }
@@ -3097,6 +3097,13 @@ fn main() {
                 return Err("no displays reported".into());
             }
             place_overlays(app.handle(), &covered)?;
+
+            if std::env::var_os("AI_BUDDY_FORCE_DISPLAY_LOSS").is_some()
+                && covered.len() > 1
+            {
+                eprintln!("overlay: forcing one display lost after initial placement");
+                place_overlays(app.handle(), &covered[..1])?;
+            }
 
             // The sprite size is the first Instance's idle Animation, blown
             // up. Here because scripts/verify-overlay.sh crops a screenshot
