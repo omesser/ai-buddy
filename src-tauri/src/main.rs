@@ -1646,6 +1646,8 @@ struct ChatHarness {
     /// Settings already names it (#659). Chat used to drop it and say
     /// `not running` (#726).
     missing: Option<String>,
+    /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
+    initializing: bool,
 }
 
 fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
@@ -1655,6 +1657,7 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
         alive: attached.alive,
         session: attached.session_id.clone(),
         missing: attached.missing.clone(),
+        initializing: attached.initializing,
     })
 }
 
