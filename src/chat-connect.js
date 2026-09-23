@@ -26,7 +26,7 @@ function installUrlFor(missing, harnessName) {
     hermes: "https://hermes-agent.nousresearch.com/",
     "cursor-agent": "https://www.cursor.com/",
     grok: "https://x.ai/",
-    opencode: "https://opencode.us/",
+    opencode: "https://opencode.ai/",
   };
   return urls[harnessName] || null;
 }

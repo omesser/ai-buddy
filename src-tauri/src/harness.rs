@@ -1528,7 +1528,7 @@ fn not_installed(command: &str) -> String {
         "hermes" => " Install Hermes from https://hermes-agent.nousresearch.com/.",
         "cursor-agent" => " Install Cursor from https://www.cursor.com/.",
         "grok" => " Install Grok from https://x.ai/.",
-        "opencode" => " Install OpenCode from https://opencode.us/.",
+        "opencode" => " Install OpenCode from https://opencode.ai/.",
         _ => "",
     };
     format!("`{command}` is not installed; ai-buddy does not bundle a Harness.{install_hint}")
@@ -3939,7 +3939,7 @@ mod tests {
             ("hermes", "hermes-agent.nousresearch.com"),
             ("cursor-agent", "cursor.com"),
             ("grok", "x.ai"),
-            ("opencode", "opencode.us"),
+            ("opencode", "opencode.ai"),
         ];
         for (command, url_part) in cases {
             let message = not_installed(command);

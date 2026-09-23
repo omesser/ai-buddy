@@ -93,7 +93,7 @@ test("a missing first-party CLI names its install URL", () => {
     hermes: "hermes-agent.nousresearch.com",
     "cursor-agent": "cursor.com",
     grok: "x.ai",
-    opencode: "opencode.us",
+    opencode: "opencode.ai",
   };
   for (const [name, urlPart] of Object.entries(urls)) {
     const opening = {
