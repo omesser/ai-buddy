@@ -91,6 +91,7 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 | Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (proves webview stacks above overlay) |
 | Harness ACP (no sprite) | `AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh` |
 | macOS Keychain diagnostic unit | `scripts/test_verify_overlay_diagnostics.sh` |
+| Settings keyboard checks on fixtures | `scripts/test_verify_settings_keyboard.sh` (no app, no Accessibility) |
 | macOS Settings keyboard | `scripts/verify-settings-keyboard-webview.sh` (needs an Accessibility grant) |
 | macOS Settings select | `scripts/verify-settings-webview-select-macos.sh` |
 | macOS Settings clipboard | `scripts/verify-settings-webview-clipboard-macos.sh` |
