@@ -20,10 +20,12 @@ Merge #236. Re-scope #183 into a permission spike before any loop rewrite.
 **Since this investigation.** #562 shipped XI2 raw events on X11, #718 shipped
 the idle back-off on macOS and Windows, and #721 put the macOS tap behind an
 Input Monitoring row in settings — opt-in, explained before it is asked for,
-and off until the user checks it. The Stage 1 observations below are still
-open on real hardware: `platform::macos::input_events` carries an `#[ignore]`d
-test that prints the four #183 asks for. The findings below are as the
-investigation read them and are not rewritten to match what shipped.
+and off until the user checks it. The Stage 1 observations were measured on
+2026-09-23 on macOS 26.7 (25G229) with `scripts/spike-183-input-monitoring.sh`
+at `cce1d5ef`; the result is under **Measured** in the macOS section and
+contradicts the "unverified" premise above: the tap needs the grant and never
+prompts for it. The rest of the findings are as the investigation read them
+and are not rewritten to match what shipped.
 
 ## macOS
 
@@ -71,11 +73,36 @@ tauri-plugin-macos-input-monitor documents the requirement and notes that
 disabled. Chromium's remoting host ships exactly that shape
 (`kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionListenOnly, 1 <<
 kCGEventMouseMoved`) but asks for Accessibility, proving nothing about prompts.
-**Stage 1 live Mac spike remains open**: the four observations #183 Stage 1
-requests (TCC reset, tap creation, prompt appearance, preflight check) have not
-been run on real hardware. If Input Monitoring is required, that violates
-DESIGN.md decision 9 (no TCC prompt for spatial layer), so #183 Stage 2b (idle
-back-off) is the provisional v1 answer for macOS pending spike or waiver.
+That paragraph was the state before the spike below ran.
+
+**Measured (2026-09-23, macOS 26.7, build 25G229).**
+`scripts/spike-183-input-monitoring.sh` builds a throwaway `.app` under its
+own bundle id, signs it with `scripts/dev-sign.sh`, resets only that id's
+`ListenEvent` record, launches it through LaunchServices so tccd attributes
+the tap to the bundle (`AUTHREQ_ATTRIBUTION ... identifier=<bundle id>` in the
+unified log, not the terminal), and reads tccd's decision from
+`subsystem == "com.apple.TCC"`. Both masks — the six types
+`input_events::MOUSE_EVENTS` holds, and the same without `mouseMoved` — gave
+the same four answers:
+
+1. Clean record: `tccutil reset ListenEvent <bundle id>` succeeded before each
+   run. `CGPreflightListenEventAccess()` was `false` before the call.
+2. `CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
+   kCGEventTapOptionListenOnly, mask)` returned non-NULL, and
+   `CGEventTapIsEnabled` on the port returned `false`.
+3. No dialog. tccd logged `Service kTCCServiceListenEvent does not allow
+   prompting; returning denied.` and `AUTHREQ_RESULT ... authValue=0` for the
+   bundle, no `AUTHREQ_PROMPTING`, and UserNotificationCenter had no window.
+   tccd published a `TCCDEvent: type=Modify, service=kTCCServiceListenEvent`
+   for the bundle, so the app is written into the Input Monitoring pane
+   unchecked. `CGPreflightListenEventAccess()` was still `false` after.
+4. Dropping `mouseMoved` changed nothing: motion and buttons are gated alike.
+
+So a mouse-only listen tap does require Input Monitoring on current macOS,
+and the failure mode is silent: a port that exists and never fires, not a NULL
+and not a prompt. `CGRequestListenEventAccess` is the only route to a dialog,
+which is what #721 wired behind the settings row. Stage 2b idle back-off stays
+the default for every macOS user who has not opted in.
 
 **`NSEvent.addGlobalMonitorForEvents`.** "Key-related events may only be
 monitored if accessibility is enabled or if your application is trusted for
@@ -172,9 +199,9 @@ driven and permission-free.
 
 **Wayland**: Webview-only. No global pointer exists, so no poll and no events.
 
-**macOS** (#183 Stage 2b): Idle back-off. Mouse-only listen taps appear to
-require Input Monitoring (inferred from public sources 2026-09, live spike open
-unless waived), which would violate decision 9. The frame loop polls
+**macOS** (#183 Stage 2b): Idle back-off. Mouse-only listen taps require
+Input Monitoring (measured 2026-09-23, above), which would violate decision 9
+if asked for at launch; #721 asks only from the settings row. The frame loop polls
 `CGEventSourceButtonState` and `NSEvent.mouseLocation` but backs off to the next
 real deadline (Director wakes, sense interval) when idle. Hidden idle: uncapped
 deep sleep (same as X11). Visible idle: capped at 1s for timely gesture/menu.
