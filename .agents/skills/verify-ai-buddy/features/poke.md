@@ -6,7 +6,7 @@ A single click on the sprite body makes the buddy react (react animation) and re
 
 - `poke-hit` click on drawn pixels produces `verbs:.*Poke` in the trace log.
 - `poke-miss` (macOS verify) cursor over transparent corner reports hit-test `miss`.
-- `poke-resume` after the react, the buddy returns to its prior idle life.
+- `poke-resume` after the react animation (~600ms), the buddy returns to standing idle; any interrupted walk does not resume (Director's fresh call determines the next motion).
 
 ## How to get to it (user POV)
 
