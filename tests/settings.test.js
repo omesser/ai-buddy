@@ -272,6 +272,19 @@ test("a row whose id is not its field name still draws the value the snapshot ca
   assert.equal(byId(tab(MODEL_API, "Development"), "director_timeout_secs").value, "30");
 });
 
+// #888 named the macOS row for what the buddy reads rather than for the grant.
+// The id it draws under is the one the value map is keyed by, and deriving that
+// id from the label instead left the lookup empty, so the checkbox drew
+// unchecked whatever the grant said.
+test("the Privacy consent row keeps the id its value is keyed by, whatever it is named", () => {
+  for (const [state, snap] of STATES) {
+    const row = byLabel(tab(snap, "Privacy"), "Window titles");
+    assert.ok(row, `${state}: the Privacy tab draws no "Window titles" row`);
+    assert.equal(row.id, "consent_screen_recording", state);
+    assert.ok(row.id in snap.values, `${state}: no value is keyed by ${row.id}`);
+  }
+});
+
 // `render()` needs a DOM. These nodes carry what the assertions read and
 // nothing else, and the click handler is kept so a press can be driven.
 function stubDocument() {
