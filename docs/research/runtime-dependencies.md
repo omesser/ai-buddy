@@ -157,41 +157,54 @@ Landing stays visible (#831 already shipped). Issue #949 (Harness Apply/Connect 
 
 **Measured:** Registry has 19 binary-distribution agents. ai-buddy has named presets for 4 of them (cursor-agent, opencode, grok via PATH form, hermes). The rest require custom argv.
 
-**High-value candidates for new named presets** (from architect deep pass + registry):
+**Locked decisions (Oded, 2026-09-23):**
 
-1. **goose** (`goose acp`) — Block/open-source, strong "local agent" candidate.
-2. **copilot** (`copilot --acp --stdio`) — GitHub Copilot. Issue #457 closed without named row; revisit.
-3. **antigravity-acp** (`agy_acp_server.par` / `.exe`) — Google's official ACP server for Antigravity. Registry v1.1.1 binary on dl.google.com. Updates #604 (premise "agy has no ACP" now stale; official binary adapter exists).
-4. **junie** (`junie --acp=true`) — JetBrains.
-5. **kimi** (`kimi acp`) — Moonshot.
+1. **goose** (`goose acp`) — YES. Block/open-source, strong "local agent" candidate. Issue #930 filed.
+2. **copilot** (`copilot --acp --stdio`) — NO. Not prevalent enough for now. Issue #457 closed without named row.
+3. **antigravity-acp** (`agy_acp_server.par` / `.exe`) — V2. Google's official ACP server for Antigravity. Registry v1.1.1 binary on dl.google.com. Updates #604 (premise "agy has no ACP" now stale; official binary adapter exists). Not V1.
+4. **junie, kimi, others** — V2 TBD. Not V1.
 
 **Do not add:** `gemini --acp` (Gemini CLI is sunset; Google path is Antigravity). Noted in architect correction 2026-09-17.
 
-**Follow-up issue:** "Evaluate named presets for goose, copilot, antigravity-acp" (or split per agent).
-
 ## Follow-up issues filed
 
-Based on Done-when checklist and this research:
+Based on Done-when checklist, decisions (Oded, 2026-09-23), and this research:
 
-1. **#928: Optional spike: Bundle Node + pinned ACP adapters.** Self-contain option for Claude/Codex/Pi. Size/license table. Eliminates npx dep and network cold start. Only if "install Node" is unacceptable. Decision input for V1 vs declare-only.
+1. **#929: Settings/landing copy: Distinguish first-party ACP vs npx-adapter presets.** When presenting harness options, clarify which need Node (Claude/Codex/Pi) vs which are standalone CLIs (hermes/opencode/grok/cursor-agent). Helps user choose zero-dep option when possible. Includes install URLs per preset in missing-launcher messages.
 
-2. **#929: Settings/landing copy: Distinguish first-party ACP vs npx-adapter presets.** When presenting harness options, clarify which need Node (Claude/Codex/Pi) vs which are standalone CLIs (hermes/opencode/grok/cursor-agent). Helps user choose zero-dep option when possible. Includes install URLs per preset in missing-launcher messages.
+2. **#930: Named preset for Goose.** Add `launch()` row + landing button for goose (zero-npx, open-source local agent). Includes smoke test via probe-harness.sh. LOCKED decision: proceed.
 
-3. **#930: Named preset for Goose.** Add `launch()` row + landing button for goose (zero-npx, open-source local agent). Includes smoke test via probe-harness.sh.
+3. **#948: ADR: Runtime dependency philosophy.** Document "self-contain vs declare" framework for future deps. Criteria: size, licenses, update cadence, user install base, required vs optional. Filed; not written in this PR.
 
-4. **(Not filed) Named presets: copilot (#457), antigravity-acp (#604).** Evaluate separately. Copilot closed in #457. Antigravity updated in #604 comments with registry binary finding.
+4. **#949: Harness Apply/Connect + chat "initializing…".** Chat surface UX when harness is starting. Filed.
 
-5. **(Not filed) ADR or docs: Runtime dep philosophy.** Optional. Document "self-contain vs declare" framework for future deps if pattern becomes common. Criteria: size, licenses, update cadence, user install base, required vs optional.
+5. **#950: Sticky inline missing-dep message.** Sticky inline error (copy-pasteable), not toast. Keep visible until fixed or intentional user action (Retry, change harness, explicit dismiss). Filed.
 
-## Open questions for Oded
+**Issue #928 closed not planned.** Node bundling spike not needed. Decision: declare Node, not bundle.
 
-1. **Node bundling decision:** Is V1 willing to ship a Node runtime + adapter tree for Claude/Codex/Pi (~50–100MB+, licenses, update cadence), or is "install Node" + loud error the acceptable compromise?
+**Not filed (V1 decisions):**
+- Copilot named preset: NO (not prevalent enough).
+- Antigravity-acp, junie, kimi named presets: V2 TBD. Issue #604 already exists for antigravity; updated with registry binary finding in comments.
+- npx alternatives spike (first-party Claude/Codex ACP binaries): V2 deferred. Good future spike; not V1.
 
-2. **Named preset prioritization:** Which of goose / copilot / antigravity-acp / junie / kimi deserve named `launch()` rows + landing buttons vs stay in custom argv escape hatch?
+## Resolved decisions (Oded, 2026-09-23)
 
-3. **Failure UX details:** Toast vs inline error below Connect button? Dismiss landing on failure or keep it visible? Retry without restart or prompt user to restart ai-buddy?
+Formerly open questions. All answered and locked.
 
-4. **npx alternatives:** If Node install is unacceptable, explore first-party Claude/Codex ACP binaries (if/when Anthropic/OpenAI ship them) to replace Zed npm adapters? Or is that a post-V1 conversation?
+**Q1. Node bundling decision:**
+**RESOLVED: Declare, not bundle.** Not willing to ship Node runtime + adapter trees (~50–100MB+, licenses, update cadence). Accept "install Node" + loud error (#831) as V1 path for Claude/Codex/Pi. README lists Node as requirement for harnesses that need it. Issue #928 closed not planned.
+
+**Q2. Named preset prioritization:**
+**RESOLVED:**
+- **goose:** YES. Issue #930 filed.
+- **copilot:** NO. Not prevalent enough for now.
+- **antigravity-acp, junie, kimi:** V2 TBD. Not V1.
+
+**Q3. Failure UX details:**
+**RESOLVED: Sticky inline error (copy-pasteable), not toast.** Landing stays visible (#831). Keep error visible until fixed or intentional user action (Retry, change harness, explicit dismiss). Issues #949 (harness initializing), #950 (sticky inline missing-dep).
+
+**Q4. npx alternatives (first-party Claude/Codex ACP binaries):**
+**RESOLVED: V2 deferred.** Good future spike if/when Anthropic/OpenAI ship first-party ACP binaries to replace Zed npm adapters. Not V1 work.
 
 ## Claims and evidence labels
 
@@ -217,10 +230,12 @@ Based on Done-when checklist and this research:
 
 ai-buddy runtime deps beyond the binary: Node+npx (for 3 presets), Harness CLIs on PATH (per preset chosen), platform WebView (Linux declares, macOS/Windows self-contain), GStreamer (Linux optional audio), libfuse (Linux AppImage). Each assessed for self-contain vs declare.
 
-**Recommendation:** Declare Node+npx and Harness CLIs. Loud failure shipped (#831). Optional spike: bundle Node if install is unacceptable (#928). Prefer first-party ACP (zero-npx) in Settings/landing copy (#929). Evaluate named presets for goose (#930), copilot, antigravity-acp. Platform WebView / GStreamer / FUSE already documented; no change.
+**Decisions locked (Oded, 2026-09-23):** Declare Node+npx and Harness CLIs. Not bundling. Loud failure shipped (#831). README lists as requirements. Prefer first-party ACP (zero-npx) in Settings/landing copy (#929). Named preset for goose (#930). Copilot not needed; antigravity+others V2. Platform WebView / GStreamer / FUSE as recommended; no change. Failure UX: sticky inline (copy-pasteable), not toast (#950). MCP stdio binary: do not bundle; challenge need.
 
 Self-contained where sane (Windows WebView2 bootstrapper, macOS system WebKit). Declared where bundling costs more than clarity (Node for 3 agents, per-harness CLIs). Silent failures eliminated by #831.
 
+Follow-up issues: #929 (Settings copy), #930 (Goose preset), #948 (ADR runtime dep philosophy), #949 (harness initializing), #950 (sticky inline). Issue #928 closed not planned.
+
 ---
 
-Dated: 2026-09-23. Anchor: Issue #735, architect comments 2026-09-17, motivating bug #726 (closed by #831). All claims labeled Fact/Measured/Inferred/Guess. URLs verified 2026-09-23 (registry.json resolves, antigravity-acp v1.1.1 present). Do-not-claim: this note does not claim ai-buddy should bundle all 19 registry binary agents, or that acpx is the npx fix (explicitly rejected), or that Gemini CLI is a V1 path (sunset, per architect correction). Follow-up issues filed: #928, #929, #930. Open questions for Oded named explicitly.
+Dated: 2026-09-23. Anchor: Issue #735, architect comments 2026-09-17, motivating bug #726 (closed by #831). Decisions locked by Oded 2026-09-23. All claims labeled Fact/Measured/Inferred/Guess. URLs verified 2026-09-23 (registry.json resolves, antigravity-acp v1.1.1 present). Do-not-claim: this note does not claim ai-buddy should bundle all 19 registry binary agents, or that acpx is the npx fix (explicitly rejected), or that Gemini CLI is a V1 path (sunset, per architect correction). Follow-up issues filed: #929, #930, #948, #949, #950. Issue #928 closed not planned.
