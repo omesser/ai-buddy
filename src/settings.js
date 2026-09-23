@@ -313,6 +313,8 @@ function drawnControls(root, footer) {
 // with it, so a commit left a keyboard user on the document and the next Tab
 // started from the top (#937). The same tab redraws the same controls in the
 // same order, so the position that held focus is handed back afterwards.
+// Open disclosures close on rebuild the same way (#939), so their positions
+// are recorded before replaceChildren() and reopened after.
 export function render(root, tab, values, emit = () => {}) {
   const footer =
     typeof document !== "undefined" && typeof document.getElementById === "function"
@@ -320,6 +322,14 @@ export function render(root, tab, values, emit = () => {}) {
       : null;
   const active = document.activeElement;
   const focused = active ? drawnControls(root, footer).indexOf(active) : -1;
+  
+  const allDetails = [
+    ...(root.querySelectorAll?.("details") ?? []),
+    ...(footer?.querySelectorAll?.("details") ?? []),
+  ];
+  const openPositions = allDetails
+    .map((details, index) => (details.open ? index : -1))
+    .filter((index) => index !== -1);
 
   root.replaceChildren();
   if (footer) footer.replaceChildren();
@@ -347,6 +357,14 @@ export function render(root, tab, values, emit = () => {}) {
     footer.style.display = footer.children.length > 0 ? "" : "none";
   }
   if (focused !== -1) drawnControls(root, footer)[focused]?.focus();
+  
+  const rebuiltDetails = [
+    ...(root.querySelectorAll?.("details") ?? []),
+    ...(footer?.querySelectorAll?.("details") ?? []),
+  ];
+  for (const position of openPositions) {
+    if (rebuiltDetails[position]) rebuiltDetails[position].open = true;
+  }
 }
 
 // Process a settings_event response into an outcome the page can act on.
