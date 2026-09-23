@@ -1,6 +1,6 @@
 //! The attached Harness as the Completer.
 //! Spawns the Harness in ACP mode; every wake is one `session/prompt`
-//! (ADR-0008, ADR-0010). Auth is the Harness's own. Protocol in `acp_wire.rs`.
+//! (ADR-0008, ADR-0018). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
 use std::collections::HashMap;
 use std::fmt;
