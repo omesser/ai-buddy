@@ -524,10 +524,15 @@ fn run(
                 },
             )
             .await;
+        // `ready` still held here means `initialize` never completed. The
+        // SDK can end the connection from its transport side first, a reply
+        // written into a child that already exited, and drop the closure
+        // above before it labels the error. The label belongs here too, or
+        // the same death reads as two different failures (#907).
         if let Some(ready) = ready.take() {
             let _ = ready.send(Err(SpawnError::Failed(match outcome {
                 Ok(()) => "exited before initialize".to_string(),
-                Err(why) => why.message,
+                Err(why) => format!("initialize: {}", why.message),
             })));
         }
         // The Harness may have been started through `npx`, which does not
