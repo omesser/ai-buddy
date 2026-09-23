@@ -26,7 +26,7 @@ use super::{
     remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
     ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
     MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
-    CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    CHAT_STATUS_EVENT, CHAT_UI_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// How long an overlay may go without being told anything.

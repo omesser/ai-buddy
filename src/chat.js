@@ -712,6 +712,17 @@ async function start() {
     { target: chat.label },
   );
 
+  // Chat UI selection changed: swap the root class.
+  await listen(
+    "chat-ui",
+    ({ payload }) => {
+      const html = document.documentElement;
+      html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
+      html.classList.add(`chat-ui-${payload}`);
+    },
+    { target: chat.label },
+  );
+
   // Both listeners are up, so the state as it stands can be asked for. The bar
   // is pushed on change and a window opened between two of them would sit at
   // dashes until the sprite next did something different.
