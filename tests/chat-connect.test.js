@@ -80,6 +80,35 @@ test("a missing first-party CLI names that binary, not npx", () => {
   }
 });
 
+test("a missing npx names nodejs.org install URL", () => {
+  for (const name of ["claude", "codex", "pi"]) {
+    const opening = npxOpening(name);
+    const copy = landingCopy(opening);
+    assert.match(copy.lede, /nodejs\.org/i, `${name} landing mentions nodejs.org`);
+  }
+});
+
+test("a missing first-party CLI names its install URL", () => {
+  const urls = {
+    hermes: "hermes-agent.nousresearch.com",
+    "cursor-agent": "cursor.com",
+    grok: "x.ai",
+    opencode: "opencode.us",
+  };
+  for (const [name, urlPart] of Object.entries(urls)) {
+    const opening = {
+      name: "bmo",
+      configured: true,
+      enabled: true,
+      harness_name: name,
+      harness: { name, session: null, alive: false, login: null, missing: name },
+    };
+    const copy = landingCopy(opening);
+    const regex = new RegExp(urlPart.replace(/\./g, "\\."), "i");
+    assert.match(copy.lede, regex, `${name} landing mentions ${urlPart}`);
+  }
+});
+
 test("a named Harness that has not come up stays on the landing", () => {
   const copy = landingCopy({
     name: "bmo",

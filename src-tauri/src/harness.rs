@@ -1523,7 +1523,15 @@ fn not_authenticated(command: &str) -> String {
 /// the only fix is one the user makes outside the app, the same shape as
 /// `not_authenticated` and for the same reason.
 fn not_installed(command: &str) -> String {
-    format!("`{command}` is not installed; ai-buddy does not bundle a Harness")
+    let install_hint = match command {
+        "npx" => " Install Node.js from https://nodejs.org/.",
+        "hermes" => " Install Hermes from https://hermes-agent.nousresearch.com/.",
+        "cursor-agent" => " Install Cursor from https://www.cursor.com/.",
+        "grok" => " Install Grok from https://x.ai/.",
+        "opencode" => " Install OpenCode from https://opencode.us/.",
+        _ => "",
+    };
+    format!("`{command}` is not installed; ai-buddy does not bundle a Harness.{install_hint}")
 }
 
 /// The command that logs the user in. The table outranks the handshake,
@@ -3922,6 +3930,25 @@ mod tests {
             assert_eq!(
                 launch.argv[0], expected_argv0,
                 "preset {preset} should have argv[0]={expected_argv0}"
+            );
+        }
+    }
+
+    /// Missing-binary messages include install URLs for first-party ACPs and npx.
+    #[test]
+    fn missing_binary_messages_include_install_urls() {
+        let cases = [
+            ("npx", "nodejs.org"),
+            ("hermes", "hermes-agent.nousresearch.com"),
+            ("cursor-agent", "cursor.com"),
+            ("grok", "x.ai"),
+            ("opencode", "opencode.us"),
+        ];
+        for (command, url_part) in cases {
+            let message = not_installed(command);
+            assert!(
+                message.contains(url_part),
+                "missing {command} should mention {url_part}, got: {message}"
             );
         }
     }
