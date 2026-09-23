@@ -256,7 +256,7 @@
               ],
               "frozen": false,
               "batched": true,
-              "disclosure": "Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.",
+              "disclosure": "Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (cursor-agent, grok, hermes, opencode) require only their binary on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.",
               "status": null
             },
             {
@@ -281,7 +281,7 @@
             }
           ],
           "comment": "Choose which \"AI brain\" answers: Model API or an attached Harness.",
-          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, cursor-agent, grok, hermes, opencode, pi, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.",
+          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, cursor-agent, grok, hermes, opencode, pi, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (cursor-agent, grok, hermes, opencode) need only their CLI on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.",
           "status": null
         },
         {

@@ -18,6 +18,19 @@ export function harnessDisplayName(opening) {
   return DISPLAY_NAMES[key] || key || "The Harness";
 }
 
+function installUrlFor(missing, harnessName) {
+  if (missing === "npx") {
+    return "https://nodejs.org/";
+  }
+  const urls = {
+    hermes: "https://hermes-agent.nousresearch.com/",
+    "cursor-agent": "https://www.cursor.com/",
+    grok: "https://x.ai/",
+    opencode: "https://opencode.ai/",
+  };
+  return urls[harnessName] || null;
+}
+
 // Configured is not ready. A named Harness whose child never came up, or
 // whose launcher is missing, must not enable Ask {name} the way a live
 // session does. HTTP Completer mode has no harness object.
@@ -75,9 +88,11 @@ export function landingCopy(opening) {
   }
 
   if (missing) {
+    const installUrl = installUrlFor(missing, harness?.name);
+    const installHint = installUrl ? ` Install from ${installUrl}.` : "";
     return {
       title: `${name} needs \`${missing}\``,
-      lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`. Install it, then press ${name} again, or pick a different Harness below.`,
+      lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
       command: null,
       hint: null,
     };
