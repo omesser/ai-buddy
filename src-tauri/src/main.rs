@@ -2896,6 +2896,28 @@ fn load_named(
     })
 }
 
+/// Off-screen park, in pixels.
+///
+/// Win32 still carries some positions in a signed 16-bit. -32000 stays
+/// inside that range, so a truncated coordinate cannot wrap onto the
+/// desktop, and a 200x200 window there misses a normal virtual screen.
+#[cfg(not(target_os = "macos"))]
+const ANCHOR_PARK: (i32, i32) = (-32_000, -32_000);
+
+#[cfg(not(target_os = "macos"))]
+fn anchor_origin(requested: (i32, i32), locked: bool) -> (i32, i32) {
+    if locked {
+        requested
+    } else {
+        ANCHOR_PARK
+    }
+}
+
+#[cfg(any(all(test, not(target_os = "macos")), target_os = "windows"))]
+fn anchor_position_locked(flags: u32, nomove: u32) -> bool {
+    (flags & nomove) != 0
+}
+
 /// The taskbar/panel anchor on Windows and Linux, matching the macOS Dock.
 /// Clicking it opens Settings. Main thread only: builds a window and
 /// registers event handlers.
@@ -2906,7 +2928,11 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         .inner_size(1.0, 1.0)
         .resizable(false)
         .decorations(false)
+        // Tauri's default shadow on an undecorated window is a 1px white
+        // frame, and on Windows 11 the DWM rounds it.
+        .shadow(false)
         .transparent(true)
+        .focused(false)
         .visible(false)
         .build()?;
 
@@ -2932,6 +2958,8 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
     }
 
     window.show()?;
+    let (x, y) = anchor_origin((0, 0), false);
+    window.set_position(tauri::PhysicalPosition::new(x, y))?;
     Ok(())
 }
 
@@ -2940,7 +2968,8 @@ fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
     use std::sync::atomic::{AtomicPtr, Ordering};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, WM_ACTIVATE,
+        CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, SWP_NOMOVE, WINDOWPOS, WM_ACTIVATE,
+        WM_WINDOWPOSCHANGING,
     };
 
     static OLD_WNDPROC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
@@ -2952,6 +2981,18 @@ fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        if msg == WM_WINDOWPOSCHANGING {
+            let pos = lparam as *mut WINDOWPOS;
+            if !pos.is_null() {
+                let nomove = anchor_position_locked(unsafe { (*pos).flags }, SWP_NOMOVE);
+                let requested = unsafe { ((*pos).x, (*pos).y) };
+                let (x, y) = anchor_origin(requested, nomove);
+                unsafe {
+                    (*pos).x = x;
+                    (*pos).y = y;
+                }
+            }
+        }
         if msg == WM_ACTIVATE {
             let f_active = (wparam & 0xFFFF) as u16;
             const WA_CLICKACTIVE: u16 = 2;
@@ -3555,6 +3596,30 @@ mod tests {
             const WA_CLICKACTIVE: u16 = 2;
             f_active == WA_CLICKACTIVE
         }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn a_move_parks_the_anchor_off_the_virtual_screen() {
+        let (x, y) = anchor_origin((540, 260), false);
+        let (wide, tall) = (200, 200);
+        let span = 16_384;
+        let misses_x = x + wide <= -span || x >= span;
+        let misses_y = y + tall <= -span || y >= span;
+        assert!(
+            misses_x && misses_y,
+            "anchor at {x},{y} size {wide}x{tall} still meets a screen inside +/-{span}"
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn a_suppressed_move_leaves_the_anchor_where_it_is() {
+        assert_eq!(anchor_origin((12, 34), true), (12, 34));
+        assert!(anchor_position_locked(2 | 1, 2));
+        assert!(anchor_position_locked(2, 2));
+        assert!(!anchor_position_locked(1, 2));
+        assert!(!anchor_position_locked(0, 2));
     }
 
     /// A chosen name survives retarget; the Chat header still has to name the
