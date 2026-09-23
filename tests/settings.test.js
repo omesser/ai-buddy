@@ -306,9 +306,13 @@ function stubDocument() {
         },
         closest: () => null,
         getRootNode: () => node,
+        focus() {
+          document.activeElement = node;
+        },
       };
       return node;
     },
+    activeElement: null,
   };
 }
 
@@ -339,6 +343,60 @@ test("the Character popups offer every installed package, the worn one selected"
   assert.deepEqual(offered, { character: ["bmo", "ghost"], new_character: ["bmo", "ghost"] });
   for (const select of selects) {
     assert.equal(select.value, "bmo", select.dataset.id);
+  }
+});
+
+// A redraw is render() again, and replaceChildren() takes the focused control
+// with it. The stub keeps activeElement and answers querySelectorAll by tag,
+// which is all the restore reads. #937.
+function focusRoot() {
+  const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
+  return {
+    children: [],
+    replaceChildren() {
+      this.children = [];
+      document.activeElement = null;
+    },
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+    querySelectorAll(selector) {
+      const tags = selector.split(",").map((tag) => tag.trim());
+      return this.children.flatMap(walk).filter((node) => tags.includes(node.tagName));
+    },
+  };
+}
+
+// The row a control was drawn for, read off the wrapper's data-row.
+function rowOf(root, control) {
+  const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
+  const owner = root.children
+    .flatMap(walk)
+    .find((node) => node.attributes["data-row"] !== undefined && walk(node).includes(control));
+  return owner?.attributes["data-row"];
+}
+
+test("a redraw hands focus back to the control that held it", () => {
+  const cases = [
+    ["Character", (node) => node.tagName === "select", "character"],
+    ["Presence", (node) => node.attributes.type === "checkbox", "dnd"],
+    ["Presence", (node) => node.tagName === "summary", "dnd"],
+  ];
+  for (const [title, pick, row] of cases) {
+    stubDocument();
+    const root = focusRoot();
+    const tab = MODEL_API.form.tabs.find((candidate) => candidate.title === title);
+    render(root, tab, MODEL_API.values);
+    const before = root.querySelectorAll("input, textarea, select, button, summary, pre, label").find(pick);
+    assert.equal(rowOf(root, before), row);
+    before.focus();
+
+    render(root, tab, MODEL_API.values);
+
+    const after = document.activeElement;
+    assert.notEqual(after, before, `${row}: the redraw rebuilt the ${before.tagName}`);
+    assert.equal(after?.tagName, before.tagName, `${row}: focus is on a ${before.tagName}`);
+    assert.equal(rowOf(root, after), row, `${row}: focus is on the same row's control`);
   }
 });
 
