@@ -322,7 +322,7 @@ export function render(root, tab, values, emit = () => {}) {
       : null;
   const active = document.activeElement;
   const focused = active ? drawnControls(root, footer).indexOf(active) : -1;
-  
+
   const allDetails = [
     ...(root.querySelectorAll?.("details") ?? []),
     ...(footer?.querySelectorAll?.("details") ?? []),
@@ -357,7 +357,7 @@ export function render(root, tab, values, emit = () => {}) {
     footer.style.display = footer.children.length > 0 ? "" : "none";
   }
   if (focused !== -1) drawnControls(root, footer)[focused]?.focus();
-  
+
   const rebuiltDetails = [
     ...(root.querySelectorAll?.("details") ?? []),
     ...(footer?.querySelectorAll?.("details") ?? []),
