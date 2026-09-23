@@ -72,7 +72,7 @@ else
 read -r _ || true
 EOF
   chmod +x "$FOREIGN_DIR/ai-buddy"
-  
+
   FOREIGN_FIFO="$TEMP_DIR/foreign.fifo"
   mkfifo "$FOREIGN_FIFO"
   "$FOREIGN_DIR/ai-buddy" < "$FOREIGN_FIFO" &
@@ -106,7 +106,7 @@ EOF
 read -r _ || true
 EOF
   chmod +x "$OWN_DIR/ai-buddy"
-  
+
   OWN_FIFO="$TEMP_DIR/own.fifo"
   mkfifo "$OWN_FIFO"
   BIN_PATH="$OWN_DIR/ai-buddy"
