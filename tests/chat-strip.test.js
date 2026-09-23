@@ -7,21 +7,28 @@ import { test } from "node:test";
 import { createStrip } from "../src/chat-strip.js";
 
 function stripped() {
-  let line = "";
+  let showing = { line: "", collapsed: false };
   const strip = createStrip((latest) => {
-    line = latest;
+    showing = latest;
   });
-  return { strip, showing: () => line };
+  return { strip, showing: () => showing };
 }
 
 test("a thought is drawn and the end of the turn takes it away", () => {
   const { strip, showing } = stripped();
 
   strip.thinking("weighing a nap against the desk");
-  assert.equal(showing(), "weighing a nap against the desk");
+  assert.deepEqual(showing(), {
+    line: "weighing a nap against the desk",
+    collapsed: false,
+  });
 
   strip.thinking("");
-  assert.equal(showing(), "", "an empty line is the turn saying it stopped");
+  assert.deepEqual(
+    showing(),
+    { line: "", collapsed: false },
+    "an empty line is the turn saying it stopped",
+  );
 });
 
 test("the user's next line clears the thought", () => {
@@ -29,5 +36,19 @@ test("the user's next line clears the thought", () => {
 
   strip.thinking("weighing a nap");
   strip.asked();
-  assert.equal(showing(), "");
+  assert.deepEqual(showing(), { line: "", collapsed: false });
+});
+
+test("the user's collapsed preference survives the next turn", () => {
+  const { strip, showing } = stripped();
+
+  strip.thinking("weighing a nap");
+  strip.toggle();
+  strip.thinking("");
+  strip.thinking("checking the desk first");
+
+  assert.deepEqual(showing(), {
+    line: "checking the desk first",
+    collapsed: true,
+  });
 });

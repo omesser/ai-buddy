@@ -219,9 +219,17 @@
          itself on every step, so a live region would read it all out again. -->
     <div class="plan" id="plan" hidden></div>
 
-    <!-- The Harness's thinking, while the turn runs. One line, clipped rather
-         than wrapped, and taken away when the turn ends (ADR-0025). -->
-    <div class="thought" id="thought" hidden></div>
+    <!-- The Harness's thinking, while the turn runs. It stays outside the log
+         and is taken away when the turn ends (ADR-0025). -->
+    <div class="thought" id="thought" hidden>
+      <div class="thought-text" id="thought-text"></div>
+      <button
+        class="thought-toggle"
+        type="button"
+        aria-controls="thought-text"
+        aria-expanded="true"
+      >Collapse</button>
+    </div>
 
     <!-- The only way in, so the composer is never hidden; the button disables
          when the field does. maxlength is `CHAT_LIMIT`: the bound is the field's,

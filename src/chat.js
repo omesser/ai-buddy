@@ -7,7 +7,7 @@ import { canAnswer, landingCopy } from "./chat-connect.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
-import { createStrip } from "./chat-strip.js";
+import { mountThoughtStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
 import { appendReply, drawReply } from "./markdown.js";
@@ -138,10 +138,7 @@ function settled(row) {
 // What the Harness is thinking, while the turn runs (ADR-0025). Not a row, so
 // it never joins the log. The Shell sends the line to draw, and an empty one
 // when the turn ends, so this never decides whether a Harness is still thinking.
-const strip = createStrip((line) => {
-  thought.textContent = line;
-  thought.hidden = !line;
-});
+const strip = mountThoughtStrip(thought, window.localStorage);
 
 // The agent's steps, replaced whole on every update because that is how ACP
 // sends them (#697). The current step is scrolled to, or a plan longer than
