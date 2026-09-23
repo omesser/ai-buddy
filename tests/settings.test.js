@@ -99,7 +99,7 @@ test('"the Director\'s mind" stays out of the state line', () => {
 
 const HEADINGS = {
   Presence: ["Do Not Disturb", "Hide", "Launch"],
-  Character: ["Character", "Instances"],
+  Character: ["Character", "Appearance", "Instances"],
   AI: ["AI", "AI source", "Point a Harness you run yourself at ai-buddy", "Model / API", "Last user turn"],
   Privacy: ["What the buddy can see", "Excluded applications", "Memory File"],
   Development: ["Traces", "Blank AI", "HTTP limits", "Harness attachment"],
@@ -359,7 +359,8 @@ test("the Character popups offer every installed package, the worn one selected"
     new_character: ["bmo", "ghost"],
   });
   for (const select of selects) {
-    assert.equal(select.value, "bmo", select.dataset.id);
+    const expected = select.dataset.id === "chat_ui" ? "Minimal" : "bmo";
+    assert.equal(select.value, expected, select.dataset.id);
   }
 });
 
