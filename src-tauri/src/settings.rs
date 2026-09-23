@@ -2469,7 +2469,7 @@ mod tests {
             #[cfg(target_os = "macos")]
             assert_eq!(
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                ["Accessibility", "Screen Recording", "Input Monitoring"]
+                ["Accessibility", "Window titles", "Input Monitoring"]
             );
             #[cfg(target_os = "windows")]
             {
