@@ -3934,7 +3934,6 @@ mod tests {
         }
     }
 
-    /// Missing-binary messages include install URLs for first-party ACPs and npx.
     #[test]
     fn missing_binary_messages_include_install_urls() {
         let cases = [
