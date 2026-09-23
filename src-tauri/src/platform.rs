@@ -492,6 +492,18 @@ pub fn update_input_region(
     )
 }
 
+/// Read and reset mask rebuild metrics on X11. Returns (count, total_ns).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn read_mask_rebuild_stats() -> (u64, u64) {
+    x11::read_mask_rebuild_stats()
+}
+
+/// Stub for non-X11 platforms.
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+pub fn read_mask_rebuild_stats() -> (u64, u64) {
+    (0, 0)
+}
+
 /// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
 #[cfg(not(unix))]
 pub fn update_input_region(

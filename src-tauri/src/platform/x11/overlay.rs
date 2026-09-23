@@ -9,12 +9,25 @@
 //! `wl_surface`, which nothing here matches; the input region is core Wayland
 //! and unwired. DESIGN.md decision 3.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
+
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, SK};
 use x11rb::protocol::xproto::{self, AtomEnum, PropMode};
 use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+static MASK_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
+static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
+
+/// Read and reset mask rebuild metrics. Returns (count, total_ns).
+pub fn read_mask_rebuild_stats() -> (u64, u64) {
+    let count = MASK_REBUILD_COUNT.swap(0, Ordering::Relaxed);
+    let total_ns = MASK_REBUILD_TOTAL_NS.swap(0, Ordering::Relaxed);
+    (count, total_ns)
+}
 
 /// Float above other windows, non-activating, skip the taskbar and pager.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
@@ -108,6 +121,8 @@ fn apply_input_mask(
     scale: i32,
     hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
+    let rebuild_start = Instant::now();
+    
     let (width, height, opaque) = mask.raw();
     let scaled_width = width * scale;
     let scaled_height = height * scale;
@@ -224,6 +239,22 @@ fn apply_input_mask(
 
     conn.flush()
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
+
+    let rebuild_elapsed = rebuild_start.elapsed().as_nanos() as u64;
+    MASK_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
+    MASK_REBUILD_TOTAL_NS.fetch_add(rebuild_elapsed, Ordering::Relaxed);
+    
+    if std::env::var("AI_BUDDY_TRACE_MASK_REBUILD").is_ok() {
+        let opaque_count = opaque.iter().filter(|&&b| b).count();
+        eprintln!(
+            "mask_rebuild: {}x{} @{}x scale, {} opaque pixels, {:.3} ms",
+            width,
+            height,
+            scale,
+            opaque_count,
+            rebuild_elapsed as f64 / 1_000_000.0
+        );
+    }
 
     Ok(())
 }

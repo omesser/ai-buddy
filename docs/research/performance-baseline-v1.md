@@ -96,7 +96,16 @@ _Pending._
 _Pending._
 
 ## Click-through mask (issue #428)
-_Pending._
+
+See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed X11 measurements.
+
+**Summary (X11 on Linux cloud VM):**
+- Idle perched: 0.05 rebuilds/sec (very low, only on animation frame changes)
+- Rebuild cost: 11-13 ms for 126x128@1x sprite (~6360-7888 opaque pixels)
+- Per-pixel cost: ~1.5-2.0 μs per opaque pixel
+- Walking/fast animation: Inconclusive (requires GUI interaction)
+- Large/small sprite comparison: Partially measured (extrapolation provided)
+- Windows: Not measured (Windows desktop not available in cloud VM)
 
 ## Memory & multi-monitor (issue #424)
 _Pending._
