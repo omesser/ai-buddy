@@ -91,8 +91,9 @@ fn overlay_label(index: usize) -> String {
     format!("overlay-{index}")
 }
 
-/// The Chat surface belonging to `id`. Outside `overlay-` on purpose: those
-/// labels belong exclusively to the display overlay pool.
+/// The Chat surface belonging to `id`. Outside `overlay-` on purpose:
+/// `place_overlays` hides every `overlay-{n}` past the display count, so a
+/// Chat surface sharing that prefix would vanish when a display goes away.
 fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
@@ -1406,9 +1407,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     }
 }
 
-/// Shut the Chat surface belonging to `id`, if it has one. Nothing else closes
-/// a `chat-*`; the label namespace stays separate from the display overlay
-/// pool. Main thread only, for `open_chat`'s reason.
+/// Shut the Chat surface belonging to `id`, if it has one. Nothing else
+/// closes a `chat-*`: they sit outside the `overlay-` namespace
+/// `place_overlays` sweeps. Main thread only, for `open_chat`'s reason.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
@@ -2063,15 +2064,21 @@ fn chat_ready(
     let _ = chat.0.send(ChatMsg::Listening(instance));
 }
 
-/// One overlay per display. A spanning window is invisible off its Space, so
-/// a seam needs both overlays. Idempotent as displays move; every display is
-/// attempted even after one fails, or the rest of the desktop would go blank.
+/// What each `overlay-{n}` should be covering after a display change.
+///
+/// `Inactive` is an overlay that outlived its display. It stays built and
+/// hidden rather than closed: closing a webview from the main-thread block
+/// that runs during display reconfiguration tears down WebKit mid-recalculation
+/// and the Objective-C exception crosses an `extern "C"` frame, which Rust
+/// cannot catch and aborts the process. #868.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OverlayTarget {
     Display(Rect),
     Inactive,
 }
 
+/// One target per label in use, which is one per display plus every overlay
+/// left over from a larger arrangement.
 fn overlay_targets(displays: &[Rect], existing: usize) -> Vec<OverlayTarget> {
     (0..displays.len().max(existing))
         .map(|index| {
@@ -2083,8 +2090,14 @@ fn overlay_targets(displays: &[Rect], existing: usize) -> Vec<OverlayTarget> {
         .collect()
 }
 
+/// One overlay per display. A spanning window is invisible off its Space, so
+/// a seam needs both overlays. Idempotent as displays move; every display is
+/// attempted even after one fails, or the rest of the desktop would go blank.
 fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), String> {
     let mut failed = Vec::new();
+    // Probed, not remembered: an overlay that lost its display is hidden and
+    // still there, and it is the one this has to find again. Labels are handed
+    // out in order, so the first missing one ends the set.
     let existing = (0..)
         .take_while(|index| app.get_webview_window(&overlay_label(*index)).is_some())
         .count();
@@ -2092,6 +2105,8 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
     for (index, target) in overlay_targets(displays, existing).into_iter().enumerate() {
         let label = overlay_label(index);
         let placed = match (app.get_webview_window(&label), target) {
+            // Shown, not just covered: this is the path a returning display
+            // takes, and `build_overlay` shows for the same reason.
             (Some(window), OverlayTarget::Display(display)) => cover_display(&window, display)
                 .and_then(|()| window.show())
                 .map_err(|why| why.to_string()),
@@ -3098,13 +3113,6 @@ fn main() {
             }
             place_overlays(app.handle(), &covered)?;
 
-            if std::env::var_os("AI_BUDDY_FORCE_DISPLAY_LOSS").is_some()
-                && covered.len() > 1
-            {
-                eprintln!("overlay: forcing one display lost after initial placement");
-                place_overlays(app.handle(), &covered[..1])?;
-            }
-
             // The sprite size is the first Instance's idle Animation, blown
             // up. Here because scripts/verify-overlay.sh crops a screenshot
             // to it, and that script runs one Instance.
@@ -3410,18 +3418,40 @@ mod tests {
         }
     }
 
+    /// A two-display Mac, the arrangement #868 was reported on.
+    const PRIMARY: Rect = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+    };
+
+    const SECOND: Rect = Rect {
+        x: 1920.0,
+        y: 0.0,
+        width: 1512.0,
+        height: 982.0,
+    };
+
     #[test]
     fn display_loss_keeps_the_unassigned_overlay_inactive() {
-        let primary = Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 1920.0,
-            height: 1080.0,
-        };
-
         assert_eq!(
-            overlay_targets(&[primary], 2),
-            vec![OverlayTarget::Display(primary), OverlayTarget::Inactive]
+            overlay_targets(&[PRIMARY], 2),
+            vec![OverlayTarget::Display(PRIMARY), OverlayTarget::Inactive]
+        );
+    }
+
+    /// Production change that would fail this: dropping the overlay that lost
+    /// its display out of the plan, which is what closing it did. A returning
+    /// display has to find the same label and cover it again.
+    #[test]
+    fn a_returning_display_takes_its_overlay_back() {
+        assert_eq!(
+            overlay_targets(&[PRIMARY, SECOND], 2),
+            vec![
+                OverlayTarget::Display(PRIMARY),
+                OverlayTarget::Display(SECOND)
+            ]
         );
     }
 
