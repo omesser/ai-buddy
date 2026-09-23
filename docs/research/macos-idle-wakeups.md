@@ -608,6 +608,41 @@ arm's P-Cluster spread down from 33 points to 7.5, and the answer is still
 Inconclusive, now because the effect is under the instrument's floor rather than
 under the room's noise.
 
+## Does ai-buddy keep the machine awake? No
+
+This is the question "deep sleep prevention" is usually reaching for, and it is
+not the question idle residency answers. macOS decides system and display sleep
+from `IOPMAssertion`, not from C-states. A process keeps the machine awake only
+by taking an assertion out, so the check is one command and it is decisive.
+
+Measured 2026-09-24, release binary, overlay up, `AI_BUDDY_DIRECTOR=0`:
+
+```
+$ pmset -g assertions            # before launch
+   PreventUserIdleDisplaySleep    0
+   PreventSystemSleep             0
+   PreventUserIdleSystemSleep     1
+   pid 80906(caffeinate) ...  pid 559(powerd) ...
+
+$ pmset -g assertions            # ai-buddy running
+   PreventUserIdleDisplaySleep    0
+   PreventSystemSleep             0
+   PreventUserIdleSystemSleep     1
+   (no assertion names ai-buddy)
+```
+
+The count does not move and nothing names the buddy. The single assertion
+present belongs to `caffeinate` and `powerd` and predates the launch, so take
+the baseline in the same session rather than reading a lone count as ownership.
+
+So the display and the system sleep on their normal idle timers with ai-buddy
+running. What the buddy does cost is package idle, about 2.32 wakeups a second
+while perched, which is a different and much smaller claim. #741 owns reducing
+that.
+
+Run this before reaching for residency. It took one command and answered what
+two rounds of interleaved `powermetrics` captures could not.
+
 ## What "C-state" means on this hardware
 
 #431 asks for "C3/C6/C7 residency," which is Intel nomenclature. This machine
@@ -636,6 +671,9 @@ The comparison this section could not make when it was written, buddy against
 no buddy, is now in "Baseline (no ai-buddy) and hidden, interleaved" above,
 and reaches the same verdict for the same reason: the no-app arm's residency
 moved by more between rounds than one process could move it at all.
+
+If what you want to know is whether the buddy stops the machine sleeping, this
+section is the wrong one. See "Does ai-buddy keep the machine awake?" above.
 
 ## Gotchas
 
