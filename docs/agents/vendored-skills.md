@@ -15,6 +15,18 @@ stays on across turns once entered, so enter it only when asked for by name.
 were written for their authors' projects. The table is not exhaustive; the rule
 holds for a collision it misses.
 
+**A path a vendored skill names is relative to that skill, not to the
+repository root.** `poteto-mode`'s babysit playbook says PR status comes from
+`scripts/watch-pr/watch-pr`; here that is
+`.agents/skills/poteto-mode/scripts/watch-pr/watch-pr`, and it runs — it needs
+`bun`, which the launcher's shebang names. A few references instead carry
+upstream's own plugin root, as in `pstack/skills/poteto-mode/scripts/check-plan.mjs`;
+drop the `pstack/skills/` prefix and read the rest under `.agents/skills/`.
+Neither shape resolves from the repository root, and an agent that gets "no such
+file" there quietly invents a workaround rather than reporting the miss.
+`tests/skills-script-refs.test.js` resolves every runnable path the skills name
+and fails on one that is genuinely absent.
+
 **A personal copy beats the vendored one.** Claude Code resolves enterprise over
 personal over project, so a skill in someone's `~/.claude/skills/` shadows the
 vendored copy and the vendored copy is what everyone else gets. Cursor
