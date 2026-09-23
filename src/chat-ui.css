@@ -862,7 +862,7 @@ body {
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: end;
   gap: 8px;
   padding: 0 18px;
   font-size: 12.5px;
@@ -870,7 +870,13 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* Column-reverse fills the reserved box from the composer upwards. A short
+   thought sits on the composer instead of stranding four blank lines under it,
+   and a thought past five lines stays pinned to the words being written now,
+   which a scroll container anchored at the top would scroll out of sight. */
 .thought-text {
+  display: flex;
+  flex-direction: column-reverse;
   height: calc(1.45em * 5);
   overflow-y: auto;
   overflow-wrap: anywhere;
@@ -878,7 +884,9 @@ body {
   line-height: 1.45;
 }
 
+/* Back to a block: `text-overflow` has no effect on a flex container. */
 .thought.is-collapsed .thought-text {
+  display: block;
   height: 1.45em;
   overflow: hidden;
   white-space: nowrap;

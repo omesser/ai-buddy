@@ -6,8 +6,12 @@ import { mountThoughtStrip } from "../src/chat-strip.js";
 
 const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
 
+// The whole selector is escaped, not just its first character: an unescaped
+// `.` matches any character, so a typo'd selector silently finds a neighbouring
+// rule and the assertions below pass against the wrong declarations.
 function rule(selector) {
-  return css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+  const literal = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return css.match(new RegExp(`${literal}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
 }
 
 function node() {
@@ -86,14 +90,23 @@ test("the Chat control collapses thinking and remembers that preference", () => 
   assert.equal(next.toggle.attributes["aria-expanded"], "false");
 });
 
-test("expanded thinking reserves five lines and scrolls within them", () => {
+// A guard on the stylesheet, not on behavior: `node --test` has no layout
+// engine, so the height that keeps the transcript still cannot be measured
+// here. It fails when an edit takes the box off its fixed five lines.
+test("expanded thinking reserves five lines and fills them from the bottom", () => {
   const expanded = rule(".thought-text");
   assert.match(expanded, /height:\s*calc\(1\.45em \* 5\)/);
   assert.match(expanded, /overflow-y:\s*auto/);
   assert.match(expanded, /white-space:\s*pre-wrap/);
+  assert.match(expanded, /flex-direction:\s*column-reverse/);
 
-  const collapsed = rule(".thought\.is-collapsed \.thought-text");
+  const collapsed = rule(".thought.is-collapsed .thought-text");
   assert.match(collapsed, /height:\s*1\.45em/);
   assert.match(collapsed, /white-space:\s*nowrap/);
   assert.match(collapsed, /text-overflow:\s*ellipsis/);
+  assert.match(
+    collapsed,
+    /display:\s*block/,
+    "text-overflow is ignored on the flex container the expanded rule makes",
+  );
 });
