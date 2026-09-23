@@ -71,7 +71,7 @@ test("the send key reuses the submit path rather than opening a second one", () 
 // rests at the single line it has always been and a paste scrolls inside it.
 function ruleBlock(selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
+  const match = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`));
   assert.ok(match, `${selector} has no rule of its own`);
   return match[1];
 }

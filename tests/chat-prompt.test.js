@@ -12,7 +12,7 @@ const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8")
 
 function ruleBlock(source, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
+  const match = source.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`));
   assert.ok(match, `${selector} has no rule of its own`);
   return match[1];
 }
