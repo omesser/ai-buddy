@@ -846,3 +846,40 @@ test("showError clears and hides footer to prevent empty-payload wipes (Bug 2)",
 
   delete globalThis.document;
 });
+
+test("a redraw preserves open disclosure state across rebuild", () => {
+  stubDocument();
+  const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
+  const root = {
+    children: [],
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+    querySelectorAll(selector) {
+      if (selector === "details") {
+        return this.children.flatMap(walk).filter((node) => node.tagName === "details");
+      }
+      return [];
+    },
+  };
+
+  const tab = MODEL_API.form.tabs.find((t) => t.title === "Presence");
+  render(root, tab, MODEL_API.values);
+
+  const firstDetails = root.querySelectorAll("details");
+  assert.ok(firstDetails.length > 0, "the Presence tab has disclosure rows");
+
+  firstDetails[0].open = true;
+  if (firstDetails.length > 1) firstDetails[1].open = true;
+
+  render(root, tab, MODEL_API.values);
+
+  const secondDetails = root.querySelectorAll("details");
+  assert.equal(secondDetails[0].open, true, "first disclosure stays open across redraw");
+  if (secondDetails.length > 1) {
+    assert.equal(secondDetails[1].open, true, "second disclosure stays open across redraw");
+  }
+});
