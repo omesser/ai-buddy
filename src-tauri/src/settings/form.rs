@@ -2019,6 +2019,7 @@ mod tests {
         assert_eq!(placed, headings.len(), "a heading is on two tabs");
 
         let mut expected = vec![
+            "Appearance",
             "Blank AI",
             "Character",
             "Model / API",

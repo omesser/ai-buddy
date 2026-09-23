@@ -130,6 +130,30 @@
           "status": null
         },
         {
+          "heading": "Appearance",
+          "rows": [
+            {
+              "type": "Popup",
+              "id": "chat_ui",
+              "label": "Chat UI",
+              "writes": "ChatUI",
+              "help": "How the chat window looks.",
+              "options": [
+                "Minimal",
+                "Terminal",
+                "Glass"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": null,
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
           "heading": "Instances",
           "rows": [
             {

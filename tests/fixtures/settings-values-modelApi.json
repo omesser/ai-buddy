@@ -5,6 +5,7 @@
   "byo_steps": "Run the line above in a terminal, then start claude.",
   "byo_token": "",
   "capturable": true,
+  "chat_ui": "Minimal",
   "character": "bmo",
   "consent_accessibility": true,
   "consent_input_monitoring": false,
