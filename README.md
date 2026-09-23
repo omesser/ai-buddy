@@ -226,7 +226,7 @@ Two transports, two distinct axes:
 
 ### Computer use
 
-ai-buddy never reads screen pixels. Sensing is OS window metadata — owner, title, bounds, frontmost app, idle — so `describe_screen` describes the window layout, not what is on screen. The buddy takes no screenshots, runs no OCR, and embeds no vision model for desktop content (ADR-0031). The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
+ai-buddy never reads screen pixels. Sensing is OS window metadata — owner, title, bounds, frontmost app, idle — so `describe_screen` describes the window layout, not what is on screen. The buddy takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
 
 That bounds ai-buddy's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through ai-buddy, whose MCP serves no input events.
 
