@@ -3003,7 +3003,6 @@ fn main() {
                 consent::CapabilityId::Accessibility,
                 settings.use_accessibility,
             );
-            #[cfg(not(target_os = "windows"))]
             consent::set_wanted(
                 consent::CapabilityId::WindowTitles,
                 settings.use_window_titles,

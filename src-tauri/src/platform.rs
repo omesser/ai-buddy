@@ -728,10 +728,16 @@ pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     }
 }
 
-/// Titles from `GetWindowText`. Windows consent gate is #912 (out of this PR).
+/// Titles from `GetWindowText`, gated behind WindowTitles consent.
 /// Owner is still the process image, never the title, matching the geometry path.
 #[cfg(not(unix))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
+    if !crate::consent::usable(
+        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::live(),
+    ) {
+        return Vec::new();
+    }
     windows::visible_window_titles()
 }
 
@@ -879,21 +885,29 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    let source = windows::WindowsWindowSource::new({
-        let cache = cache.clone();
-        let app_clone = app.clone();
-        move || {
-            if due(&refreshed) {
-                *cache.0.lock().unwrap() = read_displays(&app_clone);
-            }
+    let source = windows::WindowsWindowSource::new(
+        {
+            let cache = cache.clone();
+            let app_clone = app.clone();
+            move || {
+                if due(&refreshed) {
+                    *cache.0.lock().unwrap() = read_displays(&app_clone);
+                }
 
-            let displays = cache.read();
-            (
-                displays.usable_frames,
-                displays.dock.map(|(bounds, _)| bounds),
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
+            }
+        },
+        || {
+            crate::consent::usable(
+                crate::consent::CapabilityId::WindowTitles,
+                crate::consent::live(),
             )
-        }
-    });
+        },
+    );
 
     (source, cache)
 }
@@ -1331,6 +1345,26 @@ mod tests {
         assert!(
             without_wanted.is_empty(),
             "list_window_titles must return empty when WindowTitles is not wanted"
+        );
+    }
+
+    /// Windows list_window_titles must gate behind WindowTitles consent.
+    /// Probe always grants (no system dialog), but wanted must still gate.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_mcp_window_titles_require_consent() {
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, false);
+        let without_wanted = list_window_titles();
+        assert!(
+            without_wanted.is_empty(),
+            "list_window_titles must return empty when WindowTitles is not wanted"
+        );
+
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, true);
+        let with_wanted = list_window_titles();
+        assert!(
+            !with_wanted.is_empty() || cfg!(not(windows)),
+            "list_window_titles should return titles when wanted (may be empty in test env)"
         );
     }
 }

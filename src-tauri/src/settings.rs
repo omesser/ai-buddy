@@ -1168,7 +1168,6 @@ impl SettingsSession {
         }
         #[cfg(not(target_os = "linux"))]
         let prompt_ax = patch.use_accessibility == Some(true);
-        #[cfg(not(target_os = "windows"))]
         let prompt_wt = patch.use_window_titles == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
@@ -1181,7 +1180,6 @@ impl SettingsSession {
         apply_and_seed(&mut settings, patch);
         #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
-        #[cfg(not(target_os = "windows"))]
         consent::set_wanted(CapabilityId::WindowTitles, settings.use_window_titles);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
@@ -1249,7 +1247,6 @@ impl SettingsSession {
         if prompt_ax {
             self.enable_consent(CapabilityId::Accessibility);
         }
-        #[cfg(not(target_os = "windows"))]
         if prompt_wt {
             self.enable_consent(CapabilityId::WindowTitles);
         }
@@ -1379,11 +1376,10 @@ pub enum BoolField {
     /// not gated: the file carries it anywhere.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     Capturable,
-    // The consent rows. Linux and macOS both offer WindowTitles; Accessibility
-    // is macOS-only. The patch fields are not gated; the file carries them. #250.
+    // The consent rows. All three platforms offer WindowTitles; Accessibility
+    // is macOS and Windows. The patch fields are not gated; the file carries them. #250.
     #[cfg(not(target_os = "linux"))]
     UseAccessibility,
-    #[cfg(not(target_os = "windows"))]
     UseWindowTitles,
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
@@ -1444,7 +1440,6 @@ impl SettingsPatch {
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
-            #[cfg(not(target_os = "windows"))]
             BoolField::UseWindowTitles => self.use_window_titles = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
@@ -1700,7 +1695,6 @@ impl Settings {
         match id {
             #[cfg(not(target_os = "linux"))]
             CapabilityId::Accessibility => self.use_accessibility,
-            #[cfg(not(target_os = "windows"))]
             CapabilityId::WindowTitles => self.use_window_titles,
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => self.use_input_monitoring,
@@ -2471,10 +2465,13 @@ mod tests {
                 ["Accessibility", "Screen Recording", "Input Monitoring"]
             );
             #[cfg(target_os = "windows")]
-            assert_eq!(
-                view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                ["Accessibility"]
-            );
+            {
+                assert_eq!(
+                    view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
+                    ["Accessibility", "Window Titles"]
+                );
+                assert!(!view.consent[1].granted);
+            }
             assert!(
                 view.consent[0].granted,
                 "the checkbox follows settings intent, not the OS grant"
@@ -2555,6 +2552,19 @@ mod tests {
             });
             assert!(!settings.use_window_titles);
         }
+        #[cfg(target_os = "windows")]
+        {
+            settings.apply(SettingsPatch {
+                use_window_titles: Some(true),
+                ..SettingsPatch::default()
+            });
+            assert!(settings.use_window_titles);
+            settings.apply(SettingsPatch {
+                use_window_titles: Some(false),
+                ..SettingsPatch::default()
+            });
+            assert!(!settings.use_window_titles);
+        }
         let view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/memory.md"),
@@ -2568,6 +2578,46 @@ mod tests {
             !view.consent[0].granted,
             "unchecking has to show off even if the OS still holds the grant"
         );
+
+        // Consent rows must appear in row_values by their row_id.
+        let values = view.row_values();
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(
+                values.get(form::CONSENT_ACCESSIBILITY_ID),
+                Some(&RowValue::Bool(settings.use_accessibility)),
+                "Accessibility checkbox value must match settings.use_accessibility"
+            );
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                values.get(form::CONSENT_WINDOW_TITLES_ID),
+                Some(&RowValue::Bool(settings.use_window_titles)),
+                "Window Titles checkbox value must match settings.use_window_titles"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                values.get(form::CONSENT_SCREEN_RECORDING_ID),
+                Some(&RowValue::Bool(settings.use_window_titles)),
+                "Screen Recording checkbox value must match settings.use_window_titles"
+            );
+            assert_eq!(
+                values.get(form::CONSENT_INPUT_MONITORING_ID),
+                Some(&RowValue::Bool(settings.use_input_monitoring)),
+                "Input Monitoring checkbox value must match settings.use_input_monitoring"
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                values.get(form::CONSENT_PORTAL_SCREENCAST_ID),
+                Some(&RowValue::Bool(settings.use_window_titles)),
+                "Screen Cast checkbox value must match settings.use_window_titles"
+            );
+        }
     }
 
     /// The Instances list is this view. After a dismiss the window must
