@@ -672,6 +672,11 @@ pub(crate) fn run_frame_loop(
                             session_log::new_session(&app, &live.id, "a new session was started");
                         }
                     }
+                    SettingsOp::ChatUIChanged { chat_ui } => {
+                        for live in &lives {
+                            let _ = app.emit_to(chat_label(&live.id), CHAT_UI_EVENT, &chat_ui);
+                        }
+                    }
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }

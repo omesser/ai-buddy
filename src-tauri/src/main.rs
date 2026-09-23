@@ -137,6 +137,9 @@ const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 /// replaces the whole list, and an empty one is the turn taking it away (#697).
 const CHAT_PLAN_EVENT: &str = "chat-plan";
 
+/// Chat UI selection change, telling each chat surface to swap its root class.
+const CHAT_UI_EVENT: &str = "chat-ui";
+
 /// Retires one forwarded request in every open Chat surface, by request id.
 /// The ask went to all of them and one took the click; the rest would
 /// otherwise keep offering buttons on a question already answered.

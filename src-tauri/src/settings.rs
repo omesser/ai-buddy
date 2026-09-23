@@ -724,6 +724,10 @@ pub enum SettingsOp {
     /// Not a Retarget: nothing about what answers moved, so the Completer is
     /// rebuilt from the settings the loop already holds (#679).
     NewSession,
+    /// Chat UI selection changed: swap the root class on every chat surface.
+    ChatUIChanged {
+        chat_ui: String,
+    },
 }
 
 /// Whether what a secure field holds is a key somebody typed.
@@ -1189,6 +1193,8 @@ impl SettingsSession {
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
         let reload_chat = chat_surface_reloads(&settings, &patch);
+        let chat_ui_changed = patch.chat_ui.as_ref().is_some_and(|ui| *ui != settings.chat_ui);
+        let new_chat_ui = patch.chat_ui.clone();
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and turn ceiling.
         apply_and_seed(&mut settings, patch);
@@ -1253,6 +1259,11 @@ impl SettingsSession {
         }
         if reload_chat {
             let _ = self.ops.send(SettingsOp::ReloadChat);
+        }
+        if chat_ui_changed {
+            if let Some(ui) = new_chat_ui {
+                let _ = self.ops.send(SettingsOp::ChatUIChanged { chat_ui: ui });
+            }
         }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
