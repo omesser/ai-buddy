@@ -676,6 +676,24 @@ pub fn harness_choice(title: &str) -> String {
     }
 }
 
+pub fn chat_ui_choice(title: &str) -> String {
+    match title {
+        "Minimal" => "minimal".to_string(),
+        "Terminal" => "terminal".to_string(),
+        "Glass" => "glass".to_string(),
+        _ => "minimal".to_string(),
+    }
+}
+
+pub fn chat_ui_title(value: &str) -> String {
+    match value {
+        "minimal" => "Minimal".to_string(),
+        "terminal" => "Terminal".to_string(),
+        "glass" => "Glass".to_string(),
+        _ => "Minimal".to_string(),
+    }
+}
+
 /// The label of a row an environment variable can own, whether it owns it, and
 /// status information for rendering.
 ///
@@ -1128,6 +1146,23 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 frozen: false,
                 batched: false,
                 disclosure: Some("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.".to_string()),
+                status: None,
+            }],
+        },
+        FormSection {
+            heading: "Appearance".to_string(),
+            comment: None,
+            disclosure: None,
+            status: None,
+            rows: vec![FormRow::Popup {
+                id: "chat_ui".to_string(),
+                label: Some("Chat UI".to_string()),
+                writes: TextField::ChatUI,
+                help: Some("Visual design for the chat surface.".to_string()),
+                options: vec!["Minimal".to_string(), "Terminal".to_string(), "Glass".to_string()],
+                frozen: false,
+                batched: false,
+                disclosure: Some("The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.".to_string()),
                 status: None,
             }],
         },
