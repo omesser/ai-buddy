@@ -610,11 +610,15 @@ impl Session {
         self.update_inspect(|inspect| inspect.initializing = true);
         let session = Arc::clone(self);
         thread::spawn(move || {
-            match session.attach(None) {
+            let attached = session.attach(None);
+            match &attached {
                 Ok(_) => eprintln!("harness: {} attached", session.launch.name),
                 Err(why) => {
                     eprintln!("harness: {why}; StaticDirector is in force until it answers")
                 }
+            }
+            if attached.is_err() {
+                session.update_inspect(|inspect| inspect.initializing = false);
             }
             // Chat's ReloadChat after a pick races this thread. A second
             // opening is how `inspect.missing` reaches the landing (#726).
@@ -3826,6 +3830,40 @@ mod tests {
             "initializing is false after spawn fails"
         );
         assert!(!inspect.alive, "alive is false after spawn fails");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn initializing_clears_on_spawn_failed_not_just_missing() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let (tx, rx) = mpsc::channel();
+        let launch = Launch {
+            name: "fails".into(),
+            argv: vec!["any".into()],
+        };
+        let session = Arc::new(Session::new(
+            launch,
+            Err(CwdError::Relative(PathBuf::from("relative/path"))),
+            SessionDataDir::at(dir.clone()),
+            Arc::new(Box::new(move |forwarded| {
+                let _ = tx.send(forwarded);
+            }) as Forward),
+        ));
+
+        assert!(!session.inspect().initializing);
+
+        session.spawn_preflight();
+
+        assert!(session.inspect().initializing);
+
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Forwarded::AttachSettled) => {}
+            other => panic!("expected AttachSettled, got {other:?}"),
+        }
+
+        assert!(!session.inspect().initializing);
+        assert!(!session.inspect().alive);
 
         let _ = std::fs::remove_dir_all(dir);
     }
