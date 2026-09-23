@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Keyboard-only sitting for the Settings webview (#848, #706 artefact 2).
+# Keyboard-only sitting for the Settings webview (#848, #854, #706 artefact 2).
 # Usage:
-#   ./scripts/verify-settings-keyboard-webview.sh
+#   AI_BUDDY_SETTINGS_WEBVIEW=1 ./scripts/verify-settings-keyboard-webview.sh
 #   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-keyboard-webview.sh
 #
-# Settings webview is the default. Overlay may be up. After the tray
-# open, every control is reached with Tab / Space / Enter / Escape, not AXPress.
-# Needs Accessibility (scripts/ax-settings.swift). CI does not run this.
+# Overlay may be up. After the tray open, every control is reached with
+# Tab / Space / Enter / Escape, not AXPress. Needs Accessibility
+# (scripts/ax-settings.swift). CI does not run this; the pure checks are
+# covered by scripts/test_verify_settings_keyboard.sh on fixtures.
 #
 # Stills land under .verify/; downscale before attaching. Do not commit PNGs.
 # Shares /tmp/ai-buddy-settings-overlay.lock with the #849 sitting.
@@ -24,11 +25,95 @@ failures=0
 lock_held=0
 app_pid=""
 
+TABS="Presence Character AI Privacy Development"
+
 info() { printf '\033[36m[INFO]\033[0m %s\n' "$*"; }
 pass() { printf '\033[32m[PASS]\033[0m %s\n' "$*"; }
 fail() {
   printf '\033[31m[FAIL]\033[0m %s\n' "$*"
   failures=$((failures + 1))
+}
+
+# role|title of a focused or dump line. The focused element carries a ▸ on a
+# disclosure that the dump does not, and the value column changes with state,
+# so neither takes part in the identity. Duplicate and empty titles survive
+# because the sequence is compared by position, never as a set.
+identity() {
+  awk -F'|' '{ t = $2; sub(/^▸ /, "", t); print $1 "|" t }'
+}
+
+# Enabled tabbable controls in dump order. Window chrome is skipped because
+# WKWebView's Tab cycle stays inside the page.
+expected_sequence() {
+  awk -F'|' '
+    $1 ~ /AXCloseButton|AXMinimizeButton|AXZoomButton|AXFullScreenButton/ { next }
+    $1 ~ /^(AXButton|AXCheckBox|AXPopUpButton|AXComboBox|AXDisclosureTriangle|AXRadioButton|AXTextField|AXTextArea)/ && $5 != "false" { print }
+  ' "$1" | identity
+}
+
+# One full Tab cycle: the first line repeats when focus wraps, and that repeat
+# is dropped. A cycle that never wrapped keeps every line, so the comparison
+# below sees the truncation.
+observed_sequence() {
+  awk 'NR == 1 { first = $0 } NR > 1 && $0 == first { exit } { print }' "$1" | identity
+}
+
+# The cycle starts wherever Space left focus, so the expected list is rotated
+# to that control before the ordered comparison.
+check_tab_sequence() {
+  local tab="$1" dump="$2" cycle="$3" out="$4"
+  local expect="$out/expect-$tab.txt" observed="$out/observed-$tab.txt"
+  expected_sequence "$dump" > "$expect"
+  observed_sequence "$cycle" > "$observed"
+  local start n
+  start=$(head -n 1 "$observed")
+  n=$(grep -nxF -- "$start" "$expect" | head -n 1 | cut -d: -f1)
+  if [ -z "$n" ]; then
+    fail "$tab: focus started on '$start', which is not a tabbable control in the dump"
+    return 1
+  fi
+  {
+    tail -n +"$n" "$expect"
+    head -n "$((n - 1))" "$expect"
+  } > "$out/expect-$tab.rotated.txt"
+  if diff "$out/expect-$tab.rotated.txt" "$observed" > "$out/sequence-diff-$tab.txt"; then
+    pass "$tab: Tab visited all $(wc -l < "$observed" | tr -d ' ') dump controls in dump order"
+    return 0
+  fi
+  fail "$tab: focus sequence differs from dump order (< dump, > observed)"
+  cat "$out/sequence-diff-$tab.txt"
+  return 1
+}
+
+# A tab's evidence is a nonempty still taken while a control had focus.
+check_tab_still() {
+  local tab="$1" png="$2" line="$3"
+  if [ -s "$png" ] && [ -n "$line" ] && [ "$line" != "none|||false" ]; then
+    pass "$tab: still taken with focus on $(printf '%s' "$line" | cut -d'|' -f1-2)"
+    return 0
+  fi
+  fail "$tab: no still with a focused control (png $([ -s "$png" ] && echo present || echo missing), focused '${line:-}')"
+  return 1
+}
+
+# Space, Down, Return must leave the same select focused with another value.
+check_select_commit() {
+  local before="$1" after="$2"
+  local before_role after_role before_val after_val
+  before_role=$(printf '%s' "$before" | cut -d'|' -f1)
+  after_role=$(printf '%s' "$after" | cut -d'|' -f1)
+  before_val=$(printf '%s' "$before" | cut -d'|' -f3)
+  after_val=$(printf '%s' "$after" | cut -d'|' -f3)
+  if [ "$before_role" != "$after_role" ] || [ -z "$after_val" ]; then
+    fail "<select> lost focus after Return (before '$before', after '$after')"
+    return 1
+  fi
+  if [ "$before_val" = "$after_val" ]; then
+    fail "<select> value did not commit: still '$after_val' after Down and Return"
+    return 1
+  fi
+  pass "<select> committed '$before_val' -> '$after_val'"
+  return 0
 }
 
 # Inline: shellcheck cannot see that trap calls a function.
@@ -66,8 +151,10 @@ for link in .claude .claude.json .codex .config; do
   [ -e "$HOME/$link" ] && ln -sfn "$HOME/$link" "$home/$link"
 done
 
+# An exported key outranks the Keychain store, so no modal prompt takes key
+# focus mid-sitting. A placeholder spends no tokens when Enter sets the wake.
 log="$out/app.log"
-env -u AI_BUDDY_DIRECTOR_API_KEY \
+env AI_BUDDY_DIRECTOR_API_KEY=verify-settings-keyboard \
   HOME="$home" \
   AI_BUDDY_CAPTURABLE=1 \
   AI_BUDDY_CHARACTER=timber-wolf \
@@ -103,11 +190,12 @@ still() {
   local rect
   rect=$("$ax" frame "$app_pid" 2> /dev/null) || {
     info "no Settings frame for $name"
-    return 0
+    return 1
   }
-  [ -n "$rect" ] || return 0
+  [ -n "$rect" ] || return 1
   printf '%s\n' "$rect" > "$out/last-rect"
   screencapture -x -o -R "$rect" "$out/${name}.png" 2> /dev/null
+  [ -s "$out/${name}.png" ]
 }
 
 downscale() {
@@ -117,8 +205,17 @@ downscale() {
   sips -Z 420 "$src" --out "$dst" > /dev/null
 }
 
+key_owner() {
+  osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2> /dev/null
+}
+
+# A failed focus read logs who held key focus, so a stolen-focus run reads as
+# one at the end instead of as eleven unrelated failures.
 focused() {
-  "$ax" focused "$app_pid" 2> /dev/null || echo "none|||false"
+  "$ax" focused "$app_pid" 2> /dev/null || {
+    printf '%s\n' "$(key_owner)" >> "$out/focus-lost.log"
+    echo "none|||false"
+  }
 }
 
 key() { "$ax" key "$app_pid" "$1"; }
@@ -140,7 +237,13 @@ tab_until() {
   return 1
 }
 
-TABS="Presence Character AI Privacy Development"
+is_tab_title() {
+  local t
+  for t in $TABS; do
+    [ "$1" = "$t" ] && return 0
+  done
+  return 1
+}
 
 info "Tab order on all five tabs"
 for tab in $TABS; do
@@ -148,8 +251,8 @@ for tab in $TABS; do
     key space
     sleep 0.4
     "$ax" dump "$app_pid" > "$out/dump-${tab}.txt" || fail "dump $tab"
-    still "tab-${tab}"
     count=0
+    shot=0
     first=$(focused)
     printf '%s\n' "$first" > "$out/cycle-${tab}.txt"
     key tab
@@ -159,6 +262,12 @@ for tab in $TABS; do
       printf '%s\n' "$line" >> "$out/cycle-${tab}.txt"
       count=$((count + 1))
       [ "$line" = "$first" ] && [ "$count" -gt 1 ] && break
+      # The still shows a ring on the first panel control, past the tab bar.
+      title=$(printf '%s\n' "$line" | cut -d'|' -f2)
+      if [ "$shot" -eq 0 ] && ! is_tab_title "${title#▸ }"; then
+        still "tab-${tab}" && shot=1
+        printf '%s\n' "$line" > "$out/still-${tab}-focus.txt"
+      fi
       key tab
       j=$((j + 1))
     done
@@ -169,75 +278,32 @@ for tab in $TABS; do
 done
 
 tab_order=PASS
+focus_ring=PASS
 for tab in $TABS; do
-  cycle="$out/cycle-${tab}.txt"
-  dump="$out/dump-${tab}.txt"
-  if [ ! -s "$cycle" ]; then
-    tab_order=FAIL
-    continue
-  fi
-  # Enabled tabbable roles in dump order, titles only. Window chrome is
-  # skipped because WKWebView's Tab cycle stays inside the page.
-  awk -F'|' '
-    $1 ~ /AXCloseButton|AXMinimizeButton|AXZoomButton|AXFullScreenButton/ { next }
-    $1 ~ /^(AXButton|AXCheckBox|AXPopUpButton|AXComboBox|AXDisclosureTriangle|AXRadioButton)/ && $5 != "false" { print $2 }
-    $1 ~ /^AXTextField/ && $5 != "false" { print $2 }
-    $1 ~ /^AXTextArea/ && $5 != "false" { print $2 }
-  ' "$dump" | awk 'NF && !seen[$0]++' > "$out/expect-${tab}.txt"
-  missing=0
-  while IFS= read -r title; do
-    [ -z "$title" ] && continue
-    grep -F "|${title}|" "$cycle" > /dev/null || {
-      echo "$title" >> "$out/missing-${tab}.txt"
-      missing=$((missing + 1))
-    }
-  done < "$out/expect-${tab}.txt"
-  if [ "$missing" -gt 0 ]; then
-    fail "$tab: $missing dump controls never took focus"
+  if [ ! -s "$out/cycle-${tab}.txt" ] || [ ! -s "$out/dump-${tab}.txt" ]; then
+    fail "$tab: no cycle or dump recorded"
     tab_order=FAIL
   else
-    pass "$tab: Tab reached every dump-tabbable control"
+    check_tab_sequence "$tab" "$out/dump-${tab}.txt" "$out/cycle-${tab}.txt" "$out" || tab_order=FAIL
+  fi
+  if check_tab_still "$tab" "$out/tab-${tab}.png" "$(cat "$out/still-${tab}-focus.txt" 2> /dev/null)"; then
+    downscale "$out/tab-${tab}.png" "$out/01-tab-${tab}.png"
+  else
+    focus_ring=FAIL
   fi
 done
-
-# Presence still is the tab-order artefact: a mid-form focus ring after a walk.
-if [ -f "$out/tab-Presence.png" ]; then
-  downscale "$out/tab-Presence.png" "$out/01-tab-order.png"
-else
-  tab_order=FAIL
-fi
 if [ "$tab_order" = PASS ]; then
   pass "Tab reaches every control in DOM order on all five tabs"
 else
   fail "Tab order sitting failed"
 fi
-
-# Focus ring: Character tab, one Tab into the panel, still.
-if tab_until "Character"; then
-  key space
-  sleep 0.3
-  key tab
-  key tab
-  key tab
-  key tab
-  key tab
-  still "focus-ring"
-  downscale "$out/focus-ring.png" "$out/02-focus-ring.png"
-  line=$(focused)
-  printf '%s\n' "$line" > "$out/focus-ring.txt"
-  if [ -f "$out/02-focus-ring.png" ] && [ "$line" != "none|||false" ]; then
-    pass "focus ring still taken on $(echo "$line" | cut -d'|' -f1-2)"
-    focus_ring=PASS
-  else
-    fail "focus ring still missing or nothing focused"
-    focus_ring=FAIL
-  fi
+if [ "$focus_ring" = PASS ]; then
+  pass "Focus ring still taken on all five tabs"
 else
-  fail "could not reach Character for the focus-ring still"
-  focus_ring=FAIL
+  fail "Focus ring stills incomplete"
 fi
 
-# <select> Space then arrows. Character popup is the first <select>.
+# <select> Space, Down, Return. Character popup is the first <select>.
 select_ok=FAIL
 if tab_until "Character"; then
   key space
@@ -249,25 +315,31 @@ if tab_until "Character"; then
     key tab
     s=$((s + 1))
   done
-  before=$("$ax" menus "$app_pid")
+  select_before=$(focused)
+  printf '%s\n' "$select_before" > "$out/select-before.txt"
+  menus_before=$("$ax" menus "$app_pid")
   still "select-closed"
   key space
   sleep 0.35
-  after=$("$ax" menus "$app_pid")
+  menus_after=$("$ax" menus "$app_pid")
   still "select-open"
   downscale "$out/select-open.png" "$out/05-select-space.png"
-  info "select menus before=$before after=$after focused=$(focused)"
+  info "select menus before=$menus_before after=$menus_after focused=$select_before"
   key down
   sleep 0.2
   still "select-arrow"
   key return
   sleep 0.4
-  if [ "${after:-0}" -gt "${before:-0}" ]; then
-    pass "<select> opened on Space (menu windows $before -> $after) and arrows moved"
-    select_ok=PASS
+  select_after=$(focused)
+  printf '%s\n' "$select_after" > "$out/select-after.txt"
+  select_ok=PASS
+  if [ "${menus_after:-0}" -gt "${menus_before:-0}" ]; then
+    pass "<select> opened on Space (menu windows $menus_before -> $menus_after)"
   else
-    fail "<select> Space did not add a menu-layer window ($before -> $after)"
+    fail "<select> Space did not add a menu-layer window ($menus_before -> $menus_after)"
+    select_ok=FAIL
   fi
+  check_select_commit "$select_before" "$select_after" || select_ok=FAIL
 else
   fail "could not reach Character for the <select> sitting"
 fi
@@ -360,25 +432,36 @@ else
   fi
 fi
 
+five_stills=""
+for tab in $TABS; do
+  five_stills="$five_stills ![tab-${tab}](./01-tab-${tab}.png)"
+done
 table="$out/TABLE.md"
 {
   echo '| Behaviour | Result | Still |'
   echo '| --- | --- | --- |'
-  echo "| Tab reaches every control in DOM order on all five tabs | $tab_order | ![tab-order](./01-tab-order.png) |"
-  echo "| Focus ring visible on each | $focus_ring | ![focus-ring](./02-focus-ring.png) |"
+  echo "| Tab reaches every control in DOM order on all five tabs | $tab_order |${five_stills} |"
+  echo "| Focus ring visible on each | $focus_ring |${five_stills} |"
   echo "| Escape closes | $escape_ok | ![escape](./03-escape.png) |"
   echo "| Enter applies | $enter_ok | ![enter-applies](./04-enter-applies.png) |"
-  echo "| \`<select>\` opens on Space, picks with arrows | $select_ok | ![select-space](./05-select-space.png) |"
+  echo "| \`<select>\` opens on Space, picks with arrows, commits | $select_ok | ![select-space](./05-select-space.png) |"
   echo "| \`<details>\` toggles on Enter | $details_ok | ![details-enter](./06-details-enter.png) |"
 } > "$table"
 cat "$table"
 
 echo
+echo "$out" > "$out/../settings-keyboard-webview-latest"
 if [ "$failures" -eq 0 ]; then
   pass "all checks passed - stills under $out"
-  echo "$out" > "$out/../settings-keyboard-webview-latest"
   exit 0
 fi
 fail "$failures check(s) failed - dumps and stills under $out"
-echo "$out" > "$out/../settings-keyboard-webview-latest"
+if [ -s "$out/focus-lost.log" ]; then
+  lost=$(wc -l < "$out/focus-lost.log" | tr -d ' ')
+  owners=$(sort "$out/focus-lost.log" | uniq -c | sort -rn | awk '{ $1 = $1 ":"; print }' | tr '\n' ' ')
+  info "$lost focus reads failed while key focus sat on: $owners"
+  info "another window took key focus during the sitting; rerun with nothing else raising windows before trusting these failures"
+else
+  info "every focus read answered, so these failures are not a stolen-focus artefact"
+fi
 exit 1

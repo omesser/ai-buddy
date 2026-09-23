@@ -37,6 +37,14 @@ else
   STATUS=1
 fi
 
+echo "prove-units: test_verify_settings_keyboard.sh"
+if bash scripts/test_verify_settings_keyboard.sh 2>&1 | tee "$DEST/settings-keyboard.txt"; then
+  echo "PASS settings-keyboard" | tee -a "$DEST/summary.txt"
+else
+  echo "FAIL settings-keyboard" | tee -a "$DEST/summary.txt"
+  STATUS=1
+fi
+
 # Document GUI gap for this host so Oded is not left a chore list.
 {
   echo "# GUI / overlay gap (this host)"
