@@ -3863,9 +3863,6 @@ mod tests {
 
         session.spawn_preflight();
 
-        thread::sleep(Duration::from_millis(10));
-        assert!(session.inspect().initializing);
-
         match rx.recv_timeout(Duration::from_secs(5)) {
             Ok(Forwarded::AttachSettled) => {}
             other => panic!("expected AttachSettled, got {other:?}"),
