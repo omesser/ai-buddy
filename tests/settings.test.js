@@ -871,7 +871,7 @@ test("a redraw preserves open disclosure state across rebuild", () => {
 
   const firstDetails = root.querySelectorAll("details");
   assert.ok(firstDetails.length > 0, "the Presence tab has disclosure rows");
-  
+
   firstDetails[0].open = true;
   if (firstDetails.length > 1) firstDetails[1].open = true;
 
