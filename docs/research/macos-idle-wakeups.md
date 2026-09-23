@@ -336,6 +336,7 @@ machine and expect different figures.
 | Control arm, written `main` below | `7a58e02f` — this issue's base, **before** #718 |
 | Treatment arm, written `#718` below | `9864d789` (`cursor/macos-idle-backoff-183-3b49`) |
 | Baseline, idle and hidden arms, 2026-09-23 | `dac3c1ae` (`main` after #760 and #790), macOS 26.7 (25G229), two displays |
+| Quiet-machine residency rerun, 2026-09-24 | `ecb92b8d`, macOS 26.7 (25G229), release build from `.worktrees/bench-960` |
 
 **#718 has since merged** (`8ba9481d`). So the arm labelled `#718` throughout this
 document is what `main` does today, and the arm labelled `main` is the pre-back-off
@@ -599,9 +600,13 @@ process, and it reads about 2 per second perched (2.40 [1.99–3.98]) and about
 2 per second hidden (2.03 [0.89–2.49]). That is the direct measurement of
 "does this process prevent package idle": yes, roughly twice a second, in both
 states, an amount the system-wide residency cannot see here. A residency
-comparison that could confirm it needs a machine with nothing else on it,
-ideally a laptop left alone long enough for the baseline arm to read near 100%
-idle, and this document does not have one.
+comparison that could confirm it needs a machine with nothing else on it.
+
+**That machine has since been found, and it did not change the verdict.** See
+"The quiet-machine result" below: four more interleaved rounds with the no-app
+arm's P-Cluster spread down from 33 points to 7.5, and the answer is still
+Inconclusive, now because the effect is under the instrument's floor rather than
+under the room's noise.
 
 ## What "C-state" means on this hardware
 
@@ -659,7 +664,14 @@ moved by more between rounds than one process could move it at all.
   per-process wakeup counts on macOS that this task found.
 - **This machine is not quiet, and the numbers say so.** See Headline. Do
   not read a single capture as a stable constant; a rerun on a quiet
-  machine is expected to disagree.
+  machine is expected to disagree. One has since run, and it did disagree
+  on the spreads and agree on the verdict — see "The quiet-machine result".
+- **A build immediately before a capture is a build during it.** `cargo build`
+  is not reliably a no-op on a second invocation in this tree, and the load
+  average it leaves behind outlives the process by minutes. Put the build in
+  its own step and gate the first capture on `sysctl -n vm.loadavg` coming
+  back down. Measured: load 2.49 before a 17-second relink, 4.02 in the
+  baseline capture that started straight after it.
 
 ## Completing the residency confirmation on a quiet machine
 
@@ -667,48 +679,78 @@ The last acceptance criterion in #431 asks whether per-cluster idle residency
 drops with ai-buddy running, to confirm deep sleep prevention. The baseline and
 idle measurements exist (see "Baseline (no ai-buddy) and hidden, interleaved"
 above), but were taken on a shared development machine where background activity
-produces larger residency swings than one 7.9%-CPU process can cause. This
-section documents how to complete the measurement on a quieter machine and what
-"confirm" versus "inconclusive" looks like.
+produces larger residency swings than one 7.9%-CPU process can cause.
+
+**#960 wrote the protocol below to settle that on a quiet machine, and this
+section now carries both halves: its instructions, and the run they were written
+to get.** The protocol ran on 2026-09-24 against `ecb92b8d`. The verdict is in
+"The quiet-machine result" after the protocol block, and it is
+**Inconclusive** — on #960's own definitions, and for a different reason than
+#931 was.
 
 ### Prerequisites
 
 - A Mac with no other builds or agents running in the background
-- Ideally left alone long enough for the baseline arm to read near 100% idle
-  on at least one cluster (P-Cluster on Apple Silicon, or equivalent on Intel)
 - Non-interactive `sudo` for powermetrics (`sudo -n true` succeeds)
 - A release binary built from `main` at the commit to be measured
+- The 1-minute load average back at its floor before the first capture, checked
+  with `sysctl -n vm.loadavg`, not assumed from the build having exited
+
+**A quiet Apple Silicon Mac does not read near 100% idle on either cluster, and
+waiting for that is waiting forever.** The run below was as quiet as this
+machine gets (load 2.2–2.8, no `cargo`, no `rustc`, no other `ai-buddy`) and its
+no-app arm still read 83.8% median on P-Cluster and 25.3% on E-Cluster. macOS
+parks its own background work on the E-cores, so E-Cluster idle residency is
+structurally low on a desktop that is merely unattended. Treat the baseline
+arm's *spread across rounds* as the quietness signal instead, which is what the
+comparison actually needs. Under 10 points on P-Cluster is quiet enough to
+attempt the measurement; #931 saw 33.
 
 ### Protocol
 
 Run four interleaved rounds of baseline and idle-perched, following the same
-A/B pattern used in "Baseline (no ai-buddy) and hidden, interleaved":
+A/B pattern used in "Baseline (no ai-buddy) and hidden, interleaved".
+
+**Build in a separate step and wait for the load average to come back down.**
+The build is not part of the capture loop, and it is not enough to put it at the
+top of the same script. On the 2026-09-24 run the load average was 2.49 at the
+moment the loop was launched, the loop's own `cargo build` relinked the
+`ai-buddy` crate in 17 seconds, and round 1's baseline arm — the very next
+command — recorded 4.02. That capture was discarded and the run restarted with
+the build outside the loop. A build during a capture is the confound that made
+#931 inconclusive, and a build immediately *before* one is the same confound.
 
 ```bash
-# Build the binary once
+# Step 1, on its own. Build, then wait for the machine to come back down.
 cargo build -p ai-buddy --release
 BINARY="$PWD/target/release/ai-buddy"
+until awk -v l="$(sysctl -n vm.loadavg | awk '{print $2}')" \
+  'BEGIN{exit !(l < 2.6)}'; do sleep 15; done
+```
 
-# Create output directory
+Replace `2.6` with whatever this machine reads when it is doing nothing.
+`cargo build` is not reliably a no-op on a second invocation here, so do not
+leave it inside the loop as insurance.
+
+```bash
+# Step 2. Four interleaved rounds: baseline, idle, baseline, idle, ...
 OUT_BASE=".verify/residency-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT_BASE"
 
-# Run four interleaved rounds: baseline, idle, baseline, idle, baseline, idle, baseline, idle
 for i in 1 2 3 4; do
-  echo "=== Round $i ===" | tee -a "$OUT_BASE/summary.txt"
+  echo "=== Round $i === $(date) load=$(sysctl -n vm.loadavg)" \
+    | tee -a "$OUT_BASE/summary.txt"
 
-  # Baseline: no ai-buddy running
+  # Baseline: no ai-buddy running. The script refuses if one is.
   scripts/bench-wakeups-macos.sh --scenario baseline --duration 45 \
     --out "$OUT_BASE/round${i}-baseline"
 
-  # Wait for system to settle
   sleep 10
 
-  # Idle perched
+  # Idle perched.
   scripts/bench-wakeups-macos.sh --binary "$BINARY" --scenario idle --duration 45 \
     --out "$OUT_BASE/round${i}-idle"
 
-  # Parse and record results
   echo "Round $i baseline:" >> "$OUT_BASE/summary.txt"
   scripts/parse-powermetrics.py "$OUT_BASE/round${i}-baseline/powermetrics.txt" \
     --process '' >> "$OUT_BASE/summary.txt"
@@ -721,22 +763,107 @@ for i in 1 2 3 4; do
 
   sleep 10
 done
-
-# Summary: extract cluster residency from all runs
-echo "" >> "$OUT_BASE/summary.txt"
-echo "=== Cluster Residency Summary ===" >> "$OUT_BASE/summary.txt"
-for i in 1 2 3 4; do
-  echo "Round $i:" >> "$OUT_BASE/summary.txt"
-  grep -E 'E-Cluster idle residency|P-Cluster idle residency' \
-    "$OUT_BASE/round${i}-baseline/powermetrics.txt" | \
-    scripts/parse-powermetrics.py "$OUT_BASE/round${i}-baseline/powermetrics.txt" --process '' | \
-    grep -E 'E-Cluster|P-Cluster' >> "$OUT_BASE/summary.txt" 2>/dev/null || true
-  grep -E 'E-Cluster idle residency|P-Cluster idle residency' \
-    "$OUT_BASE/round${i}-idle/powermetrics.txt" | \
-    scripts/parse-powermetrics.py "$OUT_BASE/round${i}-idle/powermetrics.txt" --pid "$IDLE_PID" | \
-    grep -E 'E-Cluster|P-Cluster' >> "$OUT_BASE/summary.txt" 2>/dev/null || true
-done
 ```
+
+The per-round parse above is the whole summary. An earlier draft of this
+protocol followed it with a second loop that re-extracted cluster residency, and
+that loop does nothing: it pipes a `grep` of the capture into
+`parse-powermetrics.py`, which reads its file argument and never reads stdin, and
+it reuses the `IDLE_PID` the first loop happened to leave in scope — round 4's —
+for all four rounds. The two lines it prints are right anyway, because cluster
+residency is system-wide and does not depend on the PID, which is exactly what
+makes it worth deleting rather than fixing. Read the per-round blocks in
+`summary.txt`, or reduce the eight `powermetrics.txt` files with a parser of
+your own.
+
+### The quiet-machine result
+
+Run 2026-09-24 on the same `Mac15,7` as everything above, macOS 26.7 (25G229),
+release build of `ecb92b8d` from `.worktrees/bench-960`. Four rounds, baseline
+then idle, 45 seconds each, 10 seconds between arms. Every capture's `meta.txt`
+recorded `cargo_or_rustc_running: 0`, no `ai-buddy` alive before a baseline arm,
+and the load average below. Per-process columns are the exact PID the script
+launched; cluster residency and package power are system-wide, over the whole
+45-second capture rather than the idle-family bucket, so the two arms are
+measured the same way.
+
+| Round | Arm | n | Wakeups/sec (interrupt) | Wakeups/sec (pkg-idle) | CPU% | E-Cluster idle % | P-Cluster idle % | Package mW | Load (1 min) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | baseline | 45 | — | — | — | 25.0 | 83.5 | 790 | 2.58 |
+| 1 | idle | 45 | 178.9 | 2.28 | 8.4 | 24.4 | 81.9 | 676 | 2.24 |
+| 2 | baseline | 45 | — | — | — | 25.6 | 88.7 | 622 | 2.60 |
+| 2 | idle | 45 | 179.8 | 2.44 | 8.5 | 26.3 | 81.7 | 635 | 2.81 |
+| 3 | baseline | 45 | — | — | — | 26.2 | 84.0 | 830 | 2.21 |
+| 3 | idle | 45 | 179.9 | 1.77 | 8.0 | 22.0 | 78.9 | 855 | 2.82 |
+| 4 | baseline | 45 | — | — | — | 23.0 | 81.2 | 1160 | 3.54 |
+| 4 | idle | 45 | 186.4 | 2.36 | 8.4 | 24.0 | 79.2 | 762 | 3.01 |
+
+Nothing was dropped. Round 4's baseline arm is the noisiest capture in the set
+(load 3.54, 1160 mW, and the lowest P-Cluster idle of any baseline at 81.2%),
+and it is the round that most narrows the gap this section is looking for. It
+stays, for the same reason #931's round 3 stayed.
+
+**Median and range per arm, four rounds:**
+
+| | baseline | idle |
+|---|---|---|
+| Wakeups/sec (interrupt) | — | 179.8 [178.9–186.4] |
+| Wakeups/sec (pkg-idle) | — | 2.32 [1.77–2.44] |
+| CPU% | — | 8.4 [8.0–8.5] |
+| E-Cluster idle residency | 25.3% [23.0–26.2%] | 24.2% [22.0–26.3%] |
+| P-Cluster idle residency | 83.8% [81.2–88.7%] | 80.4% [78.9–81.9%] |
+| Package CPU power | 810 mW [622–1160] | 719 mW [635–855] |
+| Load average (1 min) | 2.59 [2.21–3.54] | 2.81 [2.24–3.01] |
+
+**The machine was quiet, and the numbers prove it rather than assert it.** Every
+spread narrowed against #931's run on the same hardware: the no-app arm's
+E-Cluster range went from 12.2 points to 3.2, its P-Cluster range from 32.9
+points to 7.5, and the idle arm's CPU% from a 3.0-point spread to 0.5. The
+precondition this protocol was written to obtain was obtained.
+
+**Same-round deltas, idle minus baseline:**
+
+| Round | E-Cluster | P-Cluster | Package power |
+|---|---|---|---|
+| 1 | −0.5 pts | −1.7 pts | −113 mW |
+| 2 | +0.7 pts | −7.0 pts | +13 mW |
+| 3 | −4.1 pts | −5.1 pts | +25 mW |
+| 4 | +1.0 pts | −2.1 pts | −398 mW |
+
+**P-Cluster now resolves a direction, and it is the direction #431 predicted.**
+All four rounds read less P-Cluster idle residency with the buddy perched than
+with nothing running. #931's four rounds split two up and two down on the same
+column, which is what "cannot say" looked like. That is the one thing a quiet
+machine bought. E-Cluster still swings both ways (−0.5, +0.7, −4.1, +1.0) and
+resolves nothing.
+
+**It does not resolve a magnitude, and on #960's own bar that is
+Inconclusive.** The P-Cluster medians are 83.8% against 80.4%, a gap of 3.4
+points where the protocol asks for at least 5. The ranges overlap by 0.6 points
+(baseline bottoms out at 81.2%, idle tops out at 81.9%), which meets the
+"minimally overlapping" half of the Confirmed bar and only that half. Against
+the Inconclusive definition the answer is plainer still: the baseline arm's own
+variation across rounds is 7.5 points, more than twice the 3.4-point gap it
+would have to explain. Four rounds of one sign is a sign test at p = 0.0625,
+suggestive and not significant.
+
+**This is a different Inconclusive from #931's, and that is the finding.** #931
+said the machine was too loud to see the effect. This says the machine is quiet
+and the effect is still smaller than cluster residency can resolve, which is
+what the arithmetic predicted all along: a host process at 8.4% of one core,
+plus the WebKit services #741 measured at roughly the same again, is a few
+percent of a six-core P-Cluster's capacity, and a few percent is where the
+measured 3.4-point gap sits. Chasing a larger gap means chasing something that
+is not there. Another four rounds would narrow the ranges and not move the
+ceiling.
+
+**The column that does answer the question has not changed.** Per-process
+`pkg-idle` wakeups read 2.32/sec [1.77–2.44] perched, in line with the
+2.40/sec #931 measured on a loud machine. That is a direct, per-PID count of
+wakeups that pulled the whole package out of idle, it resolves cleanly in both
+environments, and it says yes: this process prevents package idle, about twice
+a second. The system-wide residency column cannot see a process that small, and
+two runs on two noise floors now say so.
 
 ### What "confirm" versus "inconclusive" looks like
 
@@ -747,10 +874,14 @@ ranges:
 lower cluster idle residency than baseline, with non-overlapping or minimally
 overlapping ranges across the four rounds. Specifically:
 
-- P-Cluster (or Intel equivalent) baseline median near 90-100% idle
 - P-Cluster idle-perched median lower by ≥5 percentage points
 - Ranges that do not fully overlap (e.g., baseline 88-95%, idle 75-82%)
 - E-Cluster may show smaller or no effect (it runs lower-power cores)
+
+The first bar this list carried, "baseline median near 90-100% idle," is struck.
+The quiet run above never reached it and no unattended Apple Silicon desktop
+will; see Prerequisites. It was a precondition on the machine, not a property of
+the result, and leaving it in makes a reachable Confirmed look unreachable.
 
 Example of confirmation:
 
@@ -763,30 +894,50 @@ The 14-point gap with non-overlapping ranges confirms the process prevents
 deep sleep.
 
 **Inconclusive (noise floor):** The baseline arm's own variation across rounds
-is as large as or larger than the difference between baseline and idle. This is
-what the shared-machine measurements showed:
+is as large as or larger than the difference between baseline and idle. Both
+runs of this protocol landed here, for reasons worth telling apart.
 
-- Baseline P-Cluster: 84.1% [59.2-92.1%] — 33-point range
-- Idle P-Cluster: 84.1% [71.1-87.8%]
-- Same-round deltas swing both ways (sometimes more idle with buddy than without)
+| | #931, shared machine | 2026-09-24, quiet machine |
+|---|---|---|
+| Baseline P-Cluster | 84.1% [59.2–92.1%] | 83.8% [81.2–88.7%] |
+| Idle P-Cluster | 84.1% [71.1–87.8%] | 80.4% [78.9–81.9%] |
+| Baseline's own spread | 32.9 pts | 7.5 pts |
+| Median gap | 0.0 pts | 3.4 pts |
+| Same-round delta signs | 2 down, 2 up | 4 down |
 
-In this case, the machine's background activity dominates the signal. The
-measurement is not wrong, it is unanswerable on that machine. The `pkg-idle`
-wakeup count (about 2/sec for ai-buddy) is the direct per-process measurement
-that does resolve, but it does not answer the cluster-level residency question
-the acceptance box asks.
+On the shared machine the background activity dominated the signal and the
+measurement was unanswerable there. On the quiet machine the signal is not
+dominated and the direction comes out, but the gap is still smaller than the
+baseline's own spread and short of the 5-point bar. **A second Inconclusive on a
+quiet machine is not a repeat of the first.** It says the effect is below what
+system-wide cluster residency can resolve for a process this size, which is a
+result about the instrument rather than about the room.
+
+Either way the `pkg-idle` wakeup count (about 2/sec for ai-buddy) is the direct
+per-process measurement that does resolve, and it does not answer the
+cluster-level residency question the acceptance box asks.
 
 ### Script validation
 
-The existing `scripts/bench-wakeups-macos.sh` already:
+The claim that the harness needed no changes survived the run. Eight captures,
+eight clean exits, no edit to `scripts/bench-wakeups-macos.sh` or
+`scripts/parse-powermetrics.py`. It already:
+
 - Refuses to run a baseline while any `ai-buddy` process is alive
 - Records load average and `cargo`/`rustc` status in `meta.txt`
 - Filters `powermetrics` output by exact PID (not process name)
 - Proves the scenario via frame log (Summon for chat, `presence: hidden` for hidden)
 
-No script gaps were identified that need fixing for the quiet-machine rerun.
-The inconclusive result from #931 was environmental (shared machine), not a
-tooling defect.
+The inconclusive result from #931 was environmental, not a tooling defect, and
+that reading held up.
+
+What did not survive the run was the surrounding protocol, in two places, both
+fixed above. The build belongs outside the capture loop behind a load-average
+gate, because the loop's own `cargo build` relinked `ai-buddy` and put 4.02 on
+the load average of the baseline capture that followed it. And the trailing
+cluster-residency loop is dead code that reads correctly by accident. Neither is
+a criticism of writing a protocol without a Mac to run it on; they are the two
+things only a run could find.
 
 ## Not measured
 
@@ -794,10 +945,12 @@ Scoped out per this task's instructions, not fabricated:
 
 - **Multi-monitor** — #424's scope, not this issue's.
 - **Baseline (no ai-buddy running)** and **hidden/fullscreen** — measured
-  since, see "Baseline (no ai-buddy) and hidden, interleaved" above. What they still do not give is a
-  clean per-cluster idle-residency comparison: on this machine the no-app
-  arm's residency is set by everything else running, not by the absence of
-  one process, and the section says so.
+  since, see "Baseline (no ai-buddy) and hidden, interleaved" above, and
+  rerun on a quiet machine in "The quiet-machine result". A clean per-cluster
+  idle-residency comparison is the one thing neither run produced, and the
+  second run says why: the effect is below what a system-wide residency
+  column can resolve for a process this size, not merely below the shared
+  machine's noise.
 - **Linux and Windows** — #431 is macOS-only (#432 covers Linux).
 - **Chat-open, interleaved** — left as a single pair per branch; see
   Chat-open above for why and for the explicit no-percentage rule that
