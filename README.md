@@ -20,6 +20,7 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 - **Reacts to gestures.** Poke, pick up, throw — it arcs, lands, and keeps going.
 - **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
 - **Lives its own life.** Walks, idles, sits, sleeps — even with the Director off.
+- **Never reads your screen.** Sensing is window metadata, never pixels: no screenshots, no OCR. An agent that needs to see and act on your desktop gets that from its Harness or an MCP server you attach — see [Computer use](#computer-use).
 
 ## See It
 
@@ -222,6 +223,14 @@ Two transports, two distinct axes:
 | `ai-buddy://action-log` | The current Action Log file only. Rotated siblings are not this resource. A large current file is tailed to complete JSONL lines. |
 
 **Explicitly not served:** mouse/keyboard/Executor tools (ADR-0003). No click, no type, no input events by design.
+
+### Computer use
+
+ai-buddy never reads screen pixels. Sensing is OS window metadata — owner, title, bounds, frontmost app, idle — so `describe_screen` describes the window layout, not what is on screen. The buddy takes no screenshots, runs no OCR, and embeds no vision model for desktop content (ADR-0031). The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
+
+That bounds ai-buddy's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through ai-buddy, whose MCP serves no input events.
+
+The portable option across the Harnesses above is [cua-driver](https://github.com/trycua/cua) (MIT; macOS, Windows, Linux), attached over stdio MCP. [Connect your agent to Cua Driver](https://cua.ai/docs/how-to-guides/driver/connect-your-agent) carries the per-client registration, and [MCP tools](https://cua.ai/docs/reference/cua-driver/mcp-tools) lists what it exposes. Attach it deliberately — it drives the real desktop with your signed-in sessions, and its permission mode is chosen by the process that owns the driver runtime, not by the agent asking. Some Harnesses bring computer use of their own instead; the [Capture decision note](./docs/research/capture-drop-and-harness-cu-path.md) has the per-Harness table and the other drivers surveyed.
 
 ## Platform Support
 
