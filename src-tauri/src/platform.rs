@@ -498,7 +498,8 @@ pub fn read_mask_rebuild_stats() -> (u64, u64) {
     x11::read_mask_rebuild_stats()
 }
 
-/// Stub for non-X11 platforms.
+/// Non-X11 platforms use different input region APIs (SetWindowRgn on Windows,
+/// set_ignore_cursor_events on macOS) and are not instrumented yet.
 #[cfg(not(all(unix, not(target_os = "macos"))))]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
     (0, 0)
