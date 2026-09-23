@@ -87,18 +87,12 @@ pub struct SettingsView {
     /// all of that again before it did anything (#273).
     pub development_switches: HashMap<String, bool>,
     pub development_texts: HashMap<String, String>,
-    /// Consent checkbox values keyed by form row id, flattened into top-level
-    /// JSON keys so `settings.js` can read `values[row.id]` directly. Without
-    /// flatten, the nested map makes `values["consent_window_titles"]` undefined.
-    #[serde(flatten)]
-    pub consent_checkboxes: HashMap<String, bool>,
     /// Live OS grants, not a file field. The window rereads them on become-key.
     pub consent: Vec<ConsentRow>,
     /// The name Privacy & Security will show for this process.
     pub consent_listed_as: String,
 }
 
-<<<<<<< HEAD
 /// One row's value, in the three shapes the page draws.
 ///
 /// Untagged, so a checkbox reads a bare `true` and a text row a bare string,
@@ -111,48 +105,6 @@ pub enum RowValue {
     /// The Instances list. Objects rather than printed lines, because Dismiss
     /// has to name an Instance by its id and a line throws the id away (#875).
     Instances(Vec<InstanceRow>),
-=======
-/// The consent checkboxes, by form row id, as the window must draw them.
-///
-/// Flattens consent capabilities into checkbox values keyed by form row id
-/// so `settings.js` can read `values[row.id]`. Without this map, the nested
-/// `consent` array structure leaves checkboxes always Off (#875 class of bug).
-fn consent_checkboxes(settings: &Settings) -> HashMap<String, bool> {
-    let mut map = HashMap::new();
-    #[cfg(not(target_os = "linux"))]
-    {
-        map.insert(
-            form::CONSENT_ACCESSIBILITY_ID.to_string(),
-            settings.use_accessibility,
-        );
-    }
-    #[cfg(target_os = "macos")]
-    {
-        map.insert(
-            form::CONSENT_SCREEN_RECORDING_ID.to_string(),
-            settings.use_window_titles,
-        );
-        map.insert(
-            form::CONSENT_INPUT_MONITORING_ID.to_string(),
-            settings.use_input_monitoring,
-        );
-    }
-    #[cfg(target_os = "linux")]
-    {
-        map.insert(
-            form::CONSENT_PORTAL_SCREENCAST_ID.to_string(),
-            settings.use_window_titles,
-        );
-    }
-    #[cfg(target_os = "windows")]
-    {
-        map.insert(
-            form::CONSENT_WINDOW_TITLES_ID.to_string(),
-            settings.use_window_titles,
-        );
-    }
-    map
->>>>>>> 2e4524c9 (fix(windows): Add consent_checkboxes HashMap for webview form row binding)
 }
 
 /// The Development switches, by row id, as the window must draw them.
@@ -562,7 +514,6 @@ impl SettingsView {
             byo_token,
             development_switches: development_switches(settings),
             development_texts: development_texts(settings),
-            consent_checkboxes: consent_checkboxes(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
         }
@@ -2628,161 +2579,43 @@ mod tests {
             "unchecking has to show off even if the OS still holds the grant"
         );
 
-        // Consent checkboxes must be keyed by form row id for the webview.
+        // Consent rows must appear in row_values by their row_id.
+        let values = view.row_values();
         #[cfg(not(target_os = "linux"))]
         {
             assert_eq!(
-                view.consent_checkboxes.get(form::CONSENT_ACCESSIBILITY_ID),
-                Some(&settings.use_accessibility),
+                values.get(form::CONSENT_ACCESSIBILITY_ID),
+                Some(&RowValue::Bool(settings.use_accessibility)),
                 "Accessibility checkbox value must match settings.use_accessibility"
             );
         }
         #[cfg(target_os = "windows")]
         {
             assert_eq!(
-                view.consent_checkboxes.get(form::CONSENT_WINDOW_TITLES_ID),
-                Some(&settings.use_window_titles),
+                values.get(form::CONSENT_WINDOW_TITLES_ID),
+                Some(&RowValue::Bool(settings.use_window_titles)),
                 "Window Titles checkbox value must match settings.use_window_titles"
             );
         }
         #[cfg(target_os = "macos")]
         {
             assert_eq!(
-                view.consent_checkboxes
-                    .get(form::CONSENT_SCREEN_RECORDING_ID),
-                Some(&settings.use_window_titles),
+                values.get(form::CONSENT_SCREEN_RECORDING_ID),
+                Some(&RowValue::Bool(settings.use_window_titles)),
                 "Screen Recording checkbox value must match settings.use_window_titles"
             );
             assert_eq!(
-                view.consent_checkboxes
-                    .get(form::CONSENT_INPUT_MONITORING_ID),
-                Some(&settings.use_input_monitoring),
+                values.get(form::CONSENT_INPUT_MONITORING_ID),
+                Some(&RowValue::Bool(settings.use_input_monitoring)),
                 "Input Monitoring checkbox value must match settings.use_input_monitoring"
             );
         }
         #[cfg(target_os = "linux")]
         {
             assert_eq!(
-                view.consent_checkboxes
-                    .get(form::CONSENT_PORTAL_SCREENCAST_ID),
-                Some(&settings.use_window_titles),
+                values.get(form::CONSENT_PORTAL_SCREENCAST_ID),
+                Some(&RowValue::Bool(settings.use_window_titles)),
                 "Screen Cast checkbox value must match settings.use_window_titles"
-            );
-        }
-    }
-
-    /// Consent checkboxes must serialize as top-level JSON keys for webview binding.
-    /// settings.js reads `values["consent_window_titles"]`, not nested map access.
-    /// This test proves the serialized JSON has the top-level key, not just that
-    /// the Rust HashMap contains it.
-    #[test]
-    fn consent_checkboxes_serialize_as_toplevel_json_keys() {
-        let mut settings = Settings {
-            use_window_titles: true,
-            #[cfg(not(target_os = "linux"))]
-            use_accessibility: true,
-            ..Settings::default()
-        };
-
-        let view = SettingsView::from_parts(
-            &settings,
-            Path::new("/tmp/memory.md"),
-            None,
-            Vec::new(),
-            Vec::new(),
-            (false, String::new(), String::new()),
-            None,
-        );
-
-        let json_str = serde_json::to_string(&view).expect("SettingsView must serialize");
-        let json: serde_json::Value =
-            serde_json::from_str(&json_str).expect("Serialized JSON must parse");
-
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(
-                json.get("consent_window_titles"),
-                Some(&serde_json::Value::Bool(true)),
-                "Windows: JSON must have top-level consent_window_titles: true, got {:?}",
-                json.get("consent_window_titles")
-            );
-            assert_eq!(
-                json.get("consent_accessibility"),
-                Some(&serde_json::Value::Bool(true)),
-                "Windows: JSON must have top-level consent_accessibility: true"
-            );
-            assert!(
-                json.get("consent_checkboxes").is_none(),
-                "consent_checkboxes must be flattened, not nested"
-            );
-        }
-        #[cfg(target_os = "macos")]
-        {
-            assert_eq!(
-                json.get("consent_screen_recording"),
-                Some(&serde_json::Value::Bool(true)),
-                "macOS: JSON must have top-level consent_screen_recording: true"
-            );
-            assert_eq!(
-                json.get("consent_accessibility"),
-                Some(&serde_json::Value::Bool(true)),
-                "macOS: JSON must have top-level consent_accessibility: true"
-            );
-            assert!(
-                json.get("consent_checkboxes").is_none(),
-                "consent_checkboxes must be flattened, not nested"
-            );
-        }
-        #[cfg(target_os = "linux")]
-        {
-            assert_eq!(
-                json.get("consent_screen_cast"),
-                Some(&serde_json::Value::Bool(true)),
-                "Linux: JSON must have top-level consent_screen_cast: true"
-            );
-            assert!(
-                json.get("consent_checkboxes").is_none(),
-                "consent_checkboxes must be flattened, not nested"
-            );
-        }
-
-        // Verify false values also serialize correctly at top level
-        settings.use_window_titles = false;
-        let view_off = SettingsView::from_parts(
-            &settings,
-            Path::new("/tmp/memory.md"),
-            None,
-            Vec::new(),
-            Vec::new(),
-            (false, String::new(), String::new()),
-            None,
-        );
-        let json_str_off = serde_json::to_string(&view_off).expect("SettingsView must serialize");
-        let json_off: serde_json::Value =
-            serde_json::from_str(&json_str_off).expect("Serialized JSON must parse");
-
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(
-                json_off.get("consent_window_titles"),
-                Some(&serde_json::Value::Bool(false)),
-                "Windows: JSON must have top-level consent_window_titles: false when off"
-            );
-        }
-        #[cfg(target_os = "macos")]
-        {
-            assert_eq!(
-                json_off.get("consent_screen_recording"),
-                Some(&serde_json::Value::Bool(false)),
-                "macOS: JSON must have top-level consent_screen_recording: false when off"
-            );
-        }
-        #[cfg(target_os = "linux")]
-        {
-            assert_eq!(
-                json_off.get("consent_screen_cast"),
-                Some(&serde_json::Value::Bool(false)),
-                "Linux: JSON must have top-level consent_screen_cast: false when off"
             );
         }
     }
