@@ -661,6 +661,133 @@ moved by more between rounds than one process could move it at all.
   not read a single capture as a stable constant; a rerun on a quiet
   machine is expected to disagree.
 
+## Completing the residency confirmation on a quiet machine
+
+The last acceptance criterion in #431 asks whether per-cluster idle residency
+drops with ai-buddy running, to confirm deep sleep prevention. The baseline and
+idle measurements exist (see "Baseline (no ai-buddy) and hidden, interleaved"
+above), but were taken on a shared development machine where background activity
+produces larger residency swings than one 7.9%-CPU process can cause. This
+section documents how to complete the measurement on a quieter machine and what
+"confirm" versus "inconclusive" looks like.
+
+### Prerequisites
+
+- A Mac with no other builds or agents running in the background
+- Ideally left alone long enough for the baseline arm to read near 100% idle
+  on at least one cluster (P-Cluster on Apple Silicon, or equivalent on Intel)
+- Non-interactive `sudo` for powermetrics (`sudo -n true` succeeds)
+- A release binary built from `main` at the commit to be measured
+
+### Protocol
+
+Run four interleaved rounds of baseline and idle-perched, following the same
+A/B pattern used in "Baseline (no ai-buddy) and hidden, interleaved":
+
+```bash
+# Build the binary once
+cargo build -p ai-buddy --release
+BINARY="$PWD/target/release/ai-buddy"
+
+# Create output directory
+OUT_BASE=".verify/residency-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUT_BASE"
+
+# Run four interleaved rounds: baseline, idle, baseline, idle, baseline, idle, baseline, idle
+for i in 1 2 3 4; do
+  echo "=== Round $i ===" | tee -a "$OUT_BASE/summary.txt"
+  
+  # Baseline: no ai-buddy running
+  scripts/bench-wakeups-macos.sh --scenario baseline --duration 45 \
+    --out "$OUT_BASE/round${i}-baseline"
+  
+  # Wait for system to settle
+  sleep 10
+  
+  # Idle perched
+  scripts/bench-wakeups-macos.sh --binary "$BINARY" --scenario idle --duration 45 \
+    --out "$OUT_BASE/round${i}-idle"
+  
+  # Parse and record results
+  echo "Round $i baseline:" >> "$OUT_BASE/summary.txt"
+  scripts/parse-powermetrics.py "$OUT_BASE/round${i}-baseline/powermetrics.txt" \
+    --process '' >> "$OUT_BASE/summary.txt"
+  
+  echo "Round $i idle:" >> "$OUT_BASE/summary.txt"
+  IDLE_PID=$(grep '^pid:' "$OUT_BASE/round${i}-idle/meta.txt" | awk '{print $2}')
+  scripts/parse-powermetrics.py "$OUT_BASE/round${i}-idle/powermetrics.txt" \
+    --pid "$IDLE_PID" --frame-log "$OUT_BASE/round${i}-idle/app.log" \
+    >> "$OUT_BASE/summary.txt"
+  
+  sleep 10
+done
+
+# Summary: extract cluster residency from all runs
+echo "" >> "$OUT_BASE/summary.txt"
+echo "=== Cluster Residency Summary ===" >> "$OUT_BASE/summary.txt"
+for i in 1 2 3 4; do
+  echo "Round $i:" >> "$OUT_BASE/summary.txt"
+  grep -E 'E-Cluster idle residency|P-Cluster idle residency' \
+    "$OUT_BASE/round${i}-baseline/powermetrics.txt" | \
+    scripts/parse-powermetrics.py "$OUT_BASE/round${i}-baseline/powermetrics.txt" --process '' | \
+    grep -E 'E-Cluster|P-Cluster' >> "$OUT_BASE/summary.txt" 2>/dev/null || true
+  grep -E 'E-Cluster idle residency|P-Cluster idle residency' \
+    "$OUT_BASE/round${i}-idle/powermetrics.txt" | \
+    scripts/parse-powermetrics.py "$OUT_BASE/round${i}-idle/powermetrics.txt" --pid "$IDLE_PID" | \
+    grep -E 'E-Cluster|P-Cluster' >> "$OUT_BASE/summary.txt" 2>/dev/null || true
+done
+```
+
+### What "confirm" versus "inconclusive" looks like
+
+After running the protocol, examine the per-cluster idle residency medians and
+ranges:
+
+**Confirmed (deep sleep prevented):** The idle-perched arm shows consistently
+lower cluster idle residency than baseline, with non-overlapping or minimally
+overlapping ranges across the four rounds. Specifically:
+
+- P-Cluster (or Intel equivalent) baseline median near 90-100% idle
+- P-Cluster idle-perched median lower by ≥5 percentage points
+- Ranges that do not fully overlap (e.g., baseline 88-95%, idle 75-82%)
+- E-Cluster may show smaller or no effect (it runs lower-power cores)
+
+Example of confirmation:
+
+| Arm | P-Cluster idle % median [range] |
+|---|---|
+| baseline (no app) | 92.5% [90.1-94.2%] |
+| idle perched | 78.3% [75.8-80.1%] |
+
+The 14-point gap with non-overlapping ranges confirms the process prevents
+deep sleep.
+
+**Inconclusive (noise floor):** The baseline arm's own variation across rounds
+is as large as or larger than the difference between baseline and idle. This is
+what the shared-machine measurements showed:
+
+- Baseline P-Cluster: 84.1% [59.2-92.1%] — 33-point range
+- Idle P-Cluster: 84.1% [71.1-87.8%]
+- Same-round deltas swing both ways (sometimes more idle with buddy than without)
+
+In this case, the machine's background activity dominates the signal. The
+measurement is not wrong, it is unanswerable on that machine. The `pkg-idle`
+wakeup count (about 2/sec for ai-buddy) is the direct per-process measurement
+that does resolve, but it does not answer the cluster-level residency question
+the acceptance box asks.
+
+### Script validation
+
+The existing `scripts/bench-wakeups-macos.sh` already:
+- Refuses to run a baseline while any `ai-buddy` process is alive
+- Records load average and `cargo`/`rustc` status in `meta.txt`
+- Filters `powermetrics` output by exact PID (not process name)
+- Proves the scenario via frame log (Summon for chat, `presence: hidden` for hidden)
+
+No script gaps were identified that need fixing for the quiet-machine rerun.
+The inconclusive result from #931 was environmental (shared machine), not a
+tooling defect.
+
 ## Not measured
 
 Scoped out per this task's instructions, not fabricated:
