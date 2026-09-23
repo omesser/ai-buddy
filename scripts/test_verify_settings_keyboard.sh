@@ -38,24 +38,33 @@ expect() {
   fi
 }
 
-# Dump columns: role|title|value|placeholder|enabled|settable.
+# Dump columns: role|title|value|placeholder|enabled|settable|focusable. The
+# chrome above the AXWebArea is focusable and is still not a tab stop, and the
+# two AXGroup rows differ only in that column, which is the live shape: WebKit
+# reports an empty <pre tabindex="0"> and a layout wrapper under the same role.
 cat > "$TEMP_DIR/dump.txt" << 'EOF'
-AXWindow|Settings||||
-AXButton:AXCloseButton||||true|
-AXRadioButton|Presence|1||true|
-AXRadioButton|Character|0||true|
-AXRadioButton|AI|0||true|
-AXStaticText||Presence controls|||
-AXCheckBox|Hide from captures|0||true|
-AXPopUpButton|Sound|On||true|
-AXButton|Remove|||true|
-AXButton|Remove|||true|
-AXButton||||true|
-AXButton|What is this?|||true|
-AXButton|Frozen|||false|
+AXWindow:AXStandardWindow|Settings|||||
+AXButton:AXCloseButton||||true|false|false
+AXGroup|||||false|true
+AXScrollArea||||true|false|true
+AXWebArea||||true|false|true
+AXRadioButton|Presence|1||true|false|true
+AXRadioButton|Character|0||true|false|true
+AXRadioButton|AI|0||true|false|true
+AXStaticText||Presence controls||||false
+AXCheckBox|Hide from captures|0||true|false|true
+AXPopUpButton|Sound|On||true|false|true
+AXButton|Remove|||true|false|true
+AXButton|Remove|||true|false|true
+AXButton||||true|false|true
+AXButton|What is this?|||true|false|true
+AXButton|Frozen|||false|false|false
+AXGroup:AXPreformattedStyleGroup||||true|false|true
+AXGroup:AXEmptyGroup||||true|false|false
 EOF
 
-# Cycle columns: role|title|value|enabled, first line repeated on the wrap.
+# Cycle columns: role|title|value|focused, first line repeated on the wrap. The
+# AXWebArea lands once at the end, where WebKit hands focus back to the document.
 cat > "$TEMP_DIR/cycle.txt" << 'EOF'
 AXRadioButton|Presence|1|true
 AXRadioButton|Character|0|true
@@ -66,6 +75,8 @@ AXButton|Remove||true
 AXButton|Remove||true
 AXButton|||true
 AXButton|▸ What is this?|false|true
+AXGroup:AXPreformattedStyleGroup|||true
+AXWebArea|||true
 AXRadioButton|Presence|1|true
 EOF
 
@@ -80,11 +91,16 @@ seq_case() { # name want fixture-edit
 seq_case matching-cycle PASS 'cat'
 # Space can leave focus anywhere in the tab bar; the cycle is a rotation.
 seq_case cycle-starting-mid-dump PASS \
-  "awk 'NR >= 4 && NR <= 9 { print } NR <= 3 { held = held \$0 \"\\n\" } END { printf \"%s\", held; print \"AXCheckBox|Hide from captures|0|true\" }'"
+  "awk '{ a[NR] = \$0 } END { n = NR - 1; for (i = 4; i <= n; i++) print a[i]; for (i = 1; i <= 3; i++) print a[i]; print a[4] }'"
 seq_case reordered-controls FAIL "awk 'NR == 4 { held = \$0; next } NR == 5 { print; print held; next } { print }'"
 seq_case duplicate-label-visited-once FAIL "awk '!(\$0 == \"AXButton|Remove||true\" && seen++)'"
 seq_case unlabeled-control-skipped FAIL "grep -vx 'AXButton|||true'"
-seq_case focus-left-the-form-without-wrapping FAIL "sed '\$d'; echo 'AXWebArea|||true'"
+# A role allowlist cannot list the <pre>, so without the focusable column the
+# expected sequence drops it too and a skipped scroll block reads as green.
+seq_case focusable-pre-block-skipped FAIL "grep -vx 'AXGroup:AXPreformattedStyleGroup|||true'"
+seq_case unfocusable-group-visited FAIL \
+  "awk '{ a[NR] = \$0 } END { for (i = 1; i < NR; i++) print a[i]; print \"AXGroup:AXEmptyGroup|||true\"; print a[NR] }'"
+seq_case focus-left-the-form-without-wrapping FAIL "sed '\$d'; echo 'AXButton:AXCloseButton||0|true'"
 seq_case start-not-in-dump FAIL "sed '1s/.*/AXStaticText|Presence controls||true/'"
 
 echo

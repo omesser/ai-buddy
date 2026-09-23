@@ -42,13 +42,13 @@ identity() {
   awk -F'|' '{ t = $2; sub(/^▸ /, "", t); print $1 "|" t }'
 }
 
-# Enabled tabbable controls in dump order. Window chrome is skipped because
-# WKWebView's Tab cycle stays inside the page.
+# The tab stops in dump order. A role allowlist cannot express them: WebKit
+# gives a <pre tabindex="0"> the same AXGroup role as the layout wrappers around
+# it, so the dump's focusable column is the only signal that separates the two.
+# The scan starts at the AXWebArea because the Tab cycle stays inside the page,
+# and the window chrome and AppKit scroll area above it take focus from a click.
 expected_sequence() {
-  awk -F'|' '
-    $1 ~ /AXCloseButton|AXMinimizeButton|AXZoomButton|AXFullScreenButton/ { next }
-    $1 ~ /^(AXButton|AXCheckBox|AXPopUpButton|AXComboBox|AXDisclosureTriangle|AXRadioButton|AXTextField|AXTextArea)/ && $5 != "false" { print }
-  ' "$1" | identity
+  awk -F'|' '$1 == "AXWebArea" { web = 1 } web && $7 == "true" { print }' "$1" | identity
 }
 
 # One full Tab cycle: the first line repeats when focus wraps, and that repeat

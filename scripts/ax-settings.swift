@@ -533,9 +533,10 @@ case "press-button":
     if let rect = frame(target) { printRect(rect) }
 
 case "dump":
-    // One line per element as role|title|value|placeholder|enabled|settable, so
-    // the shell can grep for a label and read the enabled flag beside it. Order
-    // is the tree's own, which is the render order, so section order is assertable.
+    // One line per element as role|title|value|placeholder|enabled|settable|
+    // focusable, so the shell can grep for a label and read the enabled flag
+    // beside it. Order is the tree's own, which is the render order, so section
+    // order is assertable.
     let wanted = args.count >= 3 ? args[2] : "Settings"
     guard let window = settledWindow(titled: wanted) else { die("\(wanted) is not open") }
     func walk(_ element: AXUIElement, depth: Int) {
@@ -557,12 +558,20 @@ case "dump":
         let settable =
             AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settableFlag)
             == .success ? String(settableFlag.boolValue) : ""
+        // Role does not say what Tab can reach: WebKit reports a
+        // <pre tabindex="0"> as a plain AXGroup, the same role it gives the
+        // layout wrappers around it. Whether AXFocused can be written is the
+        // only signal that separates them.
+        var focusableFlag: DarwinBoolean = false
+        let focusable =
+            AXUIElementIsAttributeSettable(element, kAXFocusedAttribute as CFString, &focusableFlag)
+            == .success ? String(focusableFlag.boolValue) : ""
         // A trailing newline inside a value would break the one-line-per-row
         // contract the shell greps against.
         let flat = { (s: String) in s.replacingOccurrences(of: "\n", with: "\\n") }
         print(
             "\(role)\(subrole.isEmpty ? "" : ":" + subrole)|\(flat(title))|\(flat(value))"
-                + "|\(flat(placeholder))|\(enabled)|\(settable)")
+                + "|\(flat(placeholder))|\(enabled)|\(settable)|\(focusable)")
         for child in children(element) { walk(child, depth: depth + 1) }
     }
     walk(window, depth: 0)
