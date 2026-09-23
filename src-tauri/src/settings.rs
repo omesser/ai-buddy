@@ -1193,7 +1193,10 @@ impl SettingsSession {
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
         let reload_chat = chat_surface_reloads(&settings, &patch);
-        let chat_ui_changed = patch.chat_ui.as_ref().is_some_and(|ui| *ui != settings.chat_ui);
+        let chat_ui_changed = patch
+            .chat_ui
+            .as_ref()
+            .is_some_and(|ui| *ui != settings.chat_ui);
         let new_chat_ui = patch.chat_ui.clone();
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and turn ceiling.
