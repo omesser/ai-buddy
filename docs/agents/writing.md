@@ -91,11 +91,17 @@ to see a corner radius does not build the branch — they approve on the diff,
 which is the one thing that cannot show them a corner radius. Motion is no
 exception; a contact sheet of frames says more than a sentence about timing.
 
-Check the image into the repository and link it by commit SHA.
-`branding/app-icon-preview.png` is the worked example. GitHub's own attachment
-upload is a browser affordance no agent can reach, a link to a branch dies with
-that branch on the squash merge, and an image worth showing a reviewer is
-usually worth keeping beside the asset it documents.
+Upload the image with `gh pr create --attach` or `gh pr comment --attach`, in
+`<file>#<alt text>` form. GitHub rewrites a body reference such as
+`![alt](./before.png)` to point at the uploaded asset, which outlives the branch
+and the squash merge. Until gh 2.101.0 this page said to commit the image
+instead, because attachment upload was a browser affordance no agent could
+reach. That is no longer true, and a still committed only to be looked at once
+leaves a file in the tree that nothing references after the merge.
+
+Check an image in only when it documents an asset that lives here.
+`branding/app-icon-preview.png` is the worked example, and it earns its place
+next to the icon it previews, not by being in a pull request description.
 
 ## An agent signs what it writes on GitHub
 
