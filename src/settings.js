@@ -299,12 +299,29 @@ function directorDraft(root) {
   };
 }
 
+// Every control this page draws, in render order, the footer's after the
+// panel's. The list is a superset of what can hold focus (a label never does),
+// which costs nothing because a position is only ever read back off the same
+// list. Position is the one identity every control has: a row wrapper carries
+// data-row, a labelled control an id, a Composite member data-id, a checkbox
+// input and a summary nothing at all.
+function drawnControls(root, footer) {
+  return [...root.querySelectorAll(CONTROL_SELECTOR), ...(footer?.querySelectorAll(CONTROL_SELECTOR) ?? [])];
+}
+
+// A redraw is render() again, and replaceChildren() takes the focused control
+// with it, so a commit left a keyboard user on the document and the next Tab
+// started from the top (#937). The same tab redraws the same controls in the
+// same order, so the position that held focus is handed back afterwards.
 export function render(root, tab, values, emit = () => {}) {
-  root.replaceChildren();
   const footer =
     typeof document !== "undefined" && typeof document.getElementById === "function"
       ? document.getElementById("set-footer")
       : null;
+  const active = document.activeElement;
+  const focused = active ? drawnControls(root, footer).indexOf(active) : -1;
+
+  root.replaceChildren();
   if (footer) footer.replaceChildren();
 
   for (const section of tab.sections) {
@@ -329,6 +346,7 @@ export function render(root, tab, values, emit = () => {}) {
   if (footer) {
     footer.style.display = footer.children.length > 0 ? "" : "none";
   }
+  if (focused !== -1) drawnControls(root, footer)[focused]?.focus();
 }
 
 // Process a settings_event response into an outcome the page can act on.
@@ -548,13 +566,15 @@ if (typeof document !== "undefined") {
       }
     });
 
-    // Enter commits the active control (blur triggers its handler).
+    // Enter commits the active control (blur triggers its handler). Focus
+    // comes straight back, so the redraw the commit triggers finds it there.
     document.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && document.activeElement) {
         const active = document.activeElement;
         if (active.matches("input, textarea") && !active.matches('[type="checkbox"]')) {
           event.preventDefault();
           active.blur();
+          active.focus();
         }
       }
     });
