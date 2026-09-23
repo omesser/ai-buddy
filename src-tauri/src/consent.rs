@@ -43,11 +43,25 @@ pub struct ConsentRow {
 impl ConsentRow {
     /// The settings form row id this grant is drawn as.
     ///
-    /// Derived from the title rather than listed beside it: the form builds
-    /// its checkbox ids the same way, and a grant added to one list and not
-    /// the other would otherwise draw the wrong state.
+    /// Keyed off the capability rather than the title, which is copy and
+    /// changes: #888 renamed the macOS grant's row and the derived id stopped
+    /// matching the checkbox, so the Privacy pane drew it unchecked whatever
+    /// the grant said.
     pub fn row_id(&self) -> String {
-        format!("consent_{}", self.title.to_lowercase().replace(' ', "_"))
+        use crate::settings::form;
+        match self.id {
+            #[cfg(not(target_os = "linux"))]
+            CapabilityId::Accessibility => form::CONSENT_ACCESSIBILITY_ID,
+            #[cfg(target_os = "macos")]
+            CapabilityId::WindowTitles => form::CONSENT_SCREEN_RECORDING_ID,
+            #[cfg(target_os = "windows")]
+            CapabilityId::WindowTitles => form::CONSENT_WINDOW_TITLES_ID,
+            #[cfg(target_os = "linux")]
+            CapabilityId::WindowTitles => form::CONSENT_PORTAL_SCREENCAST_ID,
+            #[cfg(target_os = "macos")]
+            CapabilityId::InputMonitoring => form::CONSENT_INPUT_MONITORING_ID,
+        }
+        .to_string()
     }
 }
 
@@ -70,7 +84,7 @@ pub const CAPABILITIES: &[Capability] = &[
         id: CapabilityId::WindowTitles,
         title: "Window titles",
         buys: "Window titles and similar metadata.",
-        costs: "macOS Screen Recording. The buddy reads window titles and similar metadata; it does not capture the screen.",
+        costs: "macOS Screen Recording. The buddy reads window titles; it does not capture the screen.",
     },
     Capability {
         id: CapabilityId::InputMonitoring,
@@ -793,7 +807,7 @@ mod tests {
                         "id": "WindowTitles",
                         "title": "Window titles",
                         "buys": "Window titles and similar metadata.",
-                        "costs": "macOS Screen Recording. The buddy reads window titles and similar metadata; it does not capture the screen.",
+                        "costs": "macOS Screen Recording. The buddy reads window titles; it does not capture the screen.",
                         "granted": false,
                     })
                 );
