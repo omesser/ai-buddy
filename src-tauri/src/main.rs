@@ -371,7 +371,7 @@ impl<'a> SpritePlacement<'a> {
             animation: &instance.animation,
             frame_index: instance.frame_index,
             mirror: instance.mirror,
-            dialogue: instance.dialogue.clone().filter(|_| bubble),
+            dialogue: instance.dialogue.as_ref().filter(|_| bubble).cloned(),
             thinking: bubble && instance.thinking,
             bubble,
             cue: instance.cue.filter(|_| bubble).map(Cue::name),
