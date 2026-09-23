@@ -287,6 +287,13 @@ function elicited(form) {
   return add(row);
 }
 
+// Allowlist known Chat UI designs; map unknowns to Minimal so arbitrary
+// strings from settings or events cannot become class names.
+function normalizeChatUi(value) {
+  const allowed = ["minimal", "terminal", "glass"];
+  return allowed.includes(value) ? value : "minimal";
+}
+
 // Whether anything can answer, and what to say when nothing can. Ready is
 // `canAnswer`: configured is not enough when the launcher is missing or the
 // child never came up (#726). The composer is disabled rather than hidden,
@@ -302,7 +309,7 @@ function attached(opening) {
 
   // Apply saved Chat UI design.
   const html = document.documentElement;
-  const chatUi = opening.chat_ui || "minimal";
+  const chatUi = normalizeChatUi(opening.chat_ui || "minimal");
   html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
   html.classList.add(`chat-ui-${chatUi}`);
 
@@ -723,8 +730,9 @@ async function start() {
     "chat-ui",
     ({ payload }) => {
       const html = document.documentElement;
+      const chatUi = normalizeChatUi(payload);
       html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
-      html.classList.add(`chat-ui-${payload}`);
+      html.classList.add(`chat-ui-${chatUi}`);
     },
     { target: chat.label },
   );
@@ -737,6 +745,12 @@ async function start() {
   });
 
   const opening = await invoke("chat_opening", { instance });
+
+  // Apply Chat UI design immediately to prevent FOUC.
+  const html = document.documentElement;
+  const chatUi = normalizeChatUi(opening.chat_ui || "minimal");
+  html.classList.add(`chat-ui-${chatUi}`);
+
   showWho(opening);
   attached(opening);
   showPrompt(opening);

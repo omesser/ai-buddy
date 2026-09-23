@@ -39,7 +39,7 @@
    apart: what was said, the explainer's prose, the Character badge, and the
    WHO label. No web fonts: the app's CSP blocks Google Fonts silently. */
 .chat-ui-minimal {
-  color-scheme: dark;
+  color-scheme: light dark;
 
   --chat-panel: var(--shared-panel);
   --chat-ink: var(--shared-ink);
@@ -85,7 +85,7 @@
 /* Terminal log. Port of .v-term from docs/design/chat-mockups.html: 62 rules
    for a dense monospace aesthetic with elapsed-time gutter and log structure. */
 .chat-ui-terminal {
-  color-scheme: dark;
+  color-scheme: light dark;
 
   --chat-panel: #0A0D12;
   --chat-ink: #C6D0DC;
@@ -344,7 +344,7 @@
 /* Pane of glass. Port of .v-glass from docs/design/chat-mockups.html: 52 rules
    for a frosted panel with backdrop blur and thin light borders. */
 .chat-ui-glass {
-  color-scheme: dark;
+  color-scheme: light dark;
 
   --chat-panel: rgba(14,17,24,.62);
   --chat-ink: #F1F4F9;
