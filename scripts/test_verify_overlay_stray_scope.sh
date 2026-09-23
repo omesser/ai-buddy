@@ -45,7 +45,7 @@ else
   mkdir -p "$FOREIGN_DIR"
   cat > "$FOREIGN_DIR/ai-buddy" << 'EOF'
 #!/bin/sh
-exec sleep 30
+sleep 30
 EOF
   chmod +x "$FOREIGN_DIR/ai-buddy"
   "$FOREIGN_DIR/ai-buddy" &
@@ -70,7 +70,7 @@ EOF
   mkdir -p "$OWN_DIR"
   cat > "$OWN_DIR/ai-buddy" << 'EOF'
 #!/bin/sh
-exec sleep 30
+sleep 30
 EOF
   chmod +x "$OWN_DIR/ai-buddy"
   BIN_PATH="$OWN_DIR/ai-buddy"

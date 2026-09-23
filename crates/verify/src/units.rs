@@ -72,6 +72,19 @@ pub fn run(repo_root: &Path, report: &mut RunReport) {
         &summary,
     );
 
+    report.say("prove-units: test_verify_overlay_stray_scope.sh");
+    let mut stray_scope = Command::new("bash");
+    stray_scope
+        .arg("scripts/test_verify_overlay_stray_scope.sh")
+        .current_dir(repo_root);
+    suite(
+        report,
+        "overlay-stray-scope",
+        &mut stray_scope,
+        &dest,
+        &summary,
+    );
+
     report.say("prove-units: test_verify_settings_keyboard.sh");
     let mut keyboard = Command::new("bash");
     keyboard
