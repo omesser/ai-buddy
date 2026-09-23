@@ -7,6 +7,7 @@ const DISPLAY_NAMES = {
   claude: "Claude Code",
   codex: "Codex",
   "cursor-agent": "Cursor",
+  goose: "Goose",
   grok: "Grok",
   opencode: "OpenCode",
   hermes: "Hermes",
@@ -24,6 +25,7 @@ function installUrlFor(missing, harnessName) {
   }
   const urls = {
     hermes: "https://hermes-agent.nousresearch.com/",
+    goose: "https://goose-docs.ai/docs/getting-started/installation/",
     "cursor-agent": "https://www.cursor.com/",
     grok: "https://x.ai/",
     opencode: "https://opencode.ai/",

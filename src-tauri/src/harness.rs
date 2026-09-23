@@ -120,6 +120,9 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
         // subcommand. Without this arm the escape hatch below launches that
         // TUI on stdio and the attach times out.
         "grok" => (value, vec!["grok", "agent", "stdio"]),
+        // `goose` alone is the interactive CLI. ACP over stdio is the `acp`
+        // subcommand; the ACP registry publishes the same argv.
+        "goose" => (value, vec!["goose", "acp"]),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
         "pi" => (value, vec!["npx", "-y", "pi-acp@latest"]),
@@ -1526,6 +1529,9 @@ fn not_installed(command: &str) -> String {
     let install_hint = match command {
         "npx" => " Install Node.js from https://nodejs.org/.",
         "hermes" => " Install Hermes from https://hermes-agent.nousresearch.com/.",
+        // The ACP registry still names https://block.github.io/goose/, which
+        // now redirects to goose-docs.ai. The install page is the CLI instructions.
+        "goose" => " Install Goose from https://goose-docs.ai/docs/getting-started/installation/.",
         "cursor-agent" => " Install Cursor from https://www.cursor.com/.",
         "grok" => " Install Grok from https://x.ai/.",
         "opencode" => " Install OpenCode from https://opencode.ai/.",
@@ -1570,6 +1576,8 @@ fn named_login(name: &str) -> Option<&'static str> {
         // the installer puts on `PATH`. Following it verbatim is a command not found.
         "cursor-agent" => "cursor-agent login",
         "grok" => "grok login",
+        // No `goose login`. Provider setup is `goose configure`.
+        "goose" => "goose configure",
         "hermes" => "hermes login",
         "opencode" => "opencode login",
         "pi" => "npx -y pi-acp@latest --terminal-login",
@@ -2326,6 +2334,9 @@ mod tests {
             ["grok", "agent", "stdio"]
         );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
+        let goose = launch(Some("goose")).unwrap();
+        assert_eq!(goose.name, "goose");
+        assert_eq!(goose.argv, ["goose", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
         assert_eq!(
             launch(Some("pi")).unwrap().argv,
@@ -2691,6 +2702,7 @@ mod tests {
             "claude",
             "codex",
             "cursor-agent",
+            "goose",
             "grok",
             "hermes",
             "opencode",
@@ -3910,8 +3922,8 @@ mod tests {
 
     /// Documents the missing-binary contract: `missing` = `argv[0]` for every
     /// preset. npx adapters (claude, codex, pi) report `npx` missing, not the
-    /// vendor CLI. First-party CLIs (cursor-agent, grok, hermes, opencode)
-    /// report their own name.
+    /// vendor CLI. First-party CLIs (cursor-agent, goose, grok, hermes,
+    /// opencode) report their own name.
     #[test]
     fn each_preset_reports_its_argv_0_as_missing() {
         let cases = [
@@ -3919,6 +3931,7 @@ mod tests {
             ("codex", "npx"),
             ("pi", "npx"),
             ("cursor-agent", "cursor-agent"),
+            ("goose", "goose"),
             ("grok", "grok"),
             ("hermes", "hermes"),
             ("opencode", "opencode"),
@@ -3937,6 +3950,7 @@ mod tests {
         let cases = [
             ("npx", "nodejs.org"),
             ("hermes", "hermes-agent.nousresearch.com"),
+            ("goose", "goose-docs.ai/docs/getting-started/installation"),
             ("cursor-agent", "cursor.com"),
             ("grok", "x.ai"),
             ("opencode", "opencode.ai"),
@@ -4308,6 +4322,7 @@ mod tests {
             "claude",
             "codex",
             "cursor-agent",
+            "goose",
             "grok",
             "hermes",
             "opencode",
