@@ -137,7 +137,7 @@
               "id": "chat_ui",
               "label": "Chat UI",
               "writes": "ChatUI",
-              "help": "How the chat window looks.",
+              "help": "Visual design for the chat surface.",
               "options": [
                 "Minimal",
                 "Terminal",
@@ -145,7 +145,7 @@
               ],
               "frozen": false,
               "batched": false,
-              "disclosure": null,
+              "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
               "status": null
             }
           ],
