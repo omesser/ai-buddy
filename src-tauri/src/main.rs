@@ -2328,7 +2328,7 @@ fn apply_menu_action(
                 config.apply_switch(settings.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
-                    push_chat_openings(app, roster, &inspect, &characters, &chat_ui);
+                    push_chat_openings(app, roster, &inspect, characters, &chat_ui);
                 }
                 persist_settings(&settings, settings_path);
                 eprintln!(
