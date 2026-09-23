@@ -58,15 +58,19 @@ Accept external dep for Claude/Codex/Pi presets. Install Node (https://nodejs.or
 
 ### Harness CLIs on PATH
 
-**Call: Declare per preset.** Present install steps in Settings/landing when selected harness CLI is missing.
+**Call: Declare per preset. LOCKED (Oded, 2026-09-23).**
 
-Named presets stay as-is: hermes, opencode, grok, cursor-agent. High-value new named presets to consider: goose, copilot (#457), antigravity-acp (#604 refresh with registry binary). Custom argv already exists as escape hatch for long tail (kimi, junie, kiro, iflow, stakpak, etc.).
+Not bundling. Graceful fail if missing. README lists PATH + authenticated as requirements per harness. Present install steps in Settings/landing when selected harness CLI is missing.
+
+Named presets stay as-is: hermes, opencode, grok, cursor-agent. High-value new named preset: goose (#930). Copilot not needed for now (not prevalent enough). Antigravity+others V2. Custom argv already exists as escape hatch for long tail (kimi, junie, kiro, iflow, stakpak, etc.).
 
 **Reasoning:** Each is a separate product. Bundling 5+ harness binaries for "pick one" is larger than declaring "install the one you pick." Registry already has 19 binary agents; we cannot bundle all. Loud failure shipped (#831).
 
 ### Platform WebView
 
-**Call: Declared on Linux only.**
+**Call: Declared on Linux only. LOCKED (Oded, 2026-09-23).**
+
+As recommended. Graceful fail if missing. README documents Tauri WebView requirement: Windows handled by Tauri WebView2 bootstrapper, Linux declared, macOS nothing extra.
 
 macOS: system WebKit (shipped).
 Windows: Tauri WebView2 evergreen bootstrapper handles it (user-installed or bundled).
@@ -78,9 +82,9 @@ Linux: libwebkit2gtk-4.1 (runtime) must be installed. README already notes libwe
 
 ### GStreamer (Linux audio)
 
-**Call: Declare, keep optional.**
+**Call: Declare, keep optional. LOCKED (Oded, 2026-09-23).**
 
-README notes GStreamer (gst-plugins-base) for Linux Cue audio. No loud failure; silent skip is acceptable for optional audio. Buddy works without sound.
+README lists as requirement for Linux audio cues. Nice-to-have. Silent skip is acceptable for optional audio. Buddy works without sound.
 
 **Reasoning:** Audio is personality flavor, not functional requirement. Graceful degradation (silent skip) is better UX than loud failure for an optional feature. Many users have GStreamer installed (common desktop dep).
 
@@ -88,23 +92,23 @@ README notes GStreamer (gst-plugins-base) for Linux Cue audio. No loud failure; 
 
 ### libfuse2 / libfuse2t64 (Linux AppImage)
 
-**Call: Declare for AppImage.**
+**Call: Declare for AppImage. LOCKED (Oded, 2026-09-23).**
 
-README already notes libfuse2 (Ubuntu 22.04) or libfuse2t64 (24.04+). .deb is the FUSE-free alternative.
+AppImage distribution only. When we ship AppImage, prefer type 2 with bundled runtime. README already notes libfuse2 / libfuse2t64. .deb is the FUSE-free alternative.
 
-**Reasoning:** AppImage runtime requires FUSE to mount squashfs. Two distributions (AppImage + .deb) cover both "user wants portable bundle" and "user wants native package manager." Cannot eliminate FUSE from AppImage without migrating to type 2 + `--appimage-extract` fallback (out of scope for this spike).
+**Reasoning:** AppImage runtime requires FUSE to mount squashfs. Two distributions (AppImage + .deb) cover both "user wants portable bundle" and "user wants native package manager." AppImage type 2 with bundled runtime reduces external FUSE dep (still needs kernel FUSE or `--appimage-extract` fallback).
 
-**No change needed.** Already documented.
+**No change needed for current distributions.** .deb and tarball releases do not need FUSE. AppImage path future work.
 
 ### MCP stdio binary (AI_BUDDY_MCP_BIN)
 
-**Call: Keep external, document HTTP as primary.**
+**Call: Do not bundle; challenge need; optional download at best. LOCKED (Oded, 2026-09-23).**
 
-BYO harness registration via HTTP + bearer token is the primary path for all five tested harnesses (claude, hermes, opencode, grok, codex). Stdio shim is fallback/advanced. No bundling needed.
+BYO harness registration via HTTP + bearer token is the primary path for all five tested harnesses (claude, hermes, opencode, grok, codex). Stdio shim is fallback/advanced. No bundling with main binary.
 
-**Reasoning:** Research (docs/research/byo-harness-mcp-registration.md) concluded HTTP path works for all, stdio costs "absolute path to a binary the user has to locate, and buys nothing the header route does not already give." Settings snippets default to HTTP.
+**Reasoning:** Research (docs/research/byo-harness-mcp-registration.md) concluded HTTP path works for all, stdio costs "absolute path to a binary the user has to locate, and buys nothing the header route does not already give." Settings snippets default to HTTP. Challenge whether stdio path is still needed.
 
-**No change needed.** Already documented and implemented.
+**No change needed.** Already documented and implemented. HTTP primary.
 
 ### uv / uvx (for registry uvx agents)
 
@@ -129,11 +133,17 @@ When spawn of selected harness fails (npx or any PATH binary):
 
 This covers npx-adapter presets (claude, codex, pi) and first-party ACP presets (hermes, opencode, grok, cursor-agent).
 
+### Locked failure UX (Oded, 2026-09-23)
+
+**Sticky inline error.** NOT a toast or snackbar. Reason: user can copy-paste the message into search/AI. Keep visible until fixed or intentional user action (Retry, change harness, explicit dismiss). Issue #950 (sticky inline missing-dep message).
+
+Landing stays visible (#831 already shipped). Issue #949 (Harness Apply/Connect + chat "initializing…").
+
 ### Remaining gaps
 
-**Install URLs per preset.** Landing message says `` `npx` is not installed `` but does not link to https://nodejs.org/. First-party ACP messages say `` `hermes` is not installed `` but do not link to install pages. Follow-up: #929 (Settings/landing copy to distinguish first-party vs npx and present install steps).
+**Install URLs per preset (#929).** Landing message says `` `npx` is not installed `` but does not link to https://nodejs.org/. First-party ACP messages say `` `hermes` is not installed `` but do not link to install pages.
 
-**Grouping presets by dep.** Settings/landing do not yet group zero-Node presets (hermes, opencode, grok, cursor-agent) separately from npx presets (claude, codex, pi). Follow-up: #929.
+**Grouping presets by dep (#929).** Settings/landing do not yet group zero-Node presets (hermes, opencode, grok, cursor-agent) separately from npx presets (claude, codex, pi).
 
 ### Optional deps (no loud failure)
 
