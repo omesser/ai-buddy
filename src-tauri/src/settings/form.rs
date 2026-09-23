@@ -175,7 +175,7 @@ pub enum FormRow {
         /// What the empty field says about the store: whether a key is set, or
         /// which variable overrides it. On the row rather than in `values`,
         /// the way `TextField` carries its own. The field's value stays empty,
-        /// because the secret never leaves the store (ADR-0010) and a
+        /// because the secret never leaves the store and a
         /// fingerprint sitting in it would be committed as a key on the next
         /// blur. #875.
         placeholder: String,
@@ -1791,7 +1791,7 @@ mod tests {
                         }
                     }
                     // A secure row carries its placeholder and no value: the
-                    // secret never leaves the store (ADR-0010).
+                    // secret never leaves the store.
                     FormRow::SecureField { .. } => {}
                     FormRow::Checkbox { id, .. }
                     | FormRow::TextField { id, .. }
