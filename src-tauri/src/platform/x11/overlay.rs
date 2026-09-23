@@ -124,7 +124,7 @@ fn apply_input_mask(
     hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     let rebuild_start = Instant::now();
-    
+
     let (width, height, opaque) = mask.raw();
     let scaled_width = width * scale;
     let scaled_height = height * scale;
@@ -245,7 +245,7 @@ fn apply_input_mask(
     let rebuild_elapsed = rebuild_start.elapsed().as_nanos() as u64;
     MASK_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
     MASK_REBUILD_TOTAL_NS.fetch_add(rebuild_elapsed, Ordering::Relaxed);
-    
+
     if std::env::var("AI_BUDDY_TRACE_MASK_REBUILD").is_ok() {
         let opaque_count = opaque.iter().filter(|&&b| b).count();
         eprintln!(
