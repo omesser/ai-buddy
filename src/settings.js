@@ -80,13 +80,6 @@ function choice(row, values) {
   return values[row.id] ?? row.options[0] ?? "";
 }
 
-// `options` empty is `describe()`'s contract: the form leaves those choices to
-// the renderer, which is how the Character popup gets the installed packages.
-// Until the snapshot carries them, the value in force is the only option.
-function options(row, values) {
-  return row.options.length > 0 ? row.options : [choice(row, values)];
-}
-
 // --- DOM -------------------------------------------------------------------
 
 function el(tag, attrs = {}, ...children) {
@@ -140,7 +133,7 @@ function labelled(row, control, extra = []) {
 function popup(row, values, frozen) {
   const select = el("select", { disabled: frozen });
   const value = values[row.id];
-  for (const option of options(row, values)) {
+  for (const option of row.options) {
     select.append(el("option", { value: option, selected: option === value, text: option }));
   }
   select.dataset.id = row.id;
