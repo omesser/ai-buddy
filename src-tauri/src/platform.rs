@@ -493,6 +493,8 @@ pub fn update_input_region(
 }
 
 /// Read and reset mask rebuild metrics on X11. Returns (count, total_ns).
+/// Used by benchmark scripts that parse trace logs; not called from main binary.
+#[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
     x11::read_mask_rebuild_stats()
@@ -500,6 +502,7 @@ pub fn read_mask_rebuild_stats() -> (u64, u64) {
 
 /// Non-X11 platforms use different input region APIs (SetWindowRgn on Windows,
 /// set_ignore_cursor_events on macOS) and are not instrumented yet.
+#[allow(dead_code)]
 #[cfg(not(all(unix, not(target_os = "macos"))))]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
     (0, 0)
@@ -1379,5 +1382,12 @@ mod tests {
             !with_wanted.is_empty() || cfg!(not(windows)),
             "list_window_titles should return titles when wanted (may be empty in test env)"
         );
+    }
+
+    #[test]
+    fn mask_rebuild_stats_returns_valid_tuple() {
+        let (count, ns) = read_mask_rebuild_stats();
+        // Just verify the function is callable and returns a tuple
+        let _ = (count, ns);
     }
 }

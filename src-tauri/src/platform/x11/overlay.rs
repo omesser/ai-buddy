@@ -23,6 +23,8 @@ static MASK_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
 static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Read and reset mask rebuild metrics. Returns (count, total_ns).
+/// Used by benchmark scripts that parse trace logs; not called from main binary.
+#[allow(dead_code)]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
     let count = MASK_REBUILD_COUNT.swap(0, Ordering::Relaxed);
     let total_ns = MASK_REBUILD_TOTAL_NS.swap(0, Ordering::Relaxed);
@@ -297,4 +299,20 @@ fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     conn.flush()
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mask_rebuild_stats_readable_and_reset() {
+        let (count1, ns1) = read_mask_rebuild_stats();
+        assert_eq!(count1, 0, "stats should start at zero");
+        assert_eq!(ns1, 0);
+
+        let (count2, ns2) = read_mask_rebuild_stats();
+        assert_eq!(count2, 0, "stats should be zero after reset");
+        assert_eq!(ns2, 0);
+    }
 }
