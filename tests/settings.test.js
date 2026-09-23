@@ -353,7 +353,11 @@ test("the Character popups offer every installed package, the worn one selected"
   const offered = Object.fromEntries(
     selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
   );
-  assert.deepEqual(offered, { character: ["bmo", "ghost"], new_character: ["bmo", "ghost"] });
+  assert.deepEqual(offered, {
+    character: ["bmo", "ghost"],
+    chat_ui: ["Minimal", "Terminal", "Glass"],
+    new_character: ["bmo", "ghost"],
+  });
   for (const select of selects) {
     assert.equal(select.value, "bmo", select.dataset.id);
   }
