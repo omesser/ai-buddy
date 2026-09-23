@@ -3,18 +3,19 @@
 # ai-buddy binary, per scenario. A reviewer reruns this directly rather than
 # trusting a number in a doc.
 
-# Needs: sudo (powermetrics), swift (click-cursor.swift, chat scenario only),
-# AI_BUDDY_TRACE_FRAMES so the frame log proves what the sprite was doing, and
-# AI_BUDDY_DIRECTOR_API_KEY so a worktree build does not block on a Keychain prompt.
+# Needs: sudo (powermetrics), swift (the chat and hidden props), and the env
+# below: AI_BUDDY_TRACE_FRAMES so the log proves what the sprite was doing,
+# AI_BUDDY_DIRECTOR_API_KEY so a worktree build skips the Keychain prompt.
 # Usage:
-#   scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat \
+#   scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden \
 #     [--duration SECS] [--out DIR]
-
-# idle: launch, settle, sample. Ambient Behaviors may fire on their own; the
-#   frame log lets the parser split the sample by what was on screen.
-# chat: launch, double-click the sprite's centre from the frame log with
-#   scripts/click-cursor.swift (shared with crates/verify; do not fork it),
-#   confirm the Summon verb, then sample with chat open.
+#   scripts/bench-wakeups-macos.sh --scenario baseline [--duration SECS] [--out DIR]
+# idle: launch, settle, sample; the frame log splits the sample by animation.
+# chat: launch, double-click the sprite via scripts/click-cursor.swift (shared
+#   with crates/verify; do not fork it), confirm Summon, sample with chat open.
+# hidden: launch, cover the main display with scripts/fullscreen-window.swift
+#   so the fullscreen-frontmost rule fires, confirm `presence: hidden`, sample.
+# baseline: launch nothing; refuses to sample while any ai-buddy is running.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -49,35 +50,47 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -x "$BINARY" ] || {
-  echo "bench-wakeups-macos: --binary $BINARY not executable" >&2
-  exit 2
-}
-case "$SCENARIO" in idle | chat) ;; *)
-  echo "bench-wakeups-macos: --scenario must be idle or chat" >&2
+case "$SCENARIO" in idle | chat | hidden | baseline) ;; *)
+  echo "bench-wakeups-macos: --scenario must be idle, chat, hidden or baseline" >&2
   exit 2
   ;;
 esac
+if [ "$SCENARIO" != "baseline" ] && [ ! -x "$BINARY" ]; then
+  echo "bench-wakeups-macos: --binary $BINARY not executable" >&2
+  exit 2
+fi
 
 mkdir -p "$OUT"
 LOG="$OUT/app.log"
 PM="$OUT/powermetrics.txt"
 META="$OUT/meta.txt"
 
-trap 'kill "$APP_PID" 2> /dev/null; wait "$APP_PID" 2> /dev/null' EXIT INT TERM
+APP_PID=""
+PROP_PID=""
+trap 'kill "$APP_PID" "$PROP_PID" 2> /dev/null; wait "$APP_PID" "$PROP_PID" 2> /dev/null' EXIT INT TERM
 
-AI_BUDDY_DIRECTOR_API_KEY=bench-placeholder \
-  AI_BUDDY_DIRECTOR=0 \
-  AI_BUDDY_TRACE_FRAMES=1 \
-  AI_BUDDY_TRACE_ENGINE=1 \
-  AI_BUDDY_CAPTURABLE=1 \
-  "$BINARY" > "$LOG" 2>&1 &
-APP_PID=$!
+# Other agents build and run ai-buddy on this machine. A baseline with one of
+# theirs alive is not a baseline, and powermetrics cannot tell whose it is.
+STRAY_BEFORE=$(pgrep -x ai-buddy | tr '\n' ' ')
+if [ "$SCENARIO" = "baseline" ] && [ -n "$STRAY_BEFORE" ]; then
+  echo "bench-wakeups-macos: baseline refused, ai-buddy already running: pid(s) $STRAY_BEFORE" >&2
+  exit 1
+fi
 
-echo "launched pid=$APP_PID binary=$BINARY log=$LOG" >&2
+if [ "$SCENARIO" != "baseline" ]; then
+  AI_BUDDY_DIRECTOR_API_KEY=bench-placeholder \
+    AI_BUDDY_DIRECTOR=0 \
+    AI_BUDDY_TRACE_FRAMES=1 \
+    AI_BUDDY_TRACE_ENGINE=1 \
+    AI_BUDDY_CAPTURABLE=1 \
+    "$BINARY" > "$LOG" 2>&1 &
+  APP_PID=$!
+  echo "launched pid=$APP_PID binary=$BINARY log=$LOG" >&2
+fi
 
-READY=0
+READY=$([ "$SCENARIO" = "baseline" ] && echo 1 || echo 0)
 for _ in $(seq 1 40); do
+  [ "$READY" -eq 1 ] && break
   grep -q '^overlay:' "$LOG" 2> /dev/null && {
     READY=1
     break
@@ -93,11 +106,31 @@ fi
 # Let the first ticks settle before driving Summon or starting the idle clock:
 # the sprite spawns mid-air and plays Falling until it lands, and a click during
 # that window can miss the moving art, so wait for Grounded.
-for _ in $(seq 1 40); do
-  grep -qE '^frame: .* (Grounded|Perched) ' "$LOG" 2> /dev/null && break
-  perl -e 'select(undef,undef,undef,0.25)'
-done
-sleep 1
+if [ -n "$APP_PID" ]; then
+  for _ in $(seq 1 40); do
+    grep -qE '^frame: .* (Grounded|Perched) ' "$LOG" 2> /dev/null && break
+    perl -e 'select(undef,undef,undef,0.25)'
+  done
+  sleep 1
+fi
+
+PRESENCE_STATUS="n/a"
+if [ "$SCENARIO" = "hidden" ]; then
+  # The prop outlives the capture by a margin and quits on its own, so an
+  # interrupted run leaves no window behind.
+  swift scripts/fullscreen-window.swift $((DURATION + 60)) > "$OUT/fullscreen.log" 2>&1 &
+  PROP_PID=$!
+  for _ in $(seq 1 40); do
+    grep -q '^presence: hidden' "$LOG" 2> /dev/null && break
+    perl -e 'select(undef,undef,undef,0.25)'
+  done
+  if ! grep -q '^presence: hidden' "$LOG"; then
+    echo "bench-wakeups-macos: sprite never reported 'presence: hidden' - see $OUT/fullscreen.log and $LOG" >&2
+    exit 1
+  fi
+  # Past the fade, so the sample holds no visible frames.
+  sleep 2
+fi
 
 SUMMON_STATUS="n/a"
 if [ "$SCENARIO" = "chat" ]; then
@@ -134,22 +167,40 @@ PY
 fi
 
 START_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+START_MS=$(($(date +%s) * 1000))
 sudo powermetrics -i 1000 -n "$DURATION" --samplers tasks,cpu_power -o "$PM"
 PM_STATUS=$?
 END_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+if [ "$SCENARIO" = "hidden" ]; then
+  # Hidden for the whole sample, or not a hidden sample: a `shown` after the
+  # `hidden` means the prop was buried and the sprite came back mid-capture.
+  if [ "$(grep -c '^presence: shown' "$LOG")" -gt 0 ]; then
+    PRESENCE_STATUS="NOT HIDDEN THROUGHOUT - presence flipped back to shown, see $LOG"
+    echo "bench-wakeups-macos: $PRESENCE_STATUS" >&2
+    PM_STATUS=1
+  else
+    PRESENCE_STATUS="$(grep '^presence: hidden' "$LOG" | tail -1), frames traced during sample: $(awk -v s="$START_MS" '/^frame: / && $2 + 0 >= s + 0' "$LOG" | wc -l | tr -d ' ')"
+  fi
+fi
+
 {
   echo "scenario: $SCENARIO"
-  echo "binary: $BINARY"
-  echo "binary_mtime: $(stat -f '%Sm' "$BINARY")"
+  echo "binary: ${BINARY:-none}"
+  echo "binary_mtime: $([ -n "$BINARY" ] && stat -f '%Sm' "$BINARY" || echo n/a)"
   echo "duration_secs: $DURATION"
   echo "start: $START_ISO"
   echo "end: $END_ISO"
-  echo "pid: $APP_PID"
+  echo "pid: ${APP_PID:-none}"
   echo "note: powermetrics is system-wide - another agent's ai-buddy build"
-  echo "  can be running at the same time. Always parse with --pid $APP_PID,"
+  echo "  can be running at the same time. Always parse with --pid ${APP_PID:-none},"
   echo "  never bare --process name matching."
+  echo "ai_buddy_pids_before: ${STRAY_BEFORE:-none}"
+  echo "ai_buddy_pids_after: $(pgrep -x ai-buddy | tr '\n' ' ')"
+  echo "load_average: $(sysctl -n vm.loadavg)"
+  echo "cargo_or_rustc_running: $(pgrep -x 'cargo|rustc' | wc -l | tr -d ' ')"
   echo "summon: $SUMMON_STATUS"
+  echo "presence: $PRESENCE_STATUS"
   echo "powermetrics_exit: $PM_STATUS"
   echo "machine: $(sysctl -n hw.model)"
   echo "os: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"

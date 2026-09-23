@@ -49,7 +49,7 @@ def parse_samples(text, process, pid=None):
         elapsed_ms = float(m.group(2))
 
         candidates = []
-        for line in block.splitlines():
+        for line in block.splitlines() if process else ():
             cols = line.split()
             if len(cols) >= 7 and process in line and not line.startswith("Name"):
                 if pid is not None:
@@ -144,6 +144,8 @@ def summarize(samples, label):
     )
     if wi is not None:
         print(f"  wakeups/sec (interrupt):      {wi:.2f}")
+    elif label.strip().endswith("()"):
+        print("  (no process of interest: system-wide numbers only)")
     else:
         print("  wakeups/sec (interrupt):      process not found in any sample")
     if wp is not None:
@@ -161,7 +163,11 @@ def summarize(samples, label):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("powermetrics_txt")
-    ap.add_argument("--process", default="ai-buddy")
+    ap.add_argument(
+        "--process",
+        default="ai-buddy",
+        help="process name to reduce; pass '' for a baseline capture with no process of interest",
+    )
     ap.add_argument("--pid", type=int, default=None, help="exact PID to match (recommended)")
     ap.add_argument("--frame-log", default=None)
     args = ap.parse_args()
