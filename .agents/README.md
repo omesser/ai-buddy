@@ -48,6 +48,10 @@ request only when upstream moved, and never merge.
 `tests/skills-layout.test.js` fails when a symlink breaks.
 `tests/skills-ownership.test.js` fails if two syncs claim one name, if either
 claims a repo-owned skill, or if a skill on disk is claimed by nobody.
+`tests/skills-script-refs.test.js` fails when a skill tells an agent to run a
+script that is not here. A vendored skill names its helpers relative to its own
+directory, so `scripts/watch-pr/watch-pr` in `poteto-mode`'s babysit playbook is
+`.agents/skills/poteto-mode/scripts/watch-pr/watch-pr`.
 
 Nothing vendored here is on by default. `docs/agents/vendored-skills.md` is the
 rule an agent follows when applying one.
