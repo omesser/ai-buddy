@@ -237,8 +237,8 @@ test("an InspectPath is a path and nothing else", () => {
   });
 });
 
-// The Character popup carries the Character in force, the only one
-// `describe()` offers it, and that is what New spawns under (#875).
+// The Character popup starts on the Character in force, which is what New
+// spawns under until the user picks another (#875).
 test("a Composite spreads into one control per member, its text field included", () => {
   const spawn = tab(MODEL_API, "Character").filter((control) =>
     ["new_name", "new_character", "spawn"].includes(control.id),
@@ -327,6 +327,20 @@ function drawn(title, emit) {
   const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
   return root.children.flatMap(walk);
 }
+
+// Both Character <select>s offer every installed package, with the one in
+// force selected. A list of one is the bug: New could only spawn the
+// character already worn (#921).
+test("the Character popups offer every installed package, the worn one selected", () => {
+  const selects = drawn("Character").filter((node) => node.tagName === "select");
+  const offered = Object.fromEntries(
+    selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
+  );
+  assert.deepEqual(offered, { character: ["bmo", "ghost"], new_character: ["bmo", "ghost"] });
+  for (const select of selects) {
+    assert.equal(select.value, "bmo", select.dataset.id);
+  }
+});
 
 test("a secure row takes its placeholder from the key status beside it", () => {
   const key = drawn("AI").find((node) => node.attributes.type === "password");

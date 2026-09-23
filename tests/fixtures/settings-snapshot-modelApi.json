@@ -115,7 +115,10 @@
               "label": null,
               "writes": "Character",
               "help": "The character your buddy wears.",
-              "options": [],
+              "options": [
+                "bmo",
+                "ghost"
+              ],
               "frozen": false,
               "batched": false,
               "disclosure": "Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.",
@@ -148,7 +151,10 @@
                 {
                   "type": "Popup",
                   "id": "new_character",
-                  "options": [],
+                  "options": [
+                    "bmo",
+                    "ghost"
+                  ],
                   "frozen": false,
                   "fills": null
                 },

@@ -108,9 +108,7 @@ pub enum FormRow {
         label: Option<String>,
         writes: TextField,
         help: Option<String>,
-        /// The choices, when the form knows them. Empty leaves them to the
-        /// renderer, which is how the Character popup gets the installed
-        /// packages — a list the form cannot see.
+        /// The choices. The Character popup's are `Live::installed`.
         options: Vec<String>,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
@@ -215,9 +213,7 @@ pub enum CompositeControl {
     },
     Popup {
         id: String,
-        /// The choices, for the same reason as `FormRow::Popup::options`:
-        /// empty leaves them to the renderer, which is how `new_instance`'s
-        /// Character popup gets the installed packages.
+        /// The choices, as `FormRow::Popup::options`.
         options: Vec<String>,
         /// Disabled, for the same reason as `FormRow::TextField::frozen`.
         frozen: bool,
@@ -1116,7 +1112,7 @@ fn byo_section() -> FormSection {
     }
 }
 
-fn character_sections() -> Vec<FormSection> {
+fn character_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "Character".to_string(),
@@ -1128,7 +1124,7 @@ fn character_sections() -> Vec<FormSection> {
                 label: None,
                 writes: TextField::Character,
                 help: Some("The character your buddy wears.".to_string()),
-                options: Vec::new(),
+                options: live.installed.clone(),
                 frozen: false,
                 batched: false,
                 disclosure: Some("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.".to_string()),
@@ -1158,7 +1154,7 @@ fn character_sections() -> Vec<FormSection> {
                         },
                         CompositeControl::Popup {
                             id: NEW_CHARACTER_ID.to_string(),
-                            options: Vec::new(),
+                            options: live.installed.clone(),
                             frozen: false,
                             fills: None,
                         },
@@ -1601,6 +1597,11 @@ pub struct Live {
     /// `settings_event` builds a description on every gesture. Only
     /// `settings_snapshot` fills it, from the view that has it cached.
     pub api_key_placeholder: String,
+    /// The Character Packages the two Character popups offer, by name.
+    ///
+    /// Filled the way `api_key_placeholder` is: only `settings_snapshot`
+    /// has the view that lists them, so `current()` leaves it empty (#921).
+    pub installed: Vec<String>,
 }
 
 impl Live {
@@ -1615,6 +1616,7 @@ impl Live {
             consent_intro,
             attach_cwd: crate::harness::attach_cwd_placeholder(),
             api_key_placeholder: String::new(),
+            installed: Vec::new(),
         }
     }
 }
@@ -1631,7 +1633,7 @@ pub fn describe_with(live: &Live) -> FormDescription {
         },
         FormTab {
             title: "Character".to_string(),
-            sections: character_sections(),
+            sections: character_sections(live),
         },
         FormTab {
             title: "AI".to_string(),
@@ -1699,8 +1701,9 @@ mod tests {
             consent_intro: FIXTURE_CONSENT_INTRO.to_string(),
             attach_cwd: FIXTURE_ATTACH_CWD.to_string(),
             // From the same view the values fixtures come from, so the two
-            // files cannot disagree about what the key row says.
+            // files cannot disagree about what the key row says or offers.
             api_key_placeholder: fixture_view(driving).api_key_placeholder(),
+            installed: fixture_view(driving).installed,
         }
     }
 
@@ -3591,6 +3594,36 @@ mod tests {
             section.rows[5],
             FormRow::InspectBlock { ref id, .. } if id == BYO_STEPS_ID
         ));
+    }
+
+    /// Both Character popups offer every installed package, not only the one
+    /// in force. The native renderers used to read the list off the view;
+    /// the webview only sees the description (#921).
+    #[test]
+    fn both_character_popups_offer_the_installed_packages() {
+        let description = describe_with(&fixture_live(false, false));
+        let rows: Vec<&FormRow> = description
+            .sections()
+            .flat_map(|section| section.rows.iter())
+            .collect();
+        let character = rows.iter().find_map(|row| match row {
+            FormRow::Popup { id, options, .. } if id == CHARACTER_ID => Some(options.clone()),
+            _ => None,
+        });
+        let new_character = rows.iter().find_map(|row| match row {
+            FormRow::Composite { controls, .. } => controls.iter().find_map(|c| match c {
+                CompositeControl::Popup { id, options, .. } if id == NEW_CHARACTER_ID => {
+                    Some(options.clone())
+                }
+                _ => None,
+            }),
+            _ => None,
+        });
+        assert_eq!(
+            character.as_deref(),
+            Some(&["bmo".to_string(), "ghost".to_string()][..])
+        );
+        assert_eq!(new_character, character);
     }
 
     /// #902: `byo_section` does not read the settings document, so asserting

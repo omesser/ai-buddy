@@ -552,8 +552,7 @@ impl SettingsView {
                 RowValue::Instances(self.instances.clone()),
             ),
             (form::NEW_NAME_ID.to_string(), text("")),
-            // The spawn popup carries no options of its own, so the Character
-            // in force is the one it can offer (#875).
+            // New starts on the Character in force (#875).
             (form::NEW_CHARACTER_ID.to_string(), text(&self.character)),
             (
                 form::DIRECTOR_ID.to_string(),
