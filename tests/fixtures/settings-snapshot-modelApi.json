@@ -256,7 +256,7 @@
               ],
               "frozen": false,
               "batched": true,
-              "disclosure": "Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.",
+              "disclosure": "Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (cursor-agent, grok, hermes, opencode) require only their binary on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.",
               "status": null
             },
             {
