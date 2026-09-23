@@ -37,6 +37,14 @@ else
   STATUS=1
 fi
 
+echo "prove-units: test_verify_overlay_stray_scope.sh"
+if bash scripts/test_verify_overlay_stray_scope.sh 2>&1 | tee "$DEST/overlay-stray-scope.txt"; then
+  echo "PASS overlay-stray-scope" | tee -a "$DEST/summary.txt"
+else
+  echo "FAIL overlay-stray-scope" | tee -a "$DEST/summary.txt"
+  STATUS=1
+fi
+
 echo "prove-units: test_verify_settings_keyboard.sh"
 if bash scripts/test_verify_settings_keyboard.sh 2>&1 | tee "$DEST/settings-keyboard.txt"; then
   echo "PASS settings-keyboard" | tee -a "$DEST/summary.txt"

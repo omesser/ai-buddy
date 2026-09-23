@@ -111,6 +111,11 @@ if [ "$UNITS" = "1" ]; then
   else
     fail "scripts/test_verify_overlay_diagnostics.sh"
   fi
+  if bash scripts/test_verify_overlay_stray_scope.sh > /dev/null; then
+    pass "scripts/test_verify_overlay_stray_scope.sh"
+  else
+    fail "scripts/test_verify_overlay_stray_scope.sh"
+  fi
   if bash scripts/test_verify_settings_keyboard.sh > /dev/null; then
     pass "scripts/test_verify_settings_keyboard.sh"
   else
