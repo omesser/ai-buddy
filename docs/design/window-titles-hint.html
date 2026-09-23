@@ -1,0 +1,602 @@
+<!doctype html>
+<!--
+  The window-titles hint for omesser/ai-buddy#916: when a window read comes
+  back title-less because the grant is off, the buddy says so once, in three
+  candidate shapes — a chat notice, a speech bubble, a menu-bar badge.
+
+  A Dated page under ADR-0011: hand-written, frozen at its date, carrying its
+  issue number. It proposes a state model and three surfaces, so it cannot be
+  Generated from anything — there is nothing shipped for a script to read. The
+  alternative class, prose claiming to describe shipped behavior, is the one
+  that decision forbids.
+
+  Self-contained on purpose: no font link, no remote image, no CDN. The system
+  font stack is the same constraint connect.html argues — the chat webview's
+  CSP blocks a remote stylesheet, so a page proposing chat surfaces has no
+  business depending on one. The buddy is inline SVG because this page is
+  about the hint, not the art.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A frozen proposal on a public site with no access control. Indexing it
+     would make an unshipped design the canonical answer for "ai-buddy window
+     titles", which is a privacy claim it must not make for the product. -->
+<meta name="robots" content="noindex">
+<title>Window Titles Hint</title>
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #2C8C7C;
+    --accent-ink: #0F3F38;
+    --accent-soft: #D6F1EB;
+    --win: #FBFCFE;
+    --win-bar: #E7EAF1;
+    --wall: linear-gradient(160deg, #6E86A8, #33415C 60%, #202838);
+    --bubble: #FFFFFF;
+    --bubble-ink: #1D2027;
+    --warn: #B4622B;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --radius: 10px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1F232D;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      --accent-ink: #0B2B26;
+      --accent-soft: #1F3A37;
+      --win: #262B36;
+      --win-bar: #323949;
+      --bubble: #F2F4F8;
+      --bubble-ink: #1D2027;
+      --warn: #E09A62;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --paper-2: #1F232D;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    --accent-ink: #0B2B26;
+    --accent-soft: #1F3A37;
+    --win: #262B36;
+    --win-bar: #323949;
+    --bubble: #F2F4F8;
+    --bubble-ink: #1D2027;
+    --warn: #E09A62;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 40px 24px 72px; }
+  header { display: flex; flex-direction: column; gap: 8px; margin-bottom: 32px; }
+  .class { font-family: var(--mono); font-size: 12px; letter-spacing: .02em; color: var(--ink-3); margin: 0; }
+  .class a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .class a:hover { text-decoration: underline; }
+  h1 { font-size: 30px; font-weight: 750; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  .lede { color: var(--ink-2); max-width: 66ch; margin: 0; }
+  h2 { font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+       margin: 44px 0 14px; }
+  p { max-width: 72ch; }
+  code { font-family: var(--mono); font-size: .9em; }
+  section > p:first-of-type { margin-top: 0; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- controls ---- */
+  .controls { display: grid; gap: 12px; margin-bottom: 14px; }
+  .bank { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .bank > .label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+                   color: var(--ink-3); min-width: 8.5em; }
+  button { font: inherit; cursor: pointer; }
+  .btn { font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px;
+         background: var(--paper-2); color: var(--ink); padding: 6px 13px; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.mono { font-family: var(--mono); font-size: 12.5px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper-2); gap: 2px; }
+  .seg button { font-size: 13px; font-weight: 650; border: 0; background: transparent; color: var(--ink-2);
+                padding: 5px 12px; border-radius: 999px; }
+  .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+
+  /* ---- the stage ---- */
+  .stage { position: relative; height: 430px; border: 1px solid var(--line); border-radius: 14px;
+           overflow: hidden; background: var(--wall); }
+  .menubar { position: absolute; inset: 0 0 auto 0; height: 26px; display: flex; align-items: center;
+             justify-content: flex-end; gap: 10px; padding: 0 10px; background: rgba(20,24,34,.55);
+             color: #EDEFF5; font-size: 11.5px; backdrop-filter: blur(6px); }
+  .menubar .clock { font-family: var(--mono); opacity: .85; }
+  .tray { position: relative; border: 0; background: transparent; padding: 2px; line-height: 0; border-radius: 6px; }
+  .tray svg { width: 18px; height: 18px; }
+  .dot { position: absolute; top: 0; right: 0; width: 7px; height: 7px; border-radius: 50%;
+         background: #E8894B; box-shadow: 0 0 0 1.5px rgba(20,24,34,.8); }
+  .tray-menu { position: absolute; top: 28px; right: 8px; background: var(--win); color: var(--ink);
+               border: 1px solid var(--line); border-radius: 8px; padding: 4px; min-width: 190px;
+               box-shadow: 0 8px 24px rgba(0,0,0,.35); font-size: 13px; }
+  .tray-menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent;
+                      color: inherit; font-size: 13px; padding: 6px 9px; border-radius: 5px; }
+  .tray-menu button:hover { background: var(--accent-soft); }
+  .tray-menu .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+  .tray-menu .inert { color: var(--ink-3); padding: 6px 9px; }
+
+  .win { position: absolute; background: var(--win); border: 1px solid rgba(0,0,0,.28); border-radius: 9px;
+         overflow: hidden; box-shadow: 0 10px 28px rgba(0,0,0,.32); }
+  .win .bar { height: 26px; background: var(--win-bar); display: flex; align-items: center; gap: 6px;
+              padding: 0 9px; font-size: 11.5px; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+  .win .lights { display: flex; gap: 4px; }
+  .win .lights i { width: 8px; height: 8px; border-radius: 50%; background: #C9CEDA; display: block; }
+  .win .body { padding: 10px; font-size: 11.5px; color: var(--ink-3); }
+  .win .body .ln { height: 6px; border-radius: 3px; background: var(--line); margin-bottom: 7px; }
+  #win-editor { left: 22px; top: 52px; width: 300px; height: 168px; }
+  #win-browser { left: 150px; top: 132px; width: 300px; height: 150px; }
+  #win-term { left: 70px; top: 250px; width: 250px; height: 120px; }
+  #win-term .body { font-family: var(--mono); color: var(--ink-2); }
+
+  /* The chat window is a stage prop, not the real surface — #17 owns that. It
+     is here only so variant A has somewhere to be, and somewhere not to be. */
+  .chatwin { right: 20px; top: 52px; width: 292px; height: 320px; display: flex; flex-direction: column; }
+  .chatwin .log { flex: 1; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .msg { font-size: 12px; border-radius: 9px; padding: 6px 9px; max-width: 85%; }
+  .msg.them { background: var(--paper-2); color: var(--ink); align-self: flex-start; }
+  .msg.you { background: var(--accent-soft); color: var(--ink); align-self: flex-end; }
+  .composer { border-top: 1px solid var(--line); padding: 8px 10px; font-size: 12px; color: var(--ink-3); }
+
+  .notice { border-top: 1px solid var(--line); background: var(--accent-soft); color: var(--ink);
+            padding: 9px 10px; font-size: 12px; }
+  .notice h4 { margin: 0 0 3px; font-size: 12.5px; font-weight: 750; }
+  .notice p { margin: 0 0 7px; max-width: none; line-height: 1.4; }
+  .notice .row, .bubble .row { display: flex; gap: 7px; }
+  .mini { font-size: 11.5px; font-weight: 650; border-radius: 6px; padding: 4px 9px; border: 1px solid var(--line);
+          background: var(--paper); color: var(--ink); }
+  .mini.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+
+  .buddy { position: absolute; left: 330px; top: 318px; width: 76px; height: 76px; }
+  .buddy svg { width: 76px; height: 76px; display: block; }
+  .bubble { position: absolute; left: 268px; top: 208px; width: 232px; background: var(--bubble);
+            color: var(--bubble-ink); border-radius: 12px; padding: 9px 11px; font-size: 12px;
+            box-shadow: 0 8px 22px rgba(0,0,0,.32); }
+  .bubble p { margin: 0 0 8px; max-width: none; line-height: 1.4; }
+  .bubble::after { content: ""; position: absolute; left: 62px; bottom: -8px; border: 8px solid transparent;
+                   border-top-color: var(--bubble); border-bottom: 0; }
+
+  /* Variant A's weakness, drawn rather than described: with the chat window
+     closed there is nowhere for the notice to go, and the stage says so. */
+  .nowhere, .costs { position: absolute; background: rgba(20,24,34,.82); color: #EDEFF5;
+             border: 1px dashed rgba(237,239,245,.5); border-radius: 8px; padding: 7px 11px; font-size: 12px; }
+  .nowhere { left: 50%; bottom: 16px; transform: translateX(-50%); max-width: 420px; text-align: center; }
+  .costs { left: 268px; top: 108px; width: 232px; }
+
+  .settings { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 396px;
+              background: var(--win); color: var(--ink); border: 1px solid var(--line); border-radius: 11px;
+              box-shadow: 0 18px 44px rgba(0,0,0,.45); overflow: hidden; }
+  .settings .bar { height: 30px; background: var(--win-bar); display: flex; align-items: center;
+                   justify-content: space-between; padding: 0 10px; font-size: 12px; color: var(--ink-2);
+                   border-bottom: 1px solid var(--line); }
+  .settings .bar button { border: 0; background: transparent; color: var(--ink-2); font-size: 15px; line-height: 1; }
+  .settings .pane { padding: 12px 14px 14px; }
+  .srow { display: flex; gap: 9px; align-items: flex-start; }
+  .srow input { margin: 2px 0 0; width: 15px; height: 15px; accent-color: var(--accent); }
+  .srow .slabel { font-size: 13.5px; font-weight: 650; }
+  .srow .shelp { font-size: 12px; color: var(--ink-3); }
+  .settings details { margin-top: 9px; font-size: 12px; color: var(--ink-2); }
+  .settings summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .settings details p { margin: 7px 0 0; line-height: 1.45; max-width: none; }
+  .os-note { margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 11.5px;
+             color: var(--ink-3); line-height: 1.45; }
+
+  .readout { display: grid; gap: 6px; margin-top: 12px; }
+  .readout .st { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); min-height: 1.5em; }
+  .readout .st b { color: var(--ink); font-weight: 700; }
+  .readout pre { font-family: var(--mono); font-size: 12px; color: var(--ink-2); background: var(--paper-2);
+                 border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; margin: 0; overflow-x: auto; }
+
+  /* ---- prose furniture ---- */
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 0 0 16px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+  td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 12.5px; }
+  .alts td:first-child { white-space: normal; font-family: var(--sans); font-size: 13.5px; }
+  .verdict { font-weight: 700; color: var(--warn); }
+  pre.code { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; background: var(--paper-2);
+             border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; }
+  ul.tight { padding-left: 1.15rem; max-width: 72ch; }
+  ul.tight li { margin-bottom: 8px; }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+  footer a { color: inherit; }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 720px) {
+    .stage { height: 520px; }
+    .chatwin { right: 12px; width: 240px; }
+    #win-browser, #win-term { display: none; }
+    .settings { width: min(94%, 396px); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a> · 2026-09-23 · hand-written and frozen, not a description of shipped behavior</p>
+    <h1>Window Titles Hint</h1>
+    <p class="lede">Window titles are off by default and stay off until the user consents. Many users never
+      find the Settings row, so <code>list_windows</code>, <code>describe_screen</code> and
+      <code>ai-buddy://windows</code> keep coming back title-less and the buddy looks less aware than it
+      actually is. This proposes a hint that closes that gap once, without ever reading as the product
+      asking for more surveillance permission.</p>
+  </header>
+
+  <h2>The stage</h2>
+  <p>Arm the hint with one of the three triggers #916 names, then switch between the three candidate
+    surfaces. The dismissal is real: <b>Quit and relaunch</b> reloads the stage from persistence, and only
+    <b>Reset everything</b> brings the hint back.</p>
+
+  <div class="controls">
+    <div class="bank">
+      <span class="label">Trigger</span>
+      <button class="btn mono" data-trigger="describe_screen">Agent calls describe_screen</button>
+      <button class="btn mono" data-trigger="attach">Harness attaches</button>
+      <button class="btn mono" data-trigger="resource">Agent reads ai-buddy://windows</button>
+    </div>
+    <div class="bank">
+      <span class="label">Variant</span>
+      <div class="seg" role="group" aria-label="Hint variant">
+        <button data-variant="a" aria-pressed="true">A · Chat notice</button>
+        <button data-variant="b" aria-pressed="false">B · Speech bubble</button>
+        <button data-variant="c" aria-pressed="false">C · Menu-bar badge</button>
+      </div>
+    </div>
+    <div class="bank">
+      <span class="label">Stage</span>
+      <button class="btn" id="chat-toggle" aria-pressed="true">Chat window: open</button>
+      <button class="btn" id="relaunch">Quit and relaunch</button>
+      <button class="btn" id="reset">Reset everything</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="menubar">
+      <span class="clock">9:41</span>
+      <button class="tray" id="tray" aria-label="ai-buddy menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="15" rx="4" fill="#EDEFF5"></rect>
+          <circle cx="9.5" cy="12" r="1.9" fill="#2B3040"></circle>
+          <circle cx="14.5" cy="12" r="1.9" fill="#2B3040"></circle>
+        </svg>
+        <span class="dot" id="tray-dot" hidden></span>
+      </button>
+      <div class="tray-menu" id="tray-menu" hidden>
+        <div class="inert">ai-buddy</div>
+        <div class="sep"></div>
+        <button id="menu-titles" hidden>Turn on window titles…</button>
+        <button>Summon…</button>
+        <button>Settings…</button>
+      </div>
+    </div>
+
+    <div class="win" id="win-editor">
+      <div class="bar"><span class="lights"><i></i><i></i><i></i></span>platform.rs — ai-buddy</div>
+      <div class="body"><div class="ln" style="width:82%"></div><div class="ln" style="width:64%"></div>
+        <div class="ln" style="width:74%"></div><div class="ln" style="width:48%"></div></div>
+    </div>
+    <div class="win" id="win-browser">
+      <div class="bar"><span class="lights"><i></i><i></i><i></i></span>#916 · omesser/ai-buddy</div>
+      <div class="body"><div class="ln" style="width:70%"></div><div class="ln" style="width:88%"></div>
+        <div class="ln" style="width:55%"></div></div>
+    </div>
+    <div class="win" id="win-term">
+      <div class="bar"><span class="lights"><i></i><i></i><i></i></span>zsh — 80×24</div>
+      <div class="body">$ cargo test -p ai-buddy-core</div>
+    </div>
+
+    <div class="win chatwin" id="chatwin">
+      <div class="bar"><span class="lights"><i></i><i></i><i></i></span>Chat</div>
+      <div class="log">
+        <div class="msg you">What am I looking at?</div>
+        <div class="msg them">Three windows — an editor, a browser and a terminal.</div>
+      </div>
+      <div class="notice" id="notice" hidden>
+        <h4>Window titles are off</h4>
+        <p>The buddy knows which apps are open, not which window is which. Settings has the switch.</p>
+        <div class="row">
+          <button class="mini primary" data-act="settings">Open Settings</button>
+          <button class="mini" data-act="dismiss">No thanks</button>
+        </div>
+      </div>
+      <div class="composer">Message the buddy…</div>
+    </div>
+
+    <div class="bubble" id="bubble" hidden>
+      <p>I can't tell your windows apart. Want me to open Settings?</p>
+      <div class="row">
+        <button class="mini primary" data-act="settings">Open Settings</button>
+        <button class="mini" data-act="dismiss">No thanks</button>
+      </div>
+    </div>
+
+    <div class="buddy" aria-hidden="true">
+      <svg viewBox="0 0 76 76">
+        <rect x="6" y="12" width="64" height="56" rx="14" fill="#7FD4C4" stroke="#1D2027" stroke-width="2.5"></rect>
+        <rect x="14" y="20" width="48" height="26" rx="7" fill="#E9F7F4" stroke="#1D2027" stroke-width="2"></rect>
+        <circle cx="30" cy="33" r="4.2" fill="#1D2027"></circle>
+        <circle cx="46" cy="33" r="4.2" fill="#1D2027"></circle>
+        <rect x="20" y="54" width="14" height="5" rx="2.5" fill="#1D2027" opacity=".55"></rect>
+        <circle cx="52" cy="56" r="3.6" fill="#1D2027" opacity=".55"></circle>
+      </svg>
+    </div>
+
+    <div class="nowhere" id="nowhere" hidden>The chat window is closed, so variant A surfaces nothing at all.
+      The read stayed title-less and the user was never told.</div>
+
+    <div class="costs" id="costs" hidden>The overlay bubble carries no buttons today. B is drawn with them so
+      the idea can be judged, but shipping it means a new affordance on the bubble.</div>
+
+    <div class="settings" id="settings" hidden role="dialog" aria-label="Settings — Privacy">
+      <div class="bar"><span>Settings — Privacy</span><button id="settings-close" aria-label="Close">×</button></div>
+      <div class="pane">
+        <div class="srow">
+          <input type="checkbox" id="titles-box">
+          <div>
+            <label class="slabel" for="titles-box">Window titles</label>
+            <div class="shelp">Requires macOS Screen Recording.</div>
+          </div>
+        </div>
+        <details>
+          <summary>What is this?</summary>
+          <p>macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen.
+            Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows
+            either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports
+            owner and bounds only.</p>
+        </details>
+        <p class="os-note">The operating system's own permission dialog comes from this checkbox, and from
+          nothing else. It is not mocked here, and the hint never triggers it.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="readout">
+    <p class="st" id="status">Nothing has asked for a title yet. <b>TitlesHint::Quiet</b>.</p>
+    <pre id="resource">ai-buddy://windows
+  { "owner": "Code",     "bounds": [22,52,300,168], "title": null }
+  { "owner": "Safari",   "bounds": [150,132,300,150], "title": null }
+  { "owner": "Terminal", "bounds": [70,250,250,120], "title": null }</pre>
+  </div>
+
+  <h2>The state model</h2>
+  <p>One derived value, not three booleans that have to stay in step. The hint is on screen because the
+    state says so, and the state has exactly one reason to be what it is.</p>
+
+  <table>
+    <thead><tr><th>State</th><th>What produced it</th><th>What the user sees</th></tr></thead>
+    <tbody>
+      <tr><td>Quiet</td><td>Titles are usable, or no title-less read is outstanding.</td><td>Nothing.</td></tr>
+      <tr><td>Due</td><td>A window read came back title-less while the grant was off.</td>
+        <td>The hint, once, in whichever variant ships.</td></tr>
+      <tr><td>Dismissed</td><td>The user said no.</td>
+        <td>Nothing, now or after a restart. The Settings row stays where it is.</td></tr>
+    </tbody>
+  </table>
+
+  <pre class="code">/// Why the hint is or is not on screen. One value, derived — never three
+/// booleans that have to stay in step.
+enum TitlesHint {
+    /// Titles are usable, or no title-less read is outstanding.
+    Quiet,
+    /// A window read came back title-less while the grant was off.
+    Due,
+    /// The user said no. Persisted, so it survives a restart.
+    Dismissed,
+}</pre>
+
+  <ul class="tight">
+    <li><b>Observed at one seam.</b> <code>usable(WindowTitles)</code> decides a title in exactly two places
+      today, <code>platform::list_window_titles()</code> and the <code>can_read_titles</code> closure in
+      <code>platform::window_source()</code>, both in <code>src-tauri/src/platform.rs</code>. That predicate is
+      where the miss is recorded, in a process-global atomic beside the <code>WANT_*</code> atomics already in
+      <code>src-tauri/src/consent.rs</code>. A flag rather than a channel because the
+      <code>ai-buddy://windows</code> read runs on the MCP HTTP thread with no <code>AppHandle</code> and no
+      route to the UI; the atomic is the one shape that covers all three consumers without new plumbing.</li>
+    <li><b>Decided and drawn in the frame loop</b>, which already holds the <code>AppHandle</code> and already
+      does exactly this for the first-run tour at <code>src-tauri/src/frame_loop.rs:1049</code> and
+      <code>:1071</code>.</li>
+    <li><b><code>Dismissed</code> persists as one new <code>bool</code> on <code>Settings</code></b>, the twin
+      of <code>first_run_tour_shown</code> at <code>src-tauri/src/settings.rs:1832</code> — no
+      <code>BoolField</code>, no <code>FormRow</code>, set and saved where it is shown.</li>
+    <li><b>Gated on <code>!do_not_disturb</code></b>, the same gate the first-run tour takes.</li>
+    <li><b>One dismissal, permanent.</b> A nudge you cannot silence is worse than no nudge, and the Settings
+      row is always there for anyone who changes their mind. The alternative is a session-scoped
+      <em>Not now</em> that comes back next launch, and that is the reviewer's call rather than this page's.</li>
+  </ul>
+
+  <h2>What the copy refuses to say</h2>
+  <p>The hint never names macOS Screen Recording, never names ScreenCast, never says screenshot, and never
+    reaches for a verb of sight — a buddy that <em>sees</em> is a buddy that captures, whatever the next
+    clause says. It names what the buddy knows and what it does not — which window is which — and the
+    Settings row names the grant
+    one line down, which is where PR #956 put it and where a disclosure belongs. A hint that leads with the
+    permission is asking for the permission; a hint that leads with the capability is describing the buddy.</p>
+  <p>The same product rule holds on every OS. Only the platform label under the Settings row changes.</p>
+
+  <h2>Not in this proposal</h2>
+  <ul class="tight">
+    <li>The default stays off. Nothing here flips a grant.</li>
+    <li>Capture stays dropped (ADR-0031), and no copy on this page foreshadows it.</li>
+    <li>Nothing auto-prompts the OS dialog. The checkbox is the only thing that reaches the operating system.</li>
+  </ul>
+
+  <h2>Alternatives weighed</h2>
+  <table class="alts">
+    <thead><tr><th>Alternative</th><th>The case for it</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>A Settings banner alone — surface the offer inside the Privacy pane and nowhere else.</td>
+        <td>Zero new surfaces, zero new copy, and it cannot interrupt anyone.</td>
+        <td><span class="verdict">Rejected.</span> The user who needs the hint is the user who never opens
+          Settings.</td></tr>
+      <tr><td>Append a nudge to the <code>ai-buddy://windows</code> resource text so the agent relays it.</td>
+        <td>One string, no UI at all, and it reaches every Harness for free.</td>
+        <td><span class="verdict">Rejected.</span> The copy then goes through a language model, so "never
+          foreshadows Capture" stops being something the repository can hold.</td></tr>
+      <tr><td>Repeat the hint on every title-less read.</td>
+        <td>Nobody misses it, and a user who ignored it once gets another chance.</td>
+        <td><span class="verdict">Rejected as a nag.</span> An agent can read windows many times a minute;
+          the second showing is already an interruption.</td></tr>
+      <tr><td>Make titles on by default.</td>
+        <td>No hint needed, because there is no gap to close.</td>
+        <td><span class="verdict">Rejected.</span> It is the issue's own out-of-scope line, and it breaks the
+          one consent rule that holds identically on every OS.</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Frozen for <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a>. The mock Settings row follows
+    PR #956; everything else on this page is a proposal, not shipped behavior.
+  </footer>
+</div>
+
+<script>
+// One key, one flag. Everything else is stage state and dies with the reload,
+// which is what makes "Quit and relaunch" worth pressing.
+const KEY = "ai-buddy.window-titles-hint.dismissed";
+// What the readout under the stage is showing: the resource an agent actually
+// reads, which is the whole reason the hint exists.
+const WINDOWS = [
+  ["Code", "[22,52,300,168]", "platform.rs — ai-buddy"],
+  ["Safari", "[150,132,300,150]", "#916 · omesser/ai-buddy"],
+  ["Terminal", "[70,250,250,120]", "zsh — 80×24"],
+];
+const TRIGGERS = {
+  describe_screen: "describe_screen",
+  attach: "a Harness attach",
+  resource: "an ai-buddy://windows read",
+};
+
+const el = (id) => document.getElementById(id);
+const state = { missed: false, dismissed: false, variant: "a", chat: true, settings: false,
+                menu: false, titles: false, last: null, storage: true };
+
+// Derived on every read, which is the whole claim the prose above makes. Kept
+// as a stored field instead, turning the grant on left the hint on screen.
+const hint = () =>
+  state.dismissed ? "dismissed" : state.missed && !state.titles ? "due" : "quiet";
+
+function readDismissed() {
+  try { return localStorage.getItem(KEY) === "1"; }
+  catch (e) { state.storage = false; return false; }
+}
+function writeDismissed(on) {
+  try { on ? localStorage.setItem(KEY, "1") : localStorage.removeItem(KEY); }
+  catch (e) { state.storage = false; }
+}
+
+function trigger(kind) {
+  state.last = TRIGGERS[kind];
+  if (state.titles) return render("Titles are usable, so " + state.last + " got them. Nothing to hint.");
+  state.missed = true;
+  render(state.dismissed
+    ? "A title-less read from " + state.last + ", and the user already said no. Silent, by design."
+    : "A title-less read from " + state.last + " while the grant was off.");
+}
+
+function act(what) {
+  if (what === "settings") { state.settings = true; state.menu = false; state.missed = false;
+    render("Opened Settings. The hint has done its whole job."); }
+  if (what === "dismiss") { state.dismissed = true; writeDismissed(true);
+    render("Dismissed and persisted. It will not come back after a restart."); }
+}
+
+function render(note) {
+  const due = hint() === "due";
+  el("notice").hidden = !(due && state.variant === "a" && state.chat);
+  el("nowhere").hidden = !(due && state.variant === "a" && !state.chat);
+  el("bubble").hidden = !(due && state.variant === "b");
+  el("tray-dot").hidden = !(due && state.variant === "c");
+  el("menu-titles").hidden = !(due && state.variant === "c");
+  el("chatwin").hidden = !state.chat;
+  el("settings").hidden = !state.settings;
+  el("tray-menu").hidden = !state.menu;
+  el("tray").setAttribute("aria-expanded", String(state.menu));
+  el("titles-box").checked = state.titles;
+
+  el("costs").hidden = !(due && state.variant === "b");
+  el("resource").textContent = "ai-buddy://windows\n" + WINDOWS.map(
+    ([owner, bounds, title]) => '  { "owner": "' + owner + '", "bounds": ' + bounds +
+      ', "title": ' + (state.titles ? '"' + title + '"' : "null") + " }").join("\n");
+
+  const names = { quiet: "TitlesHint::Quiet", due: "TitlesHint::Due", dismissed: "TitlesHint::Dismissed" };
+  const bits = [(note || "") + " <b>" + names[hint()] + "</b>."];
+  if (!state.storage) bits.push("localStorage is unavailable here, so a dismissal cannot survive a restart.");
+  el("status").innerHTML = bits.join(" ");
+}
+
+document.querySelectorAll("[data-trigger]").forEach((b) =>
+  b.addEventListener("click", () => trigger(b.dataset.trigger)));
+document.querySelectorAll("[data-act]").forEach((b) =>
+  b.addEventListener("click", () => act(b.dataset.act)));
+
+document.querySelectorAll("[data-variant]").forEach((b) => b.addEventListener("click", () => {
+  state.variant = b.dataset.variant;
+  state.menu = false;
+  document.querySelectorAll("[data-variant]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render("Variant " + state.variant.toUpperCase() + ".");
+}));
+
+el("chat-toggle").addEventListener("click", () => {
+  state.chat = !state.chat;
+  el("chat-toggle").textContent = "Chat window: " + (state.chat ? "open" : "closed");
+  el("chat-toggle").setAttribute("aria-pressed", String(state.chat));
+  render("Chat window " + (state.chat ? "open." : "closed."));
+});
+
+el("tray").addEventListener("click", () => { state.menu = !state.menu; render(""); });
+el("menu-titles").addEventListener("click", () => act("settings"));
+el("settings-close").addEventListener("click", () => { state.settings = false; render(""); });
+el("titles-box").addEventListener("change", (e) => {
+  state.titles = e.target.checked;
+  render(state.titles
+    ? "Grant on. Every consumer gets titles from the next read, and the flow ends here."
+    : "Grant off again. The next title-less read can make the hint Due.");
+});
+
+el("relaunch").addEventListener("click", () => {
+  Object.assign(state, { missed: false, settings: false, menu: false, titles: false, last: null });
+  state.dismissed = readDismissed();
+  render(state.dismissed
+    ? "Relaunched. The dismissal was read back from persistence, so the hint stays gone."
+    : "Relaunched. Nothing persisted, so a title-less read can raise the hint again.");
+});
+
+el("reset").addEventListener("click", () => {
+  writeDismissed(false);
+  Object.assign(state, { missed: false, dismissed: false, settings: false, menu: false,
+                         titles: false, last: null });
+  render("Persistence cleared.");
+});
+
+state.dismissed = readDismissed();
+render(state.dismissed ? "Loaded with a dismissal already on disk." : "Nothing has asked for a title yet.");
+</script>
+</body>
+</html>
