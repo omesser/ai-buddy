@@ -92,8 +92,8 @@ fn overlay_label(index: usize) -> String {
 }
 
 /// The Chat surface belonging to `id`. Outside `overlay-` on purpose:
-/// `place_overlays` closes every `overlay-{n}` past the display count, so a
-/// Chat surface sharing that prefix would shut when a display is unplugged.
+/// `place_overlays` hides every `overlay-{n}` past the display count, so a
+/// Chat surface sharing that prefix would hide when a display is unplugged.
 fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
@@ -1409,7 +1409,7 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
 
 /// Shut the Chat surface belonging to `id`, if it has one. Nothing else
 /// closes a `chat-*`: they sit outside the `overlay-` namespace
-/// `place_overlays` sweeps. Main thread only, for `open_chat`'s reason.
+/// `place_overlays` hides. Main thread only, for `open_chat`'s reason.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
@@ -2082,13 +2082,18 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
     }
 
     // Labels are handed out in order, so the first missing one ends the set.
+    // Hide overlays that no longer have displays, rather than closing them.
+    // Closing during display reconfiguration (lock/unlock, display removal)
+    // triggers a WebKit crash on macOS: SIGSEGV in obscured-content-insets
+    // recalculation when an NSException crosses the extern "C" boundary.
+    // Hidden windows are reused when displays return. (#868)
     for index in displays.len().. {
         let label = overlay_label(index);
         let Some(window) = app.get_webview_window(&label) else {
             break;
         };
         eprintln!("overlay: {label} has no display left to cover");
-        if let Err(why) = window.close() {
+        if let Err(why) = window.hide() {
             failed.push(format!("{label}: {why}"));
         }
     }
