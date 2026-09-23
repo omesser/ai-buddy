@@ -136,7 +136,7 @@ test("initializing Harness gates chat and shows clear state", () => {
     },
   };
   assert.equal(canAnswer(opening), false, "chat is gated during initialization");
-  assert.equal(composerPlaceholder(opening), "Nothing can answer yet");
+  assert.equal(composerPlaceholder(opening), "Starting Hermes…");
   const copy = landingCopy(opening);
   assert.equal(copy.title, "Initializing Hermes…");
   assert.match(copy.lede, /starting up/i);
