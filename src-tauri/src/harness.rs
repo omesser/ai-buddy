@@ -3801,26 +3801,32 @@ mod tests {
                 let _ = tx.send(forwarded);
             }) as Forward),
         ));
-        
+
         // Before spawn_preflight, initializing is false
         assert!(!session.inspect().initializing, "initializing starts false");
-        
+
         session.spawn_preflight();
-        
+
         // Immediately after spawn_preflight, initializing is true
-        assert!(session.inspect().initializing, "initializing is true during spawn");
-        
+        assert!(
+            session.inspect().initializing,
+            "initializing is true during spawn"
+        );
+
         // Wait for attach to complete
         match rx.recv_timeout(Duration::from_secs(5)) {
             Ok(Forwarded::AttachSettled) => {}
             other => panic!("expected AttachSettled, got {other:?}"),
         }
-        
+
         // After spawn fails, initializing is false
         let inspect = session.inspect();
-        assert!(!inspect.initializing, "initializing is false after spawn fails");
+        assert!(
+            !inspect.initializing,
+            "initializing is false after spawn fails"
+        );
         assert!(!inspect.alive, "alive is false after spawn fails");
-        
+
         let _ = std::fs::remove_dir_all(dir);
     }
 
