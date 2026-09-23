@@ -600,7 +600,14 @@ pub(crate) fn run_frame_loop(
                                     .map(|s| s.chat_ui.clone())
                                     .unwrap_or_else(|| "minimal".to_string());
                                 if let Ok(inspect) = inspect.lock() {
-                                    push_chat_opening(&app, &roster, &id, &inspect, &characters, &chat_ui);
+                                    push_chat_opening(
+                                        &app,
+                                        &roster,
+                                        &id,
+                                        &inspect,
+                                        &characters,
+                                        &chat_ui,
+                                    );
                                 }
                             }
                         } else {
