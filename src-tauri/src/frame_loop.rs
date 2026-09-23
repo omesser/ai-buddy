@@ -594,8 +594,13 @@ pub(crate) fn run_frame_loop(
                                     &director,
                                     &app,
                                 );
+                                let chat_ui = settings
+                                    .lock()
+                                    .ok()
+                                    .map(|s| s.chat_ui.clone())
+                                    .unwrap_or_else(|| "minimal".to_string());
                                 if let Ok(inspect) = inspect.lock() {
-                                    push_chat_opening(&app, &roster, &id, &inspect, &characters);
+                                    push_chat_opening(&app, &roster, &id, &inspect, &characters, &chat_ui);
                                 }
                             }
                         } else {
@@ -741,6 +746,11 @@ pub(crate) fn run_frame_loop(
                                 "chars": written.text.chars().count(),
                             }),
                         );
+                        let chat_ui = settings
+                            .lock()
+                            .ok()
+                            .map(|s| s.chat_ui.clone())
+                            .unwrap_or_else(|| "minimal".to_string());
                         if let Ok(inspect) = inspect.lock() {
                             push_chat_opening(
                                 &app,
@@ -748,6 +758,7 @@ pub(crate) fn run_frame_loop(
                                 &written.instance,
                                 &inspect,
                                 &characters,
+                                &chat_ui,
                             );
                         }
                         continue;
@@ -899,9 +910,14 @@ pub(crate) fn run_frame_loop(
             }
 
             if reload_chat {
+                let chat_ui = settings
+                    .lock()
+                    .ok()
+                    .map(|s| s.chat_ui.clone())
+                    .unwrap_or_else(|| "minimal".to_string());
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.harness = harness::attached().map(|session| session.inspect());
-                    push_chat_openings(&app, &roster, &inspect, &characters);
+                    push_chat_openings(&app, &roster, &inspect, &characters, &chat_ui);
                 }
             }
 

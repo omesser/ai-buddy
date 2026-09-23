@@ -300,6 +300,12 @@ function attached(opening) {
   send.disabled = !ready;
   line.placeholder = composerPlaceholder(opening);
 
+  // Apply saved Chat UI design.
+  const html = document.documentElement;
+  const chatUi = opening.chat_ui || "minimal";
+  html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
+  html.classList.add(`chat-ui-${chatUi}`);
+
   const landing = document.getElementById("landing");
   const httpEmpty = document.getElementById("empty-http");
   const httpOff = document.getElementById("empty-http-off");
