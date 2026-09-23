@@ -78,7 +78,8 @@ repos:
         additional_dependencies: ["tomli"]
         # "crate" is Rust vocabulary, not a misspelling of "create".
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
-        args: ["--ignore-words-list=crate,crates,static,statics"]
+        # "sigit" is an agent id in the ACP registry, not a misspelling of "digit".
+        args: ["--ignore-words-list=crate,crates,static,statics,sigit"]
         exclude: *vendored
 
   # Comment block ceiling, from `scripts/ast-grep/rules/`. tree-sitter reads

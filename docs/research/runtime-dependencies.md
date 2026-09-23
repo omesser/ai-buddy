@@ -22,8 +22,10 @@ Census of runtime deps beyond the ai-buddy binary. For each: why needed, how det
 
 **Measured from code and registry** (2026-09-23):
 
+Registry: the ACP agent registry index, https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json, `version` field `1.0.0`, fetched 2026-09-23. Documented at https://agentclientprotocol.com/get-started/registry. Every count below is reproducible from that file.
+
 Registry total: 41 agents.
-Distribution: 19 binary, 20 npx, 2 uvx.
+Distribution keys: 19 binary, 22 npx, 2 uvx. Those sum to 43, not 41, because `kilo` and `sigit` each carry both a binary and an npx distribution. Read them as "agents reachable this way", not as a partition.
 
 ai-buddy `launch()` today (src-tauri/src/harness.rs):
 - claude, codex, pi: npx adapters (need Node)
@@ -104,7 +106,7 @@ BYO harness registration via HTTP + bearer token is the primary path for all fiv
 
 **Call: Out of scope for V1.**
 
-Registry has 2 uvx agents (fast-agent, minion-code). Same "declare the runner" problem as npx, different toolchain (Python uv instead of Node). No named ai-buddy presets for uvx agents yet. Custom argv escape hatch already covers them if user has uv installed.
+Registry has 2 uvx agents, `fast-agent` 0.10.1 and `minion-code` 0.1.44. Same "declare the runner" problem as npx, different toolchain (Python uv instead of Node). No named ai-buddy presets for uvx agents yet. Custom argv escape hatch already covers them if user has uv installed.
 
 **Reasoning:** Same as npx: bundling a package runner for 2 agents is heavier than declaring "install uv if you want fast-agent." Defer until user demand or named preset for one of them.
 
@@ -180,7 +182,7 @@ Based on Done-when checklist and this research:
 ## Claims and evidence labels
 
 **Measured** (from code/registry/live tests):
-- Registry v1.0.0 has 41 agents: 19 binary, 20 npx, 2 uvx.
+- Registry v1.0.0 (https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json, fetched 2026-09-23) has 41 agents, with 19 binary, 22 npx and 2 uvx distribution keys. `kilo` and `sigit` carry two each, so the keys outnumber the agents.
 - ai-buddy launch() in src-tauri/src/harness.rs: 3 npx presets (claude/codex/pi), 4 PATH presets (cursor-agent/grok/hermes/opencode), 1 custom.
 - #726 motivating bug (closed by #831): npx missing caused silent dead chat. #831 shipped loud failure (landing stays, missing launcher surfaced).
 - Architect comments dated 2026-09-17 on #735 (npx vs acpx, deep pass of registry agents, Gemini sunset correction).
