@@ -100,6 +100,30 @@
           "comment": null,
           "disclosure": null,
           "status": null
+        },
+        {
+          "heading": "Appearance",
+          "rows": [
+            {
+              "type": "Popup",
+              "id": "chat_ui",
+              "label": "Chat UI",
+              "writes": "ChatUI",
+              "help": "Visual design for the chat surface.",
+              "options": [
+                "Minimal",
+                "Terminal",
+                "Glass"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
         }
       ]
     },
@@ -122,30 +146,6 @@
               "frozen": false,
               "batched": false,
               "disclosure": "Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.",
-              "status": null
-            }
-          ],
-          "comment": null,
-          "disclosure": null,
-          "status": null
-        },
-        {
-          "heading": "Appearance",
-          "rows": [
-            {
-              "type": "Popup",
-              "id": "chat_ui",
-              "label": "Chat UI",
-              "writes": "ChatUI",
-              "help": "Visual design for the chat surface.",
-              "options": [
-                "Minimal",
-                "Terminal",
-                "Glass"
-              ],
-              "frozen": false,
-              "batched": false,
-              "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
               "status": null
             }
           ],
