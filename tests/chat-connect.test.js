@@ -92,6 +92,28 @@ test("a named Harness that has not come up stays on the landing", () => {
   assert.match(copy.lede, /Static weights/);
 });
 
+test("initializing Harness gates chat and shows clear state", () => {
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "hermes",
+    harness: {
+      name: "hermes",
+      session: null,
+      alive: false,
+      login: null,
+      initializing: true,
+    },
+  };
+  assert.equal(canAnswer(opening), false, "chat is gated during initialization");
+  assert.equal(composerPlaceholder(opening), "Nothing can answer yet");
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Initializing Hermes…");
+  assert.match(copy.lede, /starting up/i);
+  assert.doesNotMatch(copy.lede, /not running/);
+});
+
 test("needs-auth still names the login command", () => {
   const copy = landingCopy({
     name: "bmo",

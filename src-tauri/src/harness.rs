@@ -331,6 +331,8 @@ pub struct HarnessInspect {
     /// Told apart from a child that died because no respawn mends it and the
     /// sentence a user needs is a different one.
     pub missing: Option<String>,
+    /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
+    pub initializing: bool,
     /// What the last turn came back with, when it came back with an error, and
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive, and authenticated, so nothing else here tells it apart.
@@ -605,6 +607,7 @@ impl Session {
     /// Where the Harness should be by the time the first wake arrives. Spawned
     /// so startup does not wait on `npx`; the outcome is one stderr line.
     pub fn spawn_preflight(self: &Arc<Self>) {
+        self.update_inspect(|inspect| inspect.initializing = true);
         let session = Arc::clone(self);
         thread::spawn(move || {
             match session.attach(None) {
@@ -846,7 +849,10 @@ impl Session {
         if let Ok(mut slot) = self.wire.lock() {
             *slot = None;
         }
-        self.update_inspect(|inspect| inspect.alive = false);
+        self.update_inspect(|inspect| {
+            inspect.alive = false;
+            inspect.initializing = false;
+        });
         self.charge_loss(state);
     }
 
@@ -858,6 +864,7 @@ impl Session {
         self.update_inspect(|inspect| {
             inspect.alive = false;
             inspect.missing = Some(command.clone());
+            inspect.initializing = false;
         });
         not_installed(&command)
     }
@@ -1001,6 +1008,7 @@ impl Session {
             inspect.agent = state.handshake.agent.clone();
             inspect.mcp_http = state.handshake.mcp_http;
             inspect.alive = true;
+            inspect.initializing = false;
         });
         let wire = Arc::new(wire);
         if !self.wanted.load(Ordering::SeqCst) {
@@ -3771,6 +3779,48 @@ mod tests {
         let inspect = session.inspect();
         assert_eq!(inspect.missing.as_deref(), Some(NOPE));
         assert!(!inspect.alive);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Initializing gates chat during ACP handshake. Set true at spawn_preflight,
+    /// false on success or failure.
+    #[test]
+    fn initializing_gates_chat_until_spawn_completes() {
+        const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
+        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let (tx, rx) = mpsc::channel();
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec![NOPE.into()],
+        };
+        let session = Arc::new(Session::new(
+            launch,
+            Ok(AttachCwd(dir.clone())),
+            SessionDataDir::at(dir.clone()),
+            Arc::new(Box::new(move |forwarded| {
+                let _ = tx.send(forwarded);
+            }) as Forward),
+        ));
+        
+        // Before spawn_preflight, initializing is false
+        assert!(!session.inspect().initializing, "initializing starts false");
+        
+        session.spawn_preflight();
+        
+        // Immediately after spawn_preflight, initializing is true
+        assert!(session.inspect().initializing, "initializing is true during spawn");
+        
+        // Wait for attach to complete
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Forwarded::AttachSettled) => {}
+            other => panic!("expected AttachSettled, got {other:?}"),
+        }
+        
+        // After spawn fails, initializing is false
+        let inspect = session.inspect();
+        assert!(!inspect.initializing, "initializing is false after spawn fails");
+        assert!(!inspect.alive, "alive is false after spawn fails");
+        
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -21,6 +21,7 @@ export function harnessDisplayName(opening) {
 // Configured is not ready. A named Harness whose child never came up, or
 // whose launcher is missing, must not enable Ask {name} the way a live
 // session does. HTTP Completer mode has no harness object.
+// Initializing also gates: ACP handshake is in progress and turns would fail.
 export function canAnswer(opening) {
   if (!opening?.configured || !opening.enabled || opening.login) {
     return false;
@@ -29,7 +30,7 @@ export function canAnswer(opening) {
   if (!harness) {
     return true;
   }
-  return harness.alive && !harness.missing;
+  return harness.alive && !harness.missing && !harness.initializing;
 }
 
 export function composerPlaceholder(opening) {
@@ -77,6 +78,15 @@ export function landingCopy(opening) {
     return {
       title: `${name} needs \`${missing}\``,
       lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`. Install it, then press ${name} again, or pick a different Harness below.`,
+      command: null,
+      hint: null,
+    };
+  }
+
+  if (harness?.initializing) {
+    return {
+      title: `Initializing ${name}…`,
+      lede: `${name} is starting up. Chat will be ready in a moment.`,
       command: null,
       hint: null,
     };
