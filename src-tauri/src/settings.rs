@@ -346,13 +346,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
                 .to_string(),
             String::new(), // Token already in snippet (export)
         ),
-        // One fragment, two Harnesses: neither Cursor nor Pi has an `mcp add`
-        // to generate a command from, and both read the same `mcpServers`
-        // object out of a file. Only the file and the reload differ.
-        // `cursor-agent mcp` offers login, list, list-tools, enable and
-        // disable, so `mcp enable` is not optional there: a new name lands as
-        // `not loaded (needs approval)` until it runs (#636).
-        "cursor-agent" | "pi" => (
+        "cursor-agent" => (
             format!(
                 "{{\n\
                  \x20 \"mcpServers\": {{\n\
@@ -365,18 +359,32 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
                  \x20 }}\n\
                  }}"
             ),
-            if harness == "cursor-agent" {
-                "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
-                 not a command. Add or update the `ai-buddy` entry under `mcpServers`, \
-                 then run `cursor-agent mcp enable ai-buddy` in a terminal and start a \
-                 new session. `cursor-agent mcp list` reports."
-            } else {
-                "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
-                 command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
-                 `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
-            }
-            .to_string(),
-            String::new(), // Token already in snippet
+            "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
+             not a command. Add or update the `ai-buddy` entry under `mcpServers`, \
+             then run `cursor-agent mcp enable ai-buddy` in a terminal and start a \
+             new session. `cursor-agent mcp list` reports."
+                .to_string(),
+            String::new(),
+        ),
+        "pi" => (
+            format!(
+                "{{\n\
+                 \x20 \"mcpServers\": {{\n\
+                 \x20   \"ai-buddy\": {{\n\
+                 \x20     \"url\": \"{url}\",\n\
+                 \x20     \"lifecycle\": \"eager\",\n\
+                 \x20     \"headers\": {{\n\
+                 \x20       \"Authorization\": \"Bearer {token}\"\n\
+                 \x20     }}\n\
+                 \x20   }}\n\
+                 \x20 }}\n\
+                 }}"
+            ),
+            "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
+             command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
+             `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
+                .to_string(),
+            String::new(),
         ),
         "grok" => (
             format!(
@@ -4845,6 +4853,22 @@ mod tests {
         assert!(
             pi_steps.contains("/reload"),
             "pi must still mention /reload, got {pi_steps:?}"
+        );
+    }
+
+    #[test]
+    fn pi_fragment_emits_lifecycle_eager_cursor_agent_does_not() {
+        let (pi_snippet, _, _) = byo_registration("pi", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            pi_snippet.contains(r#""lifecycle": "eager""#),
+            "pi fragment must include lifecycle eager, got {pi_snippet:?}"
+        );
+
+        let (cursor_snippet, _, _) =
+            byo_registration("cursor-agent", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            !cursor_snippet.contains("lifecycle"),
+            "cursor-agent fragment must not include lifecycle key, got {cursor_snippet:?}"
         );
     }
 }
