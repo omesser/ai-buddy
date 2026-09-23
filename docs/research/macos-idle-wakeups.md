@@ -696,29 +696,29 @@ mkdir -p "$OUT_BASE"
 # Run four interleaved rounds: baseline, idle, baseline, idle, baseline, idle, baseline, idle
 for i in 1 2 3 4; do
   echo "=== Round $i ===" | tee -a "$OUT_BASE/summary.txt"
-  
+
   # Baseline: no ai-buddy running
   scripts/bench-wakeups-macos.sh --scenario baseline --duration 45 \
     --out "$OUT_BASE/round${i}-baseline"
-  
+
   # Wait for system to settle
   sleep 10
-  
+
   # Idle perched
   scripts/bench-wakeups-macos.sh --binary "$BINARY" --scenario idle --duration 45 \
     --out "$OUT_BASE/round${i}-idle"
-  
+
   # Parse and record results
   echo "Round $i baseline:" >> "$OUT_BASE/summary.txt"
   scripts/parse-powermetrics.py "$OUT_BASE/round${i}-baseline/powermetrics.txt" \
     --process '' >> "$OUT_BASE/summary.txt"
-  
+
   echo "Round $i idle:" >> "$OUT_BASE/summary.txt"
   IDLE_PID=$(grep '^pid:' "$OUT_BASE/round${i}-idle/meta.txt" | awk '{print $2}')
   scripts/parse-powermetrics.py "$OUT_BASE/round${i}-idle/powermetrics.txt" \
     --pid "$IDLE_PID" --frame-log "$OUT_BASE/round${i}-idle/app.log" \
     >> "$OUT_BASE/summary.txt"
-  
+
   sleep 10
 done
 
