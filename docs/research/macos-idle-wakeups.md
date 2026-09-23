@@ -335,6 +335,7 @@ machine and expect different figures.
 | Date | 2026-09-15 |
 | Control arm, written `main` below | `7a58e02f` — this issue's base, **before** #718 |
 | Treatment arm, written `#718` below | `9864d789` (`cursor/macos-idle-backoff-183-3b49`) |
+| Baseline, idle and hidden arms, 2026-09-23 | `dac3c1ae` (`main` after #760 and #790), macOS 26.7 (25G229), two displays |
 
 **#718 has since merged** (`8ba9481d`). So the arm labelled `#718` throughout this
 document is what `main` does today, and the arm labelled `main` is the pre-back-off
@@ -362,19 +363,33 @@ confound a second time, more directly.
 
 ## Tools
 
-- `scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat [--duration SECS] [--out DIR]` —
+- `scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden [--duration SECS] [--out DIR]` —
   launches the release binary with the env a worktree build needs
   (`AI_BUDDY_DIRECTOR_API_KEY` skips the Keychain prompt, #283), waits for the
-  overlay to report ready, optionally drives Summon (see below), then runs
+  overlay to report ready, optionally drives Summon (see below) or the
+  fullscreen hide (see "Baseline (no ai-buddy) and hidden, interleaved"), then runs
   `sudo powermetrics -i 1000 -n DURATION --samplers tasks,cpu_power` for the
   window and writes `powermetrics.txt` + `app.log` + `meta.txt` to `--out`.
+  `--scenario baseline` launches nothing and refuses to sample while any
+  `ai-buddy` process is alive, since another agent's build would otherwise
+  become the baseline without anyone noticing. Every `meta.txt` records the
+  load average and whether `cargo`/`rustc` were running at the end of the
+  capture.
+- `scripts/fullscreen-window.swift [quit-after-secs]` — a borderless,
+  click-through, near-transparent window covering the whole main display.
+  `fullscreen_frontmost` in `crates/core/src/visibility.rs` reads rectangles
+  only, so this fires the hide rule the same way a real fullscreen app does
+  without taking the desktop from whoever is using the machine. It re-asserts
+  itself at the front of ordinary windows every 50 ms, the same trick as
+  `perch-window.swift`, and quits on its own as a backstop.
 - `scripts/parse-powermetrics.py POWERMETRICS_TXT --pid PID [--frame-log APP_LOG]` —
   reduces the capture to wakeups/sec (interrupt and pkg-idle), CPU%, cluster
   idle residency and package power, for the exact PID. With `--frame-log` it
   also buckets seconds by whatever animation the frame trace says was on
   screen at that wall-clock second (idle-family vs. active, and per
   animation), so a single idle-perched capture that happens to catch a
-  natural walk answers two scenarios at once.
+  natural walk answers two scenarios at once. `--process ''` reduces a
+  baseline capture to its system-wide numbers alone.
 - `scripts/click-cursor.swift x y [clicks]` — posts one or two real HID
   left-clicks at a point, warping the cursor there first. **Shared with
   #728** (`crates/verify`'s `summon`/`poke` subcommands add the same path;
@@ -490,6 +505,104 @@ same effect the interleaved idle-perched runs were built to control for.
 Treat this table as two single samples, not as a measurement of #718's
 effect on chat-open.
 
+## Baseline (no ai-buddy) and hidden, interleaved
+
+The two scenarios from #431's list that the sections above left out, captured
+2026-09-23 against `dac3c1ae` (`main` after #760 and #790, so the idle arm here
+is the post-fix process, not the 369-wakeup one at the top of this document).
+Same machine, now on macOS 26.7 (25G229), two displays this round
+(`overlay: 2 display(s)`, a 1920×1080 main and a 1728×1117 second), release
+build from `.worktrees/bench-431`. Three arms per round, run **baseline, idle,
+hidden, baseline, idle, hidden, ...** so a load drift lands on all three arms
+of the same round:
+
+- **baseline** — `scripts/bench-wakeups-macos.sh --scenario baseline`. No
+  ai-buddy process alive; the script refuses to sample if one is, and
+  `meta.txt` records the `pgrep -x ai-buddy` result before and after.
+- **idle** — the idle-perched scenario, rerun here so the buddy-vs-no-buddy
+  comparison #431's last acceptance box asks for is a same-round pair rather
+  than a comparison against a capture from a week earlier.
+- **hidden** — `--scenario hidden`. The app launches, waits for a
+  `Grounded`/`Perched` frame, then `scripts/fullscreen-window.swift` covers
+  the main display and the script waits for the engine's own
+  `presence: hidden over 500ms` line before sampling. A capture in which
+  `presence: shown` appears afterwards is marked invalid and exits non-zero.
+  While hidden the frame loop traced one `frame:` line per second (47–48 in
+  45 s) against ~60/s visible, which is the hidden-idle path in
+  `src-tauri/src/frame_loop.rs` sleeping to its next Director or sense
+  deadline.
+
+Five rounds ran; four are published. Round 3's hidden arm failed its own
+proof: `presence: shown` for one second at second 35 of the sample (11
+frames traced in that second, 1/s everywhere else), so something covered the
+prop for a second and the sprite came back. That capture is not a hidden
+sample, the harness said so, and the whole round is out because arms are
+paired by round. Every published run had no `cargo` or `rustc` alive at the
+end of its capture; the 1-minute load average is in the last column.
+
+| Round | Arm | n | Wakeups/sec (interrupt) | Wakeups/sec (pkg-idle) | CPU% | E-Cluster idle % | P-Cluster idle % | Package mW | Load (1 min) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | baseline | 45 | — | — | — | 23.5 | 84.4 | 729 | 3.34 |
+| 1 | idle | 45 | 190.4 | 1.99 | 6.5 | 25.5 | 71.1 | 1311 | 3.46 |
+| 1 | hidden | 45 | 129.6 | 1.58 | 2.3 | 26.2 | 78.3 | 735 | 3.50 |
+| 2 | baseline | 45 | — | — | — | 27.0 | 83.7 | 663 | 2.88 |
+| 2 | idle | 45 | 181.6 | 2.12 | 7.5 | 29.7 | 82.2 | 467 | 2.69 |
+| 2 | hidden | 45 | 173.1 | 2.49 | 3.6 | 29.0 | 82.9 | 519 | 2.55 |
+| 3 | baseline | 45 | — | — | — | 19.0 | 59.2 | 2007 | 2.96 |
+| 3 | idle | 45 | 181.7 | 2.68 | 8.2 | 29.3 | 86.0 | 505 | 2.44 |
+| 3 | hidden | 45 | 72.1 | 0.89 | 1.7 | 26.2 | 90.6 | 379 | 2.89 |
+| 4 | baseline | 45 | — | — | — | 31.2 | 92.1 | 315 | 2.32 |
+| 4 | idle | 45 | 204.6 | 3.98 | 9.5 | 30.6 | 87.8 | 386 | 3.76 |
+| 4 | hidden | 45 | 189.4 | 2.49 | 4.3 | 29.0 | 89.4 | 410 | 3.65 |
+
+Per-process columns are the exact PID the script launched. Cluster idle and
+package power are system-wide. Round 3's baseline arm (59.2% P-Cluster idle,
+2007 mW, with no ai-buddy alive) is the machine doing something else for
+those 45 seconds, and it is kept: dropping the inconvenient no-app round
+would be the single-sample mistake this document already withdrew once.
+
+**Median and range per arm, four rounds:**
+
+| | baseline | idle | hidden |
+|---|---|---|---|
+| Wakeups/sec (interrupt) | — | 186.1 [181.6–204.6] | 151.3 [72.1–189.4] |
+| Wakeups/sec (pkg-idle) | — | 2.40 [1.99–3.98] | 2.03 [0.89–2.49] |
+| CPU% | — | 7.9 [6.5–9.5] | 2.9 [1.7–4.3] |
+| E-Cluster idle residency | 25.2% [19.0–31.2%] | 29.5% [25.5–30.6%] | 27.6% [26.2–29.0%] |
+| P-Cluster idle residency | 84.1% [59.2–92.1%] | 84.1% [71.1–87.8%] | 86.2% [78.3–90.6%] |
+| Package CPU power | 696 mW [315–2007] | 486 mW [386–1311] | 464 mW [379–735] |
+
+**Hidden costs less than a third of the CPU of perched, and the ranges do not
+touch.** 7.9% [6.5–9.5] perched against 2.9% [1.7–4.3] hidden. That is the
+hide rule working as #183 intended: no webview redraws, one engine tick a
+second. Interrupt wakeups fall by median (186 to 151) but the hidden range is
+wide (72–189) and overlaps perched, so wakeups resolve direction, not
+magnitude. What stays while hidden is what #761 named: the host and WebKit
+processes keep their own cadence whether or not the sprite is drawn, and the
+hide rule does not reach it.
+
+**Does per-cluster idle residency drop with ai-buddy running? This data cannot
+say.** Same-round differences, idle minus baseline: E-Cluster idle residency
++2.0, +2.7, +10.3, −0.6 points; P-Cluster +26.9, −13.3, −1.5, −4.3 points;
+package power +582, −196, −1501, +71 mW. In three of four rounds the machine
+was *more* idle with the buddy perched than with nothing running, which is not
+a property of the buddy. The effect this box is looking for has a ceiling: a
+process at 7.9% of one core on a 12-core package (6 P + 6 E) can move a
+cluster's idle residency by under one percentage point, and the round-to-round
+swing of the no-app arm alone is 12 points on E and 33 on P. On this machine
+the residency number is set by everything else running, and the absence of one
+process is below its noise floor. Neither direction nor magnitude is resolved.
+
+What *is* resolved is the column the box is really about. "Wakeups/sec
+(pkg-idle)" counts the wakeups that pulled the whole package out of idle, per
+process, and it reads about 2 per second perched (2.40 [1.99–3.98]) and about
+2 per second hidden (2.03 [0.89–2.49]). That is the direct measurement of
+"does this process prevent package idle": yes, roughly twice a second, in both
+states, an amount the system-wide residency cannot see here. A residency
+comparison that could confirm it needs a machine with nothing else on it,
+ideally a laptop left alone long enough for the baseline arm to read near 100%
+idle, and this document does not have one.
+
 ## What "C-state" means on this hardware
 
 #431 asks for "C3/C6/C7 residency," which is Intel nomenclature. This machine
@@ -513,6 +626,11 @@ running on the machine during a given round shows up here as strongly as
 trustworthy comparison in this document; these cluster-residency and
 package-power numbers are included for completeness and are not a second
 confirmation of anything.
+
+The comparison this section could not make when it was written, buddy against
+no buddy, is now in "Baseline (no ai-buddy) and hidden, interleaved" above,
+and reaches the same verdict for the same reason: the no-app arm's residency
+moved by more between rounds than one process could move it at all.
 
 ## Gotchas
 
@@ -548,13 +666,11 @@ confirmation of anything.
 Scoped out per this task's instructions, not fabricated:
 
 - **Multi-monitor** — #424's scope, not this issue's.
-- **Baseline (no ai-buddy running)** and **hidden/fullscreen** — #431's own
-  issue body lists six scenarios; the task that produced this document
-  narrowed to the three #423 names for every child (idle perched, walking,
-  chat open). Baseline and hidden are not in this document; a follow-up
-  using the same `scripts/bench-wakeups-macos.sh` needs only a new
-  `--scenario` case (hidden: launch, then trigger the fullscreen-hides rule;
-  baseline: `sudo powermetrics` with no ai-buddy process running at all).
+- **Baseline (no ai-buddy running)** and **hidden/fullscreen** — measured
+  since, see "Baseline (no ai-buddy) and hidden, interleaved" above. What they still do not give is a
+  clean per-cluster idle-residency comparison: on this machine the no-app
+  arm's residency is set by everything else running, not by the absence of
+  one process, and the section says so.
 - **Linux and Windows** — #431 is macOS-only (#432 covers Linux).
 - **Chat-open, interleaved** — left as a single pair per branch; see
   Chat-open above for why and for the explicit no-percentage rule that
