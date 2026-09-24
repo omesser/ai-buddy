@@ -2545,7 +2545,7 @@ mod tests {
             {
                 assert_eq!(
                     view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                    ["Accessibility", "Window Titles"]
+                    ["Accessibility", "Window and Application Names"]
                 );
                 assert!(!view.consent[1].granted);
             }
@@ -2559,7 +2559,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             assert_eq!(view.consent.len(), 1);
-            assert_eq!(view.consent[0].title, "Screen Cast");
+            assert_eq!(view.consent[0].title, "Window and application names");
             assert!(!view.consent[0].granted);
         }
         #[cfg(target_os = "macos")]
@@ -2671,7 +2671,7 @@ mod tests {
             assert_eq!(
                 values.get(form::CONSENT_WINDOW_NAMES_ID),
                 Some(&RowValue::Bool(settings.use_window_names)),
-                "Window Titles checkbox value must match settings.use_window_names"
+                "The window-names checkbox value must match settings.use_window_names"
             );
         }
         #[cfg(target_os = "macos")]
@@ -2692,7 +2692,7 @@ mod tests {
             assert_eq!(
                 values.get(form::CONSENT_PORTAL_SCREENCAST_ID),
                 Some(&RowValue::Bool(settings.use_window_names)),
-                "Screen Cast checkbox value must match settings.use_window_names"
+                "The Linux window-names checkbox value must match settings.use_window_names"
             );
         }
     }

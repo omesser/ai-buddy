@@ -645,9 +645,10 @@ pub fn pane_intro(listed_as: &str) -> String {
     )
 }
 
-/// Linux-specific intro: xdg-desktop-portal for Wayland window titles.
+/// Linux-specific intro: xdg-desktop-portal for Wayland window names.
 ///
-/// Checkboxes are named after portal capabilities: ScreenCast.
+/// The checkbox is named for what it buys and the copy names the portal it
+/// prompts through, the way #888 settled it for macOS.
 /// No macOS-specific vocabulary (TCC, Privacy & Security, Accessibility).
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
@@ -665,7 +666,7 @@ pub fn listed_under_hint(name: &str) -> String {
 #[cfg(target_os = "windows")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
-        "Window Titles requires no system permission. Other grants will prompt when needed. {}",
+        "Window and Application Names requires no system permission. Other grants will prompt when needed. {}",
         listed_under_hint(listed_as)
     )
 }
@@ -744,7 +745,7 @@ mod tests {
         {
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].id, CapabilityId::WindowNames);
-            assert_eq!(rows[0].title, "Screen Cast");
+            assert_eq!(rows[0].title, "Window and application names");
             assert!(
                 rows[0].buys.contains("Wayland") || rows[0].buys.contains("title"),
                 "ScreenCast has to say what Wayland titles buy, got {:?}",
@@ -1215,17 +1216,17 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
-    fn windows_capabilities_catalog_includes_window_titles() {
+    fn windows_capabilities_catalog_includes_window_names() {
         let rows = rows(|_| false);
         assert!(!rows.is_empty(), "Windows should have at least WindowNames");
 
-        let titles_row = rows
+        let names_row = rows
             .iter()
             .find(|r| matches!(r.id, CapabilityId::WindowNames));
-        assert!(titles_row.is_some(), "WindowNames row must exist");
+        assert!(names_row.is_some(), "WindowNames row must exist");
 
-        let row = titles_row.unwrap();
-        assert_eq!(row.title, "Window Titles");
+        let row = names_row.unwrap();
+        assert_eq!(row.title, "Window and Application Names");
         assert!(
             row.buys.contains("title") || row.buys.contains("window"),
             "WindowNames buys should mention titles/windows, got {:?}",

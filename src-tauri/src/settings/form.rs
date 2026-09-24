@@ -2638,7 +2638,7 @@ mod tests {
                 .find(
                     |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_SCREEN_RECORDING_ID),
                 )
-                .expect("Window titles checkbox exists");
+                .expect("Window names checkbox exists");
 
             match accessibility {
                 FormRow::Checkbox { label, help, .. } => {
@@ -2665,7 +2665,7 @@ mod tests {
                         Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")
                     );
                 }
-                _ => panic!("Window titles row must be a checkbox"),
+                _ => panic!("Window names row must be a checkbox"),
             }
 
             // The compiler pins each of these to *a* bool; only the test pins it
@@ -2744,8 +2744,8 @@ mod tests {
                     .expect("PortalScreenCast checkbox exists");
 
                 assert!(
-                    matches!(portal_screencast, FormRow::Checkbox { label, .. } if label == "Screen Cast"),
-                    "Linux ScreenCast checkbox label must be 'Screen Cast', got {:?}",
+                    matches!(portal_screencast, FormRow::Checkbox { label, .. } if label == "Window and application names"),
+                    "Linux ScreenCast checkbox label must name what it buys, got {:?}",
                     portal_screencast
                 );
 
