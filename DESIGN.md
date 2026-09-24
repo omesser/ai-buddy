@@ -363,9 +363,11 @@ every capture at the window level, so there is nothing to fade.
 **First run grants nothing.** Window awareness uses
 `CGWindowListCopyWindowInfo` polling at ~10Hz, which returns window bounds,
 owner app, and layer with no permission prompt. Smoothness comes from
-interpolating in the render layer, not from event fidelity. Window *titles*
-require Screen Recording consent on macOS 10.15+, and sitting on a window's edge
-does not need titles.
+interpolating in the render layer, not from event fidelity. Sitting on a window's
+edge needs geometry and nothing else. Naming what the buddy sits on is a different
+question: window *titles* and *application names* both sit behind one consent,
+which on macOS 10.15+ is Screen Recording
+([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)).
 
 Accessibility becomes a deliberate upgrade tied to the Functional Layer, where
 the user understands the trade. The upgrade path is settings: a **What the

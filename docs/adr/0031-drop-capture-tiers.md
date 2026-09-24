@@ -1,5 +1,11 @@
 # Free sensing only; Capture tiers are dropped
 
+**Status:** Accepted, with two clauses superseded by
+[ADR-0032](./0032-one-consent-for-titles-and-application-names.md): free sensing
+is no longer defined as the tier needing no permissions, and the "Screen
+Recording permission is never requested" line below is withdrawn as written.
+Dropping the Capture tiers stands.
+
 **Supersedes:** [ADR-0005](./0005-sensing-posture.md)
 
 ## Context
