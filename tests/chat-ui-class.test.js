@@ -68,3 +68,58 @@ test("chat.js applies chat-ui class early to prevent FOUC", () => {
     "chat-ui class should be applied immediately after receiving opening, before attached()",
   );
 });
+
+test("attached() swaps DOM classes when applying saved chat_ui", () => {
+  // Verify attached() removes all three possible classes before adding the chosen one
+  const attachedFn = chatJs.match(
+    /function attached\(opening\) \{[\s\S]*?\}/,
+  );
+  assert.ok(attachedFn, "attached() function should exist");
+
+  const classSwap = chatJs.match(
+    /html\.classList\.remove\("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass"\);[\s\S]*?html\.classList\.add\(`chat-ui-\$\{chatUi\}`\);/,
+  );
+  assert.ok(
+    classSwap,
+    "attached() should remove all three chat-ui classes then add the chosen one",
+  );
+});
+
+test("chat-ui event listener swaps DOM classes on live change", () => {
+  // Verify the event listener removes all three possible classes before adding new one
+  const hasListener = chatJs.includes('await listen(\n    "chat-ui",');
+  assert.ok(hasListener, "chat-ui event listener should exist");
+
+  // Check that the listener has the class swap logic
+  const listenerStart = chatJs.indexOf('await listen(\n    "chat-ui",');
+  const listenerEnd = chatJs.indexOf("{ target: chat.label },", listenerStart) + 50;
+  const listenerCode = chatJs.slice(listenerStart, listenerEnd);
+
+  const hasRemove = listenerCode.includes('html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass")');
+  const hasAdd = listenerCode.includes("html.classList.add(`chat-ui-${chatUi}`)");
+  
+  assert.ok(
+    hasRemove,
+    "chat-ui event should remove all three chat-ui classes",
+  );
+  assert.ok(
+    hasAdd,
+    "chat-ui event should add the chosen chat-ui class",
+  );
+});
+
+test("cold-open applies saved chat_ui class before window becomes visible", () => {
+  // Verify start() applies the class immediately after getting opening, before calling attached()
+  const startFn = chatJs.match(
+    /async function start\(\) \{[\s\S]*?\n\}/,
+  );
+  assert.ok(startFn, "start() function should exist");
+
+  const coldOpen = startFn[0].match(
+    /const opening = await invoke\("chat_opening"[\s\S]*?const html = document\.documentElement;[\s\S]*?const chatUi = normalizeChatUi\(opening\.chat_ui[\s\S]*?html\.classList\.add\(`chat-ui-\$\{chatUi\}`\);[\s\S]*?showWho\(opening\);[\s\S]*?attached\(opening\);/,
+  );
+  assert.ok(
+    coldOpen,
+    "start() should apply chat-ui class immediately after receiving opening to prevent FOUC",
+  );
+});
