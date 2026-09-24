@@ -145,19 +145,13 @@ fn owner_name(entry: &NSDictionary<NSString, AnyObject>) -> Option<String> {
     )
 }
 
+/// Named, because the resource this feeds runs only once the consent is
+/// usable, and the same walk so the two agree on which entries are windows.
 fn window_title(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowTitle> {
-    // The same entry filter `visible_windows` applies, so the resource and the
-    // snapshot agree on which entries are windows. Named, because this walk
-    // runs only once the consent is usable.
-    window(entry, true)?;
-    let title = entry
-        .objectForKey(ns_string!("kCGWindowName"))
-        .and_then(|value| value.downcast::<NSString>().ok())
-        .map(|name| name.to_string())
-        .unwrap_or_default();
+    let window = window(entry, true)?;
     Some(WindowTitle {
-        owner: owner_name(entry)?,
-        title,
+        owner: window.owner?,
+        title: window.title.unwrap_or_default(),
     })
 }
 

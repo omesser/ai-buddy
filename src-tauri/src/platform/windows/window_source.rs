@@ -99,20 +99,10 @@ pub fn visible_window_titles() -> Vec<WindowTitle> {
     visible_windows(true)
         .into_iter()
         .map(|window| WindowTitle {
-            title: window_title(window.id as HWND),
+            title: window.title.unwrap_or_default(),
             owner: window.owner.unwrap_or_default(),
         })
         .collect()
-}
-
-fn window_title(hwnd: HWND) -> String {
-    let mut buf = [0u16; 512];
-    // SAFETY: hwnd is an EnumWindows window still valid for this read.
-    let len = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
-    if len <= 0 {
-        return String::new();
-    }
-    String::from_utf16_lossy(&buf[..len as usize])
 }
 
 /// EnumWindows callback that collects visible application windows.

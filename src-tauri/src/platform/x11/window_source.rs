@@ -88,15 +88,13 @@ fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
 /// Owner plus title, same walk and order as `visible_windows`. `_NET_WM_NAME`
 /// first, `WM_NAME` if the EWMH name is missing.
 pub fn visible_window_titles() -> Vec<WindowTitle> {
-    let Some(conn) = super::connection::connection() else {
-        return Vec::new();
-    };
-    // Named: this walk runs only once the consent is usable, and the
-    // resource reports the owner beside the title.
+    // Named: this walk runs only once the consent is usable, and the resource
+    // reports the owner beside the title. No connection means no windows,
+    // which `visible_windows` already answers with an empty list.
     visible_windows(true)
         .into_iter()
         .map(|window| WindowTitle {
-            title: window_title(conn, window.id as Window),
+            title: window.title.unwrap_or_default(),
             owner: window.owner.unwrap_or_default(),
         })
         .collect()
