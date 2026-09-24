@@ -1,0 +1,13 @@
+# Walking under cursor (BMO walk/patrol on perch) — committed extract
+# First perched walk+over bout (~0.52 s of walk+over frames)
+
+Total rebuilds: 14
+Rate: ~26.7 rebuilds/sec (motion-driven; MaskParams includes x,y)
+Average time: 15.002 ms/rebuild
+Range: 12.332 – 18.646 ms
+Opaque pixels: 6231–6298 (walk-2 / walk-0 / walk-1 alpha masks)
+
+Method notes:
+- Mapped xmessage perch (~900×80 at +190+480); stationary pointer at (640,400)
+- walk/patrol via loopback MCP play_behavior (+ StaticDirector)
+- After walking off perch (floor y≈615), further walk frames produced no rebuilds

@@ -1,0 +1,10 @@
+# Idle perched (BMO, 126×128@1x), cursor not over sprite — committed extract
+# Measure window: 15s (startup fall excluded)
+
+Total rebuilds: 0
+Rate: 0.0 rebuilds/sec
+
+Notes:
+- Startup fall briefly crossed the stationary pointer and logged 3 rebuilds
+  (~16–18 ms, 7888 opaque) before the sprite perched away from the cursor.
+- After that, idle animation continued with no mask rebuilds (cursor-over gate).

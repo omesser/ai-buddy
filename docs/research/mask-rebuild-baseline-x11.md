@@ -13,7 +13,7 @@ Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-
 - **X server**: The X.Org Foundation version 21.1.16
 - **Character**: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame)
 - **Binary**: `cargo build -p ai-buddy` debug at tip `965e147`
-- **Evidence**: `/workspace/968-box-bench/` (`idle-15s.log`, `walk-perch-cursor.log`, summaries)
+- **Evidence**: `docs/research/mask-rebuild-baseline-x11/` (committed extracts: `environment.txt`, `idle-summary.txt`, `walk-summary.txt`, `walk-mask-rebuild-sample.log`)
 
 This is a real agent desktop with an X11 GUI (not a headless cloud run without pointer/window automation). Walking used a mapped `xmessage` perch and the app's loopback MCP `play_behavior`, with the **stationary** pointer left over the sprite. Shell `xdotool` was not used to drive clicks/drags.
 
@@ -183,18 +183,18 @@ For ~6360–7888 opaque source cells at 1x:
 
 ### Grok Bot desktop
 
-- `/workspace/968-box-bench/idle-15s.log` — idle measure, 0 rebuilds in window
-- `/workspace/968-box-bench/idle-summary.txt`
-- `/workspace/968-box-bench/walk-perch-cursor.log` — walk under cursor, 14 bout rebuilds
-- `/workspace/968-box-bench/walk-summary.txt`
-- `/workspace/968-box-bench/environment.txt`
-- `/workspace/968-measurements/bmo-react-sustained.log` — BMO react animation samples (tip `6b4acbf`)
-- `/workspace/968-measurements/blackmage-drag.log` — Black Mage scale=3 samples (tip `6b4acbf`)
-- `/workspace/968-measurements/large-blackmage-cursor-over.log` — Black Mage scale=3 additional samples
+Full machine-local raw logs (idle/walk under `/workspace/968-box-bench/`, react/Black Mage under `/workspace/968-measurements/`) were not retained; committed extracts are the published evidence for the idle and walk scenarios:
+
+- `docs/research/mask-rebuild-baseline-x11/environment.txt` — environment configuration
+- `docs/research/mask-rebuild-baseline-x11/idle-summary.txt` — idle measure, 0 rebuilds in window
+- `docs/research/mask-rebuild-baseline-x11/walk-summary.txt` — walk under cursor, 14 bout rebuilds
+- `docs/research/mask-rebuild-baseline-x11/walk-mask-rebuild-sample.log` — sample `mask_rebuild` lines from walking-under-cursor bout
+
+React and Black Mage measurements (tip `6b4acbf`) are documented in the Instrumentation samples below; their raw logs were also not retained.
 
 ### Instrumentation sample
 
-**BMO walking under cursor:**
+**BMO walking under cursor** (matches `walk-mask-rebuild-sample.log`):
 ```
 mask_rebuild: 126x128 @1x scale, 6251 opaque pixels, 13.908 ms
 mask_rebuild: 126x128 @1x scale, 6298 opaque pixels, 15.328 ms

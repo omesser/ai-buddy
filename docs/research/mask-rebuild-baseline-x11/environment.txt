@@ -1,0 +1,11 @@
+# Grok Bot desktop — mask rebuild baseline environment (committed extract)
+# Source measure for docs/research/mask-rebuild-baseline-x11.md (#428 / PR #968)
+
+Host: Grok Bot box (grok-bot-vm-429178738)
+OS: Debian GNU/Linux 13 (trixie)
+Kernel: 6.12.94+
+Display: X11 on DISPLAY=:5, 1280×800, depth 24
+X server: The X.Org Foundation version 21.1.16
+Character: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame)
+Binary: cargo build -p ai-buddy debug at tip 965e147 (docs tip after remeasure: 6b4acbf)
+Note: Full raw machine logs under /workspace/968-box-bench/ were not retained; this file is the committed extract.
