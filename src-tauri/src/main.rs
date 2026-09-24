@@ -1046,10 +1046,6 @@ fn settings_event(
         controller::Outcome::Nothing => Ok(SettingsEventResponse::Nothing),
         controller::Outcome::Apply(patch) => {
             session.apply(patch).map_err(|e| e.to_string())?;
-            Ok(SettingsEventResponse::Nothing)
-        }
-        controller::Outcome::ApplyAndRefresh(patch) => {
-            session.apply(patch).map_err(|e| e.to_string())?;
             Ok(SettingsEventResponse::Refresh)
         }
         controller::Outcome::Commit(patch) => {

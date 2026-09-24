@@ -41,11 +41,10 @@ pub enum Outcome {
     /// The gesture named no write: an unknown row, a frozen one, or a value
     /// that is already what is shown.
     Nothing,
-    /// Send it through `SettingsSession::apply`.
+    /// Send it through `SettingsSession::apply`, then redraw. The page draws
+    /// every tab switch from its cached snapshot, so a write it is not told
+    /// about comes back undone on the next switch.
     Apply(SettingsPatch),
-    /// Apply, then redraw. Only a pick that raises no `SettingsOp` needs the
-    /// redraw, and asking for it always is cheaper than telling which (#577).
-    ApplyAndRefresh(SettingsPatch),
     /// Apply's two halves: write the patch if there is one, and only then take
     /// the Director tab back to live state. A locked Keychain fails the write,
     /// and resetting anyway would discard an edit nothing saved (#279).
@@ -99,7 +98,7 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
             if description.text_batched(id) {
                 return Outcome::Nothing;
             }
-            text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::ApplyAndRefresh)
+            text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::Apply)
         }
         Event::Shortcut { id, value, current } => shortcut(description, id, value, current),
         Event::Press { id } => match description.operations.get(id) {

@@ -1,7 +1,8 @@
 // One interpreter of `form::describe()`, in two halves. `controls(tab, values)`
 // is pure: the tab as a flat list of {role, id, label, value, frozen} in render
 // order, the same rows `ax-settings.swift dump` reads, so tests need no window.
-// `render(root, tab, values, emit)` is the DOM half; a redraw is render() again.
+// `render(root, tab, values, emit, stage)` is the DOM half; a redraw is render()
+// again. `stage` receives a batched row's edit, which no redraw may lose.
 
 // `emit` routes events to the `settings_event` Tauri command. A secure field
 // emits `set_text` rather than a verb of its own because `FormRow::SecureField`
@@ -140,7 +141,7 @@ function popup(row, values, frozen) {
   return select;
 }
 
-function drawRow(row, values, emit) {
+function drawRow(row, values, emit, stage) {
   switch (row.type) {
     case "Checkbox": {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
@@ -161,10 +162,13 @@ function drawRow(row, values, emit) {
         "aria-readonly": row.frozen ? "true" : null,
       });
       input.value = values[row.id] ?? "";
-      // Batched rows stay in the widget until Apply. A blur here would write
-      // the file and retarget before Cancel could restore the row (#663).
-      if (!row.batched) {
-        input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value, batched: row.batched }));
+      // A batched row is a draft until Apply. A blur write would retarget
+      // before Cancel could restore the row (#663), and a draft left in the
+      // widget alone is gone on the next tab switch, which redraws the panel.
+      if (row.batched) {
+        input.addEventListener("input", () => stage(row.id, input.value));
+      } else {
+        input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value }));
       }
       return labelled(row, input, notes(row));
     }
@@ -175,12 +179,16 @@ function drawRow(row, values, emit) {
         readonly: row.frozen,
         autocomplete: "off",
       });
+      input.value = values[row.id] ?? "";
+      input.addEventListener("input", () => stage(row.id, input.value));
       input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value }));
       return labelled(row, input, [status(row.status)]);
     }
     case "Popup": {
       const select = popup(row, values, row.frozen);
-      if (!row.batched) {
+      if (row.batched) {
+        select.addEventListener("change", () => stage(row.id, select.value));
+      } else {
         select.addEventListener("change", () => emit({ pick: row.id, value: select.value }));
       }
       return labelled(row, select, notes(row));
@@ -315,7 +323,7 @@ function drawnControls(root, footer) {
 // same order, so the position that held focus is handed back afterwards.
 // Open disclosures close on rebuild the same way (#939), so their positions
 // are recorded before replaceChildren() and reopened after.
-export function render(root, tab, values, emit = () => {}) {
+export function render(root, tab, values, emit = () => {}, stage = () => {}) {
   const footer =
     typeof document !== "undefined" && typeof document.getElementById === "function"
       ? document.getElementById("set-footer")
@@ -342,12 +350,12 @@ export function render(root, tab, values, emit = () => {}) {
     for (const row of section.rows) {
       if (row.type === "Composite" && row.id === "director_actions") {
         if (footer) {
-          footer.append(drawRow(row, values, emit));
+          footer.append(drawRow(row, values, emit, stage));
         } else {
-          node.append(drawRow(row, values, emit));
+          node.append(drawRow(row, values, emit, stage));
         }
       } else {
-        node.append(drawRow(row, values, emit));
+        node.append(drawRow(row, values, emit, stage));
       }
     }
     root.append(node);
@@ -495,6 +503,13 @@ if (typeof document !== "undefined") {
   let currentValues = null;
   let currentTabIndex = 0;
   let lastSnapshotPromise = null;
+  // Batched rows, keyed by row id, until Apply or Cancel. A tab switch redraws
+  // the panel, so what the user typed there has to live outside the widgets.
+  let draft = {};
+
+  function stage(id, value) {
+    draft[id] = value;
+  }
 
   async function loadSnapshot() {
     const currentLoad = (async () => {
@@ -503,6 +518,9 @@ if (typeof document !== "undefined") {
         if (lastSnapshotPromise === currentLoad) {
           currentForm = snapshot.form;
           currentValues = snapshot.view;
+          for (const id of Object.keys(draft)) {
+            if (draft[id] === currentValues[id]) delete draft[id];
+          }
           renderCurrentTab();
         }
       } catch (err) {
@@ -527,6 +545,9 @@ if (typeof document !== "undefined") {
     try {
       const outcome = await handleEvent(payload);
       await early;
+      if (outcome.reset) draft = {};
+      if (outcome.clearKey) delete draft.director_api_key;
+      if (outcome.fill) stage(outcome.fill.id, outcome.fill.value);
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();
       } else if (await applyEventOutcome(outcome, currentValues, writeText)) {
@@ -543,7 +564,7 @@ if (typeof document !== "undefined") {
     if (!currentForm || !currentValues || !panel) return;
     const tab = currentForm.tabs[currentTabIndex];
     if (tab) {
-      render(panel, tab, currentValues, emitEvent);
+      render(panel, tab, { ...currentValues, ...draft }, emitEvent, stage);
     }
   }
 
