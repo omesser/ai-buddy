@@ -57,7 +57,8 @@ pub type WindowId = u64;
 pub const DOCK_PERCH_ID: WindowId = WindowId::MAX;
 
 /// One visible window: which one it is, where it is, who owns it, and how high
-/// it stacks. Title is present when WindowTitles consent is usable.
+/// it stacks. Owner and title are both present when the window-names consent is
+/// usable, and both absent otherwise: one consent covers the pair (ADR-0032).
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowRect {
     /// The window server's own id, carried all the way to the Engine. Geometry
@@ -65,10 +66,12 @@ pub struct WindowRect {
     /// on last tick; guessing from size and displacement is identity by another name.
     pub id: WindowId,
     pub bounds: Rect,
-    /// The owning application's name, as the window server reports it.
-    pub owner: String,
-    /// The window's title. None when WindowTitles consent is not usable, or when
-    /// the platform/window has no title to report.
+    /// The owning application's name, as the window server reports it. None
+    /// when the window-names consent is not usable. The operating system hands
+    /// this one over for free; withholding it is this project's choice.
+    pub owner: Option<String>,
+    /// The window's title. None when the window-names consent is not usable, or
+    /// when the platform/window has no title to report.
     pub title: Option<String>,
     /// The window server's level: 0 for ordinary application windows, higher for
     /// menus and docks, lower for the desktop picture. Reported, not acted on:
@@ -381,7 +384,7 @@ mod tests {
         WindowRect {
             id,
             bounds,
-            owner: owner.to_string(),
+            owner: Some(owner.to_string()),
             title: None,
             layer: 0,
         }
@@ -518,7 +521,7 @@ mod tests {
             .snapshot()
             .windows
             .iter()
-            .map(|w| w.owner.clone())
+            .map(|w| w.owner.clone().unwrap_or_default())
             .collect();
 
         assert_eq!(owners, vec!["Terminal", "Finder"]);

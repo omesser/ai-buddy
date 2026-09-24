@@ -211,7 +211,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "list_windows".to_string(),
-            description: "List visible windows with bounds and owning application".to_string(),
+            description: "List visible windows with bounds. The owning application and the title need the window-names consent".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -304,7 +304,7 @@ mod tests {
                 width,
                 height,
             },
-            owner: owner.to_string(),
+            owner: Some(owner.to_string()),
             title: None,
             layer: 0,
         }

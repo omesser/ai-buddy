@@ -3,9 +3,12 @@
 //! `CGWindowListCopyWindowInfo` is the one macOS API that hands over the shape
 //! of the desktop for free. It reports bounds, owning application and window
 //! level to any process; only `kCGWindowName` — the title — is withheld until
-//! Screen Recording is granted. Geometry never reads that key. The MCP titles
-//! resource does, from the same dictionary, so a grant reaches a Harness
-//! without putting a title on `WindowRect`.
+//! Screen Recording is granted.
+//!
+//! The buddy withholds more than macOS does. `kCGWindowOwnerName` and
+//! `kCGWindowName` are both names, one consent covers the pair (ADR-0032), and
+//! this walk reads neither key without it. Bounds and level are free, so the
+//! sprite still perches on a window it cannot name.
 
 use objc2::runtime::AnyObject;
 use objc2_core_foundation::{CFDictionary, CGRect};
@@ -24,17 +27,17 @@ pub struct MacosWindowSource {
     /// bounds when Accessibility lets the Shell read them. Supplied rather
     /// than read here: reserved strips are the window manager's answer.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
-    can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
+    can_read_names: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl MacosWindowSource {
     pub fn new(
         read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
-        can_read_titles: impl Fn() -> bool + Send + Sync + 'static,
+        can_read_names: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             read_displays: Box::new(read_displays),
-            can_read_titles: Box::new(can_read_titles),
+            can_read_names: Box::new(can_read_names),
         }
     }
 }
@@ -49,10 +52,10 @@ impl WindowSource for MacosWindowSource {
 
     fn read(&self) -> WorldGeometry {
         let (usable_frames, dock) = (self.read_displays)();
-        let can_read_titles = (self.can_read_titles)();
+        let can_read_names = (self.can_read_names)();
         WorldGeometry {
             usable_frames,
-            windows: visible_windows(can_read_titles),
+            windows: visible_windows(can_read_names),
             dock,
         }
     }
@@ -61,8 +64,8 @@ impl WindowSource for MacosWindowSource {
 /// Visible windows, frontmost first — ours among them.
 /// The overlay is a layer-3 panel `snapshot` already drops. Excluding our
 /// process took Chat (#362) and Settings with it.
-fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
-    walk_visible(|e| window(e, can_read_titles))
+fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
+    walk_visible(|e| window(e, can_read_names))
 }
 
 /// Owner plus title, same walk and order as `visible_windows`. Empty title
@@ -90,7 +93,7 @@ fn walk_visible<T>(map: impl Fn(&NSDictionary<NSString, AnyObject>) -> Option<T>
 /// One window-list entry, or `None` for entries we cannot or should not use.
 /// Keys are literals because `kCGWindow*` constants are exactly these strings,
 /// and a bridged dictionary compares string keys by value.
-fn window(entry: &NSDictionary<NSString, AnyObject>, can_read_titles: bool) -> Option<WindowRect> {
+fn window(entry: &NSDictionary<NSString, AnyObject>, can_read_names: bool) -> Option<WindowRect> {
     let bounds = entry.objectForKey(ns_string!("kCGWindowBounds"))?;
     let mut cg_rect = CGRect::ZERO;
     // SAFETY: `kCGWindowBounds` is documented to be a rectangle in the
@@ -106,7 +109,7 @@ fn window(entry: &NSDictionary<NSString, AnyObject>, can_read_titles: bool) -> O
         return None;
     }
 
-    let title = if can_read_titles {
+    let title = if can_read_names {
         entry
             .objectForKey(ns_string!("kCGWindowName"))
             .and_then(|obj| obj.downcast::<NSString>().ok())
@@ -122,26 +125,33 @@ fn window(entry: &NSDictionary<NSString, AnyObject>, can_read_titles: bool) -> O
         // truncate. #85.
         id: u64::from(number(entry, ns_string!("kCGWindowNumber"))?.as_u32()),
         bounds: rect(cg_rect),
-        owner: entry
-            .objectForKey(ns_string!("kCGWindowOwnerName"))?
-            .downcast::<NSString>()
-            .ok()?
-            .to_string(),
+        owner: if can_read_names {
+            Some(owner_name(entry)?)
+        } else {
+            None
+        },
         title,
         layer: number(entry, ns_string!("kCGWindowLayer"))?.as_i32(),
     })
 }
 
+fn owner_name(entry: &NSDictionary<NSString, AnyObject>) -> Option<String> {
+    Some(
+        entry
+            .objectForKey(ns_string!("kCGWindowOwnerName"))?
+            .downcast::<NSString>()
+            .ok()?
+            .to_string(),
+    )
+}
+
+/// Named, because the resource this feeds runs only once the consent is
+/// usable, and the same walk so the two agree on which entries are windows.
 fn window_title(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowTitle> {
-    let geometry = window(entry, false)?;
-    let title = entry
-        .objectForKey(ns_string!("kCGWindowName"))
-        .and_then(|value| value.downcast::<NSString>().ok())
-        .map(|name| name.to_string())
-        .unwrap_or_default();
+    let window = window(entry, true)?;
     Some(WindowTitle {
-        owner: geometry.owner,
-        title,
+        owner: window.owner?,
+        title: window.title.unwrap_or_default(),
     })
 }
 
@@ -164,6 +174,59 @@ fn rect(cg_rect: CGRect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use objc2::rc::Retained;
+
+    /// One consent covers the owner and the title (ADR-0032), and this is the
+    /// walk that reads them. Geometry stays free either way, which is what
+    /// lets the sprite perch on a window it cannot name.
+    #[test]
+    fn a_window_carries_its_names_only_when_the_consent_is_usable() {
+        let entry = terminal_entry();
+
+        let withheld = window(&entry, false).expect("the entry decodes as a window");
+        assert_eq!(withheld.owner, None);
+        assert_eq!(withheld.title, None);
+        assert_eq!(withheld.bounds.width, 800.0);
+
+        let named = window(&entry, true).expect("the entry decodes as a window");
+        assert_eq!(named.owner, Some("Terminal".to_string()));
+        assert_eq!(named.title, Some("bash".to_string()));
+        assert_eq!(named.bounds.width, 800.0);
+    }
+
+    /// One `CGWindowListCopyWindowInfo` entry, built by hand: the real call
+    /// needs a window server, and the keys it returns are these literals.
+    fn terminal_entry() -> Retained<NSDictionary<NSString, AnyObject>> {
+        let (x, y, width, height) = (
+            NSNumber::new_f64(10.0),
+            NSNumber::new_f64(20.0),
+            NSNumber::new_f64(800.0),
+            NSNumber::new_f64(600.0),
+        );
+        let bounds = NSDictionary::from_slices::<NSString>(
+            &[
+                ns_string!("X"),
+                ns_string!("Y"),
+                ns_string!("Width"),
+                ns_string!("Height"),
+            ],
+            &[&*x, &*y, &*width, &*height],
+        );
+        let number = NSNumber::new_u32(7);
+        let layer = NSNumber::new_i32(0);
+        let owner = NSString::from_str("Terminal");
+        let title = NSString::from_str("bash");
+        NSDictionary::from_slices::<NSString>(
+            &[
+                ns_string!("kCGWindowNumber"),
+                ns_string!("kCGWindowBounds"),
+                ns_string!("kCGWindowOwnerName"),
+                ns_string!("kCGWindowName"),
+                ns_string!("kCGWindowLayer"),
+            ],
+            &[&*number as &AnyObject, &*bounds, &*owner, &*title, &*layer],
+        )
+    }
 
     /// Hand verification, deliberately not part of the suite: it needs a real
     /// window server and it reads a clock, both of which `docs/SPEC.md` rules
@@ -233,7 +296,7 @@ mod tests {
                         w.bounds.y,
                         w.bounds.width,
                         w.bounds.height,
-                        w.owner
+                        w.owner.as_deref().unwrap_or("(name withheld)")
                     );
                 }
                 previous = Some(geometry);

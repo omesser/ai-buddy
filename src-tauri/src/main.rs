@@ -3109,8 +3109,8 @@ fn main() {
                 settings.use_accessibility,
             );
             consent::set_wanted(
-                consent::CapabilityId::WindowTitles,
-                settings.use_window_titles,
+                consent::CapabilityId::WindowNames,
+                settings.use_window_names,
             );
             #[cfg(target_os = "macos")]
             consent::set_wanted(

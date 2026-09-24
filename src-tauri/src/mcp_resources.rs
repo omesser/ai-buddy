@@ -1,7 +1,8 @@
-//! Readonly MCP resources: Memory, the Action Log, and window titles.
+//! Readonly MCP resources: Memory, the Action Log, and window names.
 //!
-//! Window titles appear on `WindowRect` when `usable(WindowTitles)` is true
-//! (sensing layer) and in this MCP resource (independent read path).
+//! One consent covers every name the buddy reports (ADR-0032). The owner and
+//! the title reach `WindowRect` when it is usable (sensing layer), and this
+//! resource reads them again over its own path, under the same consent.
 
 use std::fs;
 use std::sync::Mutex;
@@ -41,8 +42,8 @@ pub fn catalog() -> [Resource; 3] {
     [
         Resource {
             uri: WINDOWS_URI,
-            name: "Window titles",
-            description: "Visible windows, frontmost first. Title when Screen Recording (or the platform equivalent) allows; otherwise owner only. The same excluded applications as list_windows.",
+            name: "Window names",
+            description: "Visible windows, frontmost first, with the owning application and the title. One consent covers both, so this is empty without it. The same excluded applications as list_windows.",
             mime_type: "text/plain",
         },
         Resource {

@@ -565,7 +565,7 @@ mod tests {
                 width,
                 height,
             },
-            owner: String::new(),
+            owner: None,
             title: None,
             layer: 0,
         }
