@@ -3,13 +3,15 @@
 # Measures XShapeCombineMask calls under different scenarios: idle perched,
 # walking animation, large vs small sprites.
 #
-# Usage: scripts/bench-mask-rebuild-x11.sh [--scenario SCENARIO] [--duration SECONDS]
+# Usage: scripts/bench-mask-rebuild-x11.sh [SCENARIO] [DURATION]
+#
+# Arguments are positional. SCENARIO defaults to 'idle', DURATION to 10 seconds.
 #
 # Scenarios:
 #   idle       - Sprite perched, no animation (expect ~0 rebuilds/sec)
 #   walk       - Walking animation (expect rebuilds on frame changes)
-#   large      - Large sprite 128x128@4x (more pixels to process)
-#   small      - Small sprite 32x32@1x (fewer pixels to process)
+#   large      - Large sprite 128x128@4x (currently uses BMO 126x128@1x)
+#   small      - Small sprite 32x32@1x (currently uses BMO 126x128@1x)
 
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1

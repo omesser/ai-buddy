@@ -83,10 +83,11 @@ The following scenarios require GUI interaction or specific character packages n
 **Target**: 128x128@4x would be 512x512 physical pixels
 
 **Extrapolation** (not measured):
-- At 4x scale: 512x512 = 262,144 pixels
-- If similar opaque ratio (~50%): ~130k opaque pixels
-- At 1.5 μs/pixel: ~195 ms/rebuild
-- Note: This is linear extrapolation and may not account for X11 batching or other optimizations
+- At 4x scale: The mask itself is unchanged (still 126x128 with ~6360-7888 opaque pixels)
+- Each opaque pixel becomes a 4×4 `poly_fill_rectangle` call (vs 1×1 at 1x)
+- The pixmap grows to 504×512 (from 126×128)
+- Cost may increase due to larger rectangles and larger pixmap operations, but **not** by multiplying opaque pixel count
+- **Linear opaque-pixel extrapolation does not apply** — see `apply_input_mask()` in `overlay.rs`
 
 ### Small Sprite (32x32@1x)
 **Status**: Not measured
