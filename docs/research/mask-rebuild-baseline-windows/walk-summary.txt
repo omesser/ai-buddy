@@ -1,0 +1,18 @@
+Scenario: walk
+Character: BMO (126×128 @1x)
+Method: SetCursorPos follow TRACE_FRAMES sprite(x,y) center; StaticDirector spontaneous walk
+        (MCP play_behavior not used — BYO token not obtained via Settings AX).
+        Cursor-over rebuilds attributed to preceding frame anim.
+Measure window: ~5.026 seconds of walk-attributed rebuilds (walk-only subset from ~15s total session)
+Tip SHA: a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1
+
+Results (walk-only subset):
+  Rebuild count: 223
+  Rebuilds/sec: 44.37
+  Average time: 14.544 ms
+  Min time: 14.03 ms
+  Max time: 15.74 ms
+  Opaque pixels: 6231–6298
+
+Note: Full 15s follow also included climb (351) and react (40) rebuilds while cursor tracked the sprite;
+      walk-only subset above is the walk scenario number. Opaque counts match X11 walk frames (6231-6298).

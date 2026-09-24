@@ -1,0 +1,20 @@
+Scenario: fast (BMO react animation, 10 fps)
+Character: BMO (126×128 @1x)
+Method: Rush SetCursorPos onto sprite (BMO rush_reaction=react) + LBUTTON poke;
+        hold cursor over during react frames
+Measure window: 12.13 seconds
+Tip SHA: a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1
+
+Results (react-only):
+  Rebuild count: 68
+  Rebuilds/sec: 5.604
+  Average time: 21.79 ms
+  Min time: 17.30 ms
+  Max time: 30.82 ms
+  Opaque pixels: 6360–7888
+
+Supplemental (from walk session when rush onto walking sprite triggered react under cursor):
+  Rebuild count: 40
+  Average time: 23.599 ms
+  Min time: 17.11 ms
+  Max time: 30.03 ms
