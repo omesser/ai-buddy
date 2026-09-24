@@ -82,6 +82,33 @@
   --pi-accent: #E1B06E;
 }
 
+@media (prefers-color-scheme: light) {
+  .chat-ui-minimal {
+    --chat-panel: #f8f9fb;
+    --chat-ink: #1a1d24;
+    --chat-ink-2: #525a6b;
+    --chat-ink-3: #6c7488;
+    --chat-ink-4: #8a92a3;
+    --chat-accent: #169b85;
+    --chat-accent-ink: #ffffff;
+    --chat-accent-soft: rgba(22, 155, 133, 0.12);
+
+    --chat-fill: rgba(0, 0, 0, 0.03);
+    --chat-fill-dim: rgba(0, 0, 0, 0.015);
+    --chat-fill-soft: rgba(0, 0, 0, 0.05);
+    --chat-rule: rgba(0, 0, 0, 0.08);
+    --chat-line: rgba(0, 0, 0, 0.15);
+
+    --claude-accent: #C86D4F;
+    --codex-accent: #169b85;
+    --cursor-agent-accent: #7A7469;
+    --grok-accent: #4A6B82;
+    --opencode-accent: #4A72D0;
+    --hermes-accent: #5A5ACF;
+    --pi-accent: #B8854E;
+  }
+}
+
 /* Terminal log. Port of .v-term from docs/design/chat-mockups.html: 62 rules
    for a dense monospace aesthetic with elapsed-time gutter and log structure. */
 .chat-ui-terminal {
@@ -110,6 +137,46 @@
 
   --chat-sans: system-ui, -apple-system, sans-serif;
   --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  .chat-ui-terminal {
+    --chat-panel: #FAFBFC;
+    --chat-ink: #1A2330;
+    --chat-ink-2: #4A5768;
+    --chat-ink-3: #6A778A;
+    --chat-ink-4: #9AA5B5;
+    --chat-accent: #169B85;
+    --chat-accent-ink: #ffffff;
+    --chat-accent-soft: #E8F5F3;
+
+    --chat-fill: #F0F3F6;
+    --chat-fill-dim: #FAFBFC;
+    --chat-fill-soft: #F0F3F6;
+    --chat-rule: #D5DBDF;
+    --chat-line: #D5DBDF;
+  }
+
+  .chat-ui-terminal .tb {
+    background: #E8EBEF;
+  }
+
+  .chat-ui-terminal .row.you .said {
+    color: #1A2330;
+  }
+
+  .chat-ui-terminal .ask {
+    background: #FFF9E6;
+    border-color: #D4C5A0;
+  }
+
+  .chat-ui-terminal .ask .head {
+    color: #8A6D1F;
+  }
+
+  .chat-ui-terminal .empty h2 {
+    color: #8A6D1F;
+  }
 }
 
 .chat-ui-terminal body {
@@ -589,6 +656,123 @@
   background: rgba(255,255,255,.16);
   color: rgba(241,244,249,.5);
   cursor: default;
+}
+
+@media (prefers-color-scheme: light) {
+  .chat-ui-glass {
+    --chat-panel: rgba(248,249,252,.85);
+    --chat-ink: #1A1F2B;
+    --chat-ink-2: rgba(26,31,43,.85);
+    --chat-ink-3: rgba(26,31,43,.68);
+    --chat-ink-4: rgba(26,31,43,.52);
+    --chat-accent: rgba(22,155,133,.95);
+    --chat-accent-ink: #FFFFFF;
+    --chat-accent-soft: rgba(22,155,133,.88);
+
+    --chat-fill: rgba(0,0,0,.06);
+    --chat-fill-dim: rgba(0,0,0,.03);
+    --chat-fill-soft: rgba(0,0,0,.10);
+    --chat-rule: rgba(0,0,0,.10);
+    --chat-line: rgba(0,0,0,.18);
+  }
+
+  .chat-ui-glass body {
+    background: linear-gradient(rgba(248,249,252,.85), rgba(242,244,248,.92));
+    border-color: rgba(0,0,0,.15);
+    box-shadow: 0 26px 64px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.85);
+    text-shadow: none;
+  }
+
+  .chat-ui-glass .tb button {
+    background: rgba(0,0,0,.08);
+  }
+
+  .chat-ui-glass .tb button:hover {
+    background: rgba(0,0,0,.15);
+  }
+
+  .chat-ui-glass .tab {
+    border-color: rgba(0,0,0,.12);
+    background: rgba(0,0,0,.04);
+    color: rgba(26,31,43,.75);
+  }
+
+  .chat-ui-glass .tab[aria-selected="true"] {
+    background: rgba(22,155,133,.88);
+    color: #FFFFFF;
+  }
+
+  .chat-ui-glass .log {
+    background: rgba(255,255,255,.45);
+    border-top-color: rgba(0,0,0,.10);
+  }
+
+  .chat-ui-glass .row.you .said {
+    background: rgba(0,0,0,.10);
+    border-color: rgba(0,0,0,.10);
+  }
+
+  .chat-ui-glass .who-label,
+  .chat-ui-glass .when {
+    color: rgba(26,31,43,.58);
+  }
+
+  .chat-ui-glass .ask {
+    background: rgba(255,255,255,.65);
+    border-color: rgba(0,0,0,.20);
+  }
+
+  .chat-ui-glass .row.ask button {
+    border-color: rgba(0,0,0,.22);
+    background: rgba(0,0,0,.05);
+  }
+
+  .chat-ui-glass .row.ask button.chosen {
+    background: rgba(22,155,133,.88);
+    color: #FFFFFF;
+  }
+
+  .chat-ui-glass .ask .kind,
+  .chat-ui-glass .ask .answer {
+    color: rgba(26,31,43,.62);
+  }
+
+  .chat-ui-glass .ask.answered {
+    background: rgba(255,255,255,.50);
+    border-color: rgba(0,0,0,.12);
+  }
+
+  .chat-ui-glass .empty p {
+    color: rgba(26,31,43,.82);
+  }
+
+  .chat-ui-glass .empty p b {
+    color: #1A1F2B;
+  }
+
+  .chat-ui-glass .composer textarea {
+    border-color: rgba(0,0,0,.18);
+    background: rgba(0,0,0,.06);
+  }
+
+  .chat-ui-glass .composer textarea::placeholder {
+    color: rgba(26,31,43,.50);
+  }
+
+  .chat-ui-glass .composer textarea:disabled {
+    color: rgba(26,31,43,.42);
+    background: rgba(0,0,0,.03);
+  }
+
+  .chat-ui-glass .composer button {
+    background: rgba(22,155,133,.88);
+    color: #FFFFFF;
+  }
+
+  .chat-ui-glass .composer button:disabled {
+    background: rgba(0,0,0,.12);
+    color: rgba(26,31,43,.48);
+  }
 }
 
 /* The empty-state panel and its parts are laid out as grids and hidden with

@@ -97,7 +97,7 @@ test("chat-ui event listener swaps DOM classes on live change", () => {
 
   const hasRemove = listenerCode.includes('html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass")');
   const hasAdd = listenerCode.includes("html.classList.add(`chat-ui-${chatUi}`)");
-  
+
   assert.ok(
     hasRemove,
     "chat-ui event should remove all three chat-ui classes",
