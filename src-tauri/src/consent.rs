@@ -736,6 +736,29 @@ mod tests {
         }
     }
 
+    /// #888: the Privacy pane maps a saved value by row id, so a row id is a
+    /// stored key and not copy. #975 renamed the capability and every label
+    /// and had to leave these strings where they were. A rename that moves one
+    /// draws the checkbox unchecked whatever the grant says.
+    #[test]
+    fn a_consent_row_id_is_a_stored_key_and_does_not_move() {
+        let ids: Vec<String> = rows(|_| false).iter().map(ConsentRow::row_id).collect();
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            ids,
+            [
+                "consent_accessibility",
+                "consent_screen_recording",
+                "consent_input_monitoring"
+            ]
+        );
+        #[cfg(target_os = "windows")]
+        assert_eq!(ids, ["consent_accessibility", "consent_window_titles"]);
+        #[cfg(target_os = "linux")]
+        assert_eq!(ids, ["consent_screen_cast"]);
+    }
+
     /// The window prints this catalog. Dropping a row makes that grant unreachable: nothing else names the trade.
     #[test]
     fn the_catalog_names_each_capability_and_its_trade() {

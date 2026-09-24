@@ -464,8 +464,11 @@ pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
 #[cfg(target_os = "linux")]
 pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
+/// The string is a stored key rather than copy. Settings maps a saved value by
+/// row id (#888), so #975 renamed the capability and the label and left this
+/// where it was.
 #[cfg(target_os = "windows")]
-pub const CONSENT_WINDOW_NAMES_ID: &str = "consent_window_names";
+pub const CONSENT_WINDOW_NAMES_ID: &str = "consent_window_titles";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
