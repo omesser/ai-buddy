@@ -235,9 +235,12 @@ _Avoid_: Memory log, transcript, audit trail
 ### Sensing
 
 **Free sensing**:
-OS metadata the buddy can query without permissions: frontmost app name, window
-geometry, time, idle duration, recent Behaviors. The only sensing tier ai-buddy
-ships. Exposed via MCP tools `list_windows` and `describe_screen`. ADR-0031.
+OS metadata, never pixels. The only sensing tier ai-buddy ships. Window
+geometry, time, idle duration and recent Behaviors need no permission. Window
+titles and application names — the frontmost application and a window's owner
+alike — need one consent, and it is the same consent for both. The tier's name
+is about Capture, which it never does, not about permissions. Exposed via MCP
+tools `list_windows` and `describe_screen`. ADR-0031, ADR-0032.
 _Avoid_: Ambient sensing, monitoring
 
 **Ambient Capture, On-Demand Capture, Local Gate**:
