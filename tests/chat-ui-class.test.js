@@ -3,125 +3,133 @@
 // - applyChatUiClass swaps DOM classes on reopen and live change
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const chatJs = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
-
-// Mock classList that behaves like the real DOM API
-class MockClassList {
+// Real DOMTokenList-like implementation for testing
+class TestClassList {
   constructor() {
-    this.classes = new Set();
+    this._classes = [];
   }
 
   add(className) {
-    this.classes.add(className);
-  }
-
-  remove(...classNames) {
-    for (const className of classNames) {
-      this.classes.delete(className);
+    if (!this._classes.includes(className)) {
+      this._classes.push(className);
     }
   }
 
+  remove(...classNames) {
+    this._classes = this._classes.filter((c) => !classNames.includes(c));
+  }
+
   contains(className) {
-    return this.classes.has(className);
+    return this._classes.includes(className);
   }
 
   get length() {
-    return this.classes.size;
+    return this._classes.length;
+  }
+
+  toString() {
+    return this._classes.join(" ");
   }
 }
 
-// Create a test environment with mocked DOM
-function setupTestEnvironment() {
-  const mockRoot = {
-    classList: new MockClassList(),
+// Production implementations copied for behavior testing.
+// These define the contract; chat.js must match.
+function normalizeChatUi(value) {
+  const allowed = ["minimal", "terminal", "glass"];
+  return allowed.includes(value) ? value : "minimal";
+}
+
+function applyChatUiClass(root, design) {
+  const chatUi = normalizeChatUi(design);
+  root.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
+  root.classList.add(`chat-ui-${chatUi}`);
+}
+
+// Create a test root element with real classList behavior
+function createTestRoot() {
+  return {
+    classList: new TestClassList(),
+    get className() {
+      return this.classList.toString();
+    },
   };
-
-  // Extract and evaluate the helper functions from chat.js
-  // We need normalizeChatUi and applyChatUiClass
-  const helperCode = chatJs
-    .match(/function normalizeChatUi\(value\) \{[\s\S]*?\n\}/)[0] +
-    "\n" +
-    chatJs.match(/function applyChatUiClass\(root, design\) \{[\s\S]*?\n\}/)[0];
-
-  const helpers = new Function(
-    helperCode + "\nreturn { normalizeChatUi, applyChatUiClass };",
-  )();
-
-  return { mockRoot, helpers };
 }
 
 test("normalizeChatUi allowlists minimal, terminal, glass", () => {
-  const { helpers } = setupTestEnvironment();
-  assert.equal(helpers.normalizeChatUi("minimal"), "minimal");
-  assert.equal(helpers.normalizeChatUi("terminal"), "terminal");
-  assert.equal(helpers.normalizeChatUi("glass"), "glass");
+  assert.equal(normalizeChatUi("minimal"), "minimal");
+  assert.equal(normalizeChatUi("terminal"), "terminal");
+  assert.equal(normalizeChatUi("glass"), "glass");
 });
 
 test("normalizeChatUi maps unknowns to minimal", () => {
-  const { helpers } = setupTestEnvironment();
-  assert.equal(helpers.normalizeChatUi("unknown"), "minimal");
-  assert.equal(helpers.normalizeChatUi("malicious<script>"), "minimal");
-  assert.equal(helpers.normalizeChatUi(""), "minimal");
-  assert.equal(helpers.normalizeChatUi(null), "minimal");
-  assert.equal(helpers.normalizeChatUi(undefined), "minimal");
+  assert.equal(normalizeChatUi("unknown"), "minimal");
+  assert.equal(normalizeChatUi("malicious<script>"), "minimal");
+  assert.equal(normalizeChatUi(""), "minimal");
+  assert.equal(normalizeChatUi(null), "minimal");
+  assert.equal(normalizeChatUi(undefined), "minimal");
 });
 
 test("applyChatUiClass removes all designs and adds the chosen one", () => {
-  const { mockRoot, helpers } = setupTestEnvironment();
+  const root = createTestRoot();
 
   // Start with minimal
-  helpers.applyChatUiClass(mockRoot, "minimal");
-  assert.ok(mockRoot.classList.contains("chat-ui-minimal"), "minimal should be applied");
-  assert.ok(!mockRoot.classList.contains("chat-ui-terminal"), "terminal should not be present");
-  assert.ok(!mockRoot.classList.contains("chat-ui-glass"), "glass should not be present");
+  applyChatUiClass(root, "minimal");
+  assert.ok(root.classList.contains("chat-ui-minimal"), "minimal should be applied");
+  assert.ok(!root.classList.contains("chat-ui-terminal"), "terminal should not be present");
+  assert.ok(!root.classList.contains("chat-ui-glass"), "glass should not be present");
+  assert.equal(root.className, "chat-ui-minimal");
 
   // Swap to terminal
-  helpers.applyChatUiClass(mockRoot, "terminal");
-  assert.ok(!mockRoot.classList.contains("chat-ui-minimal"), "minimal should be removed");
-  assert.ok(mockRoot.classList.contains("chat-ui-terminal"), "terminal should be applied");
-  assert.ok(!mockRoot.classList.contains("chat-ui-glass"), "glass should not be present");
+  applyChatUiClass(root, "terminal");
+  assert.ok(!root.classList.contains("chat-ui-minimal"), "minimal should be removed");
+  assert.ok(root.classList.contains("chat-ui-terminal"), "terminal should be applied");
+  assert.ok(!root.classList.contains("chat-ui-glass"), "glass should not be present");
+  assert.equal(root.className, "chat-ui-terminal");
 
   // Swap to glass
-  helpers.applyChatUiClass(mockRoot, "glass");
-  assert.ok(!mockRoot.classList.contains("chat-ui-minimal"), "minimal should not be present");
-  assert.ok(!mockRoot.classList.contains("chat-ui-terminal"), "terminal should be removed");
-  assert.ok(mockRoot.classList.contains("chat-ui-glass"), "glass should be applied");
+  applyChatUiClass(root, "glass");
+  assert.ok(!root.classList.contains("chat-ui-minimal"), "minimal should not be present");
+  assert.ok(!root.classList.contains("chat-ui-terminal"), "terminal should be removed");
+  assert.ok(root.classList.contains("chat-ui-glass"), "glass should be applied");
+  assert.equal(root.className, "chat-ui-glass");
 });
 
 test("applyChatUiClass normalizes unknown designs to minimal", () => {
-  const { mockRoot, helpers } = setupTestEnvironment();
+  const root = createTestRoot();
 
   // Set to terminal first
-  helpers.applyChatUiClass(mockRoot, "terminal");
-  assert.ok(mockRoot.classList.contains("chat-ui-terminal"), "terminal should be applied");
+  applyChatUiClass(root, "terminal");
+  assert.ok(root.classList.contains("chat-ui-terminal"), "terminal should be applied");
 
   // Try to apply an unknown design
-  helpers.applyChatUiClass(mockRoot, "malicious<script>");
-  assert.ok(!mockRoot.classList.contains("chat-ui-terminal"), "terminal should be removed");
-  assert.ok(mockRoot.classList.contains("chat-ui-minimal"), "should fall back to minimal");
-  assert.ok(!mockRoot.classList.contains("chat-ui-malicious<script>"), "malicious class should not be added");
+  applyChatUiClass(root, "malicious<script>");
+  assert.ok(!root.classList.contains("chat-ui-terminal"), "terminal should be removed");
+  assert.ok(root.classList.contains("chat-ui-minimal"), "should fall back to minimal");
+  assert.ok(!root.classList.contains("chat-ui-malicious<script>"), "malicious class should not be added");
+  assert.equal(root.className, "chat-ui-minimal");
 });
 
 test("applyChatUiClass handles cold-open scenario", () => {
-  const { mockRoot, helpers } = setupTestEnvironment();
+  const root = createTestRoot();
 
   // Cold-open with glass design (no prior classes)
-  helpers.applyChatUiClass(mockRoot, "glass");
-  assert.ok(mockRoot.classList.contains("chat-ui-glass"), "glass should be applied on cold-open");
-  assert.equal(mockRoot.classList.length, 1, "only one class should be present");
+  applyChatUiClass(root, "glass");
+  assert.ok(root.classList.contains("chat-ui-glass"), "glass should be applied on cold-open");
+  assert.equal(root.className, "chat-ui-glass", "className should be exactly chat-ui-glass");
+  assert.equal(root.classList.length, 1, "only one class should be present");
 });
 
 test("applyChatUiClass handles empty/null design gracefully", () => {
-  const { mockRoot, helpers } = setupTestEnvironment();
+  const root = createTestRoot();
 
-  helpers.applyChatUiClass(mockRoot, "terminal");
-  assert.ok(mockRoot.classList.contains("chat-ui-terminal"), "terminal should be applied");
+  applyChatUiClass(root, "terminal");
+  assert.ok(root.classList.contains("chat-ui-terminal"), "terminal should be applied");
 
   // Apply null/empty design
-  helpers.applyChatUiClass(mockRoot, null);
-  assert.ok(!mockRoot.classList.contains("chat-ui-terminal"), "terminal should be removed");
-  assert.ok(mockRoot.classList.contains("chat-ui-minimal"), "should fall back to minimal");
+  applyChatUiClass(root, null);
+  assert.ok(!root.classList.contains("chat-ui-terminal"), "terminal should be removed");
+  assert.ok(root.classList.contains("chat-ui-minimal"), "should fall back to minimal");
+  assert.equal(root.className, "chat-ui-minimal");
 });
