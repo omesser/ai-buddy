@@ -43,6 +43,10 @@ export function createChatTurns() {
       return waiting.pop();
     },
 
+    newest() {
+      return waiting.at(-1) ?? null;
+    },
+
     clear() {
       waiting.length = 0;
     },

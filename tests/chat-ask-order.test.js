@@ -44,6 +44,7 @@ test("the newest waiting turn is the one an ask lands under", () => {
 
 test("an ask and a form both move the waiting caret below themselves", () => {
   for (const name of ["asked", "elicited"]) {
-    assert.match(fnBody(name), /turns\.newest\(\)/, `${name} leaves the caret above the ask`);
+    assert.match(fnBody(name), /lowerCaret\(\)/, `${name} leaves the caret above the ask`);
   }
+  assert.match(fnBody("lowerCaret"), /turns\.newest\(\)/);
 });

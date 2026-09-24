@@ -236,7 +236,19 @@ function asked(ask) {
   body.append(buttons);
   row.append(label, body);
   asks.set(ask.request, buttons);
-  return add(row);
+  add(row);
+  lowerCaret();
+  return row;
+}
+
+// The caret of the turn on the wire moves under an ask raised mid-turn, or
+// the answer fills a row above the ask and reads as an answer that came
+// before the question, with nothing after the user's Yes.
+function lowerCaret() {
+  const turn = turns.newest();
+  if (turn?.them) {
+    add(turn.them);
+  }
 }
 
 // One `elicitation/create` form. Options are the schema's first enum; Decline
@@ -284,7 +296,9 @@ function elicited(form) {
   body.append(buttons);
   row.append(label, body);
   asks.set(form.request, buttons);
-  return add(row);
+  add(row);
+  lowerCaret();
+  return row;
 }
 
 // Allowlist known Chat UI designs; map unknowns to Minimal so arbitrary
