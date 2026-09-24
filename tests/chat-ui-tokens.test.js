@@ -22,7 +22,9 @@ function outsideDesignBlocks(source) {
     const opens = (line.match(/{/g) ?? []).length;
     const closes = (line.match(/}/g) ?? []).length;
 
-    if (!skipping && depth === 0 && line.includes(".chat-ui-") && opens > 0) {
+    // Start skipping when we see .chat-ui- at depth 0, OR when we see
+    // @media at depth 0 (media queries for light/dark mode variants)
+    if (!skipping && depth === 0 && (line.includes(".chat-ui-") || line.includes("@media")) && opens > 0) {
       skipping = true;
     }
 
