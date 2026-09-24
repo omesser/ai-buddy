@@ -31,7 +31,7 @@ Measured baselines for ai-buddy performance before optimization work. See parent
 |----------|--------------------------------------|------|-------|
 | Baseline (no ai-buddy) | 3.6 | - | X server (Xtigervnc) idle |
 | Idle perched | ~271 | ~3% | Sprite visible, no interaction |
-| Walking | N/A | N/A | Not measured (requires GUI interaction) |
+| Walking | N/A | N/A | Wakeups not measured; mask rebuild while walking measured on Grok Bot desktop (see #428 doc) |
 | Chat open | N/A | N/A | Not measured (requires GUI interaction) |
 | Multi-monitor | N/A | N/A | Not available in VM |
 | Hidden | N/A | N/A | Not measured |
@@ -99,13 +99,14 @@ _Pending._
 
 See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed X11 measurements.
 
-**Summary (X11 on Linux cloud VM):**
-- Idle perched: 0.05 rebuilds/sec (very low, only on animation frame changes)
-- Rebuild cost: 11-13 ms for 126x128@1x sprite (~6360-7888 opaque pixels)
-- Per-cell cost at 1x: ~1.5-2.0 μs per opaque source cell (not a scale law)
-- Walking/fast animation: Inconclusive (requires GUI interaction)
-- Large sprite at 4x and small sprite (32x32): not measured. Scale does not multiply the opaque source count; do not use linear opaque extrapolation
-- Windows: Not measured (Windows desktop not available in cloud VM)
+**Summary (X11 on Grok Bot Linux desktop, 1280×800):**
+- Idle perched (cursor not over sprite): **0.0 rebuilds/sec** (15s box remeasure)
+- Walking under cursor (BMO on perch): **~26.7 rebuilds/sec**, **~15.0 ms/rebuild** (motion-rate; MaskParams includes x,y)
+- Rebuild cost while walking under cursor: 12.3–18.6 ms for 126×128@1x (~6231–6298 opaque)
+- Fast animation: still not measured (no fast package)
+- Large sprite at 4x and small sprite (32×32): not measured. Scale does not multiply the opaque source count; do not use linear opaque extrapolation
+- Prior cloud-VM idle (0.05/sec, 11–13 ms) kept labeled in the detailed doc for comparison
+- Windows: Not measured
 
 ## Memory & multi-monitor (issue #424)
 _Pending._

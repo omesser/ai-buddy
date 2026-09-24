@@ -4,22 +4,35 @@ Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-
 
 ## Environment
 
-- **OS**: Ubuntu 24.04.4 LTS (Noble)
-- **Kernel**: 6.12.94+ (cloud VM, not bare metal)
-- **Display**: X11 via Xtigervnc (single 1920x1200 display)
-- **X server**: The X.Org Foundation version 21.1.11
-- **Character**: BMO (126x128 px sprite, ~6360-7888 opaque pixels depending on frame)
+### Grok Bot Linux desktop (GUI scenarios + remeasured idle)
+
+- **Host**: Grok Bot box (`grok-bot-vm-429178738`)
+- **OS**: Debian GNU/Linux 13 (trixie)
+- **Kernel**: 6.12.94+
+- **Display**: X11 on `DISPLAY=:5`, **1280×800**, depth 24
+- **X server**: The X.Org Foundation version 21.1.16
+- **Character**: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame)
+- **Binary**: `cargo build -p ai-buddy` debug at tip `965e147`
+- **Evidence**: `/workspace/968-box-bench/` (`idle-15s.log`, `walk-perch-cursor.log`, summaries)
+
+This is a real agent desktop with an X11 GUI (not a headless cloud run without pointer/window automation). Walking used a mapped `xmessage` perch and the app's loopback MCP `play_behavior`, with the **stationary** pointer left over the sprite. Shell `xdotool` was not used to drive clicks/drags.
+
+### Prior cloud-VM idle (kept for comparison)
+
+Earlier idle numbers on a headless cloud VM (Ubuntu 24.04.4, Xtigervnc 1920×1200) remain below under **Prior cloud-VM idle**. Prefer the Grok Bot desktop numbers for GUI scenarios; cloud idle is labeled when cited.
 
 ## Method
 
 ### Instrumentation
 
-Added timing instrumentation to `src-tauri/src/platform/x11/overlay.rs`:
+Timing in `src-tauri/src/platform/x11/overlay.rs`:
+
 - Atomic counters for rebuild count and total nanoseconds
 - Per-rebuild timing from start of `apply_input_mask()` to X11 flush completion
-- Logging of sprite dimensions, scale, opaque pixel count, and rebuild time
+- Logging of sprite dimensions, scale, opaque pixel count, and rebuild time when `AI_BUDDY_TRACE_MASK_REBUILD=1`
 
 The rebuild happens in `apply_input_mask()`:
+
 1. Create a 1-bit pixmap at `width * scale` by `height * scale`
 2. Iterate every cell of the source mask
 3. Call `poly_fill_rectangle` once per opaque source cell, as a `scale` by `scale` rectangle
@@ -29,120 +42,122 @@ The rebuild happens in `apply_input_mask()`:
 
 Scale multiplies rectangle size and pixmap size. It does not multiply the opaque source count.
 
+### When rebuilds run
+
+`frame_loop` only calls `update_input_region` while the overlay is not click-through-ignored — i.e. while the cursor is over the sprite (or a control / during a hold). `MaskParams` includes mask bits **and** sprite `x,y`, so walking under the cursor rebuilds at **motion rate**, not only when the animation frame's opaque set changes.
+
 ### Measurement
 
-Benchmark script `scripts/bench-mask-rebuild-x11.sh` runs the app with `AI_BUDDY_TRACE_MASK_REBUILD=1` to log each rebuild, then parses the log for timing data.
+- Script: `scripts/bench-mask-rebuild-x11.sh` (idle / walk scenarios; walk still needs an interaction source)
+- Box runs: app with `AI_BUDDY_TRACE_MASK_REBUILD=1` (plus `TRACE_ENGINE` / `TRACE_FRAMES` for walk correlation)
 
-## Results
+## Results — Grok Bot desktop
 
-### Idle Perched (BMO, 126x128@1x)
+### Idle perched (BMO, 126×128@1x), cursor not over sprite
 
-**10-second sample:**
+**15-second measure window** (startup fall excluded):
+
+- Total rebuilds: **0**
+- Rate: **0.0 rebuilds/sec**
+
+Startup fall briefly crossed the stationary pointer and logged 3 rebuilds (~16–18 ms, 7888 opaque) before the sprite perched on the floor away from the cursor. After that, idle animation continued with **no** mask rebuilds, matching the cursor-over gate.
+
+### Walking (BMO walk/patrol), cursor over sprite on a perch
+
+**Method:** Map a wide `xmessage` window (geometry ~900×80 at +190+480) so BMO perches with sprite rect covering the stationary pointer at (640,400). Trigger `walk` / `patrol` via loopback MCP `play_behavior` (and StaticDirector). Correlate `mask_rebuild:` lines with `TRACE_FRAMES` while `walk#*` and cursor-over.
+
+**First perched walk bout under the cursor (~0.52 s of walk+over frames):**
+
+- Total rebuilds: **14**
+- Rate: **~26.7 rebuilds/sec** (motion-driven; `MaskParams` includes `x,y`)
+- Average time: **15.002 ms/rebuild**
+- Range: 12.332 – 18.646 ms
+- Opaque pixels: **6231–6298** (matches walk-2 / walk-0 / walk-1 alpha masks)
+
+Opaque set changed across the three walk frames; many rebuilds repeated the same opaque count while `x` advanced — expected with the position-inclusive cache key.
+
+After the sprite walked off the perch (floor at y≈615), hundreds of further `walk#*` frames produced **no** rebuilds until/unless the cursor overlapped again.
+
+### Fast Animation
+
+**Status:** Still not measured.
+
+**Why:** No fast-animating character package in-tree beyond BMO's existing clips; not blocked only by GUI — package availability.
+
+### Large Sprite (128×128@4x) / Small Sprite (32×32@1x)
+
+Unchanged: not measured at those sizes/packages. See prior notes — do not use linear opaque extrapolation for scale.
+
+## Prior cloud-VM idle
+
+*(Headless cloud VM; Ubuntu 24.04.4; Xtigervnc 1920×1200; BMO.)*
+
+### Idle Perched — 10-second sample
+
 - Total rebuilds: 4
 - Rate: 0.4 rebuilds/sec
 - Average time: **13.119 ms/rebuild**
-- Range: 9.7 - 15.3 ms
-- Opaque pixels: 6360-7888 (frame-dependent)
+- Range: 9.7 – 15.3 ms
+- Opaque pixels: 6360–7888
 
-**60-second sample:**
+### Idle Perched — 60-second sample
+
 - Total rebuilds: 3
 - Rate: **0.05 rebuilds/sec**
 - Average time: **11.412 ms/rebuild**
-- Range: 9.5 - 13.5 ms
-- Opaque pixels: 6360 (same frame repeated)
+- Range: 9.5 – 13.5 ms
+- Opaque pixels: 6360
 
-### Per-Pixel Cost
+Those cloud samples likely had occasional cursor-over or idle frame transitions that passed the gate; box idle with cursor away from the sprite measured **0**/sec.
 
-For a 126x128 sprite with ~6360-7888 opaque source cells at 1x scale:
-- **~1.5-2.0 μs per opaque source cell at 1x** (calculated from 11-13 ms / 6360-7888 cells)
-- This ratio is one measured size. It is not a scale law: 4x does not multiply the cell count.
+### Per-Pixel Cost (from cloud 1x samples)
 
-### Idle Animation Rebuilds
+For ~6360–7888 opaque source cells at 1x:
 
-The sprite is **not static** during "idle perched". BMO's idle animation causes occasional frame changes (every 15-20 seconds based on the 3 rebuilds in 60s), which triggers mask rebuilds. This is expected behavior: idle animations provide life.
-
-**Comparison to expectation**: Issue stated "idle perched (expect 0 rebuilds)". Measured 0.05 rebuilds/sec, which is very low but not zero. Rebuilds happen only when the animation frame changes, not on every engine tick.
-
-## Inconclusive Scenarios
-
-The following scenarios require GUI interaction or specific character packages not available in the headless cloud environment:
-
-### Walking Animation
-**Status**: Inconclusive
-
-**Why**: Walking requires user interaction (dragging the sprite or letting it walk across displays). In a headless VNC environment, automated GUI interaction was not implemented for this benchmark.
-
-**Expected behavior**: Would see rebuilds at animation frame rate (e.g., 10-15 FPS for walking = 10-15 rebuilds/sec).
-
-### Fast Animation
-**Status**: Inconclusive
-
-**Why**: No fast-animating character package available, and no mechanism to trigger fast animations in headless environment.
-
-### Large Sprite (128x128@4x)
-**Status**: Not measured at 4x
-
-**Measured**: BMO at 126x128@1x with 6360-7888 opaque mask cells (see Results)
-**Target**: 128x128@4x is a 512x512 pixmap
-
-Same opaque count, larger rects / pixmap — **not measured**; do not use linear opaque extrapolation. BMO at 4x still has ~6360-7888 opaque mask cells; each becomes a `scale` by `scale` `poly_fill_rectangle`, and the pixmap grows from 126x128 to 504x512. A 128x128 mask at 4x is a 512x512 pixmap with that mask's own opaque source count, not a scaled-up cell count. Cost may grow with scale (bigger fills + bigger pixmap).
-
-### Small Sprite (32x32@1x)
-**Status**: Not measured
-
-**Why**: No 32x32 character package available in the build.
-
-**Expected** (not measured): a 32x32 mask at ~50% opaque is ~512 opaque source cells, which is a smaller mask, not a scale change. At the 1x ratio that sketch is ~0.8 ms/rebuild. Fixed pixmap and flush cost may dominate, so do not treat it as a measured scale law.
+- **~1.5–2.0 μs per opaque source cell at 1x**
+- Not a scale law: 4x does not multiply the cell count.
 
 ## Findings
 
-1. **Mask rebuilds are expensive**: 11-13 ms for a 126x128 sprite at 1x scale is significant (about 1 frame at 60 FPS).
+1. **Mask rebuilds are expensive:** ~12–18 ms for BMO at 1x on this box (~15 ms avg while walking under the cursor).
 
-2. **Rebuilds only on frame change**: The code correctly caches mask parameters and rebuilds only when they change (different animation frame). Idle scenarios show very low rebuild rates (0.05/sec).
+2. **Rebuilds are gated on cursor-over (and hold/control):** With the pointer elsewhere, idle and even long walk sequences log no `mask_rebuild` lines. Cost shows up when the user is interacting over the sprite.
 
-3. **Scale is not more opaque cells**: The 1x sample is ~1.5-2.0 μs per opaque source cell. `apply_input_mask()` issues one `poly_fill_rectangle` per opaque source cell; scale only enlarges that rectangle and the pixmap. Cost at 4x was **not measured**. Do not use linear opaque extrapolation.
+3. **Walking under the cursor rebuilds at motion rate:** Because `MaskParams` includes position, expect tens of rebuilds/sec while walking under the pointer (measured ~27/s), not only the 8 fps walk animation rate.
 
-4. **No per-tick overhead**: When the animation frame doesn't change, no rebuild happens. The mask stays applied.
+4. **Scale is not more opaque cells:** Same model as before; 4x still unmeasured.
 
 ## Evidence
 
-### Instrumentation Output
+### Grok Bot desktop
+
+- `/workspace/968-box-bench/idle-15s.log` — idle measure, 0 rebuilds in window
+- `/workspace/968-box-bench/idle-summary.txt`
+- `/workspace/968-box-bench/walk-perch-cursor.log` — walk under cursor, 14 bout rebuilds
+- `/workspace/968-box-bench/walk-summary.txt`
+- `/workspace/968-box-bench/environment.txt`
+
+### Instrumentation sample (walking under cursor)
 
 ```
-mask_rebuild: 126x128 @1x scale, 6360 opaque pixels, 15.130 ms
-mask_rebuild: 126x128 @1x scale, 6360 opaque pixels, 9.724 ms
-mask_rebuild: 126x128 @1x scale, 7888 opaque pixels, 15.299 ms
-mask_rebuild: 126x128 @1x scale, 7888 opaque pixels, 12.325 ms
+mask_rebuild: 126x128 @1x scale, 6251 opaque pixels, 13.908 ms
+mask_rebuild: 126x128 @1x scale, 6298 opaque pixels, 15.328 ms
+mask_rebuild: 126x128 @1x scale, 6231 opaque pixels, 12.332 ms
 ```
 
-### Benchmark Logs
+### Code
 
-Saved in:
-- `/tmp/bench-idle-10s.log` (4 rebuilds in 10s)
-- `/tmp/bench-idle-60s.log` (3 rebuilds in 60s)
-
-### Code Changes
-
-Instrumentation added to:
-- `src-tauri/src/platform/x11/overlay.rs`: Timing and counters
-- `scripts/bench-mask-rebuild-x11.sh`: Benchmark script
+- `src-tauri/src/platform/x11/overlay.rs` — timing / counters
+- `scripts/bench-mask-rebuild-x11.sh` — benchmark script
+- `src-tauri/src/frame_loop.rs` — `MaskParams` cache + cursor-over gate
 
 ## Comparison to Issue #432 (System Wakeups)
 
-Issue #432 measured ~271 voluntary context switches/sec (used as wakeup proxy) during idle perched on Linux. Mask rebuilds account for only 0.05/sec of that, so **mask rebuilds are not a significant contributor to idle wakeup rate**.
-
-The 11-13 ms rebuild time is relevant when animation is active, not for idle power consumption.
+Issue #432 measured ~271 voluntary context switches/sec during idle perched on Linux (cloud). Mask rebuilds at 0/sec with the cursor away are **not** a contributor to that idle wakeup rate. The ~15 ms rebuild time matters when the cursor is over an animating/moving sprite.
 
 ## Recommendations for Follow-Up
 
-1. **Bare-metal testing**: A real Linux desktop (not VM) would allow:
-   - GUI automation to test walking animations
-   - Real multi-monitor testing
-   - Measurement of actual CPU time (not wall time affected by VM scheduling)
-
-2. **Direct measurement of the gaps**: A 32x32 package and a real 4x run would replace the unmeasured cases. At 4x, measure the same opaque source count drawn as larger rects into a larger pixmap. Do not fill that gap with linear opaque extrapolation.
-
-3. **Optimization scope** (out of scope for this baseline):
-   - Cache opaque pixel rectangles per frame to avoid per-pixel iteration
-   - Batch rectangle draws before XShapeCombineMask
-   - Use XShapeCombineRegion with pre-computed regions
+1. **Longer walk-under-cursor samples** (keep pointer over the sprite for a full 10–20 s) for a stabler rate — e.g. a shorter perch or computerUse drag.
+2. **Separate counters** for “opaque set changed” vs “position-only” rebuilds if optimizing the cache key.
+3. **32×32 package and real 4x run** — still unmeasured; no linear opaque extrapolation.
+4. **Fast-animation package** when one exists.
