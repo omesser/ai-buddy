@@ -99,14 +99,15 @@ _Pending._
 
 See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed X11 measurements.
 
-**Summary (X11 on Grok Bot Linux desktop, 1280×800):**
-- Idle perched (cursor not over sprite): **0.0 rebuilds/sec** (15s box remeasure)
-- Walking under cursor (BMO on perch): **~26.7 rebuilds/sec**, **~15.0 ms/rebuild** (motion-rate; MaskParams includes x,y)
-- Rebuild cost while walking under cursor: 12.3–18.6 ms for 126×128@1x (~6231–6298 opaque)
-- Fast animation: still not measured (no fast package)
-- Large sprite at 4x and small sprite (32×32): not measured. Scale does not multiply the opaque source count; do not use linear opaque extrapolation
-- Prior cloud-VM idle (0.05/sec, 11–13 ms) kept labeled in the detailed doc for comparison
-- Windows: Not measured
+**Summary (X11 on Grok Bot Linux desktop, 1280×800, tip `6b4acbf`):**
+- **Idle perched** (cursor not over sprite): **0.0 rebuilds/sec** (BMO 126×128@1x)
+- **Walking under cursor** (BMO on perch): **~26.7 rebuilds/sec**, **~15.0 ms/rebuild** (motion-driven; MaskParams includes x,y)
+- **Fast animation** (BMO react, 10 fps): **~9.6 ms/rebuild** (6360 opaque pixels) — FPS doesn't increase rebuild cost, which remains driven by opaque count
+- **Large sprite** (Black Mage 37×33@3x): **~1.4 ms/rebuild** (477–579 opaque pixels) — much faster than BMO@1x despite 3× scale, because fewer source opaque pixels. Scale multiplies rendered size, not source opaque count.
+- Small sprite: No genuinely smaller shipped character at scale=1; scenario dropped.
+- Prior cloud-VM idle: 0.05/sec, 11–13 ms (kept for comparison in detailed doc)
+- **Windows:** Not measured (pending DESKTOP approval)
+- **`perf` flamegraph:** Not yet collected
 
 ## Memory & multi-monitor (issue #424)
 _Pending._

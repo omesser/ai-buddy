@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # Benchmark X11 mask rebuild cost for click-through regions (issue #428).
-# Measures XShapeCombineMask calls under different scenarios: idle perched,
-# walking animation, large vs small sprites.
+# Measures XShapeCombineMask calls under different scenarios using shipped characters.
 #
 # Usage: scripts/bench-mask-rebuild-x11.sh [SCENARIO] [DURATION]
 #
 # Arguments are positional. SCENARIO defaults to 'idle', DURATION to 10 seconds.
 #
 # Scenarios:
-#   idle       - Sprite perched, no animation (expect ~0 rebuilds/sec)
-#   walk       - Walking animation (expect rebuilds on frame changes)
-#   large      - Large sprite 128x128@4x (currently uses BMO 126x128@1x)
-#   small      - Small sprite 32x32@1x (currently uses BMO 126x128@1x)
+#   idle       - BMO perched, cursor away (expect ~0 rebuilds/sec)
+#   walk       - BMO walking under cursor (expect rebuilds at motion rate)
+#   fast       - BMO react animation (10 fps) under cursor
+#   large      - Black Mage at scale=3 (larger rendered sprite)
 
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -25,10 +24,10 @@ usage() {
 Usage: $0 [SCENARIO] [DURATION]
 
 Scenarios:
-  idle       Sprite perched, no animation (expect ~0 rebuilds/sec)
-  walk       Walking animation (expect rebuilds on frame changes)
-  large      Large sprite 128x128@4x
-  small      Small sprite 32x32@1x
+  idle       BMO perched, cursor away (expect ~0 rebuilds/sec)
+  walk       BMO walking under cursor (expect rebuilds at motion rate)
+  fast       BMO react animation (10 fps) under cursor
+  large      Black Mage at scale=3 (larger rendered sprite)
 
 Duration: seconds to measure (default: 10)
 EOF
@@ -36,7 +35,7 @@ EOF
 }
 
 case "$scenario" in
-  idle | walk | large | small) ;;
+  idle | walk | fast | large) ;;
   --help | -h) usage ;;
   *)
     echo "Unknown scenario: $scenario" >&2
@@ -63,17 +62,12 @@ export AI_BUDDY_TRACE_MASK_REBUILD=1
 # Choose character and setup based on scenario
 case "$scenario" in
   large)
-    # Use a character with large sprites if available, otherwise BMO (126x128)
-    export AI_BUDDY_INSTANCES="BMO"
-    echo "Using BMO (126x128 sprite)"
-    ;;
-  small)
-    # Would need a smaller character package - for now use BMO but note limitation
-    export AI_BUDDY_INSTANCES="BMO"
-    echo "Note: Using BMO (126x128) - true 32x32@1x test requires small character package"
+    export AI_BUDDY_INSTANCES="Black Mage"
+    echo "Using Black Mage (scale=3, larger rendered sprite)"
     ;;
   *)
     export AI_BUDDY_INSTANCES="BMO"
+    echo "Using BMO (126x128@1x)"
     ;;
 esac
 
@@ -103,13 +97,17 @@ sleep 2
 
 echo "Measuring for ${duration}s..."
 
-# For walk scenario, we'd need to interact with the app to make it walk.
-# This is a limitation of headless testing - we can measure idle and observe
-# the instrumentation, but walking requires GUI automation.
+# For walk and fast scenarios, GUI interaction is needed to trigger animation
+# under the cursor. This requires manual setup (perch + cursor positioning)
+# or MCP play_behavior calls.
 case "$scenario" in
   walk)
-    echo "Note: Walking animation requires GUI interaction - measuring whatever animation plays"
-    echo "      (idle animations may still cause mask rebuilds)"
+    echo "Note: Walking requires cursor over sprite during walk animation"
+    echo "      Use perch + MCP play_behavior or manual GUI interaction"
+    ;;
+  fast)
+    echo "Note: Fast animation (BMO react at 10fps) requires cursor over sprite"
+    echo "      Trigger via poke or other interaction while measuring"
     ;;
 esac
 
@@ -157,9 +155,10 @@ else
   echo "No mask rebuilds detected during measurement period."
   echo ""
   echo "Expected behavior by scenario:"
-  echo "  - idle: 0 rebuilds (sprite not animating)"
-  echo "  - walk: rebuilds on each frame change"
-  echo "  - large/small: cost comparison when animating"
+  echo "  - idle: 0 rebuilds (cursor away from sprite)"
+  echo "  - walk: rebuilds at motion rate when cursor over sprite"
+  echo "  - fast: rebuilds during high-fps animation under cursor"
+  echo "  - large: cost comparison for scale=3 character"
 fi
 
 echo ""
