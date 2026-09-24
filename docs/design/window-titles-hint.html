@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
-  The window-titles hint for omesser/ai-buddy#916: when a window read comes
-  back title-less because the grant is off, the buddy says so once, in three
-  candidate shapes — a chat notice, a speech bubble, a menu-bar badge.
+  The window-names hint for omesser/ai-buddy#916: when a window read comes
+  back nameless (no title, no owning application) because the one consent
+  ADR-0032 puts over both is off, the buddy says so once, in three candidate
+  shapes — a chat notice, a speech bubble, a menu-bar badge.
 
   A Dated page under ADR-0011: hand-written, frozen at its date, carrying its
   issue number. It proposes a state model and three surfaces, so it cannot be
@@ -24,7 +25,7 @@
      would make an unshipped design the canonical answer for "ai-buddy window
      titles", which is a privacy claim it must not make for the product. -->
 <meta name="robots" content="noindex">
-<title>Window Titles Hint</title>
+<title>Window Names Hint</title>
 <style>
   :root {
     --paper: #F4F5F8;
@@ -240,13 +241,14 @@
 <body>
 <div class="page">
   <header>
-    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a> · 2026-09-23 · hand-written and frozen, not a description of shipped behavior</p>
-    <h1>Window Titles Hint</h1>
-    <p class="lede">Window titles are off by default and stay off until the user consents. Many users never
-      find the Settings row, so <code>list_windows</code>, <code>describe_screen</code> and
-      <code>ai-buddy://windows</code> keep coming back title-less and the buddy looks less aware than it
-      actually is. This proposes a hint that closes that gap once, without ever reading as the product
-      asking for more surveillance permission.</p>
+    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a> · 2026-09-24 · hand-written and frozen, not a description of shipped behavior</p>
+    <h1>Window Names Hint</h1>
+    <p class="lede">Window titles and application names sit behind one consent (ADR-0032), off by default
+      and off until the user turns it on. Many users never find the Settings row, so <code>list_windows</code>
+      and <code>describe_screen</code> keep reporting anonymous rectangles, <code>ai-buddy://windows</code>
+      stays empty, and the buddy knows where the windows are but not what they are. This proposes a hint
+      that closes that gap once, without ever reading as the product asking for more surveillance
+      permission.</p>
   </header>
 
   <h2>The stage</h2>
@@ -291,7 +293,7 @@
       <div class="tray-menu" id="tray-menu" hidden>
         <div class="inert">ai-buddy</div>
         <div class="sep"></div>
-        <button id="menu-titles" hidden>Turn on window titles…</button>
+        <button id="menu-titles" hidden>Turn on window names…</button>
         <button>Summon…</button>
         <button>Settings…</button>
       </div>
@@ -316,11 +318,12 @@
       <div class="bar"><span class="lights"><i></i><i></i><i></i></span>Chat</div>
       <div class="log">
         <div class="msg you">What am I looking at?</div>
-        <div class="msg them">Three windows — an editor, a browser and a terminal.</div>
+        <div class="msg them">Three windows. I know where they are, not what they are.</div>
       </div>
       <div class="notice" id="notice" hidden>
-        <h4>Window titles are off</h4>
-        <p>The buddy knows which apps are open, not which window is which. Settings has the switch.</p>
+        <h4>Window names are off</h4>
+        <p>The buddy knows where your windows are, not what they are. One switch in Settings turns on
+          titles and application names together.</p>
         <div class="row">
           <button class="mini primary" data-act="settings">Open Settings</button>
           <button class="mini" data-act="dismiss">No thanks</button>
@@ -330,7 +333,7 @@
     </div>
 
     <div class="bubble" id="bubble" hidden>
-      <p>I can't tell your windows apart. Want me to open Settings?</p>
+      <p>I know where your windows are, not what they are. Want me to open Settings?</p>
       <div class="row">
         <button class="mini primary" data-act="settings">Open Settings</button>
         <button class="mini" data-act="dismiss">No thanks</button>
@@ -349,7 +352,7 @@
     </div>
 
     <div class="nowhere" id="nowhere" hidden>The chat window is closed, so variant A surfaces nothing at all.
-      The read stayed title-less and the user was never told.</div>
+      The read stayed nameless and the user was never told.</div>
 
     <div class="costs" id="costs" hidden>The overlay bubble carries no buttons today. B is drawn with them so
       the idea can be judged, but shipping it means a new affordance on the bubble.</div>
@@ -360,16 +363,14 @@
         <div class="srow">
           <input type="checkbox" id="titles-box">
           <div>
-            <label class="slabel" for="titles-box">Window titles</label>
-            <div class="shelp">Requires macOS Screen Recording.</div>
+            <label class="slabel" for="titles-box">Window and application names</label>
+            <div class="shelp">macOS Screen Recording. The buddy reads the names of what is open; it does not
+              capture the screen.</div>
           </div>
         </div>
         <details>
           <summary>What is this?</summary>
-          <p>macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen.
-            Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows
-            either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports
-            owner and bounds only.</p>
+          <p>macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.</p>
         </details>
         <p class="os-note">The operating system's own permission dialog comes from this checkbox, and from
           nothing else. It is not mocked here, and the hint never triggers it.</p>
@@ -378,11 +379,11 @@
   </div>
 
   <div class="readout">
-    <p class="st" id="status">Nothing has asked for a title yet. <b>TitlesHint::Quiet</b>.</p>
-    <pre id="resource">ai-buddy://windows
-  { "owner": "Code",     "bounds": [22,52,300,168], "title": null }
-  { "owner": "Safari",   "bounds": [150,132,300,150], "title": null }
-  { "owner": "Terminal", "bounds": [70,250,250,120], "title": null }</pre>
+    <p class="st" id="status">Nothing has asked for a name yet. <b>NamesHint::Quiet</b>.</p>
+    <pre id="resource">list_windows
+  { "bounds": [22,52,300,168],   "owner": null, "title": null }
+  { "bounds": [150,132,300,150], "owner": null, "title": null }
+  { "bounds": [70,250,250,120],  "owner": null, "title": null }</pre>
   </div>
 
   <h2>The state model</h2>
@@ -392,8 +393,8 @@
   <table>
     <thead><tr><th>State</th><th>What produced it</th><th>What the user sees</th></tr></thead>
     <tbody>
-      <tr><td>Quiet</td><td>Titles are usable, or no title-less read is outstanding.</td><td>Nothing.</td></tr>
-      <tr><td>Due</td><td>A window read came back title-less while the grant was off.</td>
+      <tr><td>Quiet</td><td>Names are usable, or no nameless read is outstanding.</td><td>Nothing.</td></tr>
+      <tr><td>Due</td><td>Something asked for windows and got them nameless while the consent was off.</td>
         <td>The hint, once, in whichever variant ships.</td></tr>
       <tr><td>Dismissed</td><td>The user said no.</td>
         <td>Nothing, now or after a restart. The Settings row stays where it is.</td></tr>
@@ -402,28 +403,36 @@
 
   <pre class="code">/// Why the hint is or is not on screen. One value, derived — never three
 /// booleans that have to stay in step.
-enum TitlesHint {
-    /// Titles are usable, or no title-less read is outstanding.
+enum NamesHint {
+    /// Names are usable, or no nameless read is outstanding.
     Quiet,
-    /// A window read came back title-less while the grant was off.
+    /// Something asked for windows and got them nameless while the consent was off.
     Due,
     /// The user said no. Persisted, so it survives a restart.
     Dismissed,
 }</pre>
 
   <ul class="tight">
-    <li><b>Observed at one seam.</b> <code>usable(WindowTitles)</code> decides a title in exactly two places
-      today, <code>platform::list_window_titles()</code> and the <code>can_read_titles</code> closure in
-      <code>platform::window_source()</code>, both in <code>src-tauri/src/platform.rs</code>. That predicate is
-      where the miss is recorded, in a process-global atomic beside the <code>WANT_*</code> atomics already in
-      <code>src-tauri/src/consent.rs</code>. A flag rather than a channel because the
-      <code>ai-buddy://windows</code> read runs on the MCP HTTP thread with no <code>AppHandle</code> and no
-      route to the UI; the atomic is the one shape that covers all three consumers without new plumbing.</li>
+    <li><b>Recorded where something asks, not where the consent is checked.</b>
+      <code>usable(WindowNames)</code> runs in three places on <code>main</code>: the
+      <code>can_read_titles</code> closure in <code>platform::window_source()</code>
+      (<code>src-tauri/src/platform.rs:770</code>), the frontmost-name gate in the frame loop
+      (<code>src-tauri/src/frame_loop.rs:1118</code>), and <code>platform::list_window_titles()</code>
+      (<code>src-tauri/src/platform.rs:722</code>). The first two run every frame and every sense interval
+      whether anyone wants a name or not, so a miss recorded there would arm the hint seconds after every
+      launch. Only the third is a request, the <code>ai-buddy://windows</code> read from
+      <code>mcp_http::read_resource</code>. <code>list_windows</code> and <code>describe_screen</code> never
+      call <code>usable</code> at all; they read the frame loop's snapshot, whose windows carry
+      <code>owner: None, title: None</code> under the same consent (#979). So <code>Due</code> is recorded at
+      the two request seams, the resource read and the frame loop's tool dispatch
+      (<code>src-tauri/src/frame_loop.rs:2113</code>) for those two tools, in a process-global atomic beside <code>WANT_WINDOW_NAMES</code> in <code>src-tauri/src/consent.rs</code>. A flag rather
+      than a channel because the resource read runs on the MCP HTTP thread with no <code>AppHandle</code>
+      and no route to the UI.</li>
     <li><b>Decided and drawn in the frame loop</b>, which already holds the <code>AppHandle</code> and already
-      does exactly this for the first-run tour at <code>src-tauri/src/frame_loop.rs:1049</code> and
-      <code>:1071</code>.</li>
+      does exactly this for the first-run tour at <code>src-tauri/src/frame_loop.rs:1072</code> and
+      <code>:1099</code>.</li>
     <li><b><code>Dismissed</code> persists as one new <code>bool</code> on <code>Settings</code></b>, the twin
-      of <code>first_run_tour_shown</code> at <code>src-tauri/src/settings.rs:1832</code> — no
+      of <code>first_run_tour_shown</code> at <code>src-tauri/src/settings.rs:1871</code> — no
       <code>BoolField</code>, no <code>FormRow</code>, set and saved where it is shown.</li>
     <li><b>Gated on <code>!do_not_disturb</code></b>, the same gate the first-run tour takes.</li>
     <li><b>One dismissal, permanent.</b> A nudge you cannot silence is worse than no nudge, and the Settings
@@ -434,16 +443,20 @@ enum TitlesHint {
   <h2>What the copy refuses to say</h2>
   <p>The hint never names macOS Screen Recording, never names ScreenCast, never says screenshot, and never
     reaches for a verb of sight — a buddy that <em>sees</em> is a buddy that captures, whatever the next
-    clause says. It names what the buddy knows and what it does not — which window is which — and the
-    Settings row names the grant
-    one line down, which is where PR #956 put it and where a disclosure belongs. A hint that leads with the
+    clause says. It names what the buddy knows and what it does not — where the windows are, not what they
+    are — in the words the Settings row's own disclosure already uses, and the row names the grant one line
+    down, which is where #888 and #979 put it and where a disclosure belongs. A hint that leads with the
     permission is asking for the permission; a hint that leads with the capability is describing the buddy.</p>
-  <p>The same product rule holds on every OS. Only the platform label under the Settings row changes.</p>
+  <p>One consent, one thing it gates. Before ADR-0032 the copy had to explain a split — application names
+    free, titles gated — and that split is gone, so the hint no longer says what the buddy still knows without
+    consent, because without it the buddy knows no name at all. The same product rule holds on every OS. Only
+    the platform label under the Settings row changes: Screen Recording on macOS, ScreenCast on Linux, no
+    system permission on Windows.</p>
 
   <h2>Not in this proposal</h2>
   <ul class="tight">
-    <li>The default stays off. Nothing here flips a grant.</li>
-    <li>Capture stays dropped (ADR-0031), and no copy on this page foreshadows it.</li>
+    <li>The default stays off. Nothing here flips a consent.</li>
+    <li>Capture stays dropped (ADR-0031, upheld by ADR-0032), and no copy on this page foreshadows it.</li>
     <li>Nothing auto-prompts the OS dialog. The checkbox is the only thing that reaches the operating system.</li>
   </ul>
 
@@ -459,11 +472,11 @@ enum TitlesHint {
         <td>One string, no UI at all, and it reaches every Harness for free.</td>
         <td><span class="verdict">Rejected.</span> The copy then goes through a language model, so "never
           foreshadows Capture" stops being something the repository can hold.</td></tr>
-      <tr><td>Repeat the hint on every title-less read.</td>
+      <tr><td>Repeat the hint on every nameless read.</td>
         <td>Nobody misses it, and a user who ignored it once gets another chance.</td>
         <td><span class="verdict">Rejected as a nag.</span> An agent can read windows many times a minute;
           the second showing is already an interruption.</td></tr>
-      <tr><td>Make titles on by default.</td>
+      <tr><td>Make names on by default.</td>
         <td>No hint needed, because there is no gap to close.</td>
         <td><span class="verdict">Rejected.</span> It is the issue's own out-of-scope line, and it breaks the
           one consent rule that holds identically on every OS.</td></tr>
@@ -472,20 +485,21 @@ enum TitlesHint {
 
   <footer>
     Frozen for <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a>. The mock Settings row follows
-    PR #956; everything else on this page is a proposal, not shipped behavior.
+    #979 and ADR-0032; everything else on this page is a proposal, not shipped behavior.
   </footer>
 </div>
 
 <script>
 // One key, one flag. Everything else is stage state and dies with the reload,
 // which is what makes "Quit and relaunch" worth pressing.
-const KEY = "ai-buddy.window-titles-hint.dismissed";
-// What the readout under the stage is showing: the resource an agent actually
-// reads, which is the whole reason the hint exists.
+const KEY = "ai-buddy.window-names-hint.dismissed";
+// What the readout under the stage is showing: what list_windows hands an
+// agent, which is the whole reason the hint exists. Owner and title fall
+// together (ADR-0032).
 const WINDOWS = [
-  ["Code", "[22,52,300,168]", "platform.rs — ai-buddy"],
-  ["Safari", "[150,132,300,150]", "#916 · omesser/ai-buddy"],
-  ["Terminal", "[70,250,250,120]", "zsh — 80×24"],
+  ["[22,52,300,168],  ", "Code", "platform.rs — ai-buddy"],
+  ["[150,132,300,150],", "Safari", "#916 · omesser/ai-buddy"],
+  ["[70,250,250,120], ", "Terminal", "zsh — 80×24"],
 ];
 const TRIGGERS = {
   describe_screen: "describe_screen",
@@ -495,12 +509,12 @@ const TRIGGERS = {
 
 const el = (id) => document.getElementById(id);
 const state = { missed: false, dismissed: false, variant: "a", chat: true, settings: false,
-                menu: false, titles: false, last: null, storage: true };
+                menu: false, names: false, last: null, storage: true };
 
 // Derived on every read, which is the whole claim the prose above makes. Kept
-// as a stored field instead, turning the grant on left the hint on screen.
+// as a stored field instead, turning the consent on left the hint on screen.
 const hint = () =>
-  state.dismissed ? "dismissed" : state.missed && !state.titles ? "due" : "quiet";
+  state.dismissed ? "dismissed" : state.missed && !state.names ? "due" : "quiet";
 
 function readDismissed() {
   try { return localStorage.getItem(KEY) === "1"; }
@@ -513,11 +527,11 @@ function writeDismissed(on) {
 
 function trigger(kind) {
   state.last = TRIGGERS[kind];
-  if (state.titles) return render("Titles are usable, so " + state.last + " got them. Nothing to hint.");
+  if (state.names) return render("Names are usable, so " + state.last + " got them. Nothing to hint.");
   state.missed = true;
   render(state.dismissed
-    ? "A title-less read from " + state.last + ", and the user already said no. Silent, by design."
-    : "A title-less read from " + state.last + " while the grant was off.");
+    ? "A nameless read from " + state.last + ", and the user already said no. Silent, by design."
+    : "A nameless read from " + state.last + " while the consent was off.");
 }
 
 function act(what) {
@@ -538,14 +552,15 @@ function render(note) {
   el("settings").hidden = !state.settings;
   el("tray-menu").hidden = !state.menu;
   el("tray").setAttribute("aria-expanded", String(state.menu));
-  el("titles-box").checked = state.titles;
+  el("titles-box").checked = state.names;
 
   el("costs").hidden = !(due && state.variant === "b");
-  el("resource").textContent = "ai-buddy://windows\n" + WINDOWS.map(
-    ([owner, bounds, title]) => '  { "owner": "' + owner + '", "bounds": ' + bounds +
-      ', "title": ' + (state.titles ? '"' + title + '"' : "null") + " }").join("\n");
+  const name = (s) => (state.names ? '"' + s + '"' : "null");
+  el("resource").textContent = "list_windows\n" + WINDOWS.map(
+    ([bounds, owner, title]) => '  { "bounds": ' + bounds + ' "owner": ' + name(owner) +
+      ', "title": ' + name(title) + " }").join("\n");
 
-  const names = { quiet: "TitlesHint::Quiet", due: "TitlesHint::Due", dismissed: "TitlesHint::Dismissed" };
+  const names = { quiet: "NamesHint::Quiet", due: "NamesHint::Due", dismissed: "NamesHint::Dismissed" };
   const bits = [(note || "") + " <b>" + names[hint()] + "</b>."];
   if (!state.storage) bits.push("localStorage is unavailable here, so a dismissal cannot survive a restart.");
   el("status").innerHTML = bits.join(" ");
@@ -574,29 +589,29 @@ el("tray").addEventListener("click", () => { state.menu = !state.menu; render(""
 el("menu-titles").addEventListener("click", () => act("settings"));
 el("settings-close").addEventListener("click", () => { state.settings = false; render(""); });
 el("titles-box").addEventListener("change", (e) => {
-  state.titles = e.target.checked;
-  render(state.titles
-    ? "Grant on. Every consumer gets titles from the next read, and the flow ends here."
-    : "Grant off again. The next title-less read can make the hint Due.");
+  state.names = e.target.checked;
+  render(state.names
+    ? "Consent on. Every consumer gets titles and application names from the next read, and the flow ends here."
+    : "Consent off again. The next nameless read can make the hint Due.");
 });
 
 el("relaunch").addEventListener("click", () => {
-  Object.assign(state, { missed: false, settings: false, menu: false, titles: false, last: null });
+  Object.assign(state, { missed: false, settings: false, menu: false, names: false, last: null });
   state.dismissed = readDismissed();
   render(state.dismissed
     ? "Relaunched. The dismissal was read back from persistence, so the hint stays gone."
-    : "Relaunched. Nothing persisted, so a title-less read can raise the hint again.");
+    : "Relaunched. Nothing persisted, so a nameless read can raise the hint again.");
 });
 
 el("reset").addEventListener("click", () => {
   writeDismissed(false);
   Object.assign(state, { missed: false, dismissed: false, settings: false, menu: false,
-                         titles: false, last: null });
+                         names: false, last: null });
   render("Persistence cleared.");
 });
 
 state.dismissed = readDismissed();
-render(state.dismissed ? "Loaded with a dismissal already on disk." : "Nothing has asked for a title yet.");
+render(state.dismissed ? "Loaded with a dismissal already on disk." : "Nothing has asked for a name yet.");
 </script>
 </body>
 </html>
