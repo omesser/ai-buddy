@@ -80,7 +80,9 @@ After the sprite walked off the perch (floor at y≈615), hundreds of further `w
 
 ### Fast Animation (BMO react, 10 fps)
 
-**Method:** BMO with `react` animation (2 frames at 10 fps, the fastest in BMO's manifest) triggered by poke interactions. Limited sample from startup interactions with cursor near sprite.
+**Status:** Measured (startup interactions, limited sample).
+
+**Method:** BMO with `react` animation (2 frames at 10 fps, the fastest in BMO's manifest) triggered by poke interactions.
 
 **Measurements (tip `6b4acbf`):**
 - Sprite: BMO 126×128@1x
@@ -93,7 +95,9 @@ The fast animation frame rate (10 fps) doesn't increase per-rebuild cost — it 
 
 ### Large Sprite (Black Mage, scale=3)
 
-**Method:** Black Mage character package (`scale = 3` in manifest), measuring startup and limited interaction. The 3× scale renders the sprite larger on screen but does not multiply the source opaque cell count.
+**Status:** Measured (startup + limited interaction).
+
+**Method:** Black Mage character package (`scale = 3` in manifest). The 3× scale renders the sprite larger on screen but does not multiply the source opaque cell count.
 
 **Measurements (tip `6b4acbf`):**
 - Sprite: **37×33@3x** (source 37×33, rendered 111×99)
@@ -103,34 +107,6 @@ The fast animation frame rate (10 fps) doesn't increase per-rebuild cost — it 
 - Average: **~1.4 ms/rebuild**
 
 Black Mage rebuilds **much faster** than BMO (~1.4ms vs ~10-15ms) because it has far fewer opaque source pixels (477–579 vs 6231–7888). Scale affects rendered size and pixmap rectangle dimensions, but rebuild cost is dominated by the iteration over opaque source cells. A 3× scale means each source cell becomes a 3×3 rectangle in the pixmap, but the loop count is the source opaque count, not the rendered pixel count.
-
-### Fast Animation (BMO react, 10 fps)
-
-**Status:** Measured (startup interactions, limited sample).
-
-**Method:** BMO with `react` animation triggered by poke interactions. The `react` animation runs at 10 fps (2 frames), the fastest declared animation in BMO's manifest.
-
-**Measurements (current tip `6b4acbf`):**
-- Sprite: BMO 126×128@1x
-- Opaque pixels: 6360
-- Rebuild time: **~9.6–9.7 ms** (3 samples during react triggers)
-- Average: **~9.6 ms**
-
-**Findings:** The "fast" animation (10 fps vs typical 1-8 fps for other BMO animations) shows the same rebuild cost as other BMO frames with similar opaque counts. Rebuild cost is driven by opaque pixel count, not animation FPS. The 10 fps rate would produce up to 10 rebuilds/sec **if** the cursor stayed over the sprite during the full animation sequence, but each rebuild's cost remains ~10ms per the opaque count.
-
-### Large Sprite (Black Mage at scale=3)
-
-**Status:** Measured (startup + limited interaction).
-
-**Method:** Black Mage character package, which declares `scale = 3` in its manifest. This renders the sprite 3× larger on screen compared to scale=1.
-
-**Measurements (current tip `6b4acbf`):**
-- Sprite: 37×33@3x scale (source sprite is 37×33 pixels, rendered at 111×99 on screen)
-- Opaque pixels: **477–579** (varies by animation frame)
-- Rebuild time: **0.97–1.94 ms** (3 samples)
-- Average: **~1.4 ms**
-
-**Findings:** Black Mage at scale=3 rebuilds **much faster** than BMO@1x (~1.4ms vs ~10-15ms) because it has far fewer opaque pixels (477–579 vs 6360). Scale multiplies the rendered size and the rectangle size in the 1-bit pixmap, but it does **not** multiply the source opaque cell count. A 3× scale means each source cell becomes a 3×3 rectangle in the pixmap, but the iteration count is still the source cell count. Cost is dominated by opaque count, not scale.
 
 Black Mage is a genuinely smaller source sprite (37×33) scaled up to appear larger, not a large-source sprite. For measuring the cost of a large opaque count at higher scale, one would need a character with both large source dimensions and dense opaque regions — not present in the current shipped character set.
 
@@ -232,4 +208,3 @@ Issue #432 measured ~271 voluntary context switches/sec during idle perched on L
 2. **Separate counters** for "opaque set changed" vs "position-only" rebuilds if optimizing the cache key — the position-inclusive `MaskParams` drives high rebuild rates during motion even when the mask bits don't change.
 3. **Windows baseline** — X11 measurements complete for shipped character scenarios. Windows DWM click-through shaping (issue #428 parent task) remains unmeasured pending DESKTOP green light.
 4. **`perf` flamegraph** for rebuild hotspots — not yet collected.
-
