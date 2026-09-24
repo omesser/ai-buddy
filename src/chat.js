@@ -294,6 +294,19 @@ function normalizeChatUi(value) {
   return allowed.includes(value) ? value : "minimal";
 }
 
+// Apply a Chat UI design to the root element, removing all others first.
+// Exported for testing.
+function applyChatUiClass(root, design) {
+  const chatUi = normalizeChatUi(design);
+  root.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
+  root.classList.add(`chat-ui-${chatUi}`);
+}
+
+// Make applyChatUiClass available for tests
+if (typeof window !== "undefined") {
+  window.__chatUiHelpers = { applyChatUiClass, normalizeChatUi };
+}
+
 // Whether anything can answer, and what to say when nothing can. Ready is
 // `canAnswer`: configured is not enough when the launcher is missing or the
 // child never came up (#726). The composer is disabled rather than hidden,
@@ -309,9 +322,7 @@ function attached(opening) {
 
   // Apply saved Chat UI design.
   const html = document.documentElement;
-  const chatUi = normalizeChatUi(opening.chat_ui || "minimal");
-  html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
-  html.classList.add(`chat-ui-${chatUi}`);
+  applyChatUiClass(html, opening.chat_ui || "minimal");
 
   const landing = document.getElementById("landing");
   const httpEmpty = document.getElementById("empty-http");
@@ -729,10 +740,7 @@ async function start() {
   await listen(
     "chat-ui",
     ({ payload }) => {
-      const html = document.documentElement;
-      const chatUi = normalizeChatUi(payload);
-      html.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
-      html.classList.add(`chat-ui-${chatUi}`);
+      applyChatUiClass(document.documentElement, payload);
     },
     { target: chat.label },
   );
@@ -747,9 +755,7 @@ async function start() {
   const opening = await invoke("chat_opening", { instance });
 
   // Apply Chat UI design immediately to prevent FOUC.
-  const html = document.documentElement;
-  const chatUi = normalizeChatUi(opening.chat_ui || "minimal");
-  html.classList.add(`chat-ui-${chatUi}`);
+  applyChatUiClass(document.documentElement, opening.chat_ui || "minimal");
 
   showWho(opening);
   attached(opening);
