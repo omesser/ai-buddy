@@ -2015,6 +2015,18 @@ mod tests {
                     let prompts = recorded(count, "prompt");
                     match script {
                         "refusal" => stop(&id, "refusal"),
+                        // The token died between the attach and this turn.
+                        // claude-code-acp's shape, then ACP's own code.
+                        "auth-turn" if prompts == 1 => {
+                            say(json!({"jsonrpc": "2.0", "id": id, "error": {
+                                "code": -32603,
+                                "message": "Internal error: Failed to authenticate: OAuth session expired and could not be refreshed",
+                                "data": {"errorKind": "authentication_failed"},
+                            }}))
+                        }
+                        "auth-turn-32000" if prompts == 1 => say(
+                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "Authentication required"}}),
+                        ),
                         // The session the load claimed to restore is not
                         // there, so the first prompt refuses and the one
                         // after the reopen is served.
@@ -2227,6 +2239,19 @@ mod tests {
             match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Settled { request, option }) => (request, option),
                 other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+            }
+        }
+
+        /// The next forwarded reload of the Chat surface, past the plan and
+        /// thought a turn's end forwards on the way, or a panic naming what
+        /// came instead.
+        fn attach_settled(&self) {
+            loop {
+                match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                    Ok(Forwarded::AttachSettled) => return,
+                    Ok(Forwarded::Plan(_) | Forwarded::Thought(_)) => {}
+                    other => panic!("expected AttachSettled, got {other:?}"),
+                }
             }
         }
 
@@ -3622,6 +3647,31 @@ mod tests {
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
         session.shutdown();
+    }
+
+    /// The attach path's translation, on the turn path (#991). The session
+    /// stays open: the token died, not the child, and the next answer is the
+    /// proof the user signed in somewhere else.
+    #[test]
+    fn an_auth_refusal_on_the_turn_names_the_login_and_the_next_answer_clears_it() {
+        for script in ["auth-turn", "auth-turn-32000"] {
+            let (fx, session) = Fixture::new(script);
+            assert_eq!(
+                session.complete(&asking("hi")),
+                Err(not_authenticated("fake --login")),
+                "{script}"
+            );
+            assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
+            fx.attach_settled();
+            assert_eq!(
+                session.complete(&asking("again")),
+                Ok(Reply::whole("Hello"))
+            );
+            assert_eq!(session.inspect().login, None);
+            fx.attach_settled();
+            assert_eq!(fx.count("new"), 1, "{script}: the session was kept");
+            session.shutdown();
+        }
     }
 
     #[test]

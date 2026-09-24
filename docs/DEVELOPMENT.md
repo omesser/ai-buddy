@@ -342,6 +342,12 @@ Neither line stops anything: a wake that fails already falls back to Static per 
 AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
 ```
 
+`scripts/stub-acp-agent.cjs` is a Harness that refuses on cue. It answers `initialize` and `session/new`, refuses the first `session/prompt` with the JSON-RPC error its `AI_BUDDY_STUB_*` variables name (by default the expired-OAuth wall #991 reported, in claude-code-acp's shape), and answers every later one. Attach it like any custom command to see what a refusal looks like on the surface without waiting for a token to die:
+
+```sh
+AI_BUDDY_HARNESS="node $PWD/scripts/stub-acp-agent.cjs" scripts/probe-harness.sh
+```
+
 ```
 probe-harness
   harness      hermes
