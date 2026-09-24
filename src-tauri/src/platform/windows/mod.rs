@@ -13,7 +13,7 @@ mod sensing;
 mod settings_raise;
 mod window_source;
 
-pub use overlay::{configure_overlay, update_input_region};
+pub use overlay::{configure_overlay, read_mask_rebuild_stats, update_input_region};
 pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::WindowsActivitySource;
 pub(super) use settings_raise::raise_settings_window;

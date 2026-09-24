@@ -7,6 +7,9 @@
 //! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE excludes the
 //! overlay from screen capture.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
+
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
@@ -15,6 +18,21 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE,
     WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
 };
+
+static MASK_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
+static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
+
+/// Read and reset mask rebuild metrics. Returns (count, total_ns).
+///
+/// Reserved counters; measurement is via TRACE log
+/// (`AI_BUDDY_TRACE_MASK_REBUILD`). The bench script parses that log and
+/// does not call this.
+#[allow(dead_code)]
+pub fn read_mask_rebuild_stats() -> (u64, u64) {
+    let count = MASK_REBUILD_COUNT.swap(0, Ordering::Relaxed);
+    let total_ns = MASK_REBUILD_TOTAL_NS.swap(0, Ordering::Relaxed);
+    (count, total_ns)
+}
 
 /// Float above other windows, non-activating, excluded from screen capture.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
@@ -169,7 +187,12 @@ fn apply_input_mask(
     scale: i32,
     hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
+    let rebuild_start = Instant::now();
+
     let (width, height, opaque) = mask.raw();
+    let scaled_width = width * scale;
+    let scaled_height = height * scale;
+    let opaque_count = opaque.iter().filter(|&&b| b).count();
 
     // SAFETY: hwnd is valid. Region handles are checked for null and freed on
     // every error path. SetWindowRgn takes ownership of combined_rgn on
@@ -280,6 +303,18 @@ fn apply_input_mask(
         }
     }
 
+    let rebuild_ns = rebuild_start.elapsed().as_nanos() as u64;
+    MASK_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
+    MASK_REBUILD_TOTAL_NS.fetch_add(rebuild_ns, Ordering::Relaxed);
+
+    if std::env::var("AI_BUDDY_TRACE_MASK_REBUILD").is_ok() {
+        let rebuild_ms = rebuild_ns as f64 / 1_000_000.0;
+        eprintln!(
+            "mask_rebuild: {}x{} @{}x scale, {} opaque pixels, {:.2} ms",
+            scaled_width, scaled_height, scale, opaque_count, rebuild_ms
+        );
+    }
+
     Ok(())
 }
 
@@ -297,4 +332,20 @@ fn clear_input_region(hwnd: HWND) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mask_rebuild_stats_readable_and_reset() {
+        let (count1, ns1) = read_mask_rebuild_stats();
+        assert_eq!(count1, 0, "stats should start at zero");
+        assert_eq!(ns1, 0);
+
+        let (count2, ns2) = read_mask_rebuild_stats();
+        assert_eq!(count2, 0, "stats should be zero after reset");
+        assert_eq!(ns2, 0);
+    }
 }
