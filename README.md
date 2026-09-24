@@ -182,9 +182,13 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 | `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
 | `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and does not receive ai-buddy's MCP. |
 | `grok` | Keeps shell, web search and fetch, filesystem, and `ask_user_question`, and the user's own MCP servers were empty on a machine with none configured, and project scope keys off `cwd` per vendor docs. |
-| `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. Whether ai-buddy's own MCP tools reach a Goose session is not measured, because `scripts/probe-harness.sh` serves no endpoint for any Harness to reach. |
+| `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy__` prefix. |
 
 No Harness brings desktop control to an ACP session ai-buddy opens.
+
+`scripts/probe-harness.sh` starts no MCP endpoint of its own (#984), so a probe
+run cannot see ai-buddy's tools arrive. The Goose row reads from a run patched to
+serve one, which confirms delivery of the tool list and not a call into it.
 
 How they handle session differs, and changes what ai-buddy can do with them:
 
