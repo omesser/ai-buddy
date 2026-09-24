@@ -1,0 +1,5 @@
+# Slim extract: sample mask_rebuild lines from walking-under-cursor bout
+# (same lines previously quoted under Instrumentation sample in the research doc)
+mask_rebuild: 126x128 @1x scale, 6251 opaque pixels, 13.908 ms
+mask_rebuild: 126x128 @1x scale, 6298 opaque pixels, 15.328 ms
+mask_rebuild: 126x128 @1x scale, 6231 opaque pixels, 12.332 ms

@@ -31,7 +31,7 @@ Measured baselines for ai-buddy performance before optimization work. See parent
 |----------|--------------------------------------|------|-------|
 | Baseline (no ai-buddy) | 3.6 | - | X server (Xtigervnc) idle |
 | Idle perched | ~271 | ~3% | Sprite visible, no interaction |
-| Walking | N/A | N/A | Not measured (requires GUI interaction) |
+| Walking | N/A | N/A | Wakeups not measured; mask rebuild while walking measured on Grok Bot desktop (see #428 doc) |
 | Chat open | N/A | N/A | Not measured (requires GUI interaction) |
 | Multi-monitor | N/A | N/A | Not available in VM |
 | Hidden | N/A | N/A | Not measured |
@@ -63,7 +63,7 @@ Baseline X server (60s sample, PID 1594):
 
 Startup log excerpt:
 ```
-character: BMO from /workspace/target/debug/characters/bmo
+character: BMO from target/debug/characters/bmo
 libEGL warning: DRI3 error: Could not get DRI3 device
 window_source: 0 visible windows
 overlay: overlay-0 covers 1920x1200 at (0,0)
@@ -96,7 +96,18 @@ _Pending._
 _Pending._
 
 ## Click-through mask (issue #428)
-_Pending._
+
+See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed X11 measurements.
+
+**Summary (X11 on Grok Bot Linux desktop, 1280×800, tip `6b4acbf`):**
+- **Idle perched** (cursor not over sprite): **0.0 rebuilds/sec** (BMO 126×128@1x)
+- **Walking under cursor** (BMO on perch): **~26.7 rebuilds/sec**, **~15.0 ms/rebuild** (motion-driven; MaskParams includes x,y)
+- **Fast animation** (BMO react, 10 fps): **~9.6 ms/rebuild** (6360 opaque pixels) — FPS doesn't increase rebuild cost, which remains driven by opaque count
+- **Large sprite** (Black Mage 37×33@3x): **~1.4 ms/rebuild** (477–579 opaque pixels) — much faster than BMO@1x despite 3× scale, because fewer source opaque pixels. Scale multiplies rendered size, not source opaque count.
+- Small sprite: No genuinely smaller shipped character at scale=1; scenario dropped.
+- Prior cloud-VM idle: 0.05/sec, 11–13 ms (kept for comparison in detailed doc)
+- **Windows:** Not measured (pending DESKTOP approval)
+- **`perf` flamegraph:** Not yet collected
 
 ## Memory & multi-monitor (issue #424)
 _Pending._
