@@ -8,4 +8,4 @@ Display: X11 on DISPLAY=:5, 1280×800, depth 24
 X server: The X.Org Foundation version 21.1.16
 Character: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame)
 Binary: cargo build -p ai-buddy debug at tip 965e147 (docs tip after remeasure: 6b4acbf)
-Note: Full raw machine logs under /workspace/968-box-bench/ were not retained; this file is the committed extract.
+Note: Raw TRACE dumps were not committed; this file is the published extract.

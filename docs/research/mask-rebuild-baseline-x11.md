@@ -183,7 +183,7 @@ For ~6360–7888 opaque source cells at 1x:
 
 ### Grok Bot desktop
 
-Full machine-local raw logs (idle/walk under `/workspace/968-box-bench/`, react/Black Mage under `/workspace/968-measurements/`) were not retained; committed extracts are the published evidence for the idle and walk scenarios:
+Raw TRACE dumps were not committed. Published evidence for idle and walk scenarios is the extracts below; react and Black Mage measurements rely on the inlined `mask_rebuild:` samples in this doc:
 
 - `docs/research/mask-rebuild-baseline-x11/environment.txt` — environment configuration
 - `docs/research/mask-rebuild-baseline-x11/idle-summary.txt` — idle measure, 0 rebuilds in window
