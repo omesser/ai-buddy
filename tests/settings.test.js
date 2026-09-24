@@ -98,7 +98,7 @@ test('"the Director\'s mind" stays out of the state line', () => {
 });
 
 const HEADINGS = {
-  Presence: ["Do Not Disturb", "Hide", "Launch"],
+  Presence: ["Do Not Disturb", "Hide", "Launch", "Appearance"],
   Character: ["Character", "Instances"],
   AI: ["AI", "AI source", "Point a Harness you run yourself at ai-buddy", "Model / API", "Last user turn"],
   Privacy: ["What the buddy can see", "Excluded applications", "Memory File"],
@@ -353,10 +353,27 @@ test("the Character popups offer every installed package, the worn one selected"
   const offered = Object.fromEntries(
     selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
   );
-  assert.deepEqual(offered, { character: ["bmo", "ghost"], new_character: ["bmo", "ghost"] });
+  assert.deepEqual(offered, {
+    character: ["bmo", "ghost"],
+    new_character: ["bmo", "ghost"],
+  });
   for (const select of selects) {
     assert.equal(select.value, "bmo", select.dataset.id);
   }
+});
+
+// chat_ui is an application setting (ADR-0019), so the picker sits on
+// Presence. Minimal is the design a fresh settings file starts on.
+test("the Chat UI popup lives on Presence and offers the three designs", () => {
+  const selects = drawn("Presence").filter((node) => node.tagName === "select");
+  const offered = Object.fromEntries(
+    selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
+  );
+  assert.deepEqual(offered, {
+    chat_ui: ["Minimal", "Terminal", "Glass"],
+  });
+  assert.equal(selects[0].value, "Minimal");
+  assert.equal(drawn("Character").some((node) => node.dataset.id === "chat_ui"), false);
 });
 
 // A redraw is render() again, and replaceChildren() takes the focused control

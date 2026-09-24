@@ -26,7 +26,7 @@ use super::{
     remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
     ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
     MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
-    CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    CHAT_STATUS_EVENT, CHAT_UI_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// How long an overlay may go without being told anything.
@@ -594,8 +594,20 @@ pub(crate) fn run_frame_loop(
                                     &director,
                                     &app,
                                 );
+                                let chat_ui = settings
+                                    .lock()
+                                    .ok()
+                                    .map(|s| s.chat_ui.clone())
+                                    .unwrap_or_else(|| "minimal".to_string());
                                 if let Ok(inspect) = inspect.lock() {
-                                    push_chat_opening(&app, &roster, &id, &inspect, &characters);
+                                    push_chat_opening(
+                                        &app,
+                                        &roster,
+                                        &id,
+                                        &inspect,
+                                        &characters,
+                                        &chat_ui,
+                                    );
                                 }
                             }
                         } else {
@@ -672,6 +684,11 @@ pub(crate) fn run_frame_loop(
                             session_log::new_session(&app, &live.id, "a new session was started");
                         }
                     }
+                    SettingsOp::ChatUIChanged { chat_ui } => {
+                        for live in &lives {
+                            let _ = app.emit_to(chat_label(&live.id), CHAT_UI_EVENT, &chat_ui);
+                        }
+                    }
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }
@@ -736,6 +753,11 @@ pub(crate) fn run_frame_loop(
                                 "chars": written.text.chars().count(),
                             }),
                         );
+                        let chat_ui = settings
+                            .lock()
+                            .ok()
+                            .map(|s| s.chat_ui.clone())
+                            .unwrap_or_else(|| "minimal".to_string());
                         if let Ok(inspect) = inspect.lock() {
                             push_chat_opening(
                                 &app,
@@ -743,6 +765,7 @@ pub(crate) fn run_frame_loop(
                                 &written.instance,
                                 &inspect,
                                 &characters,
+                                &chat_ui,
                             );
                         }
                         continue;
@@ -894,9 +917,14 @@ pub(crate) fn run_frame_loop(
             }
 
             if reload_chat {
+                let chat_ui = settings
+                    .lock()
+                    .ok()
+                    .map(|s| s.chat_ui.clone())
+                    .unwrap_or_else(|| "minimal".to_string());
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.harness = harness::attached().map(|session| session.inspect());
-                    push_chat_openings(&app, &roster, &inspect, &characters);
+                    push_chat_openings(&app, &roster, &inspect, &characters, &chat_ui);
                 }
             }
 

@@ -137,6 +137,9 @@ const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 /// replaces the whole list, and an empty one is the turn taking it away (#697).
 const CHAT_PLAN_EVENT: &str = "chat-plan";
 
+/// Chat UI selection change, telling each chat surface to swap its root class.
+const CHAT_UI_EVENT: &str = "chat-ui";
+
 /// Retires one forwarded request in every open Chat surface, by request id.
 /// The ask went to all of them and one took the click; the rest would
 /// otherwise keep offering buttons on a question already answered.
@@ -1607,6 +1610,8 @@ struct ChatOpening {
     /// The HTTP Completer in force: model and host, never a credential.
     model: String,
     host: String,
+    /// Which Chat UI design the user picked: "minimal", "terminal", or "glass".
+    chat_ui: String,
     /// A Harness is attached but not signed in: the command that fixes it,
     /// for the user's own terminal. The third state ADR-0010 names.
     login: Option<String>,
@@ -1667,7 +1672,13 @@ fn chat_opening_from(
     inspect: &model::DirectorInspect,
     personality: &str,
 ) -> ChatOpening {
-    chat_opening_layers(instance, inspect, personality, std::iter::empty::<&str>())
+    chat_opening_layers(
+        instance,
+        inspect,
+        personality,
+        std::iter::empty::<&str>(),
+        "minimal",
+    )
 }
 
 fn chat_opening_layers(
@@ -1675,6 +1686,7 @@ fn chat_opening_layers(
     inspect: &model::DirectorInspect,
     personality: &str,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+    chat_ui: &str,
 ) -> ChatOpening {
     let blank = model::blank();
     ChatOpening {
@@ -1685,6 +1697,7 @@ fn chat_opening_layers(
         harness: chat_harness(inspect),
         model: inspect.model.clone(),
         host: inspect.host.clone(),
+        chat_ui: chat_ui.to_string(),
         login: inspect
             .harness
             .as_ref()
@@ -1788,6 +1801,12 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .as_ref()
             .and_then(|read| read.harness.as_ref())
             .map(|attached| attached.name.clone()),
+        chat_ui: state
+            .settings
+            .lock()
+            .ok()
+            .map(|settings| settings.chat_ui.clone())
+            .unwrap_or_else(|| "minimal".to_string()),
         instance_prompt,
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
@@ -1870,6 +1889,7 @@ fn push_chat_opening(
     id: &InstanceId,
     inspect: &model::DirectorInspect,
     characters: &BTreeMap<String, Arc<Character>>,
+    chat_ui: &str,
 ) {
     let Some(instance) = roster.get(id) else {
         return;
@@ -1879,6 +1899,7 @@ fn push_chat_opening(
         inspect,
         &personality_of(characters, instance),
         behavior_names_of(characters, instance),
+        chat_ui,
     );
     let label = chat_label(id);
     let title = opening.name.clone();
@@ -1900,10 +1921,11 @@ fn push_chat_openings(
     roster: &Roster,
     inspect: &model::DirectorInspect,
     characters: &BTreeMap<String, Arc<Character>>,
+    chat_ui: &str,
 ) {
     let ids: Vec<_> = roster.list().into_iter().map(|(id, _)| id).collect();
     for id in ids {
-        push_chat_opening(app, roster, &id, inspect, characters);
+        push_chat_opening(app, roster, &id, inspect, characters, chat_ui);
     }
 }
 
@@ -2263,8 +2285,13 @@ fn apply_menu_action(
                     director,
                     app,
                 );
+                let chat_ui = settings
+                    .lock()
+                    .ok()
+                    .map(|s| s.chat_ui.clone())
+                    .unwrap_or_else(|| "minimal".to_string());
                 if let Ok(inspect) = inspect.lock() {
-                    push_chat_opening(app, roster, instance_id, &inspect, characters);
+                    push_chat_opening(app, roster, instance_id, &inspect, characters, &chat_ui);
                 }
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
@@ -2297,10 +2324,11 @@ fn apply_menu_action(
         menu::MenuAction::ToggleDirector => {
             if let Ok(mut settings) = settings.lock() {
                 settings.director_enabled = !settings.director_enabled;
+                let chat_ui = settings.chat_ui.clone();
                 config.apply_switch(settings.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
-                    push_chat_openings(app, roster, &inspect, characters);
+                    push_chat_openings(app, roster, &inspect, characters, &chat_ui);
                 }
                 persist_settings(&settings, settings_path);
                 eprintln!(
@@ -3746,6 +3774,7 @@ mod tests {
             &stub_inspect(),
             "Nim is patient.",
             ["wave"],
+            "minimal",
         );
         assert_eq!(fresh.personality, "Nim is patient.");
         assert_eq!(fresh.instance_prompt, "", "empty by default");
@@ -3787,6 +3816,7 @@ mod tests {
                 &stub_inspect(),
                 "Nim is patient.",
                 ["wave"],
+                "minimal",
             );
             assert_eq!(off.personality, "Nim is patient.");
             assert_eq!(off.instance_prompt, "Answer in haiku.");
@@ -3805,6 +3835,7 @@ mod tests {
                 &stub_inspect(),
                 "Nim is patient.",
                 ["wave"],
+                "minimal",
             );
             assert_eq!(on.personality, "", "the built-in layer was emptied");
             assert_eq!(

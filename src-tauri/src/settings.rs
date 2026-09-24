@@ -91,6 +91,8 @@ pub struct SettingsView {
     pub consent: Vec<ConsentRow>,
     /// The name Privacy & Security will show for this process.
     pub consent_listed_as: String,
+    /// Which Chat UI design is selected: minimal, terminal, or glass.
+    pub chat_ui: String,
 }
 
 /// One row's value, in the three shapes the page draws.
@@ -524,6 +526,7 @@ impl SettingsView {
             development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
+            chat_ui: settings.chat_ui.clone(),
         }
     }
 
@@ -622,6 +625,10 @@ impl SettingsView {
                 .iter()
                 .map(|row| (row.row_id(), RowValue::Bool(row.granted))),
         );
+        values.insert(
+            "chat_ui".to_string(),
+            text(&form::chat_ui_title(&self.chat_ui)),
+        );
         values
     }
 
@@ -717,6 +724,10 @@ pub enum SettingsOp {
     /// Not a Retarget: nothing about what answers moved, so the Completer is
     /// rebuilt from the settings the loop already holds (#679).
     NewSession,
+    /// Chat UI selection changed: swap the root class on every chat surface.
+    ChatUIChanged {
+        chat_ui: String,
+    },
 }
 
 /// Whether what a secure field holds is a key somebody typed.
@@ -1182,6 +1193,11 @@ impl SettingsSession {
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
         let reload_chat = chat_surface_reloads(&settings, &patch);
+        let chat_ui_changed = patch
+            .chat_ui
+            .as_ref()
+            .is_some_and(|ui| *ui != settings.chat_ui);
+        let new_chat_ui = patch.chat_ui.clone();
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and turn ceiling.
         apply_and_seed(&mut settings, patch);
@@ -1246,6 +1262,11 @@ impl SettingsSession {
         }
         if reload_chat {
             let _ = self.ops.send(SettingsOp::ReloadChat);
+        }
+        if chat_ui_changed {
+            if let Some(ui) = new_chat_ui {
+                let _ = self.ops.send(SettingsOp::ChatUIChanged { chat_ui: ui });
+            }
         }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
@@ -1358,6 +1379,7 @@ pub struct SettingsPatch {
     /// a setting, and nothing about it survives the restart (#679).
     #[serde(default)]
     pub new_session: bool,
+    pub chat_ui: Option<String>,
 }
 
 /// A boolean field of `SettingsPatch`, as the form row writing it names it.
@@ -1421,6 +1443,7 @@ pub enum TextField {
     McpBin,
     HarnessCwd,
     ExcludedApplications,
+    ChatUI,
 }
 
 impl SettingsPatch {
@@ -1496,6 +1519,7 @@ impl SettingsPatch {
                 self.excluded_applications =
                     Some(value.lines().map(|line| line.trim().to_string()).collect())
             }
+            TextField::ChatUI => self.chat_ui = Some(form::chat_ui_choice(value)),
         }
         true
     }
@@ -1677,6 +1701,9 @@ impl Settings {
         if let Some(value) = patch.use_input_monitoring {
             self.use_input_monitoring = value;
         }
+        if let Some(value) = patch.chat_ui {
+            self.chat_ui = value;
+        }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
     }
@@ -1830,6 +1857,8 @@ pub struct Settings {
     /// per-app rather than per-Instance: a second buddy spawned later sees
     /// this flag set.
     pub first_run_tour_shown: bool,
+    /// Which Chat UI design is selected: minimal, terminal, or glass.
+    pub chat_ui: String,
 }
 
 impl Default for Settings {
@@ -1869,6 +1898,7 @@ impl Default for Settings {
             use_window_titles: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
+            chat_ui: "minimal".to_string(),
         }
     }
 }
@@ -2120,6 +2150,7 @@ mod tests {
             trace_engine: true,
             director_blank: true,
             capturable: true,
+            chat_ui: "minimal".into(),
             use_accessibility: true,
             use_window_titles: false,
             use_input_monitoring: true,
@@ -2430,6 +2461,7 @@ mod tests {
             trace_engine: false,
             director_blank: false,
             capturable: true,
+            chat_ui: "minimal".into(),
             use_accessibility: true,
             use_window_titles: false,
             use_input_monitoring: false,

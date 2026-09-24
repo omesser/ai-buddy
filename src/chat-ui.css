@@ -39,7 +39,7 @@
    apart: what was said, the explainer's prose, the Character badge, and the
    WHO label. No web fonts: the app's CSP blocks Google Fonts silently. */
 .chat-ui-minimal {
-  color-scheme: dark;
+  color-scheme: light dark;
 
   --chat-panel: var(--shared-panel);
   --chat-ink: var(--shared-ink);
@@ -80,6 +80,515 @@
      obvious pick, but it lands between OpenCode and Hermes and the three read
      as one blue; sunkissed is the same palette and stays apart. */
   --pi-accent: #E1B06E;
+}
+
+/* Terminal log. Port of .v-term from docs/design/chat-mockups.html: 62 rules
+   for a dense monospace aesthetic with elapsed-time gutter and log structure. */
+.chat-ui-terminal {
+  color-scheme: light dark;
+
+  --chat-panel: #0A0D12;
+  --chat-ink: #C6D0DC;
+  --chat-ink-2: #8A97A8;
+  --chat-ink-3: #6D7A8A;
+  --chat-ink-4: #46525F;
+  --chat-accent: #7FE0B0;
+  --chat-accent-ink: #0b231f;
+  --chat-accent-soft: #131C1A;
+
+  --chat-fill: #0F141B;
+  --chat-fill-dim: #0A0D12;
+  --chat-fill-soft: #0F141B;
+  --chat-rule: #2A3340;
+  --chat-line: #2A3340;
+
+  --chat-radius: 3px;
+  --chat-radius-tail: 3px;
+  --chat-radius-control: 3px;
+  --chat-radius-badge: 3px;
+  --chat-radius-tab: 0;
+
+  --chat-sans: system-ui, -apple-system, sans-serif;
+  --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chat-ui-terminal body {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chat-ui-terminal .tb {
+  padding: 6px 8px 6px 10px;
+  background: #141A22;
+  border-bottom: 1px solid var(--chat-rule);
+}
+
+.chat-ui-terminal .tb .name {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.chat-ui-terminal .tb .of::before {
+  content: "@";
+}
+
+.chat-ui-terminal .tb button {
+  width: 20px;
+  height: 20px;
+}
+
+.chat-ui-terminal .tabs {
+  border-bottom: 1px solid var(--chat-rule);
+  background: var(--chat-fill);
+}
+
+.chat-ui-terminal .tab {
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: lowercase;
+  padding: 5px 11px;
+  border-right: 1px solid var(--chat-rule);
+}
+
+.chat-ui-terminal .tab[aria-selected="true"] {
+  background: var(--chat-accent-soft);
+}
+
+.chat-ui-terminal .log {
+  padding: 8px 10px 6px;
+  gap: 2px;
+}
+
+.chat-ui-terminal .row {
+  grid-template-columns: 46px auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.chat-ui-terminal .row::before {
+  content: "+" attr(data-t) "s";
+  color: var(--chat-ink-4);
+  font-size: 11px;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.chat-ui-terminal .row .who {
+  grid-column: 2;
+  grid-row: 1;
+  gap: 6px;
+}
+
+.chat-ui-terminal .who-label {
+  font-size: 11px;
+  text-transform: lowercase;
+  letter-spacing: 0;
+}
+
+.chat-ui-terminal .who-label::after {
+  content: " ›";
+}
+
+.chat-ui-terminal .when {
+  font-size: 11px;
+}
+
+.chat-ui-terminal .row .said {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.chat-ui-terminal .row.you .said {
+  color: #E4EAF2;
+}
+
+.chat-ui-terminal .row.them .said {
+  color: var(--chat-ink);
+}
+
+.chat-ui-terminal .ask {
+  margin: 4px 0;
+  padding: 7px 10px 8px 54px;
+  position: relative;
+  background: #16130C;
+  border: 1px solid #4A3D1E;
+  border-radius: var(--chat-radius);
+}
+
+.chat-ui-terminal .ask::before {
+  content: "+" attr(data-t) "s";
+  position: absolute;
+  left: 10px;
+  top: 7px;
+  color: var(--chat-ink-4);
+  font-size: 11px;
+}
+
+.chat-ui-terminal .ask .head {
+  color: #E8C46A;
+}
+
+.chat-ui-terminal .ask .head::before {
+  content: "ask  ";
+  color: var(--chat-ink-4);
+}
+
+.chat-ui-terminal .ask .what {
+  color: var(--chat-ink);
+  margin: 3px 0 8px;
+  word-break: break-all;
+}
+
+.chat-ui-terminal .ask .choices {
+  gap: 6px;
+}
+
+.chat-ui-terminal .row.ask button {
+  font-size: 11.5px;
+  padding: 4px 9px;
+  border-radius: var(--chat-radius);
+  background: var(--chat-fill);
+}
+
+.chat-ui-terminal .ask .kind {
+  font-size: 10.5px;
+  color: var(--chat-ink-4);
+  margin-top: 7px;
+}
+
+.chat-ui-terminal .ask.answered {
+  background: var(--chat-fill);
+  border-color: var(--chat-rule);
+}
+
+.chat-ui-terminal .ask.answered .head {
+  color: var(--chat-ink-2);
+}
+
+.chat-ui-terminal .ask .answer {
+  color: var(--chat-ink-3);
+  margin-top: 5px;
+}
+
+.chat-ui-terminal .empty {
+  gap: 9px;
+  padding: 4px 0 2px;
+}
+
+.chat-ui-terminal .empty h2 {
+  font-size: 12px;
+  font-weight: 500;
+  color: #E8C46A;
+}
+
+.chat-ui-terminal .empty h2::before {
+  content: "── ";
+  color: var(--chat-ink-4);
+}
+
+.chat-ui-terminal .empty p {
+  color: var(--chat-ink-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.chat-ui-terminal .empty p b {
+  color: var(--chat-ink);
+  font-weight: 500;
+}
+
+.chat-ui-terminal .composer {
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid var(--chat-rule);
+  background: var(--chat-fill);
+}
+
+.chat-ui-terminal .composer::before {
+  content: "›";
+  color: var(--chat-accent);
+  padding: 8px 0 8px 10px;
+  flex: 0 0 auto;
+}
+
+.chat-ui-terminal .composer textarea {
+  font-size: 12px;
+  padding: 8px 8px;
+  border: 0;
+  background: none;
+}
+
+.chat-ui-terminal .composer textarea::placeholder {
+  color: var(--chat-ink-4);
+}
+
+.chat-ui-terminal .composer textarea:disabled {
+  color: var(--chat-ink-4);
+}
+
+.chat-ui-terminal .composer button {
+  font-size: 11px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid var(--chat-rule);
+  background: none;
+}
+
+.chat-ui-terminal .composer button:disabled {
+  color: var(--chat-ink-4);
+  cursor: default;
+}
+
+/* Pane of glass. Port of .v-glass from docs/design/chat-mockups.html: 52 rules
+   for a frosted panel with backdrop blur and thin light borders. */
+.chat-ui-glass {
+  color-scheme: light dark;
+
+  --chat-panel: rgba(14,17,24,.62);
+  --chat-ink: #F1F4F9;
+  --chat-ink-2: rgba(241,244,249,.78);
+  --chat-ink-3: rgba(241,244,249,.66);
+  --chat-ink-4: rgba(241,244,249,.55);
+  --chat-accent: rgba(255,255,255,.92);
+  --chat-accent-ink: #16202C;
+  --chat-accent-soft: rgba(255,255,255,.9);
+
+  --chat-fill: rgba(255,255,255,.10);
+  --chat-fill-dim: rgba(255,255,255,.07);
+  --chat-fill-soft: rgba(255,255,255,.16);
+  --chat-rule: rgba(255,255,255,.12);
+  --chat-line: rgba(255,255,255,.22);
+
+  --chat-radius: 14px;
+  --chat-radius-tail: 4px;
+  --chat-radius-control: 999px;
+  --chat-radius-badge: 999px;
+  --chat-radius-tab: 999px;
+
+  --chat-sans: system-ui, -apple-system, sans-serif;
+  --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chat-ui-glass body {
+  background: linear-gradient(rgba(14,17,24,.62), rgba(14,17,24,.74));
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 18px;
+  box-shadow: 0 26px 64px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.28);
+  font-size: 13.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+
+.chat-ui-glass .tb {
+  padding: 12px 14px 10px 18px;
+}
+
+.chat-ui-glass .tb .name {
+  font-weight: 800;
+  font-size: 14.5px;
+}
+
+.chat-ui-glass .tb .of {
+  font-size: 11px;
+  color: rgba(241,244,249,.62);
+}
+
+.chat-ui-glass .tb button {
+  width: 25px;
+  height: 25px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  font: 700 11px/1 var(--chat-sans);
+}
+
+.chat-ui-glass .tb button:hover {
+  background: rgba(255,255,255,.22);
+}
+
+.chat-ui-glass .tabs {
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.chat-ui-glass .tab {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.07);
+  color: rgba(241,244,249,.72);
+}
+
+.chat-ui-glass .tab[aria-selected="true"] {
+  background: rgba(255,255,255,.9);
+  border-color: transparent;
+  color: #16202C;
+  text-shadow: none;
+}
+
+.chat-ui-glass .log {
+  padding: 16px 18px 8px;
+  gap: 15px;
+  background: rgba(10,13,19,.34);
+  border-top: 1px solid rgba(255,255,255,.12);
+}
+
+.chat-ui-glass .row {
+  gap: 5px;
+}
+
+.chat-ui-glass .row.you {
+  justify-items: end;
+}
+
+.chat-ui-glass .row.you .said {
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px 14px 4px 14px;
+  padding: 8px 13px;
+  max-width: 86%;
+}
+
+.chat-ui-glass .row.them .said {
+  max-width: 94%;
+  line-height: 1.55;
+}
+
+.chat-ui-glass .who-label {
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgba(241,244,249,.6);
+  font-weight: 800;
+}
+
+.chat-ui-glass .when {
+  font-size: 10px;
+  color: rgba(241,244,249,.6);
+  font-weight: 800;
+}
+
+.chat-ui-glass .ask {
+  background: rgba(10,13,19,.5);
+  border: 1px solid rgba(255,255,255,.26);
+  border-radius: 14px;
+  padding: 13px 15px;
+}
+
+.chat-ui-glass .ask .head {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.chat-ui-glass .ask .what {
+  font-size: 11.5px;
+  color: rgba(241,244,249,.82);
+  margin: 6px 0 12px;
+  word-break: break-all;
+}
+
+.chat-ui-glass .ask .choices {
+  gap: 8px;
+}
+
+.chat-ui-glass .row.ask button {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.28);
+  background: rgba(255,255,255,.08);
+}
+
+.chat-ui-glass .row.ask button.chosen {
+  background: rgba(255,255,255,.92);
+  border-color: transparent;
+  color: #16202C;
+  text-shadow: none;
+}
+
+.chat-ui-glass .ask .kind {
+  font-size: 10.5px;
+  color: rgba(241,244,249,.55);
+  margin-top: 10px;
+}
+
+.chat-ui-glass .ask.answered {
+  background: rgba(10,13,19,.3);
+  border-color: rgba(255,255,255,.14);
+}
+
+.chat-ui-glass .ask .answer {
+  font-size: 12.5px;
+  color: rgba(241,244,249,.7);
+  margin-top: 8px;
+}
+
+.chat-ui-glass .empty {
+  gap: 11px;
+  padding: 4px 2px;
+}
+
+.chat-ui-glass .empty h2 {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.chat-ui-glass .empty p {
+  color: rgba(241,244,249,.78);
+  font-size: 12.8px;
+  line-height: 1.5;
+}
+
+.chat-ui-glass .empty p b {
+  color: #FFF;
+}
+
+.chat-ui-glass .empty code {
+  font-size: 11.5px;
+}
+
+.chat-ui-glass .composer {
+  gap: 9px;
+  padding: 12px 16px 16px;
+}
+
+.chat-ui-glass .composer textarea {
+  font-size: 13px;
+  padding: 9px 14px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+}
+
+.chat-ui-glass .composer textarea::placeholder {
+  color: rgba(241,244,249,.55);
+}
+
+.chat-ui-glass .composer textarea:disabled {
+  color: rgba(241,244,249,.45);
+  background: rgba(255,255,255,.05);
+}
+
+.chat-ui-glass .composer button {
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,.92);
+  color: #16202C;
+  text-shadow: none;
+}
+
+.chat-ui-glass .composer button:disabled {
+  background: rgba(255,255,255,.16);
+  color: rgba(241,244,249,.5);
+  cursor: default;
 }
 
 /* The empty-state panel and its parts are laid out as grids and hidden with

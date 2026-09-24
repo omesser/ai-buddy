@@ -676,6 +676,24 @@ pub fn harness_choice(title: &str) -> String {
     }
 }
 
+pub fn chat_ui_choice(title: &str) -> String {
+    match title {
+        "Minimal" => "minimal".to_string(),
+        "Terminal" => "terminal".to_string(),
+        "Glass" => "glass".to_string(),
+        _ => "minimal".to_string(),
+    }
+}
+
+pub fn chat_ui_title(value: &str) -> String {
+    match value {
+        "minimal" => "Minimal".to_string(),
+        "terminal" => "Terminal".to_string(),
+        "glass" => "Glass".to_string(),
+        _ => "Minimal".to_string(),
+    }
+}
+
 /// The label of a row an environment variable can own, whether it owns it, and
 /// status information for rendering.
 ///
@@ -1259,6 +1277,25 @@ fn presence_sections() -> Vec<FormSection> {
                 help: Some("Not available yet.".to_string()),
                 comment: None,
                 disclosure: None,
+                status: None,
+            }],
+        },
+        // chat_ui is one design for every chat surface (ADR-0019), so it
+        // sits with the rest of the on-screen chrome.
+        FormSection {
+            heading: "Appearance".to_string(),
+            comment: None,
+            disclosure: None,
+            status: None,
+            rows: vec![FormRow::Popup {
+                id: "chat_ui".to_string(),
+                label: Some("Chat UI".to_string()),
+                writes: TextField::ChatUI,
+                help: Some("Visual design for the chat surface.".to_string()),
+                options: vec!["Minimal".to_string(), "Terminal".to_string(), "Glass".to_string()],
+                frozen: false,
+                batched: false,
+                disclosure: Some("The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.".to_string()),
                 status: None,
             }],
         },
@@ -1984,6 +2021,7 @@ mod tests {
         assert_eq!(placed, headings.len(), "a heading is on two tabs");
 
         let mut expected = vec![
+            "Appearance",
             "Blank AI",
             "Character",
             "Model / API",
