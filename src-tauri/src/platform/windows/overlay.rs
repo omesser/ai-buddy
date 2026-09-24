@@ -188,7 +188,7 @@ fn apply_input_mask(
     hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     let rebuild_start = Instant::now();
-    
+
     let (width, height, opaque) = mask.raw();
     let scaled_width = width * scale;
     let scaled_height = height * scale;

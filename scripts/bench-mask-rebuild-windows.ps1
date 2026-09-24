@@ -47,7 +47,7 @@ switch ($Scenario) {
 }
 
 if (-not (Test-Path $bin)) {
-    Write-Error "no $bin — run: cargo build --bin ai-buddy"
+    Write-Error "no $bin - run: cargo build --bin ai-buddy"
     exit 2
 }
 
