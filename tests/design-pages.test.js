@@ -67,3 +67,35 @@ test("chat-mockups.html class line attributes #339", () => {
   assert.match(classLine[1], /#339/);
   assert.doesNotMatch(classLine[1], /#17/);
 });
+
+test("index window-titles-hint entry is the #916 Dated proposal", () => {
+  const named = cls(indexEntry(design("index.html"), "window-titles-hint.html"));
+  assert.match(named, /Dated proposal/);
+  assert.match(named, /#916/);
+});
+
+test("window-titles-hint.html carries noindex and a visible Dated class line", () => {
+  const html = design("window-titles-hint.html");
+  assert.match(html, /<meta name="robots" content="noindex">/);
+  assert.match(
+    html,
+    /Dated proposal · <a href="https:\/\/github\.com\/omesser\/ai-buddy\/issues\/916">#916<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
+  );
+});
+
+// #916 and ADR-0032: the hint names what the buddy knows, never the grant that
+// buys it, and never a verb of sight. The Settings mock on the same page is
+// allowed to name Screen Recording, so only the hint elements are checked.
+test("window-titles-hint.html hint copy names no grant, no Capture and no sight", () => {
+  const html = design("window-titles-hint.html");
+  const hint = (id) => {
+    const match = html.match(new RegExp(`id="${id}"[^>]*>([\\s\\S]*?)<div class="row">`));
+    assert.ok(match, `page has the ${id} hint`);
+    return match[1];
+  };
+  for (const copy of [hint("notice"), hint("bubble")]) {
+    assert.doesNotMatch(copy, /Screen Recording|ScreenCast|screenshot|capture/i);
+    assert.doesNotMatch(copy, /\b(see|sees|watch|watches|look|looks)\b/i);
+    assert.match(copy, /where your windows are, not what they are/);
+  }
+});

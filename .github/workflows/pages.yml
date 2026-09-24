@@ -61,6 +61,7 @@ jobs:
           cp docs/design/bubble.html _site/bubble.html
           cp docs/design/chat.html  _site/chat.html
           cp docs/design/chat-mockups.html _site/chat-mockups.html
+          cp docs/design/window-titles-hint.html _site/window-titles-hint.html
           python3 scripts/make-character-gallery.py --self-check
           python3 scripts/make-character-gallery.py --out _site
           python3 scripts/make-expression-page.py --self-check
