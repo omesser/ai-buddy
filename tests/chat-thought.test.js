@@ -92,7 +92,7 @@ test("the Chat control collapses thinking and remembers that preference", () => 
 
 // The wire sends the last few lines joined by newlines, the last of them still
 // being written (#994). Expanded shows them all; collapsed is one line, the
-// newest, because the collapsed rule clips a block at its first line.
+// newest.
 test("a thought of several lines collapses to the newest one", () => {
   const { root, text, toggle } = thoughtRoot();
   const strip = mountThoughtStrip(root, memoryStorage());

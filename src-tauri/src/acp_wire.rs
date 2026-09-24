@@ -982,8 +982,8 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
                 thought.push_str(&text.text);
-                if let Some(line) = thinking_line(thought) {
-                    on_event(Event::Thought(line.to_string()));
+                if let Some(window) = thinking_window(thought) {
+                    on_event(Event::Thought(window));
                 }
             }
         }
@@ -991,15 +991,28 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
     }
 }
 
-/// The line of a streamed thought being written now. The tail of everything
-/// that has arrived, because a chunk lands mid-sentence. `None` while nothing
-/// but whitespace has come. An adapter streams empty thinking blocks.
-pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
-    thought
+/// How many lines of a streamed thought cross the wire. The strip reserves
+/// this many (`.thought-text` in `chat-ui.css`) and keeps no transcript, so a
+/// reasoning model's older paragraphs are cut here instead of sent and clipped.
+pub(crate) const THOUGHT_LINES: usize = 5;
+
+/// The tail of a streamed thought: its last `THOUGHT_LINES` non-empty lines,
+/// newline-joined, the last of them being written now because a chunk lands
+/// mid-sentence. `None` while nothing but whitespace has come. An adapter
+/// streams empty thinking blocks.
+pub(crate) fn thinking_window(thought: &str) -> Option<String> {
+    let mut lines: Vec<&str> = thought
         .lines()
         .rev()
         .map(str::trim)
-        .find(|line| !line.is_empty())
+        .filter(|line| !line.is_empty())
+        .take(THOUGHT_LINES)
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    lines.reverse();
+    Some(lines.join("\n"))
 }
 
 /// Close out what this side was holding for a turn that is over.
@@ -1302,8 +1315,7 @@ mod tests {
         );
     }
 
-    /// The strip reserves five lines (#994). The window is cut here, at the
-    /// source, so a reasoning model's paragraphs never cross the wire whole.
+    /// The strip reserves five lines (#994), and the sixth drops off the top.
     #[test]
     fn a_thought_keeps_the_last_five_lines() {
         let (_, events) = drive(vec![

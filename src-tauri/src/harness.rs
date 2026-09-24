@@ -415,7 +415,8 @@ pub enum Forwarded {
         request: String,
         option: Option<String>,
     },
-    /// The line of the Harness's thinking being written now. ADR-0025.
+    /// The last lines of the Harness's thinking, the last of them being
+    /// written now. ADR-0025.
     Thought(String),
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),

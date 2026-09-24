@@ -1521,10 +1521,10 @@ fn read_stream(
 ) -> Result<(Streamed, bool), String> {
     let mut thinking = String::new();
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
-    // The Chat surface keeps no thought of its own, so the last line stays
-    // until the turn that wrote it has ended (ADR-0025). Same path as the
+    // The Chat surface keeps no thought of its own, so the last lines stay
+    // until the turn that wrote them has ended (ADR-0025). Same path as the
     // draw, so all-whitespace thinking takes away nothing.
-    if crate::acp_wire::thinking_line(&thinking).is_some() {
+    if crate::acp_wire::thinking_window(&thinking).is_some() {
         thought("");
     }
     // Whether this turn marked, for the caller to remember on the host. Any
@@ -1590,11 +1590,11 @@ fn read_frames(
         truncated |= event.truncated;
         if let Some(chunk) = event.thought {
             thinking.push_str(&chunk);
-            // The line being written now, by the same rule the ACP lane
-            // draws: a chunk lands mid-sentence, and half a sentence on its
-            // own reads as nonsense.
-            if let Some(line) = crate::acp_wire::thinking_line(thinking) {
-                thought(line);
+            // The last few lines, by the same rule the ACP lane draws: a
+            // chunk lands mid-sentence, and half a sentence on its own reads
+            // as nonsense.
+            if let Some(window) = crate::acp_wire::thinking_window(thinking) {
+                thought(&window);
             }
         }
         if let Some(delta) = event.delta {
