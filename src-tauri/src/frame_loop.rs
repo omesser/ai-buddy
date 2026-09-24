@@ -1112,28 +1112,18 @@ pub(crate) fn run_frame_loop(
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let mut activity = free_tier.read(&activity_source, &SystemClock);
-                // The frontmost application is a name, and one consent covers
-                // every name the buddy reports (ADR-0032). This source is not
-                // the window walk, so the gate has to be repeated here; the
-                // filter below is the other reason a name is dropped.
-                if !crate::consent::usable(
-                    crate::consent::CapabilityId::WindowNames,
-                    crate::consent::live(),
-                ) {
-                    activity.frontmost_application = None;
-                }
                 if let Ok(settings) = settings.lock() {
-                    let denylist = DenyList {
-                        excluded_applications: settings.excluded_applications.clone(),
-                        filter_password_fields: true,
-                    };
-                    if activity
-                        .frontmost_application
-                        .as_deref()
-                        .is_some_and(|name| !denylist.allows(name))
-                    {
-                        activity.frontmost_application = None;
-                    }
+                    withhold_frontmost_name(
+                        &mut activity,
+                        crate::consent::usable(
+                            crate::consent::CapabilityId::WindowNames,
+                            crate::consent::live(),
+                        ),
+                        &DenyList {
+                            excluded_applications: settings.excluded_applications.clone(),
+                            filter_password_fields: true,
+                        },
+                    );
                 }
                 last_activity = Some(activity.clone());
                 Some(activity)
@@ -2123,6 +2113,22 @@ fn answer_tool_call(
         .send(dispatch(&call.tool, call.arguments, &mut context));
 }
 
+/// Drop the frontmost application's name when the user has not asked for it.
+///
+/// Two reasons, and both end the same way. One consent covers every name the
+/// buddy reports (ADR-0032), and this name comes from a different call than
+/// the window walk, so the gate is repeated here. An excluded application is
+/// the other reason, and it can only be matched while the name is still there.
+fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denylist: &DenyList) {
+    let denied = activity
+        .frontmost_application
+        .as_deref()
+        .is_some_and(|name| !denylist.allows(name));
+    if !can_read_names || denied {
+        activity.frontmost_application = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2134,6 +2140,42 @@ mod tests {
     use ai_buddy_core::window_source::{Capabilities, WorldGeometry};
     use serde_json::json;
     use std::collections::BTreeMap;
+
+    fn activity(frontmost: Option<&str>) -> Activity {
+        Activity {
+            frontmost_application: frontmost.map(String::from),
+            switched: false,
+            idle: std::time::Duration::ZERO,
+            at: std::time::SystemTime::UNIX_EPOCH,
+            hour: 9,
+            minute: 30,
+            displays_asleep: false,
+        }
+    }
+
+    /// The frontmost application's name is the other half of what ADR-0032
+    /// gates, and it arrives by its own call rather than through the window
+    /// walk.
+    #[test]
+    fn the_frontmost_name_survives_only_consent_and_the_exclusion_list() {
+        let allowed = DenyList::default();
+        let excluding_terminal = DenyList {
+            excluded_applications: vec!["Terminal".to_string()],
+            filter_password_fields: true,
+        };
+
+        let mut consented = activity(Some("Terminal"));
+        withhold_frontmost_name(&mut consented, true, &allowed);
+        assert_eq!(consented.frontmost_application.as_deref(), Some("Terminal"));
+
+        let mut withheld = activity(Some("Terminal"));
+        withhold_frontmost_name(&mut withheld, false, &allowed);
+        assert_eq!(withheld.frontmost_application, None);
+
+        let mut excluded = activity(Some("Terminal"));
+        withhold_frontmost_name(&mut excluded, true, &excluding_terminal);
+        assert_eq!(excluded.frontmost_application, None);
+    }
 
     /// `FakeWindowSource` is `cfg(test)` inside core, so it is not visible
     /// here. A bare desktop is all this test needs: the sensing tools are
