@@ -508,11 +508,10 @@ pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0022's order. Copilot reaches the same
 /// Completer through Custom until a turn has been smoked. Antigravity cannot:
 /// it does not speak ACP, and wants an adapter first (#604).
-pub const HARNESS_PRESETS: [&str; 8] = [
+pub const HARNESS_PRESETS: [&str; 7] = [
     "claude",
     "codex",
     "cursor-agent",
-    "goose",
     "grok",
     "hermes",
     "opencode",
@@ -996,7 +995,7 @@ fn completer_source_section() -> FormSection {
         // The preset list is read from `HARNESS_PRESETS` rather than spelled
         // again: the hand-kept copy this replaces had been missing `pi` since
         // it was added.
-        disclosure: Some(format!("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (cursor-agent, goose, grok, hermes, opencode) need only their CLI on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.", HARNESS_PRESETS.join(", "))),
+        disclosure: Some(format!("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (cursor-agent, grok, hermes, opencode) need only their CLI on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.", HARNESS_PRESETS.join(", "))),
         status: None,
         rows: vec![
             FormRow::Popup {
@@ -1007,7 +1006,7 @@ fn completer_source_section() -> FormSection {
                 options: harness_options(),
                 frozen,
                 batched: true,
-                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (cursor-agent, goose, grok, hermes, opencode) require only their binary on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.".to_string()),
+                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (cursor-agent, grok, hermes, opencode) require only their binary on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.".to_string()),
                 status: source_status,
             },
             FormRow::TextField {
@@ -3346,7 +3345,6 @@ mod tests {
                     "Harness · claude",
                     "Harness · codex",
                     "Harness · cursor-agent",
-                    "Harness · goose",
                     "Harness · grok",
                     "Harness · hermes",
                     "Harness · opencode",

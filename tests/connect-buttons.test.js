@@ -1,26 +1,27 @@
 // The landing surface is the only way to pick a Harness without opening
-// Settings, and its buttons are hand-written HTML. `harness::launch` is where a
-// Harness is named; nothing else links the two, so a new row could land with no button.
+// Settings, and its buttons are hand-written HTML. HARNESS_PRESETS in form.rs
+// is where named presets are listed; nothing else links the two, so a new preset
+// could land with no button. (harness::launch has additional cases for custom argv.)
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
-const rust = readFileSync(
-  new URL("../src-tauri/src/harness.rs", import.meta.url),
+const form = readFileSync(
+  new URL("../src-tauri/src/settings/form.rs", import.meta.url),
   "utf8",
 );
 const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
 
-// `launch`'s match runs from the signature to the `custom =>` escape hatch.
-// Slicing there keeps `login_hint`, which spells its arms the same way, out.
-function launchTable() {
-  const from = rust.indexOf("pub fn launch(");
-  assert.notEqual(from, -1, "harness.rs still defines `pub fn launch(`");
-  const to = rust.indexOf("custom =>", from);
-  assert.notEqual(to, -1, "`launch`'s match still ends at the `custom =>` arm");
+// HARNESS_PRESETS is the source of truth for named harnesses that appear in the UI.
+// The launch() function in harness.rs has additional cases for custom argv support.
+function namedPresets() {
+  const from = form.indexOf("pub const HARNESS_PRESETS:");
+  assert.notEqual(from, -1, "form.rs still defines HARNESS_PRESETS");
+  const to = form.indexOf("];", from);
+  assert.notEqual(to, -1, "HARNESS_PRESETS array still closes with ];");
   return [
-    ...rust.slice(from, to).matchAll(/^\s*"([a-z][a-z0-9-]*)" =>/gm),
+    ...form.slice(from, to).matchAll(/^\s*"([a-z][a-z0-9-]*)"/gm),
   ].map((m) => m[1]);
 }
 
@@ -31,7 +32,7 @@ function connectButtons() {
 }
 
 test("every named Harness has a Connect button, and every button a Harness", () => {
-  const named = launchTable();
+  const named = namedPresets();
   const buttons = connectButtons();
 
   // Both parses read markup that is free to be reformatted. A zero or
@@ -39,26 +40,26 @@ test("every named Harness has a Connect button, and every button a Harness", () 
   // agree, so refuse to pass vacuously.
   assert.ok(
     named.length >= 4,
-    `parsed only ${named.length} names out of \`launch\` — the match arms moved`,
+    `parsed only ${named.length} names out of HARNESS_PRESETS — the array moved`,
   );
   assert.ok(
     buttons.length >= 4,
     `parsed only ${buttons.length} \`.connect-btn\` elements out of chat.html — the markup moved`,
   );
-  assert.ok(named.includes("claude"), "`claude` is still a named Harness");
+  assert.ok(named.includes("claude"), "`claude` is still a named preset");
 
   const missing = named.filter((name) => !buttons.includes(name));
   assert.deepEqual(
     missing,
     [],
-    `\`harness::launch\` names ${missing.join(", ")} but src/chat.html ships no Connect button for ${missing.length > 1 ? "them" : "it"}`,
+    `HARNESS_PRESETS names ${missing.join(", ")} but src/chat.html ships no Connect button for ${missing.length > 1 ? "them" : "it"}`,
   );
 
   const stray = buttons.filter((name) => !named.includes(name));
   assert.deepEqual(
     stray,
     [],
-    `src/chat.html has a Connect button for ${stray.join(", ")}, which \`harness::launch\` does not name`,
+    `src/chat.html has a Connect button for ${stray.join(", ")}, which HARNESS_PRESETS does not name`,
   );
 
   assert.equal(
