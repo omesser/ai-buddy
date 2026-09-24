@@ -502,10 +502,16 @@ pub fn read_mask_rebuild_stats() -> (u64, u64) {
     x11::read_mask_rebuild_stats()
 }
 
-/// Non-X11 platforms use different input region APIs (SetWindowRgn on Windows,
-/// set_ignore_cursor_events on macOS) and are not instrumented yet.
+/// Windows mask rebuild stats (SetWindowRgn). Same instrumentation as X11.
 #[allow(dead_code)]
-#[cfg(not(all(unix, not(target_os = "macos"))))]
+#[cfg(not(unix))]
+pub fn read_mask_rebuild_stats() -> (u64, u64) {
+    windows::read_mask_rebuild_stats()
+}
+
+/// macOS uses set_ignore_cursor_events and is not instrumented yet.
+#[allow(dead_code)]
+#[cfg(target_os = "macos")]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
     (0, 0)
 }
