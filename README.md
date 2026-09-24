@@ -173,7 +173,7 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 | `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
 | `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and does not receive ai-buddy's MCP. |
 | `grok` | Keeps shell, web search and fetch, filesystem, and `ask_user_question`, and the user's own MCP servers were empty on a machine with none configured, and project scope keys off `cwd` per vendor docs. |
-| `goose` | Unverified on an ai-buddy attach. |
+| `goose` | Keeps shell and filesystem, has no web tool at all and no ask-user tool, and the other names it lists are Goose's own built-in extensions (`apps__`, `todo__`, `extensionmanager__`) rather than the user's servers. **ai-buddy's MCP does not reach the session.** The attach advertises http and the app offers the endpoint, but `describe_screen` is absent from the eighteen tools Goose lists and the agent answers that no such tool exists, so a Goose attach proposes Behaviors without being able to act through ai-buddy's tools. A user-configured Goose extension was not tested. |
 
 No Harness brings desktop control to an ACP session ai-buddy opens.
 
