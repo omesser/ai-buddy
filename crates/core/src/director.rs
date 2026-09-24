@@ -1845,6 +1845,7 @@ mod tests {
             "You may propose one of these behaviors: wave",
             "Reply with the behavior name on the first line.",
             "Propose nothing else.",
+            "use the tools you have",
         ] {
             assert!(
                 !blank.contains(instruction),
@@ -1860,13 +1861,70 @@ mod tests {
             "five short sentences",
             "Vary",
             "React to this moment",
-            "never promise",
             "You may propose one of these behaviors: wave",
             "Reply with the behavior name on the first line.",
             "Propose nothing else.",
+            "use the tools you have",
         ] {
             assert!(shaped.contains(layer), "the shaped opening: {shaped}");
         }
+    }
+
+    /// #917: the Harness is handed MCP and nothing told it. Codex searches
+    /// deferred MCP tools only when something names them, and the old
+    /// "never claim an ability" line read as "you have none". One sentence
+    /// answers both. The catalog stays the tools' own to describe.
+    #[test]
+    fn a_request_invites_the_tools_without_naming_them() {
+        let moment = context(working(), &["nap"]);
+        let opening = character_prompt(&moment, ["wave"], false);
+
+        assert!(
+            opening.contains(
+                "When you are asked for something, use the tools you have. Then reply as above."
+            ),
+            "the opening invites tool use: {opening}"
+        );
+        assert!(
+            opening.find("Reply with the behavior name on the first line.")
+                < opening.find("use the tools you have"),
+            "the reply contract comes before the invitation: {opening}"
+        );
+        for catalog in [
+            "ai-buddy://",
+            "mcp__",
+            "list_windows",
+            "describe_screen",
+            "list_instances",
+            "MCP server",
+        ] {
+            assert!(
+                !opening.contains(catalog),
+                "{catalog} is the tool catalog's to say, not the prompt's: {opening}"
+            );
+        }
+        assert!(
+            !opening.contains("never promise"),
+            "a buddy that has tools is not told it has no abilities: {opening}"
+        );
+        assert!(
+            !follow_up(&moment).contains("use the tools you have"),
+            "the opening only: {}",
+            follow_up(&moment)
+        );
+    }
+
+    /// The app layer is paid on every wake, including an HTTP Director with a
+    /// small context, and it crowds the Character and Instance prompts. #917
+    /// must not have made it cost more than it did before.
+    #[test]
+    fn the_app_layer_stays_shorter_than_it_was_before_the_tool_invitation() {
+        let app = app_instructions(["wave", "nap", "sit"], false);
+        assert!(
+            app.len() < 717,
+            "app_instructions was 717 bytes before #917, now {}: {app}",
+            app.len()
+        );
     }
 
     #[test]
@@ -1896,10 +1954,6 @@ mod tests {
             "a line fits the bubble: {payload}"
         );
         assert!(payload.contains("Vary"), "no repeated lines: {payload}");
-        assert!(
-            payload.contains("never promise"),
-            "demeanour, not capability: {payload}"
-        );
         assert!(
             payload.contains("React to this moment when there is something worth remarking on"),
             "the wake facts are material to play off, not background: {payload}"

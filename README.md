@@ -218,7 +218,7 @@ Two transports, two distinct axes:
 - **true** → loopback HTTP URL + bearer token (ADR-0023, #491)
 - **omitted/false** → stdio MCP server entry; shim relays to same loopback endpoint (ADR-0026, #501)
 
-**Seven tools** from `crates/core/src/dispatch.rs`:
+**Seven tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917):
 
 | Tool | Category | What it does |
 |---|---|---|

@@ -47,6 +47,13 @@ pub(crate) fn character_prompt(
 /// The app-level layer of the Character Prompt: voice rules, Behavior roster,
 /// reply contract. Empty under Blank AI. The Prompt tab draws this frozen so
 /// an emptied control run is visible, not a missing block.
+///
+/// Every word here is paid on every wake, by an HTTP Director with a small
+/// context as much as by a Harness, and it crowds the Character and Instance
+/// prompts that carry the personality. So it says only what nothing else can:
+/// the roster, which no tool schema advertises, and the reply shape the parser
+/// needs. The tools describe themselves over MCP, so naming them here would
+/// only be a second copy to drift.
 pub fn app_instructions(
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
@@ -79,9 +86,10 @@ pub fn app_instructions(
          have not used yet, though a signature phrase may recur, and \
          lean away from the behaviors listed as recently played. React to \
          this moment when there is something worth remarking on: what just \
-         happened to you, and what you are standing on. Dialogue is \
-         demeanour, never capability: never promise an action on the machine \
-         or claim an ability."
+         happened to you, and what you are standing on.\n\
+         \n\
+         When you are asked for something, use the tools you have. Then \
+         reply as above."
     )
 }
 
