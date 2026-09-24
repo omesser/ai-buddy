@@ -90,6 +90,7 @@ test("a batched row reports each edit through stage and writes nothing on blur",
   const key = control("director_api_key");
   key.value = "sk-draft";
   key.handlers.input?.();
+  key.handlers.blur?.();
 
   const harness = control("harness");
   harness.value = "Claude Code";
@@ -100,11 +101,7 @@ test("a batched row reports each edit through stage and writes nothing on blur",
     ["director_api_key", "sk-draft"],
     ["harness", "Claude Code"],
   ]);
-  assert.deepEqual(
-    emitted.filter((payload) => "set_text" in payload && payload.set_text !== "director_api_key"),
-    [],
-    "a batched row never writes on blur (#663)",
-  );
+  assert.deepEqual(emitted, [], "a batched row never writes on blur (#663)");
 });
 
 test("a batched row draws the draft it is handed, the key field included", () => {

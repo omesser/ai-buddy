@@ -4,9 +4,7 @@
 // `render(root, tab, values, emit, stage)` is the DOM half; a redraw is render()
 // again. `stage` receives a batched row's edit, which no redraw may lose.
 
-// `emit` routes events to the `settings_event` Tauri command. A secure field
-// emits `set_text` rather than a verb of its own because `FormRow::SecureField`
-// writes a `TextField`.
+// `emit` routes events to the `settings_event` Tauri command.
 
 // `values` is keyed by form row id and carries one scalar per row, except the
 // Instances list, which carries the rows themselves. A list item draws as
@@ -179,9 +177,10 @@ function drawRow(row, values, emit, stage) {
         readonly: row.frozen,
         autocomplete: "off",
       });
+      // Always batched (`FormRow::SecureField` carries no flag), so it only
+      // stages: a key reaches the store through Apply's draft.
       input.value = values[row.id] ?? "";
       input.addEventListener("input", () => stage(row.id, input.value));
-      input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value }));
       return labelled(row, input, [status(row.status)]);
     }
     case "Popup": {
