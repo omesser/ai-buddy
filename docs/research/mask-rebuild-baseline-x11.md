@@ -13,7 +13,7 @@ Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-
 - **X server**: The X.Org Foundation version 21.1.16
 - **Character**: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame)
 - **Binary**: `cargo build -p ai-buddy` debug at tip `965e147`
-- **Evidence**: `docs/research/mask-rebuild-baseline-x11/` (committed extracts: `environment.txt`, `idle-summary.txt`, `walk-summary.txt`, `walk-mask-rebuild-sample.log`)
+- **Evidence**: `docs/research/mask-rebuild-baseline-x11/` (slim pack: environment, summaries, sample lines)
 
 This is a real agent desktop with an X11 GUI (not a headless cloud run without pointer/window automation). Walking used a mapped `xmessage` perch and the app's loopback MCP `play_behavior`, with the **stationary** pointer left over the sprite. Shell `xdotool` was not used to drive clicks/drags.
 
@@ -175,7 +175,7 @@ For ~6360–7888 opaque source cells at 1x:
 
 3. **Walking under the cursor rebuilds at motion rate:** Because `MaskParams` includes position, expect tens of rebuilds/sec while walking under the pointer (measured ~27/s), not only the 8 fps walk animation rate.
 
-4. **Scale multiplies rendered size, not opaque count:** Black Mage at scale=3 has a smaller source sprite (37×33) than BMO@1x (126×128), so despite the 3× scale it rebuilds much faster (~1.4ms vs ~10-15ms). The iteration count is the source opaque cells; scale only affects the rectangle dimensions in the pixmap.
+4. **Scale multiplies rendered size, not opaque count:** Black Mage at scale=3 has a smaller source sprite (37×33) than BMO@1x (126×128), so despite the 3× scale it rebuilds much faster (~1.4ms vs ~10-15ms). The iteration count is the source opaque cells; scale only affects the rectangle dimensions in the pixmap. A 4× scale would cost 4²=16× the **pixels filled** (each `XFillRectangle` call fills a scale×scale rectangle), not 4× the call count.
 
 5. **Fast animation FPS doesn't directly increase rebuild cost:** BMO `react` at 10 fps shows the same ~10ms rebuild time as other BMO animations with similar opaque counts. FPS affects how often rebuilds might fire (if cursor stays over sprite), but each rebuild's cost remains driven by the opaque pixel count.
 
@@ -183,14 +183,15 @@ For ~6360–7888 opaque source cells at 1x:
 
 ### Grok Bot desktop
 
-Raw TRACE dumps were not committed. Published evidence for idle and walk scenarios is the extracts below; react and Black Mage measurements rely on the inlined `mask_rebuild:` samples in this doc:
+Slim evidence pack in [`docs/research/mask-rebuild-baseline-x11/`](./mask-rebuild-baseline-x11/):
 
-- `docs/research/mask-rebuild-baseline-x11/environment.txt` — environment configuration
-- `docs/research/mask-rebuild-baseline-x11/idle-summary.txt` — idle measure, 0 rebuilds in window
-- `docs/research/mask-rebuild-baseline-x11/walk-summary.txt` — walk under cursor, 14 bout rebuilds
-- `docs/research/mask-rebuild-baseline-x11/walk-mask-rebuild-sample.log` — sample `mask_rebuild` lines from walking-under-cursor bout
+- [`environment.txt`](./mask-rebuild-baseline-x11/environment.txt) — host/OS/display config
+- [`idle-summary.txt`](./mask-rebuild-baseline-x11/idle-summary.txt) — idle measure summary (0 rebuilds in 15s window)
+- [`walk-summary.txt`](./mask-rebuild-baseline-x11/walk-summary.txt) — walk under cursor summary (14 rebuilds)
+- [`walk-mask-rebuild-sample.log`](./mask-rebuild-baseline-x11/walk-mask-rebuild-sample.log) — sample `mask_rebuild:` log lines from walk bout
+- [`README.md`](./mask-rebuild-baseline-x11/README.md) — pack provenance
 
-React and Black Mage measurements (tip `6b4acbf`) are documented in the Instrumentation samples below; their raw logs were also not retained.
+Numbers and sample lines were extracted for publication; full TRACE logs remain on the measurement box.
 
 ### Instrumentation sample
 

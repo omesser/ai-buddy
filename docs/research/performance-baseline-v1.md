@@ -63,7 +63,7 @@ Baseline X server (60s sample, PID 1594):
 
 Startup log excerpt:
 ```
-character: BMO from /workspace/target/debug/characters/bmo
+character: BMO from target/debug/characters/bmo
 libEGL warning: DRI3 error: Could not get DRI3 device
 window_source: 0 visible windows
 overlay: overlay-0 covers 1920x1200 at (0,0)
