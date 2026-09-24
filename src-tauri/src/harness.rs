@@ -419,8 +419,9 @@ pub enum Forwarded {
     Thought(String),
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
-    /// Preflight finished. Chat's first ReloadChat races this thread, so a
-    /// missing launcher would otherwise never reach the landing (#726).
+    /// The attachment moved: preflight finished, or a login went missing or
+    /// came back mid-session (#991). Chat's first ReloadChat races preflight,
+    /// so a missing launcher would otherwise never reach the landing (#726).
     AttachSettled,
 }
 
@@ -752,6 +753,15 @@ impl Session {
                 Err(format!("harness stopped: {reason}"))
             }
             Err(TurnError::Busy) => Err("harness busy".to_string()),
+            Err(TurnError::AuthRequired) => {
+                let refused = self
+                    .state
+                    .lock()
+                    .map(|mut state| self.refuse_login(&mut state))
+                    .unwrap_or_else(|_| LOST.to_string());
+                action_log::append(self.data.as_path(), "turn", json!({"error": refused}));
+                Err(refused)
+            }
             Err(TurnError::Failed(why)) => {
                 action_log::append(self.data.as_path(), "turn", json!({"error": why}));
                 Err(format!("harness: {why}"))
@@ -803,9 +813,32 @@ impl Session {
                 if let Some(opened) = state.sessions.get_mut(&SessionKey::from_request(request)) {
                     opened.loaded = false;
                 }
+                self.signed_in(&mut state);
             }
         }
         Ok((session_id, outcome))
+    }
+
+    /// The Harness wants a login it does not have. Remembered so the Chat
+    /// surface disables its composer and names the command, and forwarded so
+    /// a window that is already open hears it now, not at its next opening.
+    fn refuse_login(&self, state: &mut State) -> String {
+        let command = login_command(&self.launch.name, &state.handshake);
+        state.login = Some(command.clone());
+        state.auth_tried = Some(Instant::now());
+        self.update_inspect(|inspect| inspect.login = Some(command.clone()));
+        (self.forward)(Forwarded::AttachSettled);
+        not_authenticated(&command)
+    }
+
+    /// An answer is the proof the login happened, in a terminal ai-buddy never
+    /// sees. The composer it disabled comes back the same way it went.
+    fn signed_in(&self, state: &mut State) {
+        if state.login.take().is_none() {
+            return;
+        }
+        self.update_inspect(|inspect| inspect.login = None);
+        (self.forward)(Forwarded::AttachSettled);
     }
 
     /// Drop a loaded session so the next `attach` opens a fresh one. A refused
@@ -1057,13 +1090,7 @@ impl Session {
                 self.lost(wire, state);
                 return Err(LOST.to_string());
             }
-            Err(OpenError::AuthRequired) => {
-                let command = login_command(&self.launch.name, &state.handshake);
-                state.login = Some(command.clone());
-                state.auth_tried = Some(Instant::now());
-                self.update_inspect(|inspect| inspect.login = Some(command.clone()));
-                return Err(not_authenticated(&command));
-            }
+            Err(OpenError::AuthRequired) => return Err(self.refuse_login(state)),
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
         state.sessions.insert(
@@ -1073,11 +1100,8 @@ impl Session {
                 loaded: saved.as_deref() == Some(id.as_str()),
             },
         );
-        state.login = None;
-        self.update_inspect(|inspect| {
-            inspect.login = None;
-            inspect.session_id = Some(id.clone());
-        });
+        self.signed_in(state);
+        self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
         self.save_session(key, &id);
         action_log::append(
             self.data.as_path(),

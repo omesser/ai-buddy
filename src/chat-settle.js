@@ -58,12 +58,10 @@ export function createChatTurns() {
         }
         return { action: "speech", turn, said: payload.said };
       }
+      // The Shell's line already names the Harness (`harness: ...`, `harness
+      // not authenticated: ...`); a prefix here stacked a fourth (#991).
       if (payload.error) {
-        return {
-          action: "error",
-          turn,
-          note: `The Harness reported an error: ${payload.error}`,
-        };
+        return { action: "error", turn, note: payload.error };
       }
       // The Shell naming the wake is a fact about this settle, so it is read
       // first. `alreadyHasSpeechAhead` is only a shape heuristic, and all it
