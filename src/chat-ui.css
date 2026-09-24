@@ -71,6 +71,8 @@
      an accent. Lifted to a warm light grey, which also keeps it off
      --grok-accent, the other neutral on the row. */
   --cursor-agent-accent: #C2BCB2;
+  /* Goose docs set the caret and the card glow to #FF4F00. */
+  --goose-accent: #FF4F00;
   --grok-accent: #7A8FA3;
   --opencode-accent: #7A9EF0;
   /* Nous ships #0000F2 across the Hermes surfaces; lifted to read on the dark
@@ -1438,6 +1440,17 @@ body {
 }
 .empty .connect-btn[data-harness="cursor-agent"] .connect-icon {
   color: var(--cursor-agent-accent);
+}
+
+.empty .connect-btn[data-harness="goose"] {
+  border-color: color-mix(in srgb, var(--goose-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="goose"]:hover {
+  background: color-mix(in srgb, var(--goose-accent) 10%, var(--chat-fill));
+  border-color: var(--goose-accent);
+}
+.empty .connect-btn[data-harness="goose"] .connect-icon {
+  color: var(--goose-accent);
 }
 
 .empty .connect-btn[data-harness="grok"] {

@@ -1803,7 +1803,7 @@ pub struct Settings {
     pub director_wake_secs: String,
     /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
     /// empty for none, a preset name (`claude`, `codex`, `cursor-agent`,
-    /// `grok`, `hermes`, `opencode`, `pi`), or `custom`, which defers to
+    /// `goose`, `grok`, `hermes`, `opencode`, `pi`), or `custom`, which defers to
     /// `harness_command`. The variable outranks it, and either way
     /// `harness::retarget` reaches the attachment now (#500).
     pub harness: String,
@@ -4755,6 +4755,19 @@ mod tests {
                     assert!(
                         !snippet.contains("beef"),
                         "hermes snippet should not embed the token, got {snippet:?}"
+                    );
+                }
+                "goose" => {
+                    // No vendor registration command is verified. The catch-all
+                    // still hands the URL and the raw token, and the steps name
+                    // the Bearer header.
+                    assert!(
+                        snippet.contains("http://127.0.0.1:5051/mcp") && snippet.contains("beef"),
+                        "goose falls through to the URL and token pair, got {snippet:?}"
+                    );
+                    assert!(
+                        steps.contains("Bearer"),
+                        "goose steps still name the Bearer header, got {steps:?}"
                     );
                 }
                 _ => {

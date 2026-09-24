@@ -58,7 +58,7 @@ test("a missing npx launcher cannot answer, for every adapter preset", () => {
 });
 
 test("a missing first-party CLI names that binary, not npx", () => {
-  for (const name of ["cursor-agent", "grok", "hermes", "opencode"]) {
+  for (const name of ["cursor-agent", "goose", "grok", "hermes", "opencode"]) {
     const opening = {
       name: "bmo",
       configured: true,
@@ -91,6 +91,7 @@ test("a missing npx names nodejs.org install URL", () => {
 test("a missing first-party CLI names its install URL", () => {
   const urls = {
     hermes: "hermes-agent.nousresearch.com",
+    goose: "goose-docs.ai/docs/getting-started/installation",
     "cursor-agent": "cursor.com",
     grok: "x.ai",
     opencode: "opencode.ai",
