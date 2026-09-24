@@ -5,7 +5,7 @@ import { test } from "node:test";
 const js = readFileSync(new URL("../src/settings.js", import.meta.url), "utf8");
 
 // #867: changing the BYO Harness popup must use pick event (not set_text)
-// so the controller returns ApplyAndRefresh, which triggers loadSnapshot
+// so the controller returns Apply, whose refresh answer triggers loadSnapshot
 // and regenerates the snippet below.
 test("non-batched Popup rows emit pick on change, not set_text", () => {
   // Match the Popup case that checks !row.batched and emits an event
