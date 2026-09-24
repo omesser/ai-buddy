@@ -279,6 +279,15 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                      API above hands the HTTP endpoint back.",
                     attached.name
                 ),
+                // #949: Apply starts the attach itself, and the handshake
+                // takes a second or two. "Set but not running" over that
+                // second reads as a Harness that never will be, which is what
+                // sent the user looking for the switch that starts it.
+                None if attached.initializing => format!(
+                    "{} is starting. Chat waits until it answers, and the AI runs on static \
+                     weights meanwhile.",
+                    attached.name
+                ),
                 None => format!(
                     "{} is set but not running, so the AI runs on static weights until it \
                      answers. It stays the AI brain while it is set; Model API above hands the \
@@ -4446,6 +4455,48 @@ mod tests {
             line.contains("static weights"),
             "the line has to name what is answering instead, got {line:?}"
         );
+    }
+
+    /// #949: Apply attaches on the spot, and the ACP handshake takes a second
+    /// or two after it. The line the user reads in that second used to be the
+    /// one for a Harness that is set and never coming up, which is why Apply
+    /// read as having done nothing.
+    #[test]
+    fn a_harness_mid_handshake_says_it_is_starting() {
+        let starting = crate::harness::HarnessInspect {
+            name: "hermes".to_string(),
+            command: "hermes acp".to_string(),
+            alive: false,
+            initializing: true,
+            ..Default::default()
+        };
+        let line = harness_state(Some(&starting));
+        assert!(
+            line.contains("is starting"),
+            "the wait has to read as a wait, got {line:?}"
+        );
+        assert!(
+            !line.contains("not running"),
+            "attach is under way, so nothing here says it is not, got {line:?}"
+        );
+    }
+
+    /// The missing launcher outranks the wait: `initializing` is cleared by the
+    /// same failure that sets `missing`, and a line that raced them would tell
+    /// the user to wait for a CLI this machine has not got.
+    #[test]
+    fn a_missing_launcher_outranks_a_handshake_in_flight() {
+        let missing = crate::harness::HarnessInspect {
+            name: "hermes".to_string(),
+            command: "hermes acp".to_string(),
+            alive: false,
+            initializing: true,
+            missing: Some("hermes".to_string()),
+            ..Default::default()
+        };
+        let line = harness_state(Some(&missing));
+        assert!(line.contains("not installed"), "got {line:?}");
+        assert!(!line.contains("is starting"), "got {line:?}");
     }
 
     /// #659: the machine has not got the CLI, which is not the same state as a

@@ -148,6 +148,23 @@ test("a Harness that never came up says so rather than claiming the turn", () =>
   assert.equal(mindLine(opening), "hermes · not running");
 });
 
+// #949: Apply starts the attach, so the second the handshake takes is a wait
+// and not a verdict. `not running` there is the line that read as broken.
+test("a Harness still shaking hands says it is starting, not that it is down", () => {
+  const opening = {
+    ...http,
+    harness: {
+      name: "hermes",
+      session: null,
+      alive: false,
+      login: null,
+      initializing: true,
+    },
+  };
+
+  assert.equal(mindLine(opening), "hermes · starting");
+});
+
 // #726: a missing launcher is not a child that died. Settings already names
 // the binary (`harness_state`); the header used to say only `not running`.
 test("a missing launcher names the binary rather than a dead child", () => {

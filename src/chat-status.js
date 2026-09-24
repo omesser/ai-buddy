@@ -173,6 +173,11 @@ export function mindLine(opening) {
   if (harness.missing) {
     return `${harness.name} · \`${harness.missing}\` is not installed`;
   }
+  // Before `not running`, which over the handshake names a state the user
+  // would have to act on when the only thing to do is wait (#949).
+  if (harness.initializing) {
+    return `${harness.name} · starting`;
+  }
   if (!harness.alive) {
     return `${harness.name} · not running`;
   }

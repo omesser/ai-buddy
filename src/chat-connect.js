@@ -50,6 +50,11 @@ export function composerPlaceholder(opening) {
   if (canAnswer(opening)) {
     return `Ask ${opening.name}…`;
   }
+  // The composer is the one surface a user types into, so a wait that ends on
+  // its own says so rather than reading as a dead end (#949).
+  if (opening?.harness?.initializing) {
+    return `Starting ${harnessDisplayName(opening)}…`;
+  }
   return "Nothing can answer yet";
 }
 
