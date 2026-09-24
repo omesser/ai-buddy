@@ -2883,9 +2883,14 @@ pub(crate) mod tests {
             streamed_with_thoughts(sse),
             (
                 Streamed::Complete("wave\nhey".to_string()),
-                ["the user", "so", "so wave back", ""]
-                    .map(str::to_string)
-                    .to_vec()
+                [
+                    "the user",
+                    "the user waved\nso",
+                    "the user waved\nso wave back",
+                    "",
+                ]
+                .map(str::to_string)
+                .to_vec()
             )
         );
     }
@@ -3183,7 +3188,9 @@ pub(crate) mod tests {
             streamed_with_thoughts(thinking_only),
             (
                 Streamed::Truncated(Truncation::ThinkingOnly),
-                ["the user", "so", ""].map(str::to_string).to_vec()
+                ["the user", "the user waved\nso", ""]
+                    .map(str::to_string)
+                    .to_vec()
             ),
             "thinking_delta is drawn and is not content, so a cap here is the \
              thinking-only row"

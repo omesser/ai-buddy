@@ -90,6 +90,29 @@ test("the Chat control collapses thinking and remembers that preference", () => 
   assert.equal(next.toggle.attributes["aria-expanded"], "false");
 });
 
+// The wire sends the last few lines joined by newlines, the last of them still
+// being written (#994). Expanded shows them all; collapsed is one line, the
+// newest, because the collapsed rule clips a block at its first line.
+test("a thought of several lines collapses to the newest one", () => {
+  const { root, text, toggle } = thoughtRoot();
+  const strip = mountThoughtStrip(root, memoryStorage());
+
+  strip.thinking("Reading the roster.\nChecking the desk.\nWeighing a nap");
+  assert.equal(text.textContent, "Reading the roster.\nChecking the desk.\nWeighing a nap");
+
+  toggle.click();
+  assert.equal(text.textContent, "Weighing a nap");
+
+  strip.thinking("Reading the roster.\nChecking the desk.\nWeighing a nap against the desk.");
+  assert.equal(text.textContent, "Weighing a nap against the desk.");
+
+  toggle.click();
+  assert.equal(
+    text.textContent,
+    "Reading the roster.\nChecking the desk.\nWeighing a nap against the desk.",
+  );
+});
+
 // A guard on the stylesheet, not on behavior: `node --test` has no layout
 // engine, so the height that keeps the transcript still cannot be measured
 // here. It fails when an edit takes the box off its fixed five lines.

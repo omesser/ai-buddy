@@ -1287,16 +1287,40 @@ mod tests {
         assert_eq!(thoughts(&events), ["Reading the roster"]);
     }
 
-    /// Chunks arrive as fragments, so what the surface shows is the tail of
-    /// the thought so far. Half a sentence on its own reads as nonsense, and
-    /// the line before a newline is finished with.
+    /// Chunks arrive as fragments, so the last line of every window is the
+    /// tail of the thought so far. Half a sentence on its own reads as
+    /// nonsense, and the line before a newline is finished with, so it stays.
     #[test]
     fn a_thought_shows_the_line_being_written() {
         let (_, events) = drive(vec![
             thinking("Reading the"),
             thinking(" roster.\n\nNow the manifest"),
         ]);
-        assert_eq!(thoughts(&events), ["Reading the", "Now the manifest"]);
+        assert_eq!(
+            thoughts(&events),
+            ["Reading the", "Reading the roster.\nNow the manifest"]
+        );
+    }
+
+    /// The strip reserves five lines (#994). The window is cut here, at the
+    /// source, so a reasoning model's paragraphs never cross the wire whole.
+    #[test]
+    fn a_thought_keeps_the_last_five_lines() {
+        let (_, events) = drive(vec![
+            thinking("Reading the"),
+            thinking(" roster.\nChecking the desk.\nWeighing a nap"),
+            thinking(" against the desk.\nCounting the windows.\nNaming the display.\nPicking a"),
+            thinking(" spot."),
+        ]);
+        assert_eq!(
+            thoughts(&events),
+            [
+                "Reading the",
+                "Reading the roster.\nChecking the desk.\nWeighing a nap",
+                "Checking the desk.\nWeighing a nap against the desk.\nCounting the windows.\nNaming the display.\nPicking a",
+                "Checking the desk.\nWeighing a nap against the desk.\nCounting the windows.\nNaming the display.\nPicking a spot.",
+            ]
+        );
     }
 
     /// The strip lives exactly as long as the turn that fills it. Nothing on
