@@ -2205,6 +2205,28 @@ mod tests {
         assert!(settings.sound);
     }
 
+    /// #975 renamed the field with the consent it stores. A rename that read
+    /// the old document as a default would revoke a grant the user gave
+    /// without telling them, which is worse than asking again on purpose, so
+    /// the alias carries it over. `use_screen_recording` is the same rename
+    /// one step further back.
+    #[test]
+    fn a_grant_stored_under_an_older_field_name_is_still_a_grant() {
+        for old_name in [
+            "use_window_titles",
+            "use_screen_recording",
+            "use_portal_screencast",
+        ] {
+            let path = temp_path();
+            fs::write(&path, format!(r#"{{"{old_name}":true}}"#)).expect("write");
+            assert!(
+                Settings::load(&path).use_window_names,
+                "{old_name} has to load as the window-names grant"
+            );
+            let _ = fs::remove_file(&path);
+        }
+    }
+
     #[test]
     fn a_partial_document_fills_missing_director_endpoint_from_defaults() {
         let path = temp_path();
