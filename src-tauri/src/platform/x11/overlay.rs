@@ -23,7 +23,10 @@ static MASK_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
 static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Read and reset mask rebuild metrics. Returns (count, total_ns).
-/// Reserved counters for future use; measurement is currently via TRACE log parsing.
+///
+/// Reserved counters; measurement is via TRACE log
+/// (`AI_BUDDY_TRACE_MASK_REBUILD`). The bench script parses that log and
+/// does not call this.
 #[allow(dead_code)]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
     let count = MASK_REBUILD_COUNT.swap(0, Ordering::Relaxed);

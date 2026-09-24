@@ -20,12 +20,14 @@ Added timing instrumentation to `src-tauri/src/platform/x11/overlay.rs`:
 - Logging of sprite dimensions, scale, opaque pixel count, and rebuild time
 
 The rebuild happens in `apply_input_mask()`:
-1. Create 1-bit pixmap
-2. Iterate every pixel of the mask
-3. Call `poly_fill_rectangle` for each opaque pixel (scaled)
+1. Create a 1-bit pixmap at `width * scale` by `height * scale`
+2. Iterate every cell of the source mask
+3. Call `poly_fill_rectangle` once per opaque source cell, as a `scale` by `scale` rectangle
 4. Call `shape::mask` (XShapeCombineMask)
 5. Optionally union hotspot rectangles with `shape::rectangles`
 6. Flush X11
+
+Scale multiplies rectangle size and pixmap size. It does not multiply the opaque source count.
 
 ### Measurement
 
@@ -51,8 +53,9 @@ Benchmark script `scripts/bench-mask-rebuild-x11.sh` runs the app with `AI_BUDDY
 
 ### Per-Pixel Cost
 
-For a 126x128 sprite with ~6360-7888 opaque pixels at 1x scale:
-- **~1.5-2.0 μs per opaque pixel** (calculated from 11-13 ms / 6360-7888 pixels)
+For a 126x128 sprite with ~6360-7888 opaque source cells at 1x scale:
+- **~1.5-2.0 μs per opaque source cell at 1x** (calculated from 11-13 ms / 6360-7888 cells)
+- This ratio is one measured size. It is not a scale law: 4x does not multiply the cell count.
 
 ### Idle Animation Rebuilds
 
@@ -77,24 +80,19 @@ The following scenarios require GUI interaction or specific character packages n
 **Why**: No fast-animating character package available, and no mechanism to trigger fast animations in headless environment.
 
 ### Large Sprite (128x128@4x)
-**Status**: Partially measured (128x128@1x)
+**Status**: Not measured at 4x
 
-**Measured**: BMO at 126x128@1x with 6360-7888 opaque pixels
-**Target**: 128x128@4x would be 512x512 physical pixels
+**Measured**: BMO at 126x128@1x with 6360-7888 opaque mask cells (see Results)
+**Target**: 128x128@4x is a 512x512 pixmap
 
-**Extrapolation** (not measured):
-- At 4x scale: The mask itself is unchanged (still 126x128 with ~6360-7888 opaque pixels)
-- Each opaque pixel becomes a 4×4 `poly_fill_rectangle` call (vs 1×1 at 1x)
-- The pixmap grows to 504×512 (from 126×128)
-- Cost may increase due to larger rectangles and larger pixmap operations, but **not** by multiplying opaque pixel count
-- **Linear opaque-pixel extrapolation does not apply** — see `apply_input_mask()` in `overlay.rs`
+Same opaque count, larger rects / pixmap — **not measured**; do not use linear opaque extrapolation. BMO at 4x still has ~6360-7888 opaque mask cells; each becomes a `scale` by `scale` `poly_fill_rectangle`, and the pixmap grows from 126x128 to 504x512. A 128x128 mask at 4x is a 512x512 pixmap with that mask's own opaque source count, not a scaled-up cell count. Cost may grow with scale (bigger fills + bigger pixmap).
 
 ### Small Sprite (32x32@1x)
 **Status**: Not measured
 
 **Why**: No 32x32 character package available in the build.
 
-**Expected**: At 32x32 with ~50% opaque: ~512 opaque pixels × 1.5 μs = **~0.8 ms/rebuild**
+**Expected** (not measured): a 32x32 mask at ~50% opaque is ~512 opaque source cells, which is a smaller mask, not a scale change. At the 1x ratio that sketch is ~0.8 ms/rebuild. Fixed pixmap and flush cost may dominate, so do not treat it as a measured scale law.
 
 ## Findings
 
@@ -102,7 +100,7 @@ The following scenarios require GUI interaction or specific character packages n
 
 2. **Rebuilds only on frame change**: The code correctly caches mask parameters and rebuilds only when they change (different animation frame). Idle scenarios show very low rebuild rates (0.05/sec).
 
-3. **Linear scaling**: The rebuild cost appears roughly proportional to the number of opaque pixels that must be drawn to the pixmap.
+3. **Scale is not more opaque cells**: The 1x sample is ~1.5-2.0 μs per opaque source cell. `apply_input_mask()` issues one `poly_fill_rectangle` per opaque source cell; scale only enlarges that rectangle and the pixmap. Cost at 4x was **not measured**. Do not use linear opaque extrapolation.
 
 4. **No per-tick overhead**: When the animation frame doesn't change, no rebuild happens. The mask stays applied.
 
@@ -142,7 +140,7 @@ The 11-13 ms rebuild time is relevant when animation is active, not for idle pow
    - Real multi-monitor testing
    - Measurement of actual CPU time (not wall time affected by VM scheduling)
 
-2. **Character packages**: Small sprite (32x32) and large sprite (128x128@4x) packages would allow direct measurement vs extrapolation.
+2. **Direct measurement of the gaps**: A 32x32 package and a real 4x run would replace the unmeasured cases. At 4x, measure the same opaque source count drawn as larger rects into a larger pixmap. Do not fill that gap with linear opaque extrapolation.
 
 3. **Optimization scope** (out of scope for this baseline):
    - Cache opaque pixel rectangles per frame to avoid per-pixel iteration

@@ -102,9 +102,9 @@ See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed 
 **Summary (X11 on Linux cloud VM):**
 - Idle perched: 0.05 rebuilds/sec (very low, only on animation frame changes)
 - Rebuild cost: 11-13 ms for 126x128@1x sprite (~6360-7888 opaque pixels)
-- Per-pixel cost: ~1.5-2.0 μs per opaque pixel
+- Per-cell cost at 1x: ~1.5-2.0 μs per opaque source cell (not a scale law)
 - Walking/fast animation: Inconclusive (requires GUI interaction)
-- Large/small sprite comparison: Partially measured (extrapolation provided)
+- Large sprite at 4x and small sprite (32x32): not measured. Scale does not multiply the opaque source count; do not use linear opaque extrapolation
 - Windows: Not measured (Windows desktop not available in cloud VM)
 
 ## Memory & multi-monitor (issue #424)

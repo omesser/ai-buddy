@@ -492,8 +492,10 @@ pub fn update_input_region(
     )
 }
 
-/// Read and reset mask rebuild metrics on X11. Returns (count, total_ns).
-/// Used by benchmark scripts that parse trace logs; not called from main binary.
+/// Read and reset X11 mask rebuild counters. Returns (count, total_ns).
+///
+/// Reserved counters; measurement is via TRACE log. The bench script parses
+/// that log and does not call this.
 #[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
