@@ -465,7 +465,7 @@ pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
 #[cfg(target_os = "linux")]
 pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
 #[cfg(target_os = "windows")]
-pub const CONSENT_WINDOW_TITLES_ID: &str = "consent_window_titles";
+pub const CONSENT_WINDOW_NAMES_ID: &str = "consent_window_names";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
@@ -1314,29 +1314,29 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads the Dock's position.".to_string()),
             comment: None,
-            disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.".to_string()),
+            disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
-            label: "Window titles".to_string(),
-            writes: BoolField::UseWindowTitles,
+            label: "Window and application names".to_string(),
+            writes: BoolField::UseWindowNames,
             frozen: false,
             help: Some("Requires macOS Screen Recording.".to_string()),
             comment: None,
-            disclosure: Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.".to_string()),
+            disclosure: Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.".to_string()),
             status: None,
         },
         #[cfg(target_os = "windows")]
         FormRow::Checkbox {
-            id: CONSENT_WINDOW_TITLES_ID.to_string(),
-            label: "Window Titles".to_string(),
-            writes: BoolField::UseWindowTitles,
+            id: CONSENT_WINDOW_NAMES_ID.to_string(),
+            label: "Window and Application Names".to_string(),
+            writes: BoolField::UseWindowNames,
             frozen: false,
-            help: Some("Reads window titles.".to_string()),
+            help: Some("Reads window titles and application names.".to_string()),
             comment: None,
-            disclosure: Some("Window Titles lets ai-buddy read other applications' window titles via GetWindowText. No system permission prompt appears — Windows allows this by default. Titles reach a readonly MCP resource when this setting is on; list_windows still reports owner and bounds only.".to_string()),
+            disclosure: Some("This lets ai-buddy read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the buddy knows where the windows are and not what they are.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]
@@ -1356,12 +1356,12 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     let consent_rows = vec![
         FormRow::Checkbox {
             id: CONSENT_PORTAL_SCREENCAST_ID.to_string(),
-            label: "Screen Cast".to_string(),
-            writes: BoolField::UseWindowTitles,
+            label: "Window and application names".to_string(),
+            writes: BoolField::UseWindowNames,
             frozen: false,
-            help: Some("For Wayland window titles and similar metadata.".to_string()),
+            help: Some("Requires xdg-desktop-portal ScreenCast.".to_string()),
             comment: None,
-            disclosure: Some("xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are already readable without a grant.".to_string()),
+            disclosure: Some("xdg-desktop-portal ScreenCast lets ai-buddy read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.".to_string()),
             status: None,
         },
     ];
@@ -2658,11 +2658,11 @@ mod tests {
                     disclosure,
                     ..
                 } => {
-                    assert_eq!(label, "Window titles");
+                    assert_eq!(label, "Window and application names");
                     assert_eq!(help.as_deref(), Some("Requires macOS Screen Recording."));
                     assert_eq!(
                         disclosure.as_deref(),
-                        Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.")
+                        Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")
                     );
                 }
                 _ => panic!("Window titles row must be a checkbox"),
@@ -2676,7 +2676,7 @@ mod tests {
             );
             assert_eq!(
                 description.bool_write(CONSENT_SCREEN_RECORDING_ID),
-                Some(BoolField::UseWindowTitles)
+                Some(BoolField::UseWindowNames)
             );
 
             let input_monitoring = consent
@@ -2764,7 +2764,7 @@ mod tests {
                 assert_eq!(
                     consent.rows.len(),
                     2,
-                    "Windows has Accessibility and WindowTitles"
+                    "Windows has Accessibility and WindowNames"
                 );
                 let listed = crate::consent::process_listed_as();
                 assert!(

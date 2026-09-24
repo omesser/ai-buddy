@@ -208,7 +208,7 @@ Two transports, two distinct axes:
 |---|---|---|
 | `speak` | Expression | Make the Character speak dialogue |
 | `play_behavior` | Expression | Play a named Behavior |
-| `list_windows` | Sensing | List visible windows with bounds and owner |
+| `list_windows` | Sensing | List visible windows with bounds, and their names under consent |
 | `describe_screen` | Sensing | Describe screen (v1: window metadata only) |
 | `recall` | Memory | Read everything Memory holds |
 | `remember` | Memory | Write one fact under a heading |
@@ -218,7 +218,7 @@ Two transports, two distinct axes:
 
 | URI | What it is |
 |---|---|
-| `ai-buddy://windows` | Visible windows, frontmost first. Owner plus title when Screen Recording (or the platform equivalent) allows; otherwise owner only. Same excluded applications as `list_windows`. |
+| `ai-buddy://windows` | Visible windows, frontmost first, with the owning application and the title. Empty without the window-names consent, which covers both (ADR-0032). Same excluded applications as `list_windows`. |
 | `ai-buddy://memory` | The Memory Manifest file every Character Instance shares. |
 | `ai-buddy://action-log` | The current Action Log file only. Rotated siblings are not this resource. A large current file is tailed to complete JSONL lines. |
 
@@ -226,7 +226,7 @@ Two transports, two distinct axes:
 
 ### Computer use
 
-ai-buddy never reads screen pixels. Sensing is OS window metadata — owner, title, bounds, frontmost app, idle — so `describe_screen` describes the window layout, not what is on screen. The buddy takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
+ai-buddy never reads screen pixels. Sensing is OS window metadata — bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)) — so `describe_screen` describes the window layout, not what is on screen. Decline it and the buddy still knows where the windows are, and not what they are. The buddy takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
 
 That bounds ai-buddy's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through ai-buddy, whose MCP serves no input events.
 

@@ -521,18 +521,18 @@
               "frozen": false,
               "help": "Reads the Dock's position.",
               "comment": null,
-              "disclosure": "Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.",
+              "disclosure": "Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.",
               "status": null
             },
             {
               "type": "Checkbox",
               "id": "consent_screen_recording",
-              "label": "Window titles",
-              "writes": "UseWindowTitles",
+              "label": "Window and application names",
+              "writes": "UseWindowNames",
               "frozen": false,
               "help": "Requires macOS Screen Recording.",
               "comment": null,
-              "disclosure": "macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.",
+              "disclosure": "macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.",
               "status": null
             },
             {

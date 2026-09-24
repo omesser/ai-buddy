@@ -717,11 +717,11 @@ pub fn activity_source() -> impl ActivitySource {
     windows::WindowsActivitySource
 }
 
-/// Window titles for the MCP resource, gated behind WindowTitles consent.
+/// Window titles for the MCP resource, gated behind the window-names consent.
 #[cfg(target_os = "macos")]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     if !crate::consent::usable(
-        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::CapabilityId::WindowNames,
         crate::consent::live(),
     ) {
         return Vec::new();
@@ -729,12 +729,12 @@ pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     macos::visible_window_titles()
 }
 
-/// Titles from `_NET_WM_NAME` / `WM_NAME`, gated behind WindowTitles consent.
+/// Titles from `_NET_WM_NAME` / `WM_NAME`, gated behind the window-names consent.
 /// Empty on a Wayland session with no X server, which is the supported stub.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     if !crate::consent::usable(
-        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::CapabilityId::WindowNames,
         crate::consent::live(),
     ) {
         return Vec::new();
@@ -746,12 +746,12 @@ pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     }
 }
 
-/// Titles from `GetWindowText`, gated behind WindowTitles consent.
+/// Titles from `GetWindowText`, gated behind the window-names consent.
 /// Owner is still the process image, never the title, matching the geometry path.
 #[cfg(not(unix))]
 pub fn list_window_titles() -> Vec<crate::mcp_resources::WindowTitle> {
     if !crate::consent::usable(
-        crate::consent::CapabilityId::WindowTitles,
+        crate::consent::CapabilityId::WindowNames,
         crate::consent::live(),
     ) {
         return Vec::new();
@@ -769,7 +769,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
 
     fn can_read_titles() -> bool {
         crate::consent::usable(
-            crate::consent::CapabilityId::WindowTitles,
+            crate::consent::CapabilityId::WindowNames,
             crate::consent::live(),
         )
     }
@@ -822,7 +822,7 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
 
     fn can_read_titles() -> bool {
         crate::consent::usable(
-            crate::consent::CapabilityId::WindowTitles,
+            crate::consent::CapabilityId::WindowNames,
             crate::consent::live(),
         )
     }
@@ -921,7 +921,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
         },
         || {
             crate::consent::usable(
-                crate::consent::CapabilityId::WindowTitles,
+                crate::consent::CapabilityId::WindowNames,
                 crate::consent::live(),
             )
         },
@@ -1352,33 +1352,33 @@ mod tests {
         );
     }
 
-    /// MCP titles resource must gate on WindowTitles consent. Without wanted,
+    /// MCP titles resource must gate on the window-names consent. Without wanted,
     /// no titles leak (even on X11 where _NET_WM_NAME is technically consent-free
     /// at the protocol level).
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn mcp_window_titles_require_consent() {
-        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, false);
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowNames, false);
         let without_wanted = list_window_titles();
         assert!(
             without_wanted.is_empty(),
-            "list_window_titles must return empty when WindowTitles is not wanted"
+            "list_window_titles must return empty when WindowNames is not wanted"
         );
     }
 
-    /// Windows list_window_titles must gate behind WindowTitles consent.
+    /// Windows list_window_titles must gate behind the window-names consent.
     /// Probe always grants (no system dialog), but wanted must still gate.
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_mcp_window_titles_require_consent() {
-        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, false);
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowNames, false);
         let without_wanted = list_window_titles();
         assert!(
             without_wanted.is_empty(),
-            "list_window_titles must return empty when WindowTitles is not wanted"
+            "list_window_titles must return empty when WindowNames is not wanted"
         );
 
-        crate::consent::set_wanted(crate::consent::CapabilityId::WindowTitles, true);
+        crate::consent::set_wanted(crate::consent::CapabilityId::WindowNames, true);
         let with_wanted = list_window_titles();
         assert!(
             !with_wanted.is_empty() || cfg!(not(windows)),

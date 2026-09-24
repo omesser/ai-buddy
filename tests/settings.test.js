@@ -275,11 +275,13 @@ test("a row whose id is not its field name still draws the value the snapshot ca
 // #888 named the macOS row for what the buddy reads rather than for the grant.
 // The id it draws under is the one the value map is keyed by, and deriving that
 // id from the label instead left the lookup empty, so the checkbox drew
-// unchecked whatever the grant said.
+// unchecked whatever the grant said. #975 renamed the label a second time,
+// which is the case this test exists for.
 test("the Privacy consent row keeps the id its value is keyed by, whatever it is named", () => {
+  const label = "Window and application names";
   for (const [state, snap] of STATES) {
-    const row = byLabel(tab(snap, "Privacy"), "Window titles");
-    assert.ok(row, `${state}: the Privacy tab draws no "Window titles" row`);
+    const row = byLabel(tab(snap, "Privacy"), label);
+    assert.ok(row, `${state}: the Privacy tab draws no "${label}" row`);
     assert.equal(row.id, "consent_screen_recording", state);
     assert.ok(row.id in snap.values, `${state}: no value is keyed by ${row.id}`);
   }

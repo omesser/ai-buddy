@@ -57,7 +57,7 @@ impl WindowSource for X11WindowSource {
 /// Visible windows, frontmost first.
 /// `_NET_CLIENT_LIST_STACKING` is bottom-to-top, so reverse it. Fall back to
 /// `_NET_CLIENT_LIST` when stacking is missing. Own windows stay; `window_rect` sets the overlay's level.
-fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
+fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
     use std::sync::atomic::{AtomicBool, Ordering};
     static LOGGED: AtomicBool = AtomicBool::new(false);
 
@@ -75,7 +75,7 @@ fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
     let result: Vec<WindowRect> = windows
         .into_iter()
         .rev()
-        .filter_map(|w| window_rect(conn, w, can_read_titles))
+        .filter_map(|w| window_rect(conn, w, can_read_names))
         .collect();
 
     if !LOGGED.swap(true, Ordering::Relaxed) {
@@ -91,11 +91,13 @@ pub fn visible_window_titles() -> Vec<WindowTitle> {
     let Some(conn) = super::connection::connection() else {
         return Vec::new();
     };
-    visible_windows(false)
+    // Named: this walk runs only once the consent is usable, and the
+    // resource reports the owner beside the title.
+    visible_windows(true)
         .into_iter()
         .map(|window| WindowTitle {
             title: window_title(conn, window.id as Window),
-            owner: window.owner,
+            owner: window.owner.unwrap_or_default(),
         })
         .collect()
 }
@@ -188,13 +190,16 @@ fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     )
 }
 
-fn window_rect(conn: &RustConnection, window: Window, can_read_titles: bool) -> Option<WindowRect> {
+fn window_rect(conn: &RustConnection, window: Window, can_read_names: bool) -> Option<WindowRect> {
     if !is_normal_window(conn, window) {
         return None;
     }
 
-    let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
-    let title = if can_read_titles {
+    // One consent covers the class and the title alike (ADR-0032). X11 hands
+    // both over for free; withholding them is this project's choice.
+    let owner =
+        can_read_names.then(|| window_class(conn, window).unwrap_or_else(|| "Unknown".to_string()));
+    let title = if can_read_names {
         let title_str = window_title(conn, window);
         if title_str.is_empty() {
             None

@@ -304,7 +304,7 @@ mod tests {
                 width,
                 height,
             },
-            owner: owner.to_string(),
+            owner: Some(owner.to_string()),
             title: None,
             layer: 0,
         }

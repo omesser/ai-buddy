@@ -12,10 +12,11 @@ pub enum CapabilityId {
     /// macOS only: reading Dock bounds and window geometry.
     #[cfg(not(target_os = "linux"))]
     Accessibility,
-    /// Reading window titles and similar metadata. macOS uses TCC Screen Recording;
-    /// Linux uses xdg-desktop-portal ScreenCast (Wayland); Windows uses no prompt
-    /// (titles are readable without a system permission dialog).
-    WindowTitles,
+    /// Reading the names of what is open: window titles and the owning
+    /// application alike, one consent for the pair (ADR-0032). macOS uses TCC
+    /// Screen Recording; Linux uses xdg-desktop-portal ScreenCast (Wayland);
+    /// Windows uses no prompt (both are readable without a permission dialog).
+    WindowNames,
     /// macOS only: the idle event tap (#721).
     #[cfg(target_os = "macos")]
     InputMonitoring,
@@ -53,11 +54,11 @@ impl ConsentRow {
             #[cfg(not(target_os = "linux"))]
             CapabilityId::Accessibility => form::CONSENT_ACCESSIBILITY_ID,
             #[cfg(target_os = "macos")]
-            CapabilityId::WindowTitles => form::CONSENT_SCREEN_RECORDING_ID,
+            CapabilityId::WindowNames => form::CONSENT_SCREEN_RECORDING_ID,
             #[cfg(target_os = "windows")]
-            CapabilityId::WindowTitles => form::CONSENT_WINDOW_TITLES_ID,
+            CapabilityId::WindowNames => form::CONSENT_WINDOW_NAMES_ID,
             #[cfg(target_os = "linux")]
-            CapabilityId::WindowTitles => form::CONSENT_PORTAL_SCREENCAST_ID,
+            CapabilityId::WindowNames => form::CONSENT_PORTAL_SCREENCAST_ID,
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => form::CONSENT_INPUT_MONITORING_ID,
         }
@@ -81,10 +82,10 @@ pub const CAPABILITIES: &[Capability] = &[
         costs: "macOS Accessibility. The buddy reads the Dock's bounds; it does not control your computer.",
     },
     Capability {
-        id: CapabilityId::WindowTitles,
-        title: "Window titles",
-        buys: "Window titles and similar metadata.",
-        costs: "macOS Screen Recording. The buddy reads window titles; it does not capture the screen.",
+        id: CapabilityId::WindowNames,
+        title: "Window and application names",
+        buys: "Window titles, and which application each window belongs to.",
+        costs: "macOS Screen Recording. The buddy reads the names of what is open; it does not capture the screen.",
     },
     Capability {
         id: CapabilityId::InputMonitoring,
@@ -103,19 +104,19 @@ pub const CAPABILITIES: &[Capability] = &[
         costs: "Windows UI Automation. The buddy reads the taskbar's bounds; it does not control your computer.",
     },
     Capability {
-        id: CapabilityId::WindowTitles,
-        title: "Window Titles",
-        buys: "Other applications' window titles and similar metadata.",
-        costs: "No system permission required. The buddy reads window titles via GetWindowText.",
+        id: CapabilityId::WindowNames,
+        title: "Window and Application Names",
+        buys: "Other applications' window titles, and which application each window belongs to.",
+        costs: "No system permission required. The buddy reads titles via GetWindowText and application names from the running process.",
     },
 ];
 
 #[cfg(target_os = "linux")]
 pub const CAPABILITIES: &[Capability] = &[
     Capability {
-        id: CapabilityId::WindowTitles,
-        title: "Screen Cast",
-        buys: "Wayland window titles and similar metadata.",
+        id: CapabilityId::WindowNames,
+        title: "Window and application names",
+        buys: "Wayland window titles, and which application each window belongs to.",
         costs: "xdg-desktop-portal ScreenCast. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs.",
     },
 ];
@@ -131,12 +132,12 @@ pub struct Null;
 
 #[cfg(not(target_os = "linux"))]
 static WANT_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
-static WANT_WINDOW_TITLES: AtomicBool = AtomicBool::new(false);
+static WANT_WINDOW_NAMES: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static WANT_INPUT_MONITORING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "linux")]
-static GRANTED_WINDOW_TITLES: AtomicBool = AtomicBool::new(false);
+static GRANTED_WINDOW_NAMES: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
@@ -145,7 +146,7 @@ pub fn wanted(id: CapabilityId) -> bool {
     match id {
         #[cfg(not(target_os = "linux"))]
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.load(Ordering::Relaxed),
-        CapabilityId::WindowTitles => WANT_WINDOW_TITLES.load(Ordering::Relaxed),
+        CapabilityId::WindowNames => WANT_WINDOW_NAMES.load(Ordering::Relaxed),
         #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.load(Ordering::Relaxed),
     }
@@ -161,7 +162,7 @@ pub fn set_wanted(id: CapabilityId, on: bool) {
     match id {
         #[cfg(not(target_os = "linux"))]
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.store(on, Ordering::Relaxed),
-        CapabilityId::WindowTitles => WANT_WINDOW_TITLES.store(on, Ordering::Relaxed),
+        CapabilityId::WindowNames => WANT_WINDOW_NAMES.store(on, Ordering::Relaxed),
         #[cfg(target_os = "macos")]
         CapabilityId::InputMonitoring => WANT_INPUT_MONITORING.store(on, Ordering::Relaxed),
     }
@@ -193,7 +194,7 @@ impl Probe for Macos {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
             CapabilityId::Accessibility => macos::accessibility_granted(),
-            CapabilityId::WindowTitles => macos::screen_recording_granted(),
+            CapabilityId::WindowNames => macos::screen_recording_granted(),
             CapabilityId::InputMonitoring => macos::input_monitoring_granted(),
         }
     }
@@ -201,7 +202,7 @@ impl Probe for Macos {
     fn prompt(&self, id: CapabilityId) {
         match id {
             CapabilityId::Accessibility => macos::request_accessibility(),
-            CapabilityId::WindowTitles => macos::request_screen_recording(),
+            CapabilityId::WindowNames => macos::request_screen_recording(),
             CapabilityId::InputMonitoring => macos::request_input_monitoring(),
         }
     }
@@ -211,13 +212,13 @@ impl Probe for Macos {
 impl Probe for LinuxPortal {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
-            CapabilityId::WindowTitles => linux::portal_screencast_granted(),
+            CapabilityId::WindowNames => linux::portal_screencast_granted(),
         }
     }
 
     fn prompt(&self, id: CapabilityId) {
         match id {
-            CapabilityId::WindowTitles => linux::request_portal_screencast(),
+            CapabilityId::WindowNames => linux::request_portal_screencast(),
         }
     }
 }
@@ -227,12 +228,12 @@ impl Probe for WindowsProbe {
     fn granted(&self, id: CapabilityId) -> bool {
         match id {
             CapabilityId::Accessibility => false,
-            CapabilityId::WindowTitles => true,
+            CapabilityId::WindowNames => true,
         }
     }
 
     fn prompt(&self, _id: CapabilityId) {
-        // Windows WindowTitles needs no prompt: always granted.
+        // Windows WindowNames needs no prompt: always granted.
         // Accessibility would prompt here when implemented.
     }
 }
@@ -353,14 +354,14 @@ mod windows {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::GRANTED_WINDOW_TITLES;
+    use super::GRANTED_WINDOW_NAMES;
     use std::sync::atomic::Ordering;
 
     /// xdg-desktop-portal ScreenCast grant check. Returns true after a successful
     /// portal session creation. Process-local: a restart clears the grant, but that
     /// is honest (the portal has no query API and Settings flip-on is the prompt).
     pub fn portal_screencast_granted() -> bool {
-        GRANTED_WINDOW_TITLES.load(Ordering::Relaxed)
+        GRANTED_WINDOW_NAMES.load(Ordering::Relaxed)
     }
 
     /// Request xdg-desktop-portal ScreenCast permission. Opens the desktop's
@@ -378,7 +379,7 @@ mod linux {
         runtime.block_on(async {
             match screencast_request().await {
                 Ok(_) => {
-                    GRANTED_WINDOW_TITLES.store(true, Ordering::Relaxed);
+                    GRANTED_WINDOW_NAMES.store(true, Ordering::Relaxed);
                 }
                 Err(why) => {
                     eprintln!("ai-buddy: portal screencast request failed: {why}");
@@ -742,7 +743,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].id, CapabilityId::WindowTitles);
+            assert_eq!(rows[0].id, CapabilityId::WindowNames);
             assert_eq!(rows[0].title, "Screen Cast");
             assert!(
                 rows[0].buys.contains("Wayland") || rows[0].buys.contains("title"),
@@ -800,14 +801,14 @@ mod tests {
 
             #[cfg(target_os = "macos")]
             {
-                assert_eq!(rows[1].id, CapabilityId::WindowTitles);
+                assert_eq!(rows[1].id, CapabilityId::WindowNames);
                 assert_eq!(
                     serde_json::to_value(&rows[1]).expect("the consent row serializes"),
                     serde_json::json!({
-                        "id": "WindowTitles",
-                        "title": "Window titles",
-                        "buys": "Window titles and similar metadata.",
-                        "costs": "macOS Screen Recording. The buddy reads window titles; it does not capture the screen.",
+                        "id": "WindowNames",
+                        "title": "Window and application names",
+                        "buys": "Window titles, and which application each window belongs to.",
+                        "costs": "macOS Screen Recording. The buddy reads the names of what is open; it does not capture the screen.",
                         "granted": false,
                     })
                 );
@@ -815,16 +816,16 @@ mod tests {
 
             #[cfg(target_os = "windows")]
             {
-                assert_eq!(rows[1].id, CapabilityId::WindowTitles);
-                assert_eq!(rows[1].title, "Window Titles");
+                assert_eq!(rows[1].id, CapabilityId::WindowNames);
+                assert_eq!(rows[1].title, "Window and Application Names");
                 assert!(
-                    rows[1].buys.contains("title"),
-                    "WindowTitles has to say titles are what it buys, got {:?}",
+                    rows[1].buys.contains("title") && rows[1].buys.contains("application"),
+                    "WindowNames has to say titles and applications are what it buys, got {:?}",
                     rows[1].buys
                 );
                 assert!(
                     rows[1].costs.contains("No system permission required"),
-                    "WindowTitles has to say no system permission required, got {:?}",
+                    "WindowNames has to say no system permission required, got {:?}",
                     rows[1].costs
                 );
                 assert!(!rows[1].granted);
@@ -865,7 +866,7 @@ mod tests {
             assert_eq!(all_off.len(), 1);
             assert!(!all_off[0].granted);
 
-            let portal_on = rows(|id| id == CapabilityId::WindowTitles);
+            let portal_on = rows(|id| id == CapabilityId::WindowNames);
             assert!(portal_on[0].granted);
         }
         #[cfg(not(target_os = "linux"))]
@@ -890,19 +891,19 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             let probe = Fake::granting(&[]);
-            enable(CapabilityId::WindowTitles, &probe);
+            enable(CapabilityId::WindowNames, &probe);
             assert_eq!(
                 *probe.prompted.lock().expect("prompt log"),
-                [CapabilityId::WindowTitles]
+                [CapabilityId::WindowNames]
             );
         }
         #[cfg(target_os = "macos")]
         {
             let probe = Fake::granting(&[]);
-            enable(CapabilityId::WindowTitles, &probe);
+            enable(CapabilityId::WindowNames, &probe);
             assert_eq!(
                 *probe.prompted.lock().expect("prompt log"),
-                [CapabilityId::WindowTitles]
+                [CapabilityId::WindowNames]
             );
         }
     }
@@ -913,8 +914,8 @@ mod tests {
     fn enabling_a_granted_capability_does_not_prompt() {
         #[cfg(target_os = "linux")]
         {
-            let probe = Fake::granting(&[CapabilityId::WindowTitles]);
-            enable(CapabilityId::WindowTitles, &probe);
+            let probe = Fake::granting(&[CapabilityId::WindowNames]);
+            enable(CapabilityId::WindowNames, &probe);
             assert!(probe.prompted.lock().expect("prompt log").is_empty());
         }
         #[cfg(not(target_os = "linux"))]
@@ -997,7 +998,7 @@ mod tests {
     fn linux_rows_are_portal_capabilities() {
         let rows = rows(|_| false);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, CapabilityId::WindowTitles);
+        assert_eq!(rows[0].id, CapabilityId::WindowNames);
         assert!(
             !rows[0].costs.contains("macOS"),
             "Linux rows must not mention macOS, got {:?}",
@@ -1015,18 +1016,18 @@ mod tests {
         let probe = Null;
         #[cfg(target_os = "linux")]
         {
-            assert!(!probe.granted(CapabilityId::WindowTitles));
-            probe.prompt(CapabilityId::WindowTitles);
-            assert!(!probe.granted(CapabilityId::WindowTitles));
+            assert!(!probe.granted(CapabilityId::WindowNames));
+            probe.prompt(CapabilityId::WindowNames);
+            assert!(!probe.granted(CapabilityId::WindowNames));
         }
         #[cfg(not(target_os = "linux"))]
         {
             assert!(!probe.granted(CapabilityId::Accessibility));
             #[cfg(target_os = "macos")]
             {
-                assert!(!probe.granted(CapabilityId::WindowTitles));
-                probe.prompt(CapabilityId::WindowTitles);
-                assert!(!probe.granted(CapabilityId::WindowTitles));
+                assert!(!probe.granted(CapabilityId::WindowNames));
+                probe.prompt(CapabilityId::WindowNames);
+                assert!(!probe.granted(CapabilityId::WindowNames));
             }
         }
     }
@@ -1068,7 +1069,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn linux_live_probe_is_portal_not_null() {
         let probe = live();
-        assert!(!probe.granted(CapabilityId::WindowTitles));
+        assert!(!probe.granted(CapabilityId::WindowNames));
     }
 
     /// The fake portal grants what it was told to grant. Settings can flip
@@ -1077,11 +1078,11 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn fake_portal_grants_what_it_was_constructed_with() {
-        let granted = Fake::granting(&[CapabilityId::WindowTitles]);
-        assert!(granted.granted(CapabilityId::WindowTitles));
+        let granted = Fake::granting(&[CapabilityId::WindowNames]);
+        assert!(granted.granted(CapabilityId::WindowNames));
 
         let nothing = Fake::granting(&[]);
-        assert!(!nothing.granted(CapabilityId::WindowTitles));
+        assert!(!nothing.granted(CapabilityId::WindowNames));
     }
 
     /// Usable requires both wanted and granted. #886 will gate on this,
@@ -1089,21 +1090,21 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn usable_requires_both_wanted_and_granted() {
-        let probe = Fake::granting(&[CapabilityId::WindowTitles]);
+        let probe = Fake::granting(&[CapabilityId::WindowNames]);
 
-        set_wanted(CapabilityId::WindowTitles, false);
-        assert!(probe.granted(CapabilityId::WindowTitles));
-        assert!(!wanted(CapabilityId::WindowTitles));
-        assert!(!usable(CapabilityId::WindowTitles, &probe));
+        set_wanted(CapabilityId::WindowNames, false);
+        assert!(probe.granted(CapabilityId::WindowNames));
+        assert!(!wanted(CapabilityId::WindowNames));
+        assert!(!usable(CapabilityId::WindowNames, &probe));
 
-        set_wanted(CapabilityId::WindowTitles, true);
-        assert!(wanted(CapabilityId::WindowTitles));
-        assert!(usable(CapabilityId::WindowTitles, &probe));
+        set_wanted(CapabilityId::WindowNames, true);
+        assert!(wanted(CapabilityId::WindowNames));
+        assert!(usable(CapabilityId::WindowNames, &probe));
 
         let nothing = Fake::granting(&[]);
-        assert!(!nothing.granted(CapabilityId::WindowTitles));
-        assert!(wanted(CapabilityId::WindowTitles));
-        assert!(!usable(CapabilityId::WindowTitles, &nothing));
+        assert!(!nothing.granted(CapabilityId::WindowNames));
+        assert!(wanted(CapabilityId::WindowNames));
+        assert!(!usable(CapabilityId::WindowNames, &nothing));
     }
 
     #[test]
@@ -1181,8 +1182,8 @@ mod tests {
     fn windows_window_titles_always_granted() {
         let probe = WindowsProbe;
         assert!(
-            probe.granted(CapabilityId::WindowTitles),
-            "WindowTitles on Windows should always be granted"
+            probe.granted(CapabilityId::WindowNames),
+            "WindowNames on Windows should always be granted"
         );
     }
 
@@ -1190,14 +1191,14 @@ mod tests {
     #[cfg(target_os = "windows")]
     fn windows_live_probe_grants_window_titles() {
         let probe = live();
-        assert!(probe.granted(CapabilityId::WindowTitles));
+        assert!(probe.granted(CapabilityId::WindowNames));
     }
 
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_window_titles_prompt_is_noop() {
         let probe = WindowsProbe;
-        probe.prompt(CapabilityId::WindowTitles);
+        probe.prompt(CapabilityId::WindowNames);
     }
 
     #[test]
@@ -1205,37 +1206,34 @@ mod tests {
     fn windows_usable_follows_wanted() {
         let probe = WindowsProbe;
 
-        set_wanted(CapabilityId::WindowTitles, false);
-        assert!(!usable(CapabilityId::WindowTitles, &probe));
+        set_wanted(CapabilityId::WindowNames, false);
+        assert!(!usable(CapabilityId::WindowNames, &probe));
 
-        set_wanted(CapabilityId::WindowTitles, true);
-        assert!(usable(CapabilityId::WindowTitles, &probe));
+        set_wanted(CapabilityId::WindowNames, true);
+        assert!(usable(CapabilityId::WindowNames, &probe));
     }
 
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_capabilities_catalog_includes_window_titles() {
         let rows = rows(|_| false);
-        assert!(
-            !rows.is_empty(),
-            "Windows should have at least WindowTitles"
-        );
+        assert!(!rows.is_empty(), "Windows should have at least WindowNames");
 
         let titles_row = rows
             .iter()
-            .find(|r| matches!(r.id, CapabilityId::WindowTitles));
-        assert!(titles_row.is_some(), "WindowTitles row must exist");
+            .find(|r| matches!(r.id, CapabilityId::WindowNames));
+        assert!(titles_row.is_some(), "WindowNames row must exist");
 
         let row = titles_row.unwrap();
         assert_eq!(row.title, "Window Titles");
         assert!(
             row.buys.contains("title") || row.buys.contains("window"),
-            "WindowTitles buys should mention titles/windows, got {:?}",
+            "WindowNames buys should mention titles/windows, got {:?}",
             row.buys
         );
         assert!(
             !row.costs.contains("macOS") && !row.costs.contains("TCC"),
-            "Windows WindowTitles costs should not mention macOS, got {:?}",
+            "Windows WindowNames costs should not mention macOS, got {:?}",
             row.costs
         );
     }

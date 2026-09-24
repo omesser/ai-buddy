@@ -1112,6 +1112,16 @@ pub(crate) fn run_frame_loop(
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let mut activity = free_tier.read(&activity_source, &SystemClock);
+                // The frontmost application is a name, and one consent covers
+                // every name the buddy reports (ADR-0032). This source is not
+                // the window walk, so the gate has to be repeated here; the
+                // filter below is the other reason a name is dropped.
+                if !crate::consent::usable(
+                    crate::consent::CapabilityId::WindowNames,
+                    crate::consent::live(),
+                ) {
+                    activity.frontmost_application = None;
+                }
                 if let Ok(settings) = settings.lock() {
                     let denylist = DenyList {
                         excluded_applications: settings.excluded_applications.clone(),

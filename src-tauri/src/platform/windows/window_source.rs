@@ -1,6 +1,8 @@
 //! Windows window geometry via EnumWindows and GetWindowRect.
 //! Visible application windows in z-order; owner is the process image name
-//! so `owner` is an application name on every platform. Consent-free.
+//! so `owner` is an application name on every platform. Geometry is
+//! consent-free; the owner and the title are not, and one consent covers the
+//! pair (ADR-0032).
 
 use std::sync::Mutex;
 
@@ -21,18 +23,18 @@ pub struct WindowsWindowSource {
     /// Where the usable part of each display comes from. Taskbar/dock bounds
     /// on Windows come from the work area Tauri already reads.
     read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
-    /// Whether WindowTitles consent is usable right now.
-    can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
+    /// Whether the window-names consent is usable right now.
+    can_read_names: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl WindowsWindowSource {
     pub fn new(
         read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
-        can_read_titles: impl Fn() -> bool + Send + Sync + 'static,
+        can_read_names: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             read_displays: Box::new(read_displays),
-            can_read_titles: Box::new(can_read_titles),
+            can_read_names: Box::new(can_read_names),
         }
     }
 }
@@ -47,8 +49,8 @@ impl WindowSource for WindowsWindowSource {
 
     fn read(&self) -> WorldGeometry {
         let (usable_frames, dock) = (self.read_displays)();
-        let can_read_titles = (self.can_read_titles)();
-        let windows = visible_windows(can_read_titles);
+        let can_read_names = (self.can_read_names)();
+        let windows = visible_windows(can_read_names);
 
         if std::env::var("AI_BUDDY_TRACE_WINDOWS").is_ok() {
             static LOGGED: std::sync::atomic::AtomicBool =
@@ -58,7 +60,12 @@ impl WindowSource for WindowsWindowSource {
                 for (i, w) in windows.iter().take(3).enumerate() {
                     eprintln!(
                         "  [{}] owner={}, bounds=({},{})@{}×{}",
-                        i, w.owner, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height
+                        i,
+                        w.owner.as_deref().unwrap_or("(name withheld)"),
+                        w.bounds.x,
+                        w.bounds.y,
+                        w.bounds.width,
+                        w.bounds.height
                     );
                 }
             }
@@ -73,8 +80,8 @@ impl WindowSource for WindowsWindowSource {
 }
 
 /// Visible application windows, frontmost first (z-order).
-fn visible_windows(can_read_titles: bool) -> Vec<WindowRect> {
-    let state = Mutex::new((Vec::new(), can_read_titles));
+fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
+    let state = Mutex::new((Vec::new(), can_read_names));
 
     // SAFETY: EnumWindows takes a callback and a pointer-sized parameter. The
     // callback's signature matches the required WNDENUMPROC ABI. The state
@@ -93,7 +100,7 @@ pub fn visible_window_titles() -> Vec<WindowTitle> {
         .into_iter()
         .map(|window| WindowTitle {
             title: window_title(window.id as HWND),
-            owner: window.owner,
+            owner: window.owner.unwrap_or_default(),
         })
         .collect()
 }
@@ -115,8 +122,8 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
     let state = &*(lparam as *const Mutex<(Vec<WindowRect>, bool)>);
 
     if let Ok(mut locked) = state.lock() {
-        let (ref mut windows, can_read_titles) = *locked;
-        if let Some(window_rect) = window_rect(hwnd, can_read_titles) {
+        let (ref mut windows, can_read_names) = *locked;
+        if let Some(window_rect) = window_rect(hwnd, can_read_names) {
             windows.push(window_rect);
         }
     }
@@ -124,7 +131,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
     TRUE
 }
 
-fn window_rect(hwnd: HWND, can_read_titles: bool) -> Option<WindowRect> {
+fn window_rect(hwnd: HWND, can_read_names: bool) -> Option<WindowRect> {
     // SAFETY: hwnd comes from EnumWindows, which guarantees it is valid for
     // the callback's execution. IsWindowVisible is a simple read.
     if unsafe { IsWindowVisible(hwnd) } == 0 {
@@ -164,9 +171,9 @@ fn window_rect(hwnd: HWND, can_read_titles: bool) -> Option<WindowRect> {
     // No title fallback when the process cannot be named: the title was the
     // bug. "Unknown" matches no exclusion, so the Engine still gets a Perch
     // rectangle and leaks that word, never a title.
-    let owner = window_owner(hwnd).unwrap_or_else(|| "Unknown".to_string());
+    let owner = can_read_names.then(|| window_owner(hwnd).unwrap_or_else(|| "Unknown".to_string()));
 
-    let title = if can_read_titles {
+    let title = if can_read_names {
         read_window_title(hwnd)
     } else {
         None

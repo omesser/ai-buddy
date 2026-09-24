@@ -120,7 +120,7 @@ pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
     {
         let bounds = &window.bounds;
         if feet.y == bounds.y && feet.x >= bounds.x && feet.x <= bounds.x + bounds.width {
-            let owner = window.owner.trim();
+            let owner = window.owner.as_deref().map(str::trim).unwrap_or_default();
             return if owner.is_empty() {
                 "a window".to_string()
             } else {
@@ -238,7 +238,7 @@ mod tests {
         WindowRect {
             id,
             bounds,
-            owner: owner.to_string(),
+            owner: Some(owner.to_string()),
             title: None,
             layer: 0,
         }
@@ -256,7 +256,7 @@ mod tests {
         WindowRect {
             id,
             bounds,
-            owner: owner.to_string(),
+            owner: Some(owner.to_string()),
             title: None,
             layer,
         }

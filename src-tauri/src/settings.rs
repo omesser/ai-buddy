@@ -1195,7 +1195,7 @@ impl SettingsSession {
         }
         #[cfg(not(target_os = "linux"))]
         let prompt_ax = patch.use_accessibility == Some(true);
-        let prompt_wt = patch.use_window_titles == Some(true);
+        let prompt_wt = patch.use_window_names == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
@@ -1212,7 +1212,7 @@ impl SettingsSession {
         apply_and_seed(&mut settings, patch);
         #[cfg(not(target_os = "linux"))]
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
-        consent::set_wanted(CapabilityId::WindowTitles, settings.use_window_titles);
+        consent::set_wanted(CapabilityId::WindowNames, settings.use_window_names);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -1285,7 +1285,7 @@ impl SettingsSession {
             self.enable_consent(CapabilityId::Accessibility);
         }
         if prompt_wt {
-            self.enable_consent(CapabilityId::WindowTitles);
+            self.enable_consent(CapabilityId::WindowNames);
         }
         #[cfg(target_os = "macos")]
         if prompt_im {
@@ -1381,7 +1381,7 @@ pub struct SettingsPatch {
     #[serde(default)]
     pub use_accessibility: Option<bool>,
     #[serde(default)]
-    pub use_window_titles: Option<bool>,
+    pub use_window_names: Option<bool>,
     pub use_input_monitoring: Option<bool>,
     /// Throw the conversation in flight away and open a fresh one on the same
     /// Completer. Not a file field either: a session boundary is a moment, not
@@ -1414,11 +1414,11 @@ pub enum BoolField {
     /// not gated: the file carries it anywhere.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     Capturable,
-    // The consent rows. All three platforms offer WindowTitles; Accessibility
+    // The consent rows. All three platforms offer WindowNames; Accessibility
     // is macOS and Windows. The patch fields are not gated; the file carries them. #250.
     #[cfg(not(target_os = "linux"))]
     UseAccessibility,
-    UseWindowTitles,
+    UseWindowNames,
     /// The idle event tap, which macOS alone has a grant to ask for (#721).
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
@@ -1479,7 +1479,7 @@ impl SettingsPatch {
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
-            BoolField::UseWindowTitles => self.use_window_titles = Some(value),
+            BoolField::UseWindowNames => self.use_window_names = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
         }
@@ -1574,7 +1574,7 @@ impl fmt::Debug for SettingsPatch {
                 &self.director_api_key.as_deref().map(model::key_fingerprint),
             )
             .field("use_accessibility", &self.use_accessibility)
-            .field("use_window_titles", &self.use_window_titles)
+            .field("use_window_names", &self.use_window_names)
             .field("use_input_monitoring", &self.use_input_monitoring)
             .finish()
     }
@@ -1704,8 +1704,8 @@ impl Settings {
         if let Some(value) = patch.use_accessibility {
             self.use_accessibility = value;
         }
-        if let Some(value) = patch.use_window_titles {
-            self.use_window_titles = value;
+        if let Some(value) = patch.use_window_names {
+            self.use_window_names = value;
         }
         if let Some(value) = patch.use_input_monitoring {
             self.use_input_monitoring = value;
@@ -1738,7 +1738,7 @@ impl Settings {
         match id {
             #[cfg(not(target_os = "linux"))]
             CapabilityId::Accessibility => self.use_accessibility,
-            CapabilityId::WindowTitles => self.use_window_titles,
+            CapabilityId::WindowNames => self.use_window_names,
             #[cfg(target_os = "macos")]
             CapabilityId::InputMonitoring => self.use_input_monitoring,
         }
@@ -1847,16 +1847,19 @@ pub struct Settings {
     pub capturable: bool,
     /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
     pub use_accessibility: bool,
-    /// Use window titles consent where the OS has granted it. macOS uses TCC
-    /// Screen Recording; Linux uses xdg-desktop-portal ScreenCast (Wayland).
-    /// Off does not revoke the grant while running.
-    /// Serde aliases preserve compatibility with old settings files.
+    /// Use the window-names consent where the OS has granted it: titles and
+    /// owning application alike, one consent for the pair (ADR-0032). macOS
+    /// uses TCC Screen Recording; Linux uses xdg-desktop-portal ScreenCast
+    /// (Wayland). Off does not revoke the grant while running.
+    /// Serde aliases preserve compatibility with old settings files, so a
+    /// grant given under an earlier name is carried over rather than reset.
     #[serde(
         default,
         alias = "use_screen_recording",
-        alias = "use_portal_screencast"
+        alias = "use_portal_screencast",
+        alias = "use_window_titles"
     )]
-    pub use_window_titles: bool,
+    pub use_window_names: bool,
     /// Listen for mouse events so the frame loop can sleep while the desktop is
     /// idle (#721). macOS alone acts on it; the field is unconditional so the
     /// document round-trips on every platform.
@@ -1904,7 +1907,7 @@ impl Default for Settings {
             director_blank: false,
             capturable: true,
             use_accessibility: false,
-            use_window_titles: false,
+            use_window_names: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
             chat_ui: "minimal".to_string(),
@@ -2161,7 +2164,7 @@ mod tests {
             capturable: true,
             chat_ui: "minimal".into(),
             use_accessibility: true,
-            use_window_titles: false,
+            use_window_names: false,
             use_input_monitoring: true,
             first_run_tour_shown: false,
         };
@@ -2472,7 +2475,7 @@ mod tests {
             capturable: true,
             chat_ui: "minimal".into(),
             use_accessibility: true,
-            use_window_titles: false,
+            use_window_names: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
         };
@@ -2510,7 +2513,11 @@ mod tests {
             #[cfg(target_os = "macos")]
             assert_eq!(
                 view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
-                ["Accessibility", "Window titles", "Input Monitoring"]
+                [
+                    "Accessibility",
+                    "Window and application names",
+                    "Input Monitoring"
+                ]
             );
             #[cfg(target_os = "windows")]
             {
@@ -2590,28 +2597,28 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             settings.apply(SettingsPatch {
-                use_window_titles: Some(true),
+                use_window_names: Some(true),
                 ..SettingsPatch::default()
             });
-            assert!(settings.use_window_titles);
+            assert!(settings.use_window_names);
             settings.apply(SettingsPatch {
-                use_window_titles: Some(false),
+                use_window_names: Some(false),
                 ..SettingsPatch::default()
             });
-            assert!(!settings.use_window_titles);
+            assert!(!settings.use_window_names);
         }
         #[cfg(target_os = "windows")]
         {
             settings.apply(SettingsPatch {
-                use_window_titles: Some(true),
+                use_window_names: Some(true),
                 ..SettingsPatch::default()
             });
-            assert!(settings.use_window_titles);
+            assert!(settings.use_window_names);
             settings.apply(SettingsPatch {
-                use_window_titles: Some(false),
+                use_window_names: Some(false),
                 ..SettingsPatch::default()
             });
-            assert!(!settings.use_window_titles);
+            assert!(!settings.use_window_names);
         }
         let view = SettingsView::from_parts(
             &settings,
@@ -2640,17 +2647,17 @@ mod tests {
         #[cfg(target_os = "windows")]
         {
             assert_eq!(
-                values.get(form::CONSENT_WINDOW_TITLES_ID),
-                Some(&RowValue::Bool(settings.use_window_titles)),
-                "Window Titles checkbox value must match settings.use_window_titles"
+                values.get(form::CONSENT_WINDOW_NAMES_ID),
+                Some(&RowValue::Bool(settings.use_window_names)),
+                "Window Titles checkbox value must match settings.use_window_names"
             );
         }
         #[cfg(target_os = "macos")]
         {
             assert_eq!(
                 values.get(form::CONSENT_SCREEN_RECORDING_ID),
-                Some(&RowValue::Bool(settings.use_window_titles)),
-                "Screen Recording checkbox value must match settings.use_window_titles"
+                Some(&RowValue::Bool(settings.use_window_names)),
+                "Screen Recording checkbox value must match settings.use_window_names"
             );
             assert_eq!(
                 values.get(form::CONSENT_INPUT_MONITORING_ID),
@@ -2662,8 +2669,8 @@ mod tests {
         {
             assert_eq!(
                 values.get(form::CONSENT_PORTAL_SCREENCAST_ID),
-                Some(&RowValue::Bool(settings.use_window_titles)),
-                "Screen Cast checkbox value must match settings.use_window_titles"
+                Some(&RowValue::Bool(settings.use_window_names)),
+                "Screen Cast checkbox value must match settings.use_window_names"
             );
         }
     }

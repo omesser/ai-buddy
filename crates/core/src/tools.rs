@@ -40,7 +40,10 @@ pub trait ExpressionHandle {
 /// Tool result for the `list_windows` tool.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WindowInfo {
-    pub owner: String,
+    /// Absent without the window-names consent, which covers owner and title
+    /// alike (ADR-0032).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub x: f64,
@@ -136,7 +139,15 @@ mod helpers {
         geometry
             .windows
             .into_iter()
-            .filter(|w| denylist.allows(&w.owner))
+            // Without the names consent there is no owner to match on, so an
+            // exclusion cannot apply and the window stays in as a rectangle.
+            // What the list exists to hide is the name, and the consent has
+            // already withheld it (ADR-0032).
+            .filter(|w| {
+                w.owner
+                    .as_deref()
+                    .is_none_or(|owner| denylist.allows(owner))
+            })
             .collect()
     }
 
@@ -319,7 +330,7 @@ pub(crate) fn describe_screen(
                 .unwrap_or_default();
             parts.push(format!(
                 "- {}{} at ({:.0}, {:.0}), size {:.0}x{:.0}",
-                window.owner,
+                window.owner.as_deref().unwrap_or("window"),
                 title_part,
                 window.bounds.x,
                 window.bounds.y,
@@ -537,7 +548,7 @@ mod tests {
                             width: 800.0,
                             height: 600.0,
                         },
-                        owner: "Terminal".to_string(),
+                        owner: Some("Terminal".to_string()),
                         title: Some("bash".to_string()),
                         layer: 0,
                     },
@@ -549,7 +560,7 @@ mod tests {
                             width: 1200.0,
                             height: 800.0,
                         },
-                        owner: "Safari".to_string(),
+                        owner: Some("Safari".to_string()),
                         title: None,
                         layer: 0,
                     },
@@ -561,10 +572,71 @@ mod tests {
         let result = list_windows(&source, &DenyList::default());
 
         assert_eq!(result.windows.len(), 2);
-        assert_eq!(result.windows[0].owner, "Terminal");
+        assert_eq!(result.windows[0].owner, Some("Terminal".to_string()));
         assert_eq!(result.windows[0].title, Some("bash".to_string()));
-        assert_eq!(result.windows[1].owner, "Safari");
+        assert_eq!(result.windows[1].owner, Some("Safari".to_string()));
         assert_eq!(result.windows[1].title, None);
+    }
+
+    /// Without the window-names consent the platform walk leaves both names
+    /// behind (ADR-0032), and the tools report the geometry that is still
+    /// free. `owner` is omitted from the JSON rather than sent empty, so a
+    /// Harness reads an absent name as absent.
+    #[test]
+    fn a_nameless_window_reports_its_geometry_and_no_owner() {
+        use crate::window_source::{
+            Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry,
+        };
+
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows: vec![WindowRect {
+                    id: 1,
+                    bounds: Rect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 800.0,
+                        height: 600.0,
+                    },
+                    owner: None,
+                    title: None,
+                    layer: 0,
+                }],
+                dock: None,
+            },
+        };
+
+        let listed = list_windows(&source, &DenyList::default());
+        assert_eq!(listed.windows.len(), 1);
+        assert_eq!(listed.windows[0].owner, None);
+        assert_eq!(listed.windows[0].width, 800.0);
+        assert_eq!(
+            serde_json::to_string(&listed.windows[0]).expect("the window serializes"),
+            r#"{"x":10.0,"y":20.0,"width":800.0,"height":600.0}"#
+        );
+
+        assert_eq!(
+            describe_screen(&source, &DenyList::default()).description,
+            "1 visible windows:\n- window at (10, 20), size 800x600"
+        );
+
+        // An exclusion matches a name, and there is no name to match, so the
+        // rectangle stays. The name it would have hidden is withheld already.
+        let excluding = DenyList {
+            excluded_applications: vec!["Terminal".to_string()],
+            filter_password_fields: true,
+        };
+        assert_eq!(list_windows(&source, &excluding).windows.len(), 1);
     }
 
     #[test]
@@ -594,7 +666,7 @@ mod tests {
                             width: 800.0,
                             height: 600.0,
                         },
-                        owner: "Finder".to_string(),
+                        owner: Some("Finder".to_string()),
                         title: None,
                         layer: 0,
                     },
@@ -606,7 +678,7 @@ mod tests {
                             width: 1200.0,
                             height: 800.0,
                         },
-                        owner: "System Preferences".to_string(),
+                        owner: Some("System Preferences".to_string()),
                         title: None,
                         layer: 0,
                     },
@@ -653,7 +725,7 @@ mod tests {
                             width: 800.0,
                             height: 600.0,
                         },
-                        owner: "Terminal".to_string(),
+                        owner: Some("Terminal".to_string()),
                         title: Some("bash".to_string()),
                         layer: 0,
                     },
@@ -665,7 +737,7 @@ mod tests {
                             width: 1200.0,
                             height: 800.0,
                         },
-                        owner: "Safari".to_string(),
+                        owner: Some("Safari".to_string()),
                         title: None,
                         layer: 0,
                     },
