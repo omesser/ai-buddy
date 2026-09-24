@@ -292,8 +292,13 @@ jobs:
         # An explicit glob, not `--test tests/`: Node 24 reads a bare directory
         # as a test file and fails with MODULE_NOT_FOUND, where Node 20 recursed
         # into it. Naming the files leaves nothing for a release to reinterpret.
+        #
+        # Pillow is only for tests/readme-gifs.test.js. setup-python does not
+        # ship it, and the GIF check is the one that imports it.
         if: steps.changes.outputs.code == 'true'
-        run: node --test tests/*.test.js
+        run: |
+          pip install pillow
+          node --test tests/*.test.js
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
