@@ -70,17 +70,22 @@ consent is a choice made here about a field the platform gives away.
 - Without the consent the buddy perches on a rectangle it cannot name. The
   Director loses the frontmost application name that `docs/SPEC.md` names first
   among its inputs, the perch description falls back from "a Terminal window" to
-  "a window", and `list_windows`, `describe_screen` and the windows resource
-  report geometry alone. The buddy is duller until the user turns the row on,
-  which is the row's whole purpose.
+  "a window", `list_windows` and `describe_screen` report geometry alone, and
+  the windows resource, which carries names and nothing else, is empty. The
+  buddy is duller until the user turns the row on, which is the row's whole
+  purpose.
 - On macOS the price of an application name rises to a Screen Recording grant
   the operating system would not otherwise have asked for. A user who wants
   names gives a grant scoped wider than the data it buys. That is what one
   switch costs, and the settings row has to say what is actually read.
-- Excluded applications keep working. The denylist matches on the owning
-  application name, so the gate belongs on what leaves the process rather than
-  on what the walk reads. Gating the read would turn every excluded
-  application's windows back into ordinary ones.
+- The excluded-applications list matches on the owning application name, so
+  with the consent off it has nothing to match and an excluded application's
+  window stays in `list_windows` as an anonymous rectangle. What that list
+  exists to hide is the name, which the consent has already withheld, and with
+  the consent on the exclusion works exactly as before. The alternative, a gate
+  on what leaves the process rather than on the walk that reads it, buys a
+  dropped rectangle for a second gate site on every path the denylist does not
+  cover.
 - The consent no longer describes what it controls, so it is renamed along with
   its settings row copy. A rename must not silently revoke a grant a user
   already gave. If the stored key changes, the user is asked again on purpose
