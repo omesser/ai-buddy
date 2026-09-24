@@ -110,6 +110,11 @@ foreach ($hwnd in $wins) {
   if (-not $onMonitor) { continue }
   if ($coversMonitor) { continue }
   if ($title -eq "Settings") { continue }
+  # Tao registers this class for the event loop. It is WS_VISIBLE so it can
+  # receive WM_PAINT, and WS_EX_LAYERED so the user does not see it. An
+  # untitled window no larger than 16x16 is that same target.
+  if ($class -eq "Tao Thread Event Target") { continue }
+  if ($title -eq "" -and $w -le 16 -and $h -le 16) { continue }
   Write-Host "[FAIL] on-desktop hwnd $hwnd ${w}x${h} class=$class title=$title is the anchor surface" -ForegroundColor Red
   $failed = $true
 }
