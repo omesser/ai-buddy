@@ -1,6 +1,133 @@
 {
   "tabs": [
     {
+      "title": "Presence",
+      "sections": [
+        {
+          "heading": "Do Not Disturb",
+          "rows": [
+            {
+              "type": "Checkbox",
+              "id": "dnd",
+              "label": "Do Not Disturb",
+              "writes": "DoNotDisturb",
+              "frozen": false,
+              "help": "Stays on screen, silences sounds, stops initiating actions.",
+              "comment": null,
+              "disclosure": "Do Not Disturb leaves the buddy visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.",
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "sound",
+              "label": "Sound",
+              "writes": "Sound",
+              "frozen": false,
+              "help": "Off silences audio cues.",
+              "comment": null,
+              "disclosure": "A synthesized sound accompanies each Cue. This switch silences them. Do Not Disturb (above) takes the sound with it.",
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Hide",
+          "rows": [
+            {
+              "type": "Checkbox",
+              "id": "hidden",
+              "label": "Go away",
+              "writes": "Hidden",
+              "frozen": false,
+              "help": "Go off screen. But still exist.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "fullscreen",
+              "label": "Hide in fullscreen apps",
+              "writes": "HideInFullscreen",
+              "frozen": false,
+              "help": "Steps aside for fullscreen apps.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "capturable",
+              "label": "Appear in screenshots and screen shares",
+              "writes": "Capturable",
+              "frozen": false,
+              "help": "Checked: visible in captures. Unchecked: excluded. Needs restart.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "InspectBlock",
+              "id": "hotkey",
+              "label": "Hide/Show Toggle",
+              "help": "Hides or shows from any app.",
+              "disclosure": null,
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Launch",
+          "rows": [
+            {
+              "type": "Checkbox",
+              "id": "launch",
+              "label": "Launch at login (unimplemented)",
+              "writes": "LaunchAtLogin",
+              "frozen": true,
+              "help": "Not available yet.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Appearance",
+          "rows": [
+            {
+              "type": "Popup",
+              "id": "chat_ui",
+              "label": "Chat UI",
+              "writes": "ChatUI",
+              "help": "Visual design for the chat surface.",
+              "options": [
+                "Minimal",
+                "Terminal",
+                "Glass"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        }
+      ]
+    },
+    {
       "title": "Character",
       "sections": [
         {
@@ -381,6 +508,101 @@
       ]
     },
     {
+      "title": "Privacy",
+      "sections": [
+        {
+          "heading": "What the buddy can see",
+          "rows": [
+            {
+              "type": "Checkbox",
+              "id": "consent_accessibility",
+              "label": "Accessibility",
+              "writes": "UseAccessibility",
+              "frozen": false,
+              "help": "Reads the Dock's position.",
+              "comment": null,
+              "disclosure": "Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.",
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "consent_screen_recording",
+              "label": "Window titles",
+              "writes": "UseWindowTitles",
+              "frozen": false,
+              "help": "Requires macOS Screen Recording.",
+              "comment": null,
+              "disclosure": "macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles reach a readonly MCP resource when this grant is on; list_windows still reports owner and bounds only.",
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "consent_input_monitoring",
+              "label": "Input Monitoring",
+              "writes": "UseInputMonitoring",
+              "frozen": false,
+              "help": "Reacts to the mouse at once, not a second late.",
+              "comment": null,
+              "disclosure": "Without this grant the buddy asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the buddy the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the buddy goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.",
+              "status": null
+            }
+          ],
+          "comment": "Checking a box asks macOS for the permission. macOS lists this app as ai-buddy, under Privacy & Security.",
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Excluded applications",
+          "rows": [
+            {
+              "type": "Multiline",
+              "id": "excluded",
+              "label": null,
+              "writes": "ExcludedApplications",
+              "help": "One app name per line. Those windows stay out of MCP sensing.",
+              "editable": true,
+              "disclosure": "Applications on this list never appear in MCP sensing tool results (window metadata). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list."
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Memory File",
+          "rows": [
+            {
+              "type": "InspectPath",
+              "id": "memory_path"
+            },
+            {
+              "type": "Composite",
+              "id": "memory_actions",
+              "controls": [
+                {
+                  "type": "Button",
+                  "id": "memory_open",
+                  "label": "Open in editor",
+                  "frozen": false
+                },
+                {
+                  "type": "Button",
+                  "id": "memory_wipe",
+                  "label": "Wipe",
+                  "frozen": false
+                }
+              ],
+              "help": null,
+              "disclosure": null
+            }
+          ],
+          "comment": "What your buddy remembers between runs.",
+          "disclosure": "Memory is one Markdown file, append-structured under stable headings. Shared by every Character Instance. Every recall reads the file, so an edit made outside ai-buddy is visible to the next recall. A single timestamped backup is written before a wipe.",
+          "status": null
+        }
+      ]
+    },
+    {
       "title": "Development",
       "sections": [
         {
@@ -591,3 +813,4 @@
     "spawn": "Spawn"
   }
 }
+
