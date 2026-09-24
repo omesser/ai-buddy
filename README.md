@@ -9,7 +9,14 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 </p>
 
 [![CI](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)<br><!-- Shields split on a single hyphen, so cursor-agent is cursor--agent in the URL. Each color is that harness's own hue, darkened until the white shield text stays readable. -->
+[![harness](https://img.shields.io/badge/harness-claude-C25B3A)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-codex-0E8A6A)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-cursor--agent-D04200)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-hermes-5C5AD6)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-opencode-005BBB)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-pi-0C7EA8)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-grok-2B2B2B)](#harness-support)
 
 ![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
