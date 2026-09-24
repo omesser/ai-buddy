@@ -106,6 +106,10 @@ Black Mage rebuilds **much faster** than BMO (~2.5ms vs ~15-22ms) because it has
 
 By animation: idle 4 rebuilds (avg 2.55 ms, opaque 570–579); react 2 rebuilds (avg 2.40 ms, opaque 579–630).
 
+### Small Sprite
+
+**Status:** Not measured. No shipped character package has a genuinely smaller sprite than the available options at scale=1. Black Mage is smaller in source dimensions but tested at scale=3. Dropped from the scenario matrix.
+
 ## Comparison to X11 Baseline
 
 X11 baseline: `docs/research/mask-rebuild-baseline-x11.md` (issue #428, shipped in PR #968).
@@ -155,13 +159,23 @@ Slim evidence pack in [`docs/research/mask-rebuild-baseline-windows/`](./mask-re
 
 Full TRACE logs remain on the measurement workstation.
 
+### Code
+
+- Windows: `src-tauri/src/platform/windows/overlay.rs` — timing / counters / SetWindowRgn
+- Instrumentation: PR #981 tip `a38ba3b` — TRACE instrumentation
+- `src-tauri/src/frame_loop.rs` — `MaskParams` cache + cursor-over gate
+
+## Comparison to Issue #432 (System Wakeups)
+
+Issue #432 measured system wakeups during idle on Linux. Windows idle with cursor away shows **0 rebuilds/sec**, so mask rebuilds are **not** a contributor to idle wakeup rate on Windows either. The ~15–22 ms rebuild time matters when the cursor is over an animating/moving sprite.
+
 ### Instrumentation sample
 
 **BMO walking under cursor:**
 ```
-mask_rebuild: 126x128 @1x scale, 6360 opaque pixels, 20.51 ms
-mask_rebuild: 126x128 @1x scale, 6360 opaque pixels, 20.59 ms
-mask_rebuild: 126x128 @1x scale, 6360 opaque pixels, 20.75 ms
+mask_rebuild: 126x128 @1x scale, 6251 opaque pixels, 14.43 ms
+mask_rebuild: 126x128 @1x scale, 6251 opaque pixels, 14.51 ms
+mask_rebuild: 126x128 @1x scale, 6251 opaque pixels, 14.56 ms
 ```
 
 **BMO react (10 fps fast animation):**
