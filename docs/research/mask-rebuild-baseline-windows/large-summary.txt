@@ -1,0 +1,18 @@
+Scenario: large (Black Mage @3x scale)
+Character: Black Mage (source 37×33, rendered 111×99 @3x)
+Method: AI_BUDDY_INSTANCES='Black Mage' (scale=3);
+        SetCursorPos follow TRACE_FRAMES sprite center
+Measure window: 12.09 seconds
+Tip SHA: a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1
+
+Results (all frames):
+  Rebuild count: 6
+  Rebuilds/sec: 0.496
+  Average time: 2.502 ms
+  Min time: 2.03 ms
+  Max time: 2.77 ms
+  Opaque pixels: 570–630
+
+By animation:
+  idle: 4 rebuilds, avg 2.552 ms, opaque 570–579
+  react: 2 rebuilds, avg 2.40 ms, opaque 579–630

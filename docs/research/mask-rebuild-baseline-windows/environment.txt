@@ -1,0 +1,26 @@
+﻿Windows mask-rebuild baseline (#428) — environment
+====================================================
+Host: DESKTOP-UQIE144 (machineId 9723dbe7-21c6-40c0-afcd-2172f499de66)
+OS: Microsoft Windows 11 Pro for Workstations
+Version: 10.0.26200 (Build 26200)
+Display:
+  Primary DISPLAY1: 3440x1440 at (0,0); work area height 1392
+  Secondary DISPLAY2: 1200x1920 at (-1200,-209)
+Checkout: C:\Users\oded\src\ai-buddy
+Branch: mask-rebuild-428-win
+Tip SHA: a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1
+  (PR #981 tip / cursor/windows-mask-rebuild-instrumentation-c08b)
+Binary: C:\Users\oded\src\ai-buddy\target\debug\ai-buddy.exe (debug)
+  TRACE confirmed: AI_BUDDY_TRACE_MASK_REBUILD string present
+Characters:
+  idle/walk/fast: BMO (126x128 @1x)
+  large: Black Mage (source 37x33, rendered 111x99 @3x)
+Instrumentation: AI_BUDDY_TRACE_MASK_REBUILD=1 (+ TRACE_FRAMES for sprite pos / anim correlation)
+Cursor method: SetCursorPos to sprite center derived from TRACE_FRAMES `sprite(x,y)` lines
+  (not human cursor; not moving perch under fixed cursor)
+Behavior trigger:
+  walk: StaticDirector spontaneous walk (MCP play_behavior not used — Settings BYO token not obtained)
+  fast: rush SetCursorPos onto sprite (rush_reaction=react) + mouse_event LBUTTON poke
+  large: cursor follow only
+Window Titles setting: not touched (left as-is)
+Measured: 2026-09-24 Asia/Jerusalem (UTC+3)

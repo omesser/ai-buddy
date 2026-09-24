@@ -1,0 +1,15 @@
+Scenario: idle
+Character: BMO (126×128 @1x)
+Method: SetCursorPos(50,50) away from sprite on primary; no interaction
+Measure window: 12 seconds
+Tip SHA: a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1
+
+Results:
+  Rebuild count: 0
+  Rebuilds/sec: 0.0
+  Average time: —
+  Min time: —
+  Max time: —
+  Opaque pixels: —
+
+Sample lines: (none)
