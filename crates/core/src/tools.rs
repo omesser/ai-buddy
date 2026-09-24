@@ -291,7 +291,7 @@ pub(crate) fn play_behavior(
     }
 }
 
-/// List visible windows with bounds and owning application.
+/// List visible windows with bounds, and their names under consent.
 pub(crate) fn list_windows(
     window_source: &dyn crate::window_source::WindowSource,
     denylist: &DenyList,

@@ -534,7 +534,7 @@ Two transport axes (do not conflate):
 
 - `speak` — Make the Character speak dialogue
 - `play_behavior` — Play a named Behavior
-- `list_windows` — List visible windows with bounds and owner
+- `list_windows` — List visible windows with bounds, and their names under consent
 - `describe_screen` — Describe screen (window metadata only; Capture dropped, ADR-0031)
 - `recall` — Read everything Memory holds
 - `remember` — Write one fact under a heading
