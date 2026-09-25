@@ -1897,6 +1897,11 @@ mod tests {
         });
     }
 
+    /// How long the `permission-after-work` Harness works before it asks, and
+    /// again after the answer. A test that sets the turn budget between one
+    /// and two of these can tell a fresh budget from a resumed one.
+    const ASK_WORK: Duration = Duration::from_millis(600);
+
     /// The fake ACP agent. This test binary re-executed with `script=<name>`
     /// among its filters, speaking newline JSON-RPC on stdio. Returns at once
     /// under a normal `cargo test`, where no script is named.
@@ -2057,7 +2062,10 @@ mod tests {
                         // after the reopen is served.
                         "load-dead" if prompts == 1 => stop(&id, "refusal"),
                         "load-refusal" => stop(&id, "refusal"),
-                        "permission" => {
+                        "permission" | "permission-after-work" | "permission-stall" => {
+                            if script == "permission-after-work" {
+                                thread::sleep(ASK_WORK);
+                            }
                             pending_prompt = Some(id);
                             say(
                                 json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
@@ -2125,7 +2133,11 @@ mod tests {
                         .unwrap_or("?")
                         .to_string();
                     record(count, &format!("perm:{outcome}"));
-                    if outcome == "selected" {
+                    // The stalling Harness takes the answer and says nothing more.
+                    if outcome == "selected" && script != "permission-stall" {
+                        if script == "permission-after-work" {
+                            thread::sleep(ASK_WORK);
+                        }
                         let option = message
                             .pointer("/result/outcome/optionId")
                             .and_then(Value::as_str)
@@ -3543,21 +3555,90 @@ mod tests {
         session.shutdown();
     }
 
+    /// The budget guards a Harness that went quiet, not a user who is busy
+    /// (#1001). Three budgets pass before the click and the turn still ends
+    /// on the answer, the ask retired by that answer and not by a cancel.
     #[test]
-    fn a_timeout_before_the_answer_sends_the_cancelled_outcome() {
+    fn a_slow_answer_to_an_ask_is_not_a_timeout() {
         let (fx, session) = Fixture::new("permission");
-        let session = session.with_timeout(Duration::from_millis(700));
-        let reply = session.complete(&asking("hi"));
-        assert!(reply.is_err(), "{reply:?}");
+        let session = Arc::new(session.with_timeout(Duration::from_millis(300)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
         let ask = fx.ask();
-        assert!(fx.wait_for("cancel", 1));
-        assert!(fx.wait_for("perm:cancelled", 1));
-        // A row nobody answered is retired too, or its buttons outlive the
-        // turn, with no option, because nothing was chosen.
-        assert_eq!(fx.settled(), (ask.request, None));
+        thread::sleep(Duration::from_millis(900));
+        session.answer_permission(&ask.request, "allow");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:allow")));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
         session.shutdown();
     }
 
+    #[test]
+    fn a_slow_answer_to_a_form_is_not_a_timeout() {
+        let (fx, session) = Fixture::new("elicitation");
+        let session = Arc::new(session.with_timeout(Duration::from_millis(300)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let form = fx.form();
+        thread::sleep(Duration::from_millis(900));
+        session.answer_elicitation(&form.request, ElicitationAnswer::Accept("balanced".into()));
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:balanced")));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.settled(), (form.request, Some("balanced".to_string())));
+        session.shutdown();
+    }
+
+    /// The answer starts the budget over. The Harness works for most of one
+    /// budget before it asks and for as long again after the answer. A fresh
+    /// budget covers that; a paused clock resumed would run out.
+    #[test]
+    fn an_answer_starts_a_fresh_turn_budget() {
+        let (fx, session) = Fixture::new("permission-after-work");
+        let session = Arc::new(session.with_timeout(ASK_WORK * 5 / 3));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let ask = fx.ask();
+        session.answer_permission(&ask.request, "allow");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:allow")));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    /// The guard is still there once the user has answered. A Harness that
+    /// takes the answer and then goes quiet is cancelled on the fresh budget.
+    #[test]
+    fn a_stall_after_the_answer_still_times_out() {
+        let (fx, session) = Fixture::new("permission-stall");
+        let session = Arc::new(session.with_timeout(Duration::from_millis(500)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let ask = fx.ask();
+        session.answer_permission(&ask.request, "allow");
+        assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
+        let reply = worker.join().unwrap();
+        assert!(
+            reply.as_ref().is_err_and(|why| why.contains("cancelled")),
+            "{reply:?}"
+        );
+        assert!(fx.wait_for("cancel", 1));
+        assert_eq!(
+            fx.count("perm:cancelled"),
+            0,
+            "the answer was taken, not cancelled"
+        );
+        session.shutdown();
+    }
+
+    /// The guard with nothing asked: silence on the wire is a stall (#1001).
     #[test]
     fn a_slow_turn_is_cancelled_and_the_next_one_works() {
         let (fx, session) = Fixture::new("slow");
