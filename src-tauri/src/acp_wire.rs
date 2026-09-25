@@ -14,7 +14,7 @@ use agent_client_protocol::schema::v1::{
     AuthMethod, CancelNotification, ClientCapabilities, ContentBlock, CreateElicitationRequest,
     CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
     ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
-    ElicitationPropertySchema, EnvVariable, ErrorCode, HttpHeader, Implementation,
+    ElicitationPropertySchema, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
@@ -217,7 +217,23 @@ pub enum TurnError {
     Stopped(String),
     /// A turn was already in flight on the wire.
     Busy,
+    /// The Harness wants a login it does not have. `auth_refused` says how.
+    AuthRequired,
     Failed(String),
+}
+
+/// `-32000` is ACP's word for it. claude-code-acp says a token that died
+/// mid-session as `-32603` with `errorKind: "authentication_failed"` in
+/// `data`, the field it documents for clients to dispatch on instead of the
+/// message text (#991).
+fn auth_refused(error: &Error) -> bool {
+    error.code == ErrorCode::AuthRequired
+        || error
+            .data
+            .as_ref()
+            .and_then(|data| data.get("errorKind"))
+            .and_then(|kind| kind.as_str())
+            == Some("authentication_failed")
 }
 
 /// Why no wire came back from a spawn.
@@ -690,7 +706,7 @@ async fn open(
         .await
         .map(|response| response.session_id)
         .map_err(|error| {
-            if error.code == ErrorCode::AuthRequired {
+            if auth_refused(&error) {
                 OpenError::AuthRequired
             } else if cx.is_incoming_closed() {
                 OpenError::Lost
@@ -755,6 +771,7 @@ async fn turn(
                 end_turn(&mut asks, &mut forms, &mut thought, on_event);
                 return match response {
                     Ok(response) => outcome(response.stop_reason, said),
+                    Err(error) if auth_refused(&error) => Err(TurnError::AuthRequired),
                     Err(_) if cx.is_incoming_closed() => Err(TurnError::Lost),
                     Err(error) => Err(TurnError::Failed(error.message)),
                 };

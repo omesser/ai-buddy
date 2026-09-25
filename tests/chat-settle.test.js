@@ -105,11 +105,13 @@ test("a cause with no clause of its own still reads as a sentence", () => {
   assert.deepEqual(log, ["Something else started before that answer landed, so I dropped it."]);
 });
 
-test("a Harness error is still the error, not a missing answer", () => {
+test("a Harness error is the Shell's line as sent, under no second prefix", () => {
   const turns = createChatTurns();
   turns.typed();
 
-  const log = play(turns, [{ said: null, error: "model not found" }]);
+  const log = play(turns, [
+    { said: null, error: "harness not authenticated: run `claude /login`" },
+  ]);
 
-  assert.deepEqual(log, ["The Harness reported an error: model not found"]);
+  assert.deepEqual(log, ["harness not authenticated: run `claude /login`"]);
 });
