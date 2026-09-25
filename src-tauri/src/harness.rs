@@ -2133,7 +2133,6 @@ mod tests {
                         .unwrap_or("?")
                         .to_string();
                     record(count, &format!("perm:{outcome}"));
-                    // The stalling Harness takes the answer and says nothing more.
                     if outcome == "selected" && script != "permission-stall" {
                         if script == "permission-after-work" {
                             thread::sleep(ASK_WORK);
@@ -2244,11 +2243,15 @@ mod tests {
             )
         }
 
-        /// The next forwarded ask, or a panic naming what came instead.
+        /// The next forwarded ask, past the plan and thought a turn's end
+        /// forwards on the way, or a panic naming what came instead.
         fn ask(&self) -> PermissionAsk {
-            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Ask(ask)) => ask,
-                other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
+            loop {
+                match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                    Ok(Forwarded::Ask(ask)) => return ask,
+                    Ok(Forwarded::Plan(_) | Forwarded::Thought(_)) => {}
+                    other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
+                }
             }
         }
 
@@ -3635,6 +3638,34 @@ mod tests {
             0,
             "the answer was taken, not cancelled"
         );
+        session.shutdown();
+    }
+
+    /// A row nobody answered is retired all the same when the turn is taken
+    /// from under it, with no option, because nothing was chosen. Or its
+    /// buttons outlive the turn. Reached through a newer wake now that a
+    /// wait on the user is not a timeout (#1001).
+    #[test]
+    fn a_newer_wake_retires_the_ask_nobody_answered() {
+        let (fx, session) = Fixture::new("permission");
+        let session = Arc::new(session);
+        let first = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let ask = fx.ask();
+        let second = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("again")))
+        };
+        assert_eq!(fx.settled(), (ask.request, None));
+        assert!(fx.wait_for("perm:cancelled", 1));
+        let displaced = first.join().unwrap().unwrap_err();
+        assert!(displaced.contains("cancelled"), "{displaced}");
+        let again = fx.ask();
+        session.answer_permission(&again.request, "allow");
+        assert_eq!(second.join().unwrap(), Ok(Reply::whole("ok:allow")));
+        assert_eq!(fx.settled(), (again.request, Some("allow".to_string())));
         session.shutdown();
     }
 
