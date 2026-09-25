@@ -285,6 +285,17 @@
               "status": null
             },
             {
+              "type": "Checkbox",
+              "id": "pi_project_mcp",
+              "label": "Write .mcp.json in the working directory",
+              "writes": "PiProjectMcp",
+              "frozen": false,
+              "help": null,
+              "comment": null,
+              "disclosure": null,
+              "status": "Apply creates /Users/buddy/Library/Application Support/ai-buddy/.mcp.json, or updates only its ai-buddy entry. The entry names AI_BUDDY_MCP_URL and AI_BUDDY_MCP_TOKEN. The port and the token stay out of the file, and a later Apply leaves a correct file alone. Pi still needs pi-mcp-adapter, or the file does nothing."
+            },
+            {
               "type": "TextField",
               "id": "harness_command",
               "label": "Custom command line",

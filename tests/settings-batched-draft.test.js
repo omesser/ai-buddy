@@ -70,7 +70,9 @@ function draw(values, emit, stage) {
   const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
   const all = root.children.flatMap(walk);
   delete globalThis.document;
-  return (id) => all.find((node) => node.id === `set-f-${id}` || node.dataset.id === id);
+  const find = (id) => all.find((node) => node.id === `set-f-${id}` || node.dataset.id === id);
+  find.row = (id) => all.find((node) => node.attributes?.["data-row"] === id);
+  return find;
 }
 
 test("a batched row reports each edit through stage and writes nothing on blur", () => {
@@ -114,6 +116,18 @@ test("a batched row draws the draft it is handed, the key field included", () =>
 // The regression in #995, as a tab switch does it: the page redraws the panel
 // from `{ ...snapshot, ...draft }`, so a batched edit survives only if it was
 // staged out of the widget and drawn back in.
+test("the Pi file row stays hidden until the staged source is Pi", () => {
+  const model = draw(MODEL_API.values, () => {}, () => {});
+  assert.equal(model.row("pi_project_mcp").hidden, true);
+
+  const pi = draw({ ...MODEL_API.values, harness: "Harness · pi" }, () => {}, () => {});
+  const row = pi.row("pi_project_mcp");
+  assert.equal(row.hidden, false);
+  const status = row.children.find((child) => child.attributes?.class === "set-status");
+  assert.match(status.attributes.text ?? status.textContent, /pi-mcp-adapter/);
+  assert.match(status.attributes.text ?? status.textContent, /AI_BUDDY_MCP_TOKEN/);
+});
+
 test("a staged Model survives the redraw a tab switch performs", () => {
   let draft = {};
   const first = draw(MODEL_API.values, () => {}, (id, value) => (draft = { ...draft, [id]: value }));
