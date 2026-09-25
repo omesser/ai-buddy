@@ -415,7 +415,8 @@ pub enum Forwarded {
         request: String,
         option: Option<String>,
     },
-    /// The line of the Harness's thinking being written now. ADR-0025.
+    /// The Harness's thinking so far, blank lines included. The strip
+    /// scrolls inside a fixed box; this is the whole thought. ADR-0025.
     Thought(String),
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),

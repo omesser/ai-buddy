@@ -90,6 +90,36 @@ test("the Chat control collapses thinking and remembers that preference", () => 
   assert.equal(next.toggle.attributes["aria-expanded"], "false");
 });
 
+// The wire sends the whole thought, blank lines included, the last line still
+// being written (#994). Expanded shows all of it, past the five the box
+// scrolls; collapsed is one line, the newest.
+test("a thought of several lines collapses to the newest one", () => {
+  const { root, text, toggle } = thoughtRoot();
+  const strip = mountThoughtStrip(root, memoryStorage());
+
+  const full = [
+    "Reading the roster.",
+    "",
+    "Checking the desk.",
+    "Weighing a nap",
+    "against the desk.",
+    "Counting the windows.",
+    "Naming the display.",
+  ].join("\n");
+  strip.thinking(full);
+  assert.equal(text.textContent, full);
+
+  toggle.click();
+  assert.equal(text.textContent, "Naming the display.");
+
+  const written = full.replace(/Naming the display\.$/, "Naming the display.\nPicking a spot.");
+  strip.thinking(written);
+  assert.equal(text.textContent, "Picking a spot.");
+
+  toggle.click();
+  assert.equal(text.textContent, written);
+});
+
 // A guard on the stylesheet, not on behavior: `node --test` has no layout
 // engine, so the height that keeps the transcript still cannot be measured
 // here. It fails when an edit takes the box off its fixed five lines.

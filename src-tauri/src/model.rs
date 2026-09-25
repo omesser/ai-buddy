@@ -1521,10 +1521,10 @@ fn read_stream(
 ) -> Result<(Streamed, bool), String> {
     let mut thinking = String::new();
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
-    // The Chat surface keeps no thought of its own, so the last line stays
-    // until the turn that wrote it has ended (ADR-0025). Same path as the
+    // The Chat surface keeps no thought of its own, so what this turn
+    // thought stays until the turn ends (ADR-0025). Same path as the
     // draw, so all-whitespace thinking takes away nothing.
-    if crate::acp_wire::thinking_line(&thinking).is_some() {
+    if crate::acp_wire::thought_to_show(&thinking).is_some() {
         thought("");
     }
     // Whether this turn marked, for the caller to remember on the host. Any
@@ -1590,11 +1590,11 @@ fn read_frames(
         truncated |= event.truncated;
         if let Some(chunk) = event.thought {
             thinking.push_str(&chunk);
-            // The line being written now, by the same rule the ACP lane
-            // draws: a chunk lands mid-sentence, and half a sentence on its
-            // own reads as nonsense.
-            if let Some(line) = crate::acp_wire::thinking_line(thinking) {
-                thought(line);
+            // The whole thought so far, by the same rule the ACP lane draws:
+            // a chunk lands mid-sentence, and half a sentence on its own
+            // reads as nonsense.
+            if let Some(text) = crate::acp_wire::thought_to_show(thinking) {
+                thought(text);
             }
         }
         if let Some(delta) = event.delta {
@@ -2867,13 +2867,14 @@ pub(crate) mod tests {
     }
 
     /// Thinking reaches the strip and never the reply, so nothing the buddy
-    /// says out loud was thought at it (ADR-0025). The strip draws the line
-    /// being written now, and the end of the turn takes it away.
+    /// says out loud was thought at it (ADR-0025). The strip is handed the
+    /// whole thought, blank lines included, and the end of the turn takes
+    /// it away.
     #[test]
     fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
         let sse = concat!(
             "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"the user\"}}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" waved\\nso\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" waved\\n\\nso\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" wave back\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"wave\\nhey\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
@@ -2883,9 +2884,14 @@ pub(crate) mod tests {
             streamed_with_thoughts(sse),
             (
                 Streamed::Complete("wave\nhey".to_string()),
-                ["the user", "so", "so wave back", ""]
-                    .map(str::to_string)
-                    .to_vec()
+                [
+                    "the user",
+                    "the user waved\n\nso",
+                    "the user waved\n\nso wave back",
+                    "",
+                ]
+                .map(str::to_string)
+                .to_vec()
             )
         );
     }
@@ -3183,7 +3189,9 @@ pub(crate) mod tests {
             streamed_with_thoughts(thinking_only),
             (
                 Streamed::Truncated(Truncation::ThinkingOnly),
-                ["the user", "so", ""].map(str::to_string).to_vec()
+                ["the user", "the user waved\nso", ""]
+                    .map(str::to_string)
+                    .to_vec()
             ),
             "thinking_delta is drawn and is not content, so a cap here is the \
              thinking-only row"

@@ -1,6 +1,9 @@
-// The one transient line above the Chat composer, as a rule rather than as
-// DOM, so node can drive the orderings a window does not reproduce on demand.
-// The strip is for the Harness's thinking only (ADR-0025).
+// The transient strip above the Chat composer, as a rule rather than as DOM,
+// so node can drive the orderings a window does not reproduce on demand. The
+// strip is for the Harness's thinking only (ADR-0025). A thought arrives as
+// the whole text so far, newlines and blank lines included, the last line
+// still being written. The box is five lines tall and scrolls; collapsed
+// chrome shows only the newest line.
 
 // Precedence: a thought wins while there is one; the empty thought that ends a
 // turn clears it; the user's next line clears it.
@@ -49,7 +52,11 @@ export function mountThoughtStrip(root, storage) {
   const strip = createStrip((view) => {
     root.hidden = !view.line;
     root.classList.toggle("is-collapsed", view.collapsed);
-    text.textContent = view.line;
+    // Collapsed is `nowrap`, which folds the newlines into spaces and ellipsizes
+    // the oldest line first, so it is handed only the newest.
+    text.textContent = view.collapsed
+      ? view.line.slice(view.line.lastIndexOf("\n") + 1)
+      : view.line;
     toggle.textContent = view.collapsed ? "Expand" : "Collapse";
     toggle.setAttribute("aria-expanded", String(!view.collapsed));
   }, collapsed);

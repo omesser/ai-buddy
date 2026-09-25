@@ -161,9 +161,9 @@ pub enum Event {
     /// One `elicitation/create` form. Separate from `Permission` because the
     /// answer is accept-content or decline, not a permission `optionId`.
     Elicitation(ElicitationForm),
-    /// The line of thinking being written now, for the Chat surface.
-    /// Transient (ADR-0025). Each one replaces the last. Nothing keeps them,
-    /// and no log line is made from one.
+    /// The thinking so far, for the Chat surface. Transient (ADR-0025):
+    /// each one replaces the last, the strip scrolls inside a fixed box,
+    /// and nothing keeps them. No log line is made from one.
     Thought(String),
     /// A forwarded ask that can no longer be answered. Every open Chat
     /// surface was given the ask, so every one of them has to hear this.
@@ -999,8 +999,8 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
                 thought.push_str(&text.text);
-                if let Some(line) = thinking_line(thought) {
-                    on_event(Event::Thought(line.to_string()));
+                if let Some(shown) = thought_to_show(thought) {
+                    on_event(Event::Thought(shown.to_string()));
                 }
             }
         }
@@ -1008,15 +1008,18 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
     }
 }
 
-/// The line of a streamed thought being written now. The tail of everything
-/// that has arrived, because a chunk lands mid-sentence. `None` while nothing
-/// but whitespace has come. An adapter streams empty thinking blocks.
-pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
-    thought
-        .lines()
-        .rev()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+/// The thought so far, once it holds something other than whitespace.
+///
+/// The strip scrolls inside a fixed box (`.thought-text` in `chat-ui.css`),
+/// so older lines stay on the wire instead of being cut here. Blank lines
+/// stay too: a paragraph break is something the harness wrote. `None` while
+/// an adapter has streamed only empty thinking blocks.
+pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
+    if thought.trim().is_empty() {
+        None
+    } else {
+        Some(thought)
+    }
 }
 
 /// Close out what this side was holding for a turn that is over.
@@ -1304,16 +1307,40 @@ mod tests {
         assert_eq!(thoughts(&events), ["Reading the roster"]);
     }
 
-    /// Chunks arrive as fragments, so what the surface shows is the tail of
-    /// the thought so far. Half a sentence on its own reads as nonsense, and
-    /// the line before a newline is finished with.
+    /// Chunks arrive as fragments. The open line is the tail of the thought
+    /// so far, blank lines included: half a sentence on its own reads as
+    /// nonsense, and a paragraph break is something the harness wrote.
     #[test]
     fn a_thought_shows_the_line_being_written() {
         let (_, events) = drive(vec![
             thinking("Reading the"),
             thinking(" roster.\n\nNow the manifest"),
         ]);
-        assert_eq!(thoughts(&events), ["Reading the", "Now the manifest"]);
+        assert_eq!(
+            thoughts(&events),
+            ["Reading the", "Reading the roster.\n\nNow the manifest"]
+        );
+    }
+
+    /// The strip scrolls inside five lines (#994). The wire sends the whole
+    /// thought, so a sixth line and a blank in the middle both survive.
+    #[test]
+    fn a_thought_keeps_every_line_including_a_blank() {
+        let (_, events) = drive(vec![
+            thinking("Reading the"),
+            thinking(" roster.\n\nChecking the desk.\nWeighing a nap"),
+            thinking(" against the desk.\nCounting the windows.\nNaming the display.\nPicking a"),
+            thinking(" spot."),
+        ]);
+        assert_eq!(
+            thoughts(&events),
+            [
+                "Reading the",
+                "Reading the roster.\n\nChecking the desk.\nWeighing a nap",
+                "Reading the roster.\n\nChecking the desk.\nWeighing a nap against the desk.\nCounting the windows.\nNaming the display.\nPicking a",
+                "Reading the roster.\n\nChecking the desk.\nWeighing a nap against the desk.\nCounting the windows.\nNaming the display.\nPicking a spot.",
+            ]
+        );
     }
 
     /// The strip lives exactly as long as the turn that fills it. Nothing on

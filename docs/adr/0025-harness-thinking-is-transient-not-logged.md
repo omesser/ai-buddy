@@ -25,7 +25,7 @@ treats as disposable.
 
 ## Decision
 
-A thought is transient status, drawn where nothing is kept: one line in the Chat
+A thought is transient status, drawn where nothing is kept: a strip in the Chat
 surface, above the composer and outside the log, saying what the Harness is
 thinking right now. Each thought replaces the one before it. The end of the turn
 clears it. Nothing keeps one — no line of the chat log, no line of the Action
