@@ -929,6 +929,99 @@ mod settings_event_tests {
         let json = serde_json::to_string(&response).expect("should serialize");
         assert_eq!(json, r#"{"action":"run","operation":"new_session"}"#);
     }
+
+    /// The page redraws every tab switch from its cached snapshot, so a
+    /// write it is not told about comes back undone: the consent checkbox in
+    /// #995. `Apply` is the only outcome that writes and does not otherwise
+    /// name a redraw, so it is the arm this test exists for.
+    #[test]
+    fn a_plain_apply_writes_and_answers_refresh() {
+        use settings::controller::Outcome;
+        let mut applied = Vec::new();
+        let mut patch = settings::SettingsPatch::default();
+        patch.set_bool(settings::BoolField::DoNotDisturb, true);
+        let response = respond(
+            Outcome::Apply(patch.clone()),
+            |p| {
+                applied.push(p);
+                Ok(())
+            },
+            |_| panic!("Apply runs no operation"),
+        );
+        assert_eq!(response, Ok(SettingsEventResponse::Refresh));
+        assert_eq!(applied, vec![patch]);
+    }
+
+    #[test]
+    fn every_other_outcome_keeps_its_answer() {
+        use settings::controller::Outcome;
+        use settings::form::RowOperation;
+        let mut applied = 0;
+        let mut respond_counting = |outcome| {
+            respond(
+                outcome,
+                |_| {
+                    applied += 1;
+                    Ok(())
+                },
+                |op| {
+                    Ok(SettingsEventResponse::Run {
+                        operation: op.as_str().to_string(),
+                    })
+                },
+            )
+        };
+        let patch = settings::SettingsPatch::default();
+        assert_eq!(
+            respond_counting(Outcome::Nothing),
+            Ok(SettingsEventResponse::Nothing)
+        );
+        assert_eq!(
+            respond_counting(Outcome::Reset),
+            Ok(SettingsEventResponse::Reset)
+        );
+        assert_eq!(
+            respond_counting(Outcome::ClearKey),
+            Ok(SettingsEventResponse::ClearKey)
+        );
+        assert_eq!(
+            respond_counting(Outcome::Commit(Some(patch.clone()))),
+            Ok(SettingsEventResponse::Reset)
+        );
+        assert_eq!(
+            respond_counting(Outcome::Commit(None)),
+            Ok(SettingsEventResponse::Reset)
+        );
+        assert_eq!(
+            respond_counting(Outcome::Fill {
+                id: "director_base_url",
+                value: "https://api.anthropic.com",
+                patch: None
+            }),
+            Ok(SettingsEventResponse::Fill {
+                id: "director_base_url".to_string(),
+                value: "https://api.anthropic.com".to_string(),
+            })
+        );
+        assert_eq!(
+            respond_counting(Outcome::Run(RowOperation::Spawn)),
+            Ok(SettingsEventResponse::Run {
+                operation: "spawn".to_string()
+            })
+        );
+        assert_eq!(applied, 1, "only Commit(Some) wrote");
+    }
+
+    #[test]
+    fn a_failed_write_is_the_answer_not_a_refresh() {
+        use settings::controller::Outcome;
+        let response = respond(
+            Outcome::Apply(settings::SettingsPatch::default()),
+            |_| Err("the store said no".to_string()),
+            |_| unreachable!(),
+        );
+        assert_eq!(response, Err("the store said no".to_string()));
+    }
 }
 
 /// What the webview must do about a gesture.
@@ -1041,35 +1134,48 @@ fn settings_event(
     };
 
     let outcome = controller::handle(&event, &draft, &view);
+    respond(
+        outcome,
+        |patch| session.apply(patch).map_err(|e| e.to_string()),
+        |op| run_operation(&session, &op, &pressed),
+    )
+}
 
+/// The wire answer for each `Outcome`, with the two things that need a live
+/// session handed in, so a test can pin the mapping. `Apply` answers
+/// `Refresh` because the page redraws every tab switch from its cached
+/// snapshot: answering `Nothing` here is the consent checkbox that came back
+/// unticked (#995).
+fn respond(
+    outcome: settings::controller::Outcome,
+    mut apply: impl FnMut(settings::SettingsPatch) -> Result<(), String>,
+    run: impl FnOnce(settings::form::RowOperation) -> Result<SettingsEventResponse, String>,
+) -> Result<SettingsEventResponse, String> {
+    use settings::controller::Outcome;
     match outcome {
-        controller::Outcome::Nothing => Ok(SettingsEventResponse::Nothing),
-        controller::Outcome::Apply(patch) => {
-            session.apply(patch).map_err(|e| e.to_string())?;
-            Ok(SettingsEventResponse::Nothing)
-        }
-        controller::Outcome::ApplyAndRefresh(patch) => {
-            session.apply(patch).map_err(|e| e.to_string())?;
+        Outcome::Nothing => Ok(SettingsEventResponse::Nothing),
+        Outcome::Apply(patch) => {
+            apply(patch)?;
             Ok(SettingsEventResponse::Refresh)
         }
-        controller::Outcome::Commit(patch) => {
+        Outcome::Commit(patch) => {
             if let Some(patch) = patch {
-                session.apply(patch).map_err(|e| e.to_string())?;
+                apply(patch)?;
             }
             Ok(SettingsEventResponse::Reset)
         }
-        controller::Outcome::Reset => Ok(SettingsEventResponse::Reset),
-        controller::Outcome::ClearKey => Ok(SettingsEventResponse::ClearKey),
-        controller::Outcome::Fill { id, value, patch } => {
+        Outcome::Reset => Ok(SettingsEventResponse::Reset),
+        Outcome::ClearKey => Ok(SettingsEventResponse::ClearKey),
+        Outcome::Fill { id, value, patch } => {
             if let Some(patch) = patch {
-                session.apply(patch).map_err(|e| e.to_string())?;
+                apply(patch)?;
             }
             Ok(SettingsEventResponse::Fill {
                 id: id.to_string(),
                 value: value.to_string(),
             })
         }
-        controller::Outcome::Run(op) => run_operation(&session, &op, &pressed),
+        Outcome::Run(op) => run(op),
     }
 }
 

@@ -41,11 +41,10 @@ pub enum Outcome {
     /// The gesture named no write: an unknown row, a frozen one, or a value
     /// that is already what is shown.
     Nothing,
-    /// Send it through `SettingsSession::apply`.
+    /// Send it through `SettingsSession::apply`, then redraw. The page draws
+    /// every tab switch from its cached snapshot, so a write it is not told
+    /// about comes back undone on the next switch.
     Apply(SettingsPatch),
-    /// Apply, then redraw. Only a pick that raises no `SettingsOp` needs the
-    /// redraw, and asking for it always is cheaper than telling which (#577).
-    ApplyAndRefresh(SettingsPatch),
     /// Apply's two halves: write the patch if there is one, and only then take
     /// the Director tab back to live state. A locked Keychain fails the write,
     /// and resetting anyway would discard an edit nothing saved (#279).
@@ -99,7 +98,7 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
             if description.text_batched(id) {
                 return Outcome::Nothing;
             }
-            text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::ApplyAndRefresh)
+            text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::Apply)
         }
         Event::Shortcut { id, value, current } => shortcut(description, id, value, current),
         Event::Press { id } => match description.operations.get(id) {
@@ -375,6 +374,25 @@ mod tests {
             ] {
                 assert_eq!(handle(&event, &draft, &view), Outcome::Nothing, "{event:?}");
             }
+        });
+    }
+
+    /// A checkbox is an immediate row: the tick is a write, not a draft. The
+    /// wire answer for that write is pinned in `main.rs` (#995); this is the
+    /// decision it answers for.
+    #[test]
+    fn a_checkbox_tick_is_an_apply() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view();
+            let description = form::describe();
+            let draft = drawn(&view, &description);
+            let event = Event::SetBool {
+                id: form::DND_ID.into(),
+                value: true,
+            };
+            let mut expected = SettingsPatch::default();
+            expected.set_bool(crate::settings::BoolField::DoNotDisturb, true);
+            assert_eq!(handle(&event, &draft, &view), Outcome::Apply(expected));
         });
     }
 
