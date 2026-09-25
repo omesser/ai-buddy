@@ -177,7 +177,7 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 |---|---|
 | `claude` | Keeps shell, web search and fetch, filesystem, and user-scope MCP plus claude.ai connectors, loads local and project MCP only when `cwd` matches, and does not list `AskUserQuestion`. |
 | `codex` | Keeps shell, web search and fetch, filesystem, the user's own MCP servers, and `request_user_input`. |
-| `cursor-agent` | Keeps shell, web search and fetch, filesystem, and the user's own MCP servers, and lists no ask-user tool. |
+| `cursor-agent` | Keeps shell, web search and fetch, filesystem, and the user's own MCP servers, and lists no ask-user tool. It discards the MCP server ai-buddy hands it on `session/new`, so none of ai-buddy's tools reach it today. Its own approved `.cursor/mcp.json` is the one door that works, and a fix that uses it is measured but not shipped (#1020). |
 | `hermes` | Keeps shell, web search and extract, filesystem, and the user's own MCP servers via the vendor mcp subcommand that the probe did not exercise, lists no ask-user tool, and lists browser tools that the start-up CDP check marks unavailable. |
 | `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
 | `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Whether Pi then lists ai-buddy's tools is unmeasured (#984). |
@@ -196,7 +196,7 @@ How they handle session differs, and changes what ai-buddy can do with them:
 |---|---|---|---|---|---|
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `codex` | yes | yes | yes | http | two: API Key, ChatGPT |
-| `cursor-agent` | yes | no | no | stdio | one: `cursor_login` |
+| `cursor-agent` | yes | no | no | none | one: `cursor_login` |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `opencode` | yes | yes | yes | http | Login with opencode |
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
@@ -204,7 +204,7 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `goose` | yes | yes | yes | http | one: Configure Provider |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok` and `goose` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `cursor-agent`, `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` advertises no HTTP MCP. `opencode` and `grok` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok` and `goose` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `cursor-agent`, `hermes` and `pi` omit it, and only `hermes` takes the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` and `cursor-agent` get nothing forwarded today. `pi` advertises no MCP capability at all. `cursor-agent` is handed the stdio entry and drops it: its ACP handler never reads `mcpServers`, and [its docs](https://cursor.com/docs/cli/acp) say it loads servers only from a `.cursor/mcp.json` you have approved per project. `opencode` and `grok` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
