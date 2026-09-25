@@ -90,7 +90,77 @@ _Pending._
 _Pending._
 
 ### Linux X11/Wayland (issue #425)
-_Pending._
+
+Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `--shot path.png` to grab the GPU tool window during idle perched. The grab stays out of the tree.
+
+**Environment:**
+
+- Ubuntu 24.04.4 LTS
+- Kernel 6.12.94+ (cloud VM, Xtigervnc, not a bare-metal GPU)
+- X11 on `DISPLAY=:1`. `WAYLAND_DISPLAY` unset. X.Org 21.1.11, vendor The X.Org Foundation
+- One screen, 1920×1200, xrandr mode `60.00*+`
+- Compositor `xfwm4`, `use_compositing` true, `vblank_mode` auto
+- Mutter, KWin, and Xfwm4's uncomposited mode were not running
+- Character BMO, 126×128, from `characters/bmo`
+- App scenarios ran with `AI_BUDDY_TRACE_FRAMES=1` and `AI_BUDDY_TRACE_MASK_REBUILD=1`
+
+**Measurement limitations:**
+
+- No `/dev/dri` and no `/dev/nvidiactl`. GPU% is N/A on every row.
+- `intel_gpu_top` exits with "no discrete/integrated i915 devices found".
+- `radeontop` exits with "Failed to find DRM devices" and "Can't find Radeon cards".
+- `nvidia-smi` is not installed.
+- `glxinfo -B` reports renderer `llvmpipe (LLVM 20.1.2, 256 bits)` and `Accelerated: no`. That is the GL setup check. It is not a utilization percent.
+- No Wayland session, so the ADR-0014 degraded lane (X11 does not answer, and the build does not switch protocols) was not exercised. This host is the X11 lane. [ADR-0014](../adr/0014-x11-lane-no-native-wayland.md) is superseded by [ADR-0020](../adr/0020-x11-lane-no-native-wayland.md).
+- One display, so multi-monitor is N/A.
+- A second compositor was not available. The script records whichever of Mutter, KWin, xfwm4, picom, or Sway is running, and a re-run on that desktop fills the same columns.
+
+**Tools:**
+
+- `intel_gpu_top`, `radeontop`, `glxinfo -B`
+- `xfconf-query` for xfwm4 compositing and vblank
+- `xrandr` for screen count and refresh
+- `mask_rebuild:` lines as the XShapeCombineMask call count. Per-call time stays in the [#428](https://github.com/omesser/ai-buddy/issues/428) study.
+- `/proc/<pid>/stat` utime+stime for `xfwm4` and `Xtigervnc`, as percent of one core over the sample window. This is a proxy for where the software composite lands. It is not GPU%.
+
+**Metrics (15s windows, except walking-over at 5s):**
+
+| Scenario | GPU% | Mask calls | Mask Hz | xfwm4 CPU% | Xtigervnc CPU% | Notes |
+|----------|------|------------|---------|------------|----------------|-------|
+| Baseline (no ai-buddy) | N/A | N/A | N/A | 0.0 | 0.0 | No client, so no mask caller |
+| Idle perched | N/A | 0 | 0.00 | 0.9 | 35.0 | Pointer at (2,2) |
+| Walking | N/A | 0 | 0.00 | 1.1 | 46.7 | Pointer away. 457 `walk` frames |
+| Walking, pointer on sprite | N/A | 22 | 4.40 | 0.2 | 5.6 | 5s window. 8 `walk` frames. See findings |
+| Chat open | N/A | 17 | 1.13 | 0.3 | 3.4 | `Summon` logged. Pointer left on the sprite |
+| Multi-monitor | N/A | N/A | N/A | N/A | N/A | xrandr reports 1 display |
+| Hidden (fullscreen) | N/A | 0 | 0.00 | 0.0 | 0.8 | Log line `presence: hidden over 500ms` |
+| Wayland | N/A | N/A | N/A | N/A | N/A | No Wayland display |
+| Mutter / KWin | N/A | N/A | N/A | N/A | N/A | Not running |
+
+**Findings:**
+
+1. **GPU% is unread.** The vendor tools exit because the VM has no DRM node. Publishing a 0 here would be a guess. The renderer string is llvmpipe with acceleration off, and the app log repeats the DRI3 failure from the [#432](https://github.com/omesser/ai-buddy/issues/432) run.
+
+2. **X server CPU is the number that moves.** Baseline 0.0%, idle perched 35.0%, walking with the pointer away 46.7%, hidden 0.8%. `xfwm4` stays near 1% or below. Inference from the renderer string: with llvmpipe and no DRM device, that CPU is the software paint of the overlay inside `Xtigervnc`. A bare-metal run with `radeontop`, `intel_gpu_top`, or `nvidia-smi` replaces the N/A column.
+
+3. **XShapeCombineMask stays at 0/s while the pointer is off the sprite.** Idle is 0 calls in 15s. Walking is 0 calls in 15s across 457 walk frames. The walking rate in this run is that 0.00/s. A later 5s window put the pointer on the sprite and logged 22 mask calls (4.40/s) with 8 walk frames, after a react and a talk. The walk did not continue under the pointer. [#428](https://github.com/omesser/ai-buddy/issues/428) measured 26.7 rebuilds/s when a walk stayed under the cursor. This issue leaves per-call time to that study.
+
+4. **Chat open is a real Summon, with the pointer still on the sprite.** 17 mask calls in 15s (1.13/s). X server CPU in that window is 3.4%. The pointer was not parked away, so the mask rate is the cursor-over rate during chat, and the CPU drop against idle is under that same condition.
+
+5. **Hiding for a fullscreen window returns X server CPU near the baseline.** 0.8% against 0.0% with no client and 35.0% while perched. The compositor flag on xfwm4 stayed on. There is no uncomposited X11 row.
+
+**Evidence:**
+
+```
+character: BMO from /workspace/characters/bmo
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+overlay: 1 display(s); sprite 126x128; BMO as BMO
+```
+
+`glxinfo -B` during idle perched: `OpenGL renderer string: llvmpipe (LLVM 20.1.2, 256 bits)`, `Accelerated: no`. The same window shows `intel_gpu_top` and `radeontop` failing for lack of a device.
+
+**Status:** Partial. GPU% is N/A until a host with a DRM device or an NVIDIA driver runs the same script. X11 under xfwm4 has a mask-rate pair (idle 0.00/s, walking with the pointer away 0.00/s) and an X-server CPU proxy. Wayland, Mutter, and KWin are still open rows.
 
 ## WindowSource (issue #427)
 _Pending._
