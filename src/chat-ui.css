@@ -1193,9 +1193,10 @@ body {
 }
 
 .said.md code {
-  padding: 0.05em 0.3em;
+  padding: 0.12em 0.4em;
+  border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-badge);
-  background: var(--chat-fill-soft);
+  background: color-mix(in srgb, var(--chat-ink) 18%, var(--chat-panel));
   font-family: var(--chat-mono);
   font-size: 0.9em;
 }
@@ -1210,13 +1211,15 @@ body {
 
 .said.md pre {
   margin: 0;
-  padding: 0.6em 0.75em;
+  padding: 0.65em 0.8em;
+  border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-control);
-  background: var(--chat-fill-dim);
+  background: color-mix(in srgb, var(--chat-ink) 14%, var(--chat-panel));
 }
 
 .said.md pre code {
   padding: 0;
+  border: 0;
   background: none;
   font-size: 0.88em;
 }

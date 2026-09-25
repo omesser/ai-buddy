@@ -1,8 +1,5 @@
-// A them-side reply that contains inline and fenced code is drawn by
-// drawReply (the nodes are real) and still reads as prose, because the chip
-// and the fence are painted with the quiet fills. On Terminal the fence fill
-// is the panel. This drives the real Chat surface the way
-// scripts/chat-ask-order.mjs does and asserts the paint a reader sees.
+// The node stand-in in chat-markdown.test.js builds the nodes and cannot see
+// paint. This drives src/chat.html the way scripts/chat-ask-order.mjs does.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -35,16 +32,26 @@ function chromeBin() {
 const chrome = chromeBin();
 
 function channel(color) {
-  const matched = String(color).match(
+  const text = String(color);
+  const rgb = text.match(
     /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\)/,
   );
-  assert.ok(matched, `unparsed color ${color}`);
-  const alpha = matched[4] === undefined ? 1 : Number(matched[4]);
+  if (rgb) {
+    return {
+      r: Number(rgb[1]),
+      g: Number(rgb[2]),
+      b: Number(rgb[3]),
+      a: rgb[4] === undefined ? 1 : Number(rgb[4]),
+    };
+  }
+  // Chrome serialises color-mix() as color(srgb …) with channels in 0..1.
+  const srgb = text.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+  assert.ok(srgb, `unparsed color ${color}`);
   return {
-    r: Number(matched[1]),
-    g: Number(matched[2]),
-    b: Number(matched[3]),
-    a: alpha,
+    r: Number(srgb[1]) * 255,
+    g: Number(srgb[2]) * 255,
+    b: Number(srgb[3]) * 255,
+    a: srgb[4] === undefined ? 1 : Number(srgb[4]),
   };
 }
 
