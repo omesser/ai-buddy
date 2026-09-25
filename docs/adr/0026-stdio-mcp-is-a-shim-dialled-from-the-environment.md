@@ -76,3 +76,18 @@ the same answer as before for a user with no app open, said out loud.
 Reversing this means a descriptor file with its permissions, staleness and
 cleanup, or accepting that a Harness which does not advertise the bit has no
 working tools.
+
+**A unix socket beside loopback is not that descriptor file (#1020).** A Harness
+that loads MCP servers only from its own approved config, `cursor-agent`, is
+handed neither variable: it passes nothing from its environment to a stdio
+server, and a token written into its config would be a secret at rest that also
+changes its approval hash every launch. So the app also serves the same dispatch
+on `<data_dir>/mcp.sock`, mode 0600, with no bearer token on that transport, and
+the config entry names only the shim and the socket path. The file this ADR
+rejected carried the token; this file carries none, so the permissions, staleness
+and cleanup it feared protect nothing and are not needed. The socket's mode is the
+same protection the token's environment relies on above: the same user, and no
+one else. The loopback path and the environment stay as they are for every other
+Harness. Windows has no unix sockets in Rust's standard library and the shim crate
+forbids `unsafe`, so a named pipe is out of scope there and `cursor-agent` on
+Windows keeps the gap.

@@ -200,7 +200,7 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `codex` | yes | yes | yes | http | two: API Key, ChatGPT |
 | `copilot` | yes | yes | yes | http | one: Log in with Copilot CLI |
-| `cursor-agent` | yes | no | no | stdio | one: `cursor_login` |
+| `cursor-agent` | yes | no | no | stdio, through its own config | one: `cursor_login` |
 | `grok` | yes | yes | yes | http | three: xai.api_key, cached_token, Grok |
 | `goose` | yes | yes | yes | http | one: Configure Provider |
 | `opencode` | yes | yes | yes | http | Login with opencode |
@@ -208,7 +208,7 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `cursor-agent`, `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` advertises no HTTP MCP. `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `cursor-agent`, `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` also ignores the `mcpServers` it is handed, so ai-buddy writes that binary into `<cwd>/.cursor/mcp.json` with a token-less unix socket to dial and runs `cursor-agent mcp enable ai-buddy` before each attach (#1020); on Windows that route is absent and `cursor-agent` gets no tools. `pi` advertises no HTTP MCP. `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
