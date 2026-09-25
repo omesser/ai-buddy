@@ -6,6 +6,7 @@
 const DISPLAY_NAMES = {
   claude: "Claude Code",
   codex: "Codex",
+  copilot: "GitHub Copilot",
   "cursor-agent": "Cursor",
   goose: "Goose",
   grok: "Grok",
@@ -26,6 +27,7 @@ function installUrlFor(missing, harnessName) {
   const urls = {
     hermes: "https://hermes-agent.nousresearch.com/",
     goose: "https://goose-docs.ai/docs/getting-started/installation/",
+    copilot: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
     "cursor-agent": "https://www.cursor.com/",
     grok: "https://x.ai/",
     opencode: "https://opencode.ai/",

@@ -306,12 +306,12 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 /// What to paste to point a Harness the user runs themselves at this app's
 /// MCP server, and what to do with it, as (snippet, instructions, raw_token).
 ///
-/// Pure, because the seven registration shapes are the whole of what can be
-/// wrong here: each was checked against the installed CLI in #580 and #636,
-/// and a typo in one fails at the Harness rather than anywhere this code can
-/// see.
+/// Pure, because the eight registration shapes are the whole of what can be
+/// wrong here: each was checked against the installed CLI in #580, #636 and
+/// #1016, and a typo in one fails at the Harness rather than anywhere this
+/// code can see.
 ///
-/// The token goes in raw, without `Bearer `. Five of the seven templates add
+/// The token goes in raw, without `Bearer `. Six of the eight templates add
 /// that prefix themselves, so a pre-prefixed token reads `Bearer Bearer` in
 /// the other two.
 ///
@@ -320,7 +320,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 /// copy field.
 ///
 /// A name the popup cannot offer - blank, `custom`, a hand-edited file - gets
-/// the pair on its own, because the pair is all any of the seven templates is
+/// the pair on its own, because the pair is all any of the eight templates is
 /// made of.
 fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, String) {
     match harness {
@@ -356,6 +356,24 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
              \"Authorization\" = \"Bearer {token}\" }}`."
                 .to_string(),
             String::new(), // Token already in snippet (export)
+        ),
+        // The remove is not optional: `copilot mcp add` refuses a name it
+        // already holds (exit 1, "already exists. To update it, remove it
+        // first"), and both the URL and the token change every launch. Whether
+        // a running session re-reads `mcp-config.json` was not measured, so
+        // the steps ask for a new one.
+        "copilot" => (
+            format!(
+                "copilot mcp remove ai-buddy 2>/dev/null\n\
+                 copilot mcp add --transport http ai-buddy \"{url}\" \
+                 --header \"Authorization: Bearer {token}\""
+            ),
+            "Run both lines in a terminal, then start a new `copilot` session. The \
+             remove is not optional: `copilot mcp add` refuses a name it already \
+             holds. This writes `~/.copilot/mcp-config.json` (user scope). \
+             `copilot mcp list` says whether it is registered."
+                .to_string(),
+            String::new(), // Token already in snippet
         ),
         "cursor-agent" => (
             format!(
@@ -1802,10 +1820,10 @@ pub struct Settings {
     /// wait from here; this is only where it starts (#262).
     pub director_wake_secs: String,
     /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
-    /// empty for none, a preset name (`claude`, `codex`, `cursor-agent`,
-    /// `goose`, `grok`, `hermes`, `opencode`, `pi`), or `custom`, which defers to
-    /// `harness_command`. The variable outranks it, and either way
-    /// `harness::retarget` reaches the attachment now (#500).
+    /// empty for none, a preset name (`claude`, `codex`, `copilot`,
+    /// `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`), or
+    /// `custom`, which defers to `harness_command`. The variable outranks it,
+    /// and either way `harness::retarget` reaches the attachment now (#500).
     pub harness: String,
     /// The command line `custom` runs, split on whitespace as the variable's
     /// own value is. Kept when a preset is picked, so coming back to Custom
@@ -4771,8 +4789,8 @@ mod tests {
                     );
                 }
                 _ => {
-                    // Claude, Cursor, Grok, OpenCode, Pi: snippet still has
-                    // Bearer+token
+                    // Claude, Copilot, Cursor, Grok, OpenCode, Pi: snippet
+                    // still has Bearer+token
                     assert!(
                         snippet.contains("Bearer beef"),
                         "{harness} must carry Bearer and the token in snippet, got {snippet:?}"
@@ -4921,7 +4939,7 @@ mod tests {
 
     /// A harness name the popup cannot offer - blank, `custom`, or a
     /// hand-edited file - still gets the pair, because that is all any of the
-    /// seven templates is made of.
+    /// eight templates is made of.
     #[test]
     fn an_unknown_harness_still_gets_the_url_and_the_token() {
         let (snippet, steps, _token) =
