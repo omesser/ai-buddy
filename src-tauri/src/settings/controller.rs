@@ -377,6 +377,25 @@ mod tests {
         });
     }
 
+    /// A checkbox is an immediate row: the tick is a write, not a draft. The
+    /// wire answer for that write is pinned in `main.rs` (#995); this is the
+    /// decision it answers for.
+    #[test]
+    fn a_checkbox_tick_is_an_apply() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view();
+            let description = form::describe();
+            let draft = drawn(&view, &description);
+            let event = Event::SetBool {
+                id: form::DND_ID.into(),
+                value: true,
+            };
+            let mut expected = SettingsPatch::default();
+            expected.set_bool(crate::settings::BoolField::DoNotDisturb, true);
+            assert_eq!(handle(&event, &draft, &view), Outcome::Apply(expected));
+        });
+    }
+
     /// New session carries no row, so a half-typed endpoint beside it survives
     /// the click (#679).
     #[test]
