@@ -113,6 +113,11 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             value,
             vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
+        // `copilot` alone is the interactive TUI. `--acp` is the documented
+        // ACP-over-stdio flag ("Start as Agent Client Protocol server"). The
+        // `--stdio` the README used to name is absent from `--help` and
+        // changes nothing: with or without it, `initialize` answers the same.
+        "copilot" => (value, vec!["copilot", "--acp"]),
         // `acp` is absent from `cursor-agent --help`, which lists `agent`,
         // `login` and `mcp`. It answers `initialize` all the same.
         "cursor-agent" => (value, vec!["cursor-agent", "acp"]),
@@ -1590,6 +1595,7 @@ fn not_installed(command: &str) -> String {
         // The ACP registry still names https://block.github.io/goose/, which
         // now redirects to goose-docs.ai. The install page is the CLI instructions.
         "goose" => " Install Goose from https://goose-docs.ai/docs/getting-started/installation/.",
+        "copilot" => " Install GitHub Copilot CLI from https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli.",
         "cursor-agent" => " Install Cursor from https://www.cursor.com/.",
         "grok" => " Install Grok from https://x.ai/.",
         "opencode" => " Install OpenCode from https://opencode.ai/.",
@@ -1629,6 +1635,8 @@ fn named_login(name: &str) -> Option<&'static str> {
     Some(match name {
         "claude" => "claude /login",
         "codex" => "codex login",
+        // The one `authMethods` entry, `copilot-login`, describes this line.
+        "copilot" => "copilot login",
         // Not the line the handshake offers. Cursor describes "agent login",
         // and `agent` is what the binary calls itself, not the `cursor-agent`
         // the installer puts on `PATH`. Following it verbatim is a command not found.
@@ -2412,6 +2420,9 @@ mod tests {
             launch(Some("codex")).unwrap().argv,
             ["npx", "-y", "@agentclientprotocol/codex-acp@latest"]
         );
+        let copilot = launch(Some("copilot")).unwrap();
+        assert_eq!(copilot.name, "copilot");
+        assert_eq!(copilot.argv, ["copilot", "--acp"]);
         assert_eq!(
             launch(Some("grok")).unwrap().argv,
             ["grok", "agent", "stdio"]
@@ -2784,6 +2795,7 @@ mod tests {
         for name in [
             "claude",
             "codex",
+            "copilot",
             "cursor-agent",
             "goose",
             "grok",
@@ -4030,14 +4042,15 @@ mod tests {
 
     /// Documents the missing-binary contract: `missing` = `argv[0]` for every
     /// preset. npx adapters (claude, codex, pi) report `npx` missing, not the
-    /// vendor CLI. First-party CLIs (cursor-agent, goose, grok, hermes,
-    /// opencode) report their own name.
+    /// vendor CLI. First-party CLIs (copilot, cursor-agent, goose, grok,
+    /// hermes, opencode) report their own name.
     #[test]
     fn each_preset_reports_its_argv_0_as_missing() {
         let cases = [
             ("claude", "npx"),
             ("codex", "npx"),
             ("pi", "npx"),
+            ("copilot", "copilot"),
             ("cursor-agent", "cursor-agent"),
             ("goose", "goose"),
             ("grok", "grok"),
@@ -4059,6 +4072,7 @@ mod tests {
             ("npx", "nodejs.org"),
             ("hermes", "hermes-agent.nousresearch.com"),
             ("goose", "goose-docs.ai/docs/getting-started/installation"),
+            ("copilot", "docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli"),
             ("cursor-agent", "cursor.com"),
             ("grok", "x.ai"),
             ("opencode", "opencode.ai"),
@@ -4429,6 +4443,7 @@ mod tests {
         for name in [
             "claude",
             "codex",
+            "copilot",
             "cursor-agent",
             "goose",
             "grok",

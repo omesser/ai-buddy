@@ -54,12 +54,12 @@ belongs to [ADR-0023](./0023-app-dispatches-its-own-tools.md): a Harness that
 can use the app's own server reaches the live Instances, and one that cannot is
 answered by a stub.
 
-Protocol-compatible harnesses not yet named (GitHub Copilot CLI) are reachable
-through the custom command and earn a named row once a turn has been smoked
-against them. Protocol compatibility alone does not earn the row: Copilot CLI
-has it and is still not named. Google is not among them: Antigravity (`agy`)
-speaks its own protocol rather than ACP, so it needs an adapter before any row
-(#604).
+A protocol-compatible harness not yet named is reachable through the custom
+command and earns a named row once a turn has been smoked against it.
+Protocol compatibility alone does not earn the row: Copilot CLI had it from
+the start and was named only once smoked (#1016). Google has none:
+Antigravity (`agy`) speaks its own protocol rather than ACP, so it needs an
+adapter before any row (#604).
 Their always-approve or auto-approve flags are never passed by default — the
 Chat surface owns permissions.
 

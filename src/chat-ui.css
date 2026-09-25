@@ -67,6 +67,10 @@
 
   --claude-accent: #E8A78A;
   --codex-accent: #26C399;
+  /* Simple Icons gives GitHub Copilot #000000, the same ground Cursor's is
+     lifted off. Primer's dark-theme foreground, which stays cool next to the
+     warm --cursor-agent-accent and the slate --grok-accent. */
+  --copilot-accent: #C9D1D9;
   /* Simple Icons gives Cursor #000000, which is the ground here rather than
      an accent. Lifted to a warm light grey, which also keeps it off
      --grok-accent, the other neutral on the row. */
@@ -103,6 +107,8 @@
 
     --claude-accent: #C86D4F;
     --codex-accent: #169b85;
+    /* Primer's light-theme muted foreground; #C9D1D9 vanishes on white. */
+    --copilot-accent: #57606A;
     --cursor-agent-accent: #7A7469;
     --grok-accent: #4A6B82;
     --opencode-accent: #4A72D0;
@@ -1432,6 +1438,17 @@ body {
 }
 .empty .connect-btn[data-harness="codex"] .connect-icon {
   color: var(--codex-accent);
+}
+
+.empty .connect-btn[data-harness="copilot"] {
+  border-color: color-mix(in srgb, var(--copilot-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="copilot"]:hover {
+  background: color-mix(in srgb, var(--copilot-accent) 10%, var(--chat-fill));
+  border-color: var(--copilot-accent);
+}
+.empty .connect-btn[data-harness="copilot"] .connect-icon {
+  color: var(--copilot-accent);
 }
 
 .empty .connect-btn[data-harness="cursor-agent"] {
