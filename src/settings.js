@@ -394,6 +394,25 @@ export function processResponse(response) {
   }
 }
 
+// The batched rows' draft, keyed by row id, between a keystroke and Apply or
+// Cancel. A tab switch redraws the panel from the snapshot, so the draft is
+// what the redraw is handed over it. Exported so the round trip has a test
+// without a browser (#995).
+export function foldDraft(draft, outcome) {
+  if (!outcome || outcome === true) return draft;
+  if (outcome.reset) return {};
+  const next = { ...draft };
+  if (outcome.clearKey) delete next.director_api_key;
+  if (outcome.fill) next[outcome.fill.id] = outcome.fill.value;
+  return next;
+}
+
+// A draft entry the store already holds is no draft: after a refresh it would
+// mask a later external write to the same row.
+export function pruneDraft(draft, values) {
+  return Object.fromEntries(Object.entries(draft).filter(([id, value]) => value !== values[id]));
+}
+
 export async function handleEvent(payload) {
   const response = await invokeSettingsEvent(payload);
   return processResponse(response);
@@ -502,8 +521,6 @@ if (typeof document !== "undefined") {
   let currentValues = null;
   let currentTabIndex = 0;
   let lastSnapshotPromise = null;
-  // Batched rows, keyed by row id, until Apply or Cancel. A tab switch redraws
-  // the panel, so what the user typed there has to live outside the widgets.
   let draft = {};
 
   function stage(id, value) {
@@ -517,9 +534,7 @@ if (typeof document !== "undefined") {
         if (lastSnapshotPromise === currentLoad) {
           currentForm = snapshot.form;
           currentValues = snapshot.view;
-          for (const id of Object.keys(draft)) {
-            if (draft[id] === currentValues[id]) delete draft[id];
-          }
+          draft = pruneDraft(draft, currentValues);
           renderCurrentTab();
         }
       } catch (err) {
@@ -544,9 +559,7 @@ if (typeof document !== "undefined") {
     try {
       const outcome = await handleEvent(payload);
       await early;
-      if (outcome.reset) draft = {};
-      if (outcome.clearKey) delete draft.director_api_key;
-      if (outcome.fill) stage(outcome.fill.id, outcome.fill.value);
+      draft = foldDraft(draft, outcome);
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();
       } else if (await applyEventOutcome(outcome, currentValues, writeText)) {

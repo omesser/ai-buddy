@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { render } from "../src/settings.js";
+import { foldDraft, pruneDraft, render } from "../src/settings.js";
 
 function snapshot(name) {
   const read = (kind) =>
@@ -109,4 +109,43 @@ test("a batched row draws the draft it is handed, the key field included", () =>
 
   assert.equal(control("director_model").value, "gpt-5");
   assert.equal(control("director_api_key").value, "sk-draft");
+});
+
+// The regression in #995, as a tab switch does it: the page redraws the panel
+// from `{ ...snapshot, ...draft }`, so a batched edit survives only if it was
+// staged out of the widget and drawn back in.
+test("a staged Model survives the redraw a tab switch performs", () => {
+  let draft = {};
+  const first = draw(MODEL_API.values, () => {}, (id, value) => (draft = { ...draft, [id]: value }));
+  const model = first("director_model");
+  model.value = "gpt-5";
+  model.handlers.input?.();
+
+  const again = draw({ ...MODEL_API.values, ...draft });
+
+  assert.deepEqual(draft, { director_model: "gpt-5" });
+  assert.equal(again("director_model").value, "gpt-5");
+  assert.equal(again("director_base_url").value, "https://api.openai.com", "an untouched row still draws the snapshot");
+});
+
+test("a Base URL shortcut fill is drawn after the redraw, and Cancel drops it", () => {
+  const filled = foldDraft({}, { fill: { id: "director_base_url", value: "https://api.anthropic.com" } });
+  const drawnFilled = draw({ ...MODEL_API.values, ...filled });
+  assert.equal(drawnFilled("director_base_url").value, "https://api.anthropic.com");
+
+  const cancelled = foldDraft(filled, { reset: true });
+  assert.deepEqual(cancelled, {});
+  assert.equal(draw({ ...MODEL_API.values, ...cancelled })("director_base_url").value, "https://api.openai.com");
+});
+
+test("Clear key blanks only the key's draft entry", () => {
+  const draft = { director_api_key: "sk-draft", director_model: "gpt-5" };
+  assert.deepEqual(foldDraft(draft, { clearKey: true }), { director_model: "gpt-5" });
+  assert.deepEqual(foldDraft(draft, true), draft, "a plain refresh keeps the draft");
+  assert.deepEqual(foldDraft(draft, false), draft, "a no-op answer keeps the draft");
+});
+
+test("a fresh snapshot prunes the draft entries it already holds", () => {
+  const draft = { director_model: "gpt-4o-mini", harness: "Claude Code" };
+  assert.deepEqual(pruneDraft(draft, MODEL_API.values), { harness: "Claude Code" });
 });
