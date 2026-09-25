@@ -24,12 +24,18 @@
 //! loopback: the token is an authorisation to move the buddy, and a variable
 //! naming some other host would post it there.
 //!
+//! A Harness that hands a stdio server none of its environment (`cursor-agent`,
+//! #1020) names the app's unix socket in `args` instead: `--sock <path>`. No
+//! token travels on that transport; the socket's 0600 mode is what authorises.
+//!
 //! Anything that is not an answer — no variables, no app, a refused token, an
 //! oversized or unreadable body — is a JSON-RPC error on a request and a line
 //! on standard error on a notification. Reporting success while nothing moves
 //! is the bug this shim exists to end.
 
 use std::io::{BufRead, Write};
+#[cfg(unix)]
+use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
@@ -38,6 +44,11 @@ pub const URL_VAR: &str = "AI_BUDDY_MCP_URL";
 
 /// The app's per-run bearer token, in the environment rather than a file.
 pub const TOKEN_VAR: &str = "AI_BUDDY_MCP_TOKEN";
+
+/// The argument that names the app's unix socket, for a Harness that keeps
+/// its environment to itself. The path is not a secret, so it may sit in a
+/// config file on disk.
+pub const SOCK_FLAG: &str = "--sock";
 
 /// How long the app has to answer before the Harness is told it did not.
 /// Longer than the app's own wait for the frame loop, so its refusal wins the
@@ -55,19 +66,38 @@ const ANSWER_LIMIT: u64 = 1024 * 1024;
 /// puzzle.
 const LOOPBACK: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
 
-/// The running app's endpoint: the URL to POST to and the header that reaches
-/// it.
+/// The running app's endpoint: where to POST and what reaches it.
 ///
 /// Neither `Debug` nor `Serialize`, so the token cannot be formatted into a
 /// log line by accident — the same guard the app puts on its own endpoint.
 pub struct Endpoint {
-    url: String,
-    authorization: String,
+    transport: Transport,
+}
+
+enum Transport {
+    Http {
+        url: String,
+        authorization: String,
+    },
+    #[cfg(unix)]
+    Unix(PathBuf),
 }
 
 impl Endpoint {
-    /// Read the endpoint the app handed this process.
-    pub fn from_env() -> Result<Self, String> {
+    /// Read the endpoint the app handed this process: `--sock <path>` in
+    /// `args` first, else the two environment variables.
+    pub fn discover(args: impl Iterator<Item = String>) -> Result<Self, String> {
+        if let Some(path) = args.skip_while(|arg| arg != SOCK_FLAG).nth(1) {
+            #[cfg(unix)]
+            return Ok(Self {
+                transport: Transport::Unix(PathBuf::from(path)),
+            });
+            #[cfg(not(unix))]
+            {
+                let _ = path;
+                return Err(format!("{SOCK_FLAG}: no unix sockets on this platform"));
+            }
+        }
         let url = std::env::var(URL_VAR).map_err(|_| no_app(URL_VAR))?;
         let token = std::env::var(TOKEN_VAR).map_err(|_| no_app(TOKEN_VAR))?;
         Self::new(&url, &token)
@@ -86,37 +116,108 @@ impl Endpoint {
             return Err(format!("{URL_VAR} does not name this machine"));
         }
         Ok(Self {
-            url: url.to_string(),
-            authorization: format!("Bearer {token}"),
+            transport: Transport::Http {
+                url: url.to_string(),
+                authorization: format!("Bearer {token}"),
+            },
         })
     }
 
     /// POST one JSON-RPC message and return the app's body, empty where it
     /// answered a notification with nothing.
     fn post(&self, body: &str) -> Result<String, String> {
-        let mut response = ureq::post(&self.url)
-            .header("Authorization", &self.authorization)
-            .header("Content-Type", "application/json")
-            .config()
-            // A status is an answer to report, not a transport failure.
-            .http_status_as_error(false)
-            .timeout_global(Some(ANSWER_TIMEOUT))
-            .build()
-            .send(body)
-            // `why` names the failure, not the endpoint: the Harness captures
-            // this stream, and the port belongs in no log.
-            .map_err(|why| format!("ai-buddy is not answering: {why}"))?;
-        let code = response.status().as_u16();
-        if !(200..300).contains(&code) {
-            return Err(format!("ai-buddy refused the call: status {code}"));
+        match &self.transport {
+            Transport::Http { url, authorization } => post_http(url, authorization, body),
+            #[cfg(unix)]
+            Transport::Unix(path) => post_unix(path, body),
         }
-        response
-            .body_mut()
-            .with_config()
-            .limit(ANSWER_LIMIT)
-            .read_to_string()
-            .map_err(|why| format!("ai-buddy's answer could not be read: {why}"))
     }
+}
+
+fn post_http(url: &str, authorization: &str, body: &str) -> Result<String, String> {
+    let mut response = ureq::post(url)
+        .header("Authorization", authorization)
+        .header("Content-Type", "application/json")
+        .config()
+        // A status is an answer to report, not a transport failure.
+        .http_status_as_error(false)
+        .timeout_global(Some(ANSWER_TIMEOUT))
+        .build()
+        .send(body)
+        // `why` names the failure, not the endpoint: the Harness captures
+        // this stream, and the port belongs in no log.
+        .map_err(|why| format!("ai-buddy is not answering: {why}"))?;
+    let code = response.status().as_u16();
+    if !(200..300).contains(&code) {
+        return Err(format!("ai-buddy refused the call: status {code}"));
+    }
+    response
+        .body_mut()
+        .with_config()
+        .limit(ANSWER_LIMIT)
+        .read_to_string()
+        .map_err(|why| format!("ai-buddy's answer could not be read: {why}"))
+}
+
+/// One HTTP/1.1 POST by hand, because ureq dials TCP only. The same three
+/// failures as `post_http`, worded the same, so a Harness log reads alike.
+#[cfg(unix)]
+fn post_unix(path: &std::path::Path, body: &str) -> Result<String, String> {
+    use std::io::{BufReader, Read};
+    use std::os::unix::net::UnixStream;
+
+    let not_answering = |why: std::io::Error| format!("ai-buddy is not answering: {why}");
+    let mut stream = UnixStream::connect(path).map_err(not_answering)?;
+    stream
+        .set_read_timeout(Some(ANSWER_TIMEOUT))
+        .map_err(not_answering)?;
+    write!(
+        stream,
+        "POST /mcp HTTP/1.1\r\nHost: ai-buddy\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .map_err(not_answering)?;
+
+    let unreadable = |why: String| format!("ai-buddy's answer could not be read: {why}");
+    let mut reader = BufReader::new(stream);
+    let mut status = String::new();
+    reader
+        .read_line(&mut status)
+        .map_err(|why| unreadable(why.to_string()))?;
+    let code: u16 = status
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .ok_or_else(|| unreadable(format!("not an HTTP status line: {status:?}")))?;
+    let mut length = 0u64;
+    loop {
+        let mut line = String::new();
+        if reader
+            .read_line(&mut line)
+            .map_err(|why| unreadable(why.to_string()))?
+            == 0
+        {
+            return Err(unreadable("closed before the headers ended".to_string()));
+        }
+        if line.trim_end().is_empty() {
+            break;
+        }
+        if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = value.trim().parse().unwrap_or(0);
+        }
+    }
+    if !(200..300).contains(&code) {
+        return Err(format!("ai-buddy refused the call: status {code}"));
+    }
+    if length > ANSWER_LIMIT {
+        return Err(unreadable(format!("{length} bytes is past the limit")));
+    }
+    let mut answer = String::new();
+    reader
+        .take(length)
+        .read_to_string(&mut answer)
+        .map_err(|why| unreadable(why.to_string()))?;
+    Ok(answer)
 }
 
 fn no_app(var: &str) -> String {
@@ -156,7 +257,7 @@ pub fn relay(line: &str, endpoint: Result<&Endpoint, &str>) -> Option<String> {
 /// `run` still lives here so `ai-buddy --mcp-stdio` and the `ai-buddy-mcp`
 /// sidecar are one code path.
 pub fn run() {
-    let endpoint = Endpoint::from_env();
+    let endpoint = Endpoint::discover(std::env::args().skip(1));
     if let Err(why) = &endpoint {
         eprintln!("ai-buddy-mcp: {why}");
     }
@@ -198,35 +299,62 @@ mod tests {
         let (sent, seen) = mpsc::channel();
         thread::spawn(move || {
             let (stream, _) = listener.accept().expect("a connection");
-            let mut reader = BufReader::new(&stream);
-            let mut request = String::new();
-            let mut length = 0usize;
-            loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                    break;
-                }
-                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                    length = value.trim().parse().unwrap_or(0);
-                }
-                let end = line.trim().is_empty();
-                request.push_str(&line);
-                if end {
-                    break;
-                }
-            }
-            let mut payload = vec![0u8; length];
-            reader.read_exact(&mut payload).expect("the body");
-            request.push_str(&String::from_utf8_lossy(&payload));
-            let _ = sent.send(request);
-            let mut out = &stream;
-            let _ = write!(
-                out,
-                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-                body.len()
-            );
+            answer_one(&stream, status, &body, &sent);
         });
         (url, seen)
+    }
+
+    /// The same stand-in on a unix socket, at a path nothing else uses.
+    #[cfg(unix)]
+    fn fake_app_on_socket(
+        name: &str,
+        status: &'static str,
+        body: String,
+    ) -> (std::path::PathBuf, mpsc::Receiver<String>) {
+        let path =
+            std::env::temp_dir().join(format!("ai-buddy-mcp-{name}-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let listener = std::os::unix::net::UnixListener::bind(&path).expect("socket binds");
+        let (sent, seen) = mpsc::channel();
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("a connection");
+            answer_one(&stream, status, &body, &sent);
+        });
+        (path, seen)
+    }
+
+    fn answer_one(
+        mut stream: impl Read + Write,
+        status: &str,
+        body: &str,
+        sent: &mpsc::Sender<String>,
+    ) {
+        let mut reader = BufReader::new(&mut stream);
+        let mut request = String::new();
+        let mut length = 0usize;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                break;
+            }
+            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                length = value.trim().parse().unwrap_or(0);
+            }
+            let end = line.trim().is_empty();
+            request.push_str(&line);
+            if end {
+                break;
+            }
+        }
+        let mut payload = vec![0u8; length];
+        reader.read_exact(&mut payload).expect("the body");
+        request.push_str(&String::from_utf8_lossy(&payload));
+        let _ = sent.send(request);
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
     }
 
     /// Run `body` with the two endpoint variables exported, and restore them
@@ -318,7 +446,8 @@ mod tests {
         // The two variables the app sets on the MCP server entry it hands the
         // Harness.
         with_endpoint_env(Some(&url), Some("secret-token"), || {
-            let endpoint = Endpoint::from_env().expect("the environment names an app");
+            let endpoint =
+                Endpoint::discover(std::iter::empty()).expect("the environment names an app");
             let answer = relay(call, Ok(&endpoint)).expect("an answer");
             assert_eq!(answer, r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#);
         });
@@ -340,7 +469,10 @@ mod tests {
     #[test]
     fn an_environment_naming_no_app_is_an_error_rather_than_a_default() {
         with_endpoint_env(None, None, || {
-            assert!(Endpoint::from_env().is_err(), "invented an endpoint");
+            assert!(
+                Endpoint::discover(std::iter::empty()).is_err(),
+                "invented an endpoint"
+            );
         });
     }
 
@@ -412,5 +544,56 @@ mod tests {
         assert!(Endpoint::new("https://example.com/mcp", "token").is_err());
         assert!(Endpoint::new("http://127.0.0.1:9/mcp", "token").is_ok());
         assert!(Endpoint::new("http://[::1]:9/mcp", "token").is_ok());
+    }
+
+    /// `--sock <path>` in args wins over the environment, and nothing in the
+    /// request names a token: the socket's file mode is the authorization.
+    #[cfg(unix)]
+    #[test]
+    fn a_sock_flag_dials_the_socket_and_sends_no_token() {
+        let (path, seen) = fake_app_on_socket(
+            "live",
+            "200 OK",
+            r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#.to_string(),
+        );
+        let call = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
+        let args = [SOCK_FLAG.to_string(), path.display().to_string()];
+        let endpoint = Endpoint::discover(args.into_iter()).expect("the flag names a socket");
+        let answer = relay(call, Ok(&endpoint)).expect("an answer");
+        assert_eq!(answer, r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#);
+
+        let request = seen
+            .recv_timeout(ANSWER_TIMEOUT)
+            .expect("the app saw a request");
+        assert!(
+            request.starts_with("POST /mcp HTTP/1.1\r\n"),
+            "wrong request line: {request}"
+        );
+        assert!(
+            !request.to_ascii_lowercase().contains("authorization:"),
+            "a token header on the socket: {request}"
+        );
+        assert!(request.ends_with(call), "body was not relayed: {request}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_socket_nobody_listens_on_answers_an_error_not_a_success() {
+        let path =
+            std::env::temp_dir().join(format!("ai-buddy-mcp-dead-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let args = [SOCK_FLAG.to_string(), path.display().to_string()];
+        let endpoint = Endpoint::discover(args.into_iter()).expect("the flag names a socket");
+        let answer = relay(
+            r#"{"jsonrpc":"2.0","id":5,"method":"initialize"}"#,
+            Ok(&endpoint),
+        )
+        .expect("a request is answered");
+        assert_eq!(
+            serde_json::from_str::<Value>(&answer).unwrap()["id"],
+            json!(5)
+        );
+        error_in(&answer);
     }
 }
