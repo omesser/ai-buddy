@@ -74,7 +74,6 @@ pub struct Endpoint {
     pub url: String,
     token: String,
     /// The unix socket path. `None` on Windows and when the bind failed.
-    #[expect(dead_code, reason = "read once the harness hands it to cursor-agent")]
     pub sock: Option<PathBuf>,
 }
 
@@ -131,8 +130,16 @@ pub fn endpoint() -> Option<Endpoint> {
     ENDPOINT.get().cloned().flatten()
 }
 
+#[cfg(not(test))]
 fn data_sock() -> PathBuf {
     ai_buddy_core::memory::data_dir().join("mcp.sock")
+}
+
+/// The test binary calls `serve` too, and binding the real path would take
+/// the socket out from under a running app.
+#[cfg(test)]
+fn data_sock() -> PathBuf {
+    std::env::temp_dir().join(format!("ai-buddy-{}-serve.sock", std::process::id()))
 }
 
 /// `sock` is a parameter so a test never binds the running app's socket.
