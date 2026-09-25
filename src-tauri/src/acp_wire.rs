@@ -417,6 +417,9 @@ impl Wire {
                 Ok(Progress::Asked) => deadline = None,
                 Ok(Progress::Settled) => deadline = Some(Instant::now() + timeout),
                 Err(RecvTimeoutError::Disconnected) => return Err(TurnError::Lost),
+                // An ask that lands in the same instant the budget runs out is
+                // cancelled with it. A Harness that spent the whole budget
+                // before asking was a stall until that instant.
                 Err(RecvTimeoutError::Timeout) => {
                     let _ = self.tx.send(Msg::Cancel);
                     let grace = Instant::now() + CANCEL_GRACE;
