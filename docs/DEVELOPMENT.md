@@ -98,6 +98,12 @@ node --test tests/*.test.js     # Renderer interpolation
 scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
 scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
+node scripts/chat-ask-order.mjs # Chat surface in headless Chromium: a typed turn, an ask, the answer under it
+```
+
+`chat-ask-order.mjs` loads the real `src/chat.html` with `window.__TAURI__` stubbed, so it runs with no app and activates no window. It needs a headless Chromium; `AI_BUDDY_CHROME` names one other than Playwright's shell.
+
+```sh
 scripts/verify-settings-webview-select-macos.sh  # macOS: <select> above overlay (#849)
 scripts/verify-settings-keyboard-webview.sh  # macOS: keyboard-only Settings (#848)
 scripts/verify-settings-webview-clipboard-macos.sh  # macOS: Copy writes the pasteboard (#855)
