@@ -90,27 +90,34 @@ test("the Chat control collapses thinking and remembers that preference", () => 
   assert.equal(next.toggle.attributes["aria-expanded"], "false");
 });
 
-// The wire sends the last few lines joined by newlines, the last of them still
-// being written (#994). Expanded shows them all; collapsed is one line, the
-// newest.
+// The wire sends the whole thought, blank lines included, the last line still
+// being written (#994). Expanded shows all of it, past the five the box
+// scrolls; collapsed is one line, the newest.
 test("a thought of several lines collapses to the newest one", () => {
   const { root, text, toggle } = thoughtRoot();
   const strip = mountThoughtStrip(root, memoryStorage());
 
-  strip.thinking("Reading the roster.\nChecking the desk.\nWeighing a nap");
-  assert.equal(text.textContent, "Reading the roster.\nChecking the desk.\nWeighing a nap");
+  const full = [
+    "Reading the roster.",
+    "",
+    "Checking the desk.",
+    "Weighing a nap",
+    "against the desk.",
+    "Counting the windows.",
+    "Naming the display.",
+  ].join("\n");
+  strip.thinking(full);
+  assert.equal(text.textContent, full);
 
   toggle.click();
-  assert.equal(text.textContent, "Weighing a nap");
+  assert.equal(text.textContent, "Naming the display.");
 
-  strip.thinking("Reading the roster.\nChecking the desk.\nWeighing a nap against the desk.");
-  assert.equal(text.textContent, "Weighing a nap against the desk.");
+  const written = full.replace(/Naming the display\.$/, "Naming the display.\nPicking a spot.");
+  strip.thinking(written);
+  assert.equal(text.textContent, "Picking a spot.");
 
   toggle.click();
-  assert.equal(
-    text.textContent,
-    "Reading the roster.\nChecking the desk.\nWeighing a nap against the desk.",
-  );
+  assert.equal(text.textContent, written);
 });
 
 // A guard on the stylesheet, not on behavior: `node --test` has no layout

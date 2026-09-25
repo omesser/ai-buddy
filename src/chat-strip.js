@@ -1,7 +1,9 @@
 // The transient strip above the Chat composer, as a rule rather than as DOM,
 // so node can drive the orderings a window does not reproduce on demand. The
 // strip is for the Harness's thinking only (ADR-0025). A thought arrives as
-// the wire's last few lines joined by newlines, the last still being written.
+// the whole text so far, newlines and blank lines included, the last line
+// still being written. The box is five lines tall and scrolls; collapsed
+// chrome shows only the newest line.
 
 // Precedence: a thought wins while there is one; the empty thought that ends a
 // turn clears it; the user's next line clears it.
