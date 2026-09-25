@@ -40,11 +40,11 @@ const OPENING = {
 
 const ASK = {
   request: "5",
-  title: "mcp__ai-buddy__list_windows",
-  kind: "other",
-  content: [],
+  title: "Open Calculator",
+  kind: "execute",
+  content: ["open -a Calculator"],
   input: null,
-  locations: [],
+  locations: ["/Applications/Calculator.app"],
   options: [
     { id: "allow-once", name: "Yes", kind: "allow_once" },
     { id: "allow-with-updates", name: "Yes, and don't ask again", kind: "allow_always" },
@@ -93,9 +93,12 @@ const stub = `
       who: row.querySelector(".who-label")?.textContent ?? "",
       said: row.querySelector(".said")?.textContent.trim().slice(0, 60) ?? "",
       ask: row.classList.contains("ask"),
+      code: row.querySelector(".said > code")?.textContent ?? "",
+      metadata: row.querySelector(".ask-metadata")?.textContent ?? "",
     }));
     const out = document.createElement("pre");
     out.id = "rows";
+    out.hidden = true;
     out.textContent = JSON.stringify(rows);
     document.body.append(out);
   }
@@ -121,7 +124,7 @@ const run = spawnSync(
   ],
   { encoding: "utf8", maxBuffer: 1 << 24 },
 );
-const match = run.stdout.match(/<pre id="rows">(.*?)<\/pre>/s);
+const match = run.stdout.match(/<pre\b[^>]*id="rows"[^>]*>(.*?)<\/pre>/s);
 if (!match) {
   console.error("the harness never reported; chromium said:", run.stderr.slice(-2000));
   process.exit(2);
@@ -136,8 +139,12 @@ if (askAt === -1 || answerAt === -1) {
   console.error("expected both an ask row and the answer row");
   process.exit(2);
 }
+if (rows[askAt].code !== "open -a Calculator" || rows[askAt].metadata !== "execute · /Applications/Calculator.app") {
+  console.error("FAIL: the command is not code with separate metadata");
+  process.exit(1);
+}
 if (answerAt < askAt) {
   console.error(`FAIL: the answer (row ${answerAt + 1}) sits above the ask it followed (row ${askAt + 1})`);
   process.exit(1);
 }
-console.log("ok: the answer landed below the ask");
+console.log("ok: the command is code and the answer landed below the ask");

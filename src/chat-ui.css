@@ -1275,6 +1275,27 @@ body {
 
 /* A forwarded permission or elicitation request: the options as buttons.
    Drawn from the Instance's side like an answer, because it is asking. */
+.row.ask .ask-code,
+.row.ask .ask-prose {
+  display: block;
+  margin-block: 0.35em;
+}
+
+.row.ask .ask-code {
+  padding: 0.35em 0.5em;
+  border: 1px solid var(--chat-rule);
+  border-radius: var(--chat-radius-badge);
+  background: var(--chat-fill-soft);
+  font-family: var(--chat-mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.row.ask .ask-metadata {
+  color: var(--chat-ink-4);
+  font-size: 0.85em;
+}
+
 .row.ask .options {
   display: flex;
   /* One answer per line, as the Harness lists them. A wrapping row drops No under Yes. */

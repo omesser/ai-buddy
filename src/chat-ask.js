@@ -1,10 +1,10 @@
-// What a permission ask says, as the text the consent row draws. Its own
+// What a permission ask says, as parts the consent row draws. Its own
 // module because chat.js reaches window.__TAURI__ as it loads and cannot be
 // imported outside a webview; this can, so it has a test.
 
 // Everything but the copy here is untrusted: `title`, `content`, `input` and
 // `locations` come from the Harness, and an MCP server can steer all four. The
-// caller writes the result with `textContent` and this file produces no markup.
+// caller writes each part with `textContent` and this file produces no markup.
 
 // How much of an ask the row may draw, in characters: about eleven wrapped
 // lines in a 420-point window, enough for a question and its arguments, short
@@ -65,15 +65,47 @@ function argumentLines(input) {
   return first(named, ARGUMENTS, "arguments");
 }
 
+function withinBudget(title, details, metadata) {
+  const parts = [
+    { kind: "title", value: title },
+    ...details.map(({ text, code }) => ({ kind: "detail", value: text, code })),
+    { kind: "metadata", value: metadata },
+  ].filter(({ value }) => value);
+  const shown = [];
+  let remaining = DETAIL_LIMIT;
+  for (const part of parts) {
+    const available = remaining - (shown.length ? 1 : 0);
+    if (available <= 0) {
+      break;
+    }
+    const value = part.value.slice(0, available);
+    shown.push({ kind: part.kind, value, code: part.code });
+    remaining = available - value.length;
+    if (value.length < part.value.length) {
+      break;
+    }
+  }
+  if (shown.length < parts.length || shown.at(-1)?.value.length < parts.at(-1)?.value.length) {
+    const last = shown.at(-1);
+    last.value = `${last.value.slice(0, -1)}…`;
+  }
+  return {
+    title: shown.find(({ kind }) => kind === "title")?.value ?? "",
+    details: shown.filter(({ kind }) => kind === "detail").map(({ value, code }) => ({ text: value, code })),
+    metadata: shown.find(({ kind }) => kind === "metadata")?.value ?? "",
+  };
+}
+
 export function askSays(ask) {
   // The title is untrusted too, and a verbose one would spend the row's budget
   // before the question arrived, from a merely chatty server.
-  const said = [clamp(flat(ask?.title ?? ""), VALUE_LIMIT)];
+  const title = clamp(flat(ask?.title ?? ""), VALUE_LIMIT);
   const content = (ask?.content ?? []).map(flat).filter(Boolean);
-  // Content first: it is where a question's own words arrive. The arguments
-  // are the fallback, and never both: a tool that sends its question as
-  // content usually repeats it in `input`, and the row cannot say anything twice.
-  said.push(...(content.length > 0 ? content : argumentLines(ask?.input)));
+  // Content takes precedence over repeated input. It can be a prose question;
+  // only execute content is a command. Fallback arguments are always code.
+  const details = content.length > 0
+    ? content.map((text) => ({ text, code: ask?.kind === "execute" }))
+    : argumentLines(ask?.input).map((text) => ({ text, code: true }));
 
   const paths = (ask?.locations ?? [])
     .map((where) => clamp(flat(where), VALUE_LIMIT))
@@ -86,14 +118,13 @@ export function askSays(ask) {
     .filter(Boolean)
     .join(" · ");
 
-  const body = said.filter(Boolean).join("\n");
   // A kind on its own is not an answer to "what am I approving": it names a
   // category, and the whole bug was a row that offered one in place of the
   // question. A path on its own is a fact worth drawing.
-  if (body === "" && paths.length === 0) {
-    return SILENT;
+  if (!title && details.length === 0 && paths.length === 0) {
+    return { title: SILENT, details: [], metadata: "" };
   }
-  return clamp([body, about].filter(Boolean).join("\n"), DETAIL_LIMIT);
+  return withinBudget(title, details, about);
 }
 
 // An elicitation form's question. Same flattening as a permission ask: the
