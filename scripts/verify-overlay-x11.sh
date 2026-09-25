@@ -161,7 +161,7 @@ done
 if echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR"; then
   log_info "EWMH states verified"
 else
-  log_info "WARN: EWMH properties not reflected by WM (app configured them: $(grep 'EWMH configured' "$TRACE_LOG" | wc -l) times)"
+  log_info "WARN: EWMH properties not reflected by WM (app configured them: $(grep -c 'EWMH configured' "$TRACE_LOG") times)"
   log_info "WARN: Continuing with overlay presence verified through frame logs"
 fi
 
