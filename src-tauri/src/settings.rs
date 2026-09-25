@@ -135,6 +135,7 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
             form::DIRECTOR_BLANK_ID.to_string(),
             dev_flags::DIRECTOR_BLANK.in_force(settings.director_blank),
         ),
+        (form::PI_PROJECT_MCP_ID.to_string(), settings.pi_project_mcp),
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         (
             form::CAPTURABLE_ID.to_string(),
@@ -1198,6 +1199,12 @@ impl SettingsSession {
         let prompt_wt = patch.use_window_names == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
+        {
+            let settings = self.settings.lock().map_err(|error| error.to_string())?;
+            let mut next = settings.clone();
+            next.apply(patch.clone());
+            sync_pi_project_mcp(&next)?;
+        }
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
@@ -1369,6 +1376,8 @@ pub struct SettingsPatch {
     pub byo_harness: Option<String>,
     pub mcp_bin: Option<String>,
     pub harness_cwd: Option<String>,
+    #[serde(default)]
+    pub pi_project_mcp: Option<bool>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
@@ -1410,6 +1419,8 @@ pub enum BoolField {
     TraceDirector,
     TraceEngine,
     DirectorBlank,
+    /// Apply writes the project `.mcp.json` when Pi is the Harness. Default on.
+    PiProjectMcp,
     /// macOS and Windows support capture exclusion. The patch field itself is
     /// not gated: the file carries it anywhere.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -1475,6 +1486,7 @@ impl SettingsPatch {
             BoolField::TraceDirector => self.trace_director = Some(value),
             BoolField::TraceEngine => self.trace_engine = Some(value),
             BoolField::DirectorBlank => self.director_blank = Some(value),
+            BoolField::PiProjectMcp => self.pi_project_mcp = Some(value),
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
@@ -1698,6 +1710,9 @@ impl Settings {
         if let Some(value) = patch.director_blank {
             self.director_blank = value;
         }
+        if let Some(value) = patch.pi_project_mcp {
+            self.pi_project_mcp = value;
+        }
         if let Some(value) = patch.capturable {
             self.capturable = value;
         }
@@ -1752,6 +1767,28 @@ impl Settings {
 /// that `parse_hotkey` reads on every OS; what a user reads is
 /// `display_hotkey`, in the words that OS gives the keys (#194).
 pub const DEFAULT_HIDE_HOTKEY: &str = "Control-Option-Command-B";
+
+fn default_pi_project_mcp() -> bool {
+    true
+}
+
+/// The project file for an Apply that is about to attach Pi, when the hatch
+/// is on. A missing endpoint or a file we cannot edit fails the Apply before
+/// the Harness moves.
+fn sync_pi_project_mcp(settings: &Settings) -> Result<(), String> {
+    let launch = crate::harness::from_settings(settings.harness_source().as_deref());
+    let pi = launch.as_ref().is_some_and(|launch| launch.name == "pi");
+    if !pi || !settings.pi_project_mcp {
+        return Ok(());
+    }
+    if crate::mcp_http::endpoint().is_none() {
+        return Err(
+            "Pi's project file was left alone: this launch has no MCP endpoint".to_string(),
+        );
+    }
+    let dir = crate::harness::attach_dir(&settings.harness_cwd)?;
+    crate::pi_mcp::sync_project_file(&dir)
+}
 
 /// Everything settings owns. Defaults are the v1 first-run answers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1832,6 +1869,10 @@ pub struct Settings {
     /// ACP cwd / spawn dir. Empty is the data folder. Session file and Action
     /// Log stay in the data folder (#782).
     pub harness_cwd: String,
+    /// Apply writes the project `.mcp.json` when the attached Harness is Pi.
+    /// On, including for a file that predates the field.
+    #[serde(default = "default_pi_project_mcp")]
+    pub pi_project_mcp: bool,
     /// Development switches. Off is the shipped answer for all of them; see
     /// `dev_flags`, which holds the live value each read site loads.
     pub trace_frames: bool,
@@ -1900,6 +1941,7 @@ impl Default for Settings {
             byo_harness: String::new(),
             mcp_bin: String::new(),
             harness_cwd: String::new(),
+            pi_project_mcp: true,
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -2156,6 +2198,7 @@ mod tests {
             byo_harness: "hermes".into(),
             mcp_bin: "/opt/ai-buddy-mcp".into(),
             harness_cwd: String::new(),
+            pi_project_mcp: true,
             trace_frames: true,
             trace_hittest: true,
             trace_director: true,
@@ -2234,6 +2277,7 @@ mod tests {
         let settings = Settings::load(&path);
         assert!(settings.director_base_url.is_empty());
         assert!(settings.director_model.is_empty());
+        assert!(settings.pi_project_mcp);
         let _ = fs::remove_file(&path);
     }
 
@@ -2489,6 +2533,7 @@ mod tests {
             byo_harness: String::new(),
             mcp_bin: String::new(),
             harness_cwd: String::new(),
+            pi_project_mcp: true,
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,

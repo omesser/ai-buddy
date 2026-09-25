@@ -148,12 +148,22 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
 }
 
 impl Launch {
-    /// The child, inheriting our environment untouched. ADR-0010. No provider
-    /// key, no `CLAUDE_CONFIG_DIR`, no `--bare`. Own process group once
-    /// `own_interrupt` has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
+    /// The child, inheriting our environment. ADR-0010. No provider key, no
+    /// `CLAUDE_CONFIG_DIR`, no `--bare`. The `pi` preset adds the loopback URL
+    /// and token, because `pi-acp` forwards `process.env` to `pi` and the
+    /// project file names those variables instead of the values. Own process
+    /// group once `own_interrupt` has taken Ctrl+C, so a SIGINT on `cargo run`
+    /// misses it.
     fn command(&self, cwd: &AttachCwd) -> Command {
         let mut command = Command::new(&self.argv[0]);
         command.args(&self.argv[1..]).current_dir(cwd.as_path());
+        if self.name == "pi" {
+            if let Some(endpoint) = crate::mcp_http::endpoint() {
+                let (url, token) = endpoint.registration();
+                command.env(ai_buddy_mcp_server::URL_VAR, url);
+                command.env(ai_buddy_mcp_server::TOKEN_VAR, token);
+            }
+        }
         isolate_from_interrupt(&mut command);
         command
     }
@@ -205,7 +215,30 @@ fn attach_cwd_display(cwd: &Result<AttachCwd, CwdError>) -> String {
 /// `AI_BUDDY_HARNESS_CWD` first, because a row the environment owns runs
 /// somewhere else again.
 pub(crate) fn attach_cwd_placeholder() -> String {
-    attach_cwd_display(&AttachCwd::resolve(&crate::model::env_or_file(CWD, "")))
+    project_dir_label("")
+}
+
+/// The path a project `.mcp.json` would be written under, or the reason that
+/// path is not a directory spawn would accept. Does not create anything.
+pub(crate) fn project_dir_label(raw: &str) -> String {
+    attach_cwd_display(&AttachCwd::resolve(&crate::model::env_or_file(CWD, raw)))
+}
+
+/// The directory spawn will use. The data directory is created, because a
+/// first launch has not got it yet and that folder is ours. A user path is
+/// not created.
+pub(crate) fn attach_dir(raw: &str) -> Result<std::path::PathBuf, String> {
+    let cwd = AttachCwd::resolve(&crate::model::env_or_file(CWD, raw))
+        .map_err(|error| error.to_string())?;
+    if cwd.as_path() == ai_buddy_core::memory::data_dir() {
+        std::fs::create_dir_all(cwd.as_path())
+            .map_err(|error| format!("{}: {error}", cwd.as_path().display()))?;
+    }
+    cwd.checked().map_err(|error| match error {
+        SpawnError::Failed(why) => why,
+        SpawnError::Missing => "missing".to_string(),
+    })?;
+    Ok(cwd.as_path().to_path_buf())
 }
 
 impl AttachCwd {

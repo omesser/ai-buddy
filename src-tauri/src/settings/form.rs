@@ -485,6 +485,7 @@ pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
 pub const HARNESS_STATE_ID: &str = "harness_state";
+pub const PI_PROJECT_MCP_ID: &str = "pi_project_mcp";
 /// The registration box's rows. #577.
 pub const BYO_HARNESS_ID: &str = "byo_harness";
 pub const BYO_SNIPPET_ID: &str = "byo_snippet";
@@ -879,7 +880,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
             ],
         },
-        completer_source_section(),
+        completer_source_section(&live.pi_mcp_dir),
         byo_section(),
         FormSection {
             heading: "Model / API".to_string(),
@@ -991,7 +992,13 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 ///
 /// The page draws these rows and commits them on Apply, the same batch as
 /// the HTTP endpoint (#663).
-fn completer_source_section() -> FormSection {
+fn pi_mcp_status(dir: &str) -> String {
+    format!(
+        "Apply creates {dir}/.mcp.json, or updates only its ai-buddy entry. The entry names AI_BUDDY_MCP_URL and AI_BUDDY_MCP_TOKEN. The port and the token stay out of the file, and a later Apply leaves a correct file alone. Pi still needs pi-mcp-adapter, or the file does nothing."
+    )
+}
+
+fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
@@ -1012,6 +1019,16 @@ fn completer_source_section() -> FormSection {
                 batched: true,
                 disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (cursor-agent, goose, grok, hermes, opencode) require only their binary on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.".to_string()),
                 status: source_status,
+            },
+            FormRow::Checkbox {
+                id: PI_PROJECT_MCP_ID.to_string(),
+                label: "Write .mcp.json in the working directory".to_string(),
+                writes: BoolField::PiProjectMcp,
+                frozen: false,
+                help: None,
+                comment: None,
+                disclosure: None,
+                status: Some(pi_mcp_status(pi_mcp_dir)),
             },
             FormRow::TextField {
                 id: HARNESS_COMMAND_ID.to_string(),
@@ -1632,6 +1649,8 @@ pub struct Live {
     pub consent_intro: String,
     /// Where a blank Working directory row runs, for its placeholder (#913).
     pub attach_cwd: String,
+    /// The directory Apply would write `.mcp.json` into, for the Pi warning.
+    pub pi_mcp_dir: String,
     /// What the API key row's empty field says about the store.
     ///
     /// `current()` leaves it blank: the status is a store read, and
@@ -1656,6 +1675,7 @@ impl Live {
             configured: crate::harness::attached().is_some(),
             consent_intro,
             attach_cwd: crate::harness::attach_cwd_placeholder(),
+            pi_mcp_dir: crate::harness::project_dir_label(""),
             api_key_placeholder: String::new(),
             installed: Vec::new(),
         }
@@ -1741,6 +1761,7 @@ mod tests {
             configured,
             consent_intro: FIXTURE_CONSENT_INTRO.to_string(),
             attach_cwd: FIXTURE_ATTACH_CWD.to_string(),
+            pi_mcp_dir: FIXTURE_ATTACH_CWD.to_string(),
             // From the same view the values fixtures come from, so the two
             // files cannot disagree about what the key row says or offers.
             api_key_placeholder: fixture_view(driving).api_key_placeholder(),
@@ -3518,7 +3539,7 @@ mod tests {
     #[test]
     fn no_completer_source_copy_promises_a_relaunch() {
         crate::model::tests::with_harness(None, || {
-            let section = completer_source_section();
+            let section = completer_source_section("/tmp");
             let mut copy = section.comment.clone().unwrap_or_default();
             for row in &section.rows {
                 if let FormRow::Popup { help, .. } | FormRow::InspectBlock { help, .. } = row {
@@ -3539,7 +3560,7 @@ mod tests {
     #[test]
     fn the_source_rows_say_apply_commits() {
         crate::model::tests::with_harness(None, || {
-            let section = completer_source_section();
+            let section = completer_source_section("/tmp");
             let mut copy = section.disclosure.clone().unwrap_or_default();
             for row in &section.rows {
                 if let FormRow::Popup { disclosure, .. } | FormRow::TextField { disclosure, .. } =
@@ -3566,7 +3587,7 @@ mod tests {
     #[test]
     fn completer_source_does_not_equate_model_api_with_static_weights() {
         crate::model::tests::with_harness(None, || {
-            let section = completer_source_section();
+            let section = completer_source_section("/tmp");
             let mut copy = section.comment.clone().unwrap_or_default();
             copy.push(' ');
             copy.push_str(&section.disclosure.clone().unwrap_or_default());

@@ -109,6 +109,14 @@ function status(text) {
   return text ? el("p", { class: "set-status", text }) : null;
 }
 
+const PI_HARNESS = "Harness · pi";
+
+function revealPiMcp(select) {
+  const panel = select.closest?.("[data-row]")?.parentElement?.parentElement;
+  const row = panel?.querySelector?.('[data-row="pi_project_mcp"]');
+  if (row) row.hidden = select.value !== PI_HARNESS;
+}
+
 function notes(row) {
   return [help(row.help), status(row.status), disclosure(row.disclosure)];
 }
@@ -145,12 +153,14 @@ function drawRow(row, values, emit, stage) {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
       input.checked = Boolean(values[row.id]);
       input.addEventListener("change", () => emit({ set_bool: row.id, value: input.checked }));
-      return el(
+      const node = el(
         "div",
         { class: `set-row set-check${row.frozen ? " set-is-frozen" : ""}`, "data-row": row.id },
         el("label", {}, input, el("span", { text: row.label })),
         ...notes(row),
       );
+      if (row.id === "pi_project_mcp") node.hidden = values.harness !== PI_HARNESS;
+      return node;
     }
     case "TextField": {
       const input = el("input", {
@@ -186,7 +196,10 @@ function drawRow(row, values, emit, stage) {
     case "Popup": {
       const select = popup(row, values, row.frozen);
       if (row.batched) {
-        select.addEventListener("change", () => stage(row.id, select.value));
+        select.addEventListener("change", () => {
+          stage(row.id, select.value);
+          if (row.id === "harness") revealPiMcp(select);
+        });
       } else {
         select.addEventListener("change", () => emit({ pick: row.id, value: select.value }));
       }
