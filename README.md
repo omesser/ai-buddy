@@ -163,13 +163,13 @@ Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./do
 |---|---|---|
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
 | `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Zed's adapter (`codex-acp`); no first-party ACP mode. Fresh and resumed sessions both work. |
+| <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> `copilot` | `copilot --acp` | First-party, GitHub. `copilot` alone is the interactive TUI, so the flag is the whole of the row; `copilot --help` lists `--acp` and not the `--stdio` this table used to name, and the two argv answer `initialize` alike. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (#1016). |
 | <img src="https://cdn.simpleicons.org/cursor" width="14" alt="" /> `cursor-agent` | `cursor-agent acp` | First-party. `cursor-agent` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh sessions work. Every attach opens a fresh session, because it advertises no `loadSession`. |
-| <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
-| <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
-| `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Footnote: requires a global `pi` on `PATH` — install with `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`/`node`/`pi` must resolve in the app's environment (Finder-launched builds inherit launchd's `PATH`, same as every other `npx` row). An unconfigured Pi may pick up an ambient provider key from the inherited environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins over that fallback. npm-global `pi` can shadow the keg; `npm uninstall -g @earendil-works/pi-coding-agent` then `brew link pi-coding-agent`. Startup banner on the first fresh-session bubble is #597, not this row. |
 | `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh and resumed sessions both work. |
 | `goose` | `goose acp` | First-party, Block. `goose` alone is the interactive CLI, so the subcommand is the whole of the row. Fresh and resumed sessions both work, smoked on goose 1.51.0. |
-| <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> `copilot` | `copilot --acp` | First-party, GitHub. `copilot` alone is the interactive TUI, so the flag is the whole of the row; `copilot --help` lists `--acp` and not the `--stdio` this table used to name, and the two argv answer `initialize` alike. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (#1016). |
+| <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
+| <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
+| <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Footnote: requires a global `pi` on `PATH` — install with `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`/`node`/`pi` must resolve in the app's environment (Finder-launched builds inherit launchd's `PATH`, same as every other `npx` row). An unconfigured Pi may pick up an ambient provider key from the inherited environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins over that fallback. npm-global `pi` can shadow the keg; `npm uninstall -g @earendil-works/pi-coding-agent` then `brew link pi-coding-agent`. Startup banner on the first fresh-session bubble is #597, not this row. |
 | anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. Google has none: Antigravity (`agy`) speaks its own protocol rather than ACP, so it needs an adapter (#604). |
 
 What each named Harness keeps under an ACP attach, measured in the [tool-class probe](./docs/research/harness-tools-under-acp-probe.md):
@@ -178,13 +178,13 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 |---|---|
 | `claude` | Keeps shell, web search and fetch, filesystem, and user-scope MCP plus claude.ai connectors, loads local and project MCP only when `cwd` matches, and does not list `AskUserQuestion`. |
 | `codex` | Keeps shell, web search and fetch, filesystem, the user's own MCP servers, and `request_user_input`. |
+| `copilot` | Keeps shell (`bash`, with `read_bash`, `stop_bash` and `list_bash`), filesystem (`view`, `create`, `edit`, `grep`, `glob`), `web_fetch` and no web-search tool, its subagent set (`task`, `parallel`, `search_code_subagent`, `read_agent`, `list_agents`, `write_agent`), `skill`, `sql` and `session_store_sql`, and five tools from its bundled `github-mcp-server`, and lists no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy-` prefix. |
 | `cursor-agent` | Keeps shell, web search and fetch, filesystem, and the user's own MCP servers, and lists no ask-user tool. |
-| `hermes` | Keeps shell, web search and extract, filesystem, and the user's own MCP servers via the vendor mcp subcommand that the probe did not exercise, lists no ask-user tool, and lists browser tools that the start-up CDP check marks unavailable. |
-| `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
-| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Whether Pi then lists ai-buddy's tools is unmeasured (#984). |
 | `grok` | Keeps shell, web search and fetch, filesystem, and `ask_user_question`, and the user's own MCP servers were empty on a machine with none configured, and project scope keys off `cwd` per vendor docs. |
 | `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy__` prefix. |
-| `copilot` | Keeps shell (`bash`, with `read_bash`, `stop_bash` and `list_bash`), filesystem (`view`, `create`, `edit`, `grep`, `glob`), `web_fetch` and no web-search tool, its subagent set (`task`, `parallel`, `search_code_subagent`, `read_agent`, `list_agents`, `write_agent`), `skill`, `sql` and `session_store_sql`, and five tools from its bundled `github-mcp-server`, and lists no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy-` prefix. |
+| `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
+| `hermes` | Keeps shell, web search and extract, filesystem, and the user's own MCP servers via the vendor mcp subcommand that the probe did not exercise, lists no ask-user tool, and lists browser tools that the start-up CDP check marks unavailable. |
+| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Whether Pi then lists ai-buddy's tools is unmeasured (#984). |
 
 No Harness brings desktop control to an ACP session ai-buddy opens.
 
@@ -199,13 +199,13 @@ How they handle session differs, and changes what ai-buddy can do with them:
 |---|---|---|---|---|---|
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `codex` | yes | yes | yes | http | two: API Key, ChatGPT |
+| `copilot` | yes | yes | yes | http | one: Log in with Copilot CLI |
 | `cursor-agent` | yes | no | no | stdio | one: `cursor_login` |
-| `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
-| `opencode` | yes | yes | yes | http | Login with opencode |
-| `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | `grok` | yes | yes | yes | http | three: xai.api_key, cached_token, Grok |
 | `goose` | yes | yes | yes | http | one: Configure Provider |
-| `copilot` | yes | yes | yes | http | one: Log in with Copilot CLI |
+| `opencode` | yes | yes | yes | http | Login with opencode |
+| `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
+| `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
 - † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `cursor-agent`, `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` advertises no HTTP MCP. `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
