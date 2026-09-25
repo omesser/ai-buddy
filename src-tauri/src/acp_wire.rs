@@ -8,7 +8,7 @@ use std::process::Command;
 use std::sync::mpsc::{self as sync_mpsc, RecvTimeoutError};
 use std::sync::Mutex;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
     AuthMethod, CancelNotification, ClientCapabilities, ContentBlock, CreateElicitationRequest,
@@ -264,7 +264,7 @@ enum Msg {
     Prompt {
         session_id: String,
         text: String,
-        reply: sync_mpsc::Sender<Result<Reply, TurnError>>,
+        reply: sync_mpsc::Sender<Progress>,
     },
     Cancel,
     Answer {
@@ -276,6 +276,18 @@ enum Msg {
         answer: ElicitationAnswer,
     },
     Shutdown,
+}
+
+/// What the wire thread tells `prompt` about the turn it is running. The
+/// budget is kept on `prompt`'s side; only the turn knows when the Harness
+/// has stopped to ask the user something, and the user is not on the clock
+/// (#1001).
+enum Progress {
+    /// A permission ask or elicitation form is open. The budget stops.
+    Asked,
+    /// Nothing is open any more. A fresh budget starts.
+    Settled,
+    Done(Result<Reply, TurnError>),
 }
 
 /// What we send on `initialize`. Named so a test can assert the payload
@@ -375,8 +387,11 @@ impl Wire {
     }
 
     /// One `session/prompt`. The concatenated `agent_message_chunk`s once the
-    /// turn ends in `end_turn`. Past `timeout`, `session/cancel` goes out and
-    /// the reply is waited on for `CANCEL_GRACE` so the wire is quiet again.
+    /// turn ends in `end_turn`. `timeout` guards a Harness that went quiet,
+    /// not the user: it stops while an ask or form waits on them and starts
+    /// over whole once the last one is settled (#1001). Past it,
+    /// `session/cancel` goes out and the reply is waited on for
+    /// `CANCEL_GRACE` so the wire is quiet again.
     pub fn prompt(
         &self,
         session_id: &str,
@@ -391,13 +406,27 @@ impl Wire {
                 reply,
             })
             .map_err(|_| TurnError::Lost)?;
-        match rx.recv_timeout(timeout) {
-            Ok(outcome) => outcome,
-            Err(RecvTimeoutError::Disconnected) => Err(TurnError::Lost),
-            Err(RecvTimeoutError::Timeout) => {
-                let _ = self.tx.send(Msg::Cancel);
-                let _ = rx.recv_timeout(CANCEL_GRACE);
-                Err(TurnError::Timeout)
+        let mut deadline = Some(Instant::now() + timeout);
+        loop {
+            let next = match deadline {
+                Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
+                None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+            match next {
+                Ok(Progress::Done(outcome)) => return outcome,
+                Ok(Progress::Asked) => deadline = None,
+                Ok(Progress::Settled) => deadline = Some(Instant::now() + timeout),
+                Err(RecvTimeoutError::Disconnected) => return Err(TurnError::Lost),
+                Err(RecvTimeoutError::Timeout) => {
+                    let _ = self.tx.send(Msg::Cancel);
+                    let grace = Instant::now() + CANCEL_GRACE;
+                    loop {
+                        match rx.recv_timeout(grace.saturating_duration_since(Instant::now())) {
+                            Ok(Progress::Done(_)) | Err(_) => return Err(TurnError::Timeout),
+                            Ok(Progress::Asked | Progress::Settled) => {}
+                        }
+                    }
+                }
             }
         }
     }
@@ -643,9 +672,9 @@ async fn serve(
                 reply,
             } => {
                 let id = SessionId::new(session_id);
-                let outcome = turn(cx, &id, &mut rx, &mut incoming, &text, on_event).await;
+                let outcome = turn(cx, &id, &mut rx, &mut incoming, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
-                let _ = reply.send(outcome);
+                let _ = reply.send(Progress::Done(outcome));
                 if lost {
                     break;
                 }
@@ -725,6 +754,7 @@ async fn turn(
     rx: &mut mpsc::UnboundedReceiver<Msg>,
     incoming: &mut mpsc::UnboundedReceiver<Incoming>,
     text: &str,
+    reply: &sync_mpsc::Sender<Progress>,
     on_event: &OnEvent,
 ) -> Result<Reply, TurnError> {
     let sent = cx.send_request(PromptRequest::new(
@@ -739,7 +769,21 @@ async fn turn(
     let mut thought = String::new();
     let mut asks: Vec<(String, Responder<RequestPermissionResponse>)> = Vec::new();
     let mut forms: Vec<PendingElicit> = Vec::new();
+    // Reported on the transition only, and at the top of the loop rather than
+    // in the arms that push or settle: several asks can be open at once, and
+    // a Cancel that drains them all has to restart the budget too, or a
+    // Harness that ignores the cancel leaves `prompt` waiting for nothing.
+    let mut blocked = false;
     loop {
+        let open = !asks.is_empty() || !forms.is_empty();
+        if open != blocked {
+            blocked = open;
+            let _ = reply.send(if open {
+                Progress::Asked
+            } else {
+                Progress::Settled
+            });
+        }
         // `biased`, updates first. The SDK dispatches a turn's chunks before
         // its response, so the response is read only once the channel ahead
         // of it is empty, and no chunk is left behind on the way out.
@@ -816,7 +860,7 @@ async fn turn(
                     }
                 }
                 Some(Msg::Prompt { reply, .. }) => {
-                    let _ = reply.send(Err(TurnError::Busy));
+                    let _ = reply.send(Progress::Done(Err(TurnError::Busy)));
                 }
                 Some(Msg::Open { reply, .. }) => {
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
