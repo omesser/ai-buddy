@@ -11,17 +11,10 @@ import { test } from "node:test";
 
 const repo = new URL("..", import.meta.url);
 
-// Code citations of a superseded ADR still in the tree. Markdown, `docs/` and
-// `.agents/` are exempt. Fix a site, lower the count here. An entry at zero
-// is deleted. A count that no longer matches the tree fails this test.
-const KNOWN_STALE = {
-  "src-tauri/src/acp_wire.rs": 1,
-  "src-tauri/src/harness.rs": 3,
-  "src-tauri/src/main.rs": 7,
-  "src-tauri/src/model.rs": 2,
-  "src-tauri/src/settings.rs": 7,
-  "src-tauri/src/settings/form.rs": 4,
-};
+// Empty on purpose. A code citation of a superseded ADR fails this test.
+// Markdown, `docs/` and `.agents/` stay exempt. Narrating a supersession is
+// what prose is for, and a Dated page keeps the link it shipped with.
+const KNOWN_STALE = {};
 
 const tracked = (...args) =>
   execFileSync("git", ["ls-files", "-z", ...args], {
@@ -67,7 +60,7 @@ function citedStale(superseded) {
   return counts;
 }
 
-test("no code cites a superseded ADR beyond the #962 backlog", () => {
+test("no code cites a superseded ADR", () => {
   const superseded = supersededAdrs();
   assert.ok(superseded.size > 0, "the ADR status lines still parse");
   assert.deepEqual(

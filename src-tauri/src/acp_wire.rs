@@ -45,8 +45,8 @@ pub enum McpChoice {
 
 impl McpChoice {
     /// What a log line, the Action Log, or a probe may say about this choice.
-    /// Never the token. ADR-0010's seventh rule treats a minted credential
-    /// the same as one we would have borrowed.
+    /// Never the token. A credential is not logged, printed, or fingerprinted,
+    /// including one this process minted.
     pub fn label(&self) -> String {
         match self {
             Self::Http { url, .. } => url.clone(),
