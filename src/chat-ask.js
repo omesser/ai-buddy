@@ -1,10 +1,10 @@
-// What a permission ask says, as the text the consent row draws. Its own
+// What a permission ask says, as parts the consent row draws. Its own
 // module because chat.js reaches window.__TAURI__ as it loads and cannot be
 // imported outside a webview; this can, so it has a test.
 
 // Everything but the copy here is untrusted: `title`, `content`, `input` and
 // `locations` come from the Harness, and an MCP server can steer all four. The
-// caller writes the result with `textContent` and this file produces no markup.
+// caller writes each part with `textContent` and this file produces no markup.
 
 // How much of an ask the row may draw, in characters: about eleven wrapped
 // lines in a 420-point window, enough for a question and its arguments, short
@@ -65,15 +65,28 @@ function argumentLines(input) {
   return first(named, ARGUMENTS, "arguments");
 }
 
+// The row's budget, spent over the parts in order and cut once with an
+// ellipsis. Every part is one flat line, so joining and splitting on newline
+// loses nothing and leaves the cut where the old single string had it.
+function withinBudget(parts) {
+  const lines = clamp(parts.map(({ text }) => text).join("\n"), DETAIL_LIMIT).split("\n");
+  return lines.map((text, at) => ({ kind: parts[at].kind, text }));
+}
+
+// What the row draws, in order: `{ kind, text }` per line, `kind` one of
+// title, code, prose or metadata. Code is the thing being approved and gets a
+// `<code>` from the renderer; metadata is the `kind · paths` tail.
 export function askSays(ask) {
   // The title is untrusted too, and a verbose one would spend the row's budget
   // before the question arrived, from a merely chatty server.
-  const said = [clamp(flat(ask?.title ?? ""), VALUE_LIMIT)];
+  const title = clamp(flat(ask?.title ?? ""), VALUE_LIMIT);
   const content = (ask?.content ?? []).map(flat).filter(Boolean);
-  // Content first: it is where a question's own words arrive. The arguments
-  // are the fallback, and never both: a tool that sends its question as
-  // content usually repeats it in `input`, and the row cannot say anything twice.
-  said.push(...(content.length > 0 ? content : argumentLines(ask?.input)));
+  // Content first, arguments as the fallback, never both: a tool that sends
+  // its question as content usually repeats it in `input`. Content is a
+  // command only when the ask runs something; an argument line always is.
+  const details = content.length > 0
+    ? content.map((text) => ({ kind: ask?.kind === "execute" ? "code" : "prose", text }))
+    : argumentLines(ask?.input).map((text) => ({ kind: "code", text }));
 
   const paths = (ask?.locations ?? [])
     .map((where) => clamp(flat(where), VALUE_LIMIT))
@@ -86,14 +99,15 @@ export function askSays(ask) {
     .filter(Boolean)
     .join(" · ");
 
-  const body = said.filter(Boolean).join("\n");
   // A kind on its own is not an answer to "what am I approving": it names a
   // category, and the whole bug was a row that offered one in place of the
   // question. A path on its own is a fact worth drawing.
-  if (body === "" && paths.length === 0) {
-    return SILENT;
+  if (!title && details.length === 0 && paths.length === 0) {
+    return [{ kind: "prose", text: SILENT }];
   }
-  return clamp([body, about].filter(Boolean).join("\n"), DETAIL_LIMIT);
+  return withinBudget(
+    [{ kind: "title", text: title }, ...details, { kind: "metadata", text: about }].filter(({ text }) => text),
+  );
 }
 
 // An elicitation form's question. Same flattening as a permission ask: the

@@ -2,7 +2,8 @@
 // ai-buddy rather than by whatever answers (ADR-0018). Like the overlay it
 // holds no authoritative state; the Shell owns the session behind it.
 
-import { askSays, elicitSays } from "./chat-ask.js";
+import { elicitSays } from "./chat-ask.js";
+import { drawAskDetails } from "./chat-ask-row.js";
 import { canAnswer, landingCopy } from "./chat-connect.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
@@ -211,9 +212,7 @@ function asked(ask) {
   const label = el("who-label");
   label.textContent = `${them} · asks`;
   const body = el("said");
-  // Every word of this is untrusted and arrives as text, never as markup.
-  // `chat-ask.js` decides what an ask says and how much of it.
-  body.textContent = askSays(ask);
+  drawAskDetails(body, ask);
   const buttons = el("options");
   for (const option of ask.options) {
     const button = el("", "button");

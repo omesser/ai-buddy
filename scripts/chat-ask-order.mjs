@@ -2,7 +2,9 @@
 // Drives the real Chat surface (src/chat.html + chat.js) in headless Chromium
 // with `window.__TAURI__` stubbed, replays one typed turn that raises a
 // permission ask and then answers, and prints the log rows in DOM order.
-// Exit 1 when the answer row sits above the ask row it answered after.
+// Exit 1 when the answer row sits above the ask it followed, when the command
+// is not a <code> with the kind and paths beside it, or when that <code>
+// paints unlike reply code.
 //   node scripts/chat-ask-order.mjs
 // Env:
 //   AI_BUDDY_CHROME  the headless Chromium binary (default: Playwright's shell)
@@ -40,11 +42,11 @@ const OPENING = {
 
 const ASK = {
   request: "5",
-  title: "mcp__ai-buddy__list_windows",
-  kind: "other",
-  content: [],
+  title: "Open Calculator",
+  kind: "execute",
+  content: ["open -a Calculator"],
   input: null,
-  locations: [],
+  locations: ["/Applications/Calculator.app"],
   options: [
     { id: "allow-once", name: "Yes", kind: "allow_once" },
     { id: "allow-with-updates", name: "Yes, and don't ask again", kind: "allow_always" },
@@ -52,7 +54,7 @@ const ASK = {
   ],
 };
 
-const ANSWER = "Hmm. BMO still sees only shapes, no names.";
+const ANSWER = "Hmm. BMO still sees only shapes, no names. Try `open -a Calculator` yourself.";
 
 const stub = `
 <script>
@@ -93,9 +95,17 @@ const stub = `
       who: row.querySelector(".who-label")?.textContent ?? "",
       said: row.querySelector(".said")?.textContent.trim().slice(0, 60) ?? "",
       ask: row.classList.contains("ask"),
+      code: row.querySelector(".said > code")?.textContent ?? "",
+      paint: ((code) => {
+        if (!code) return "";
+        const s = getComputedStyle(code);
+        return [s.backgroundColor, s.borderTopWidth, s.borderTopColor, s.fontFamily].join(" | ");
+      })(row.querySelector(".said code")),
+      metadata: row.querySelector(".ask-metadata")?.textContent ?? "",
     }));
     const out = document.createElement("pre");
     out.id = "rows";
+    out.hidden = true;
     out.textContent = JSON.stringify(rows);
     document.body.append(out);
   }
@@ -121,7 +131,7 @@ const run = spawnSync(
   ],
   { encoding: "utf8", maxBuffer: 1 << 24 },
 );
-const match = run.stdout.match(/<pre id="rows">(.*?)<\/pre>/s);
+const match = run.stdout.match(/<pre\b[^>]*id="rows"[^>]*>(.*?)<\/pre>/s);
 if (!match) {
   console.error("the harness never reported; chromium said:", run.stderr.slice(-2000));
   process.exit(2);
@@ -136,8 +146,16 @@ if (askAt === -1 || answerAt === -1) {
   console.error("expected both an ask row and the answer row");
   process.exit(2);
 }
+if (rows[askAt].code !== "open -a Calculator" || rows[askAt].metadata !== "execute · /Applications/Calculator.app") {
+  console.error("FAIL: the command is not code with separate metadata");
+  process.exit(1);
+}
+if (rows[askAt].paint !== rows[answerAt].paint) {
+  console.error(`FAIL: the ask's command paints unlike reply code\n  ask:   ${rows[askAt].paint}\n  reply: ${rows[answerAt].paint}`);
+  process.exit(1);
+}
 if (answerAt < askAt) {
   console.error(`FAIL: the answer (row ${answerAt + 1}) sits above the ask it followed (row ${askAt + 1})`);
   process.exit(1);
 }
-console.log("ok: the answer landed below the ask");
+console.log("ok: the command is code painted like a reply's, and the answer landed below the ask");

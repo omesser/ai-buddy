@@ -1198,7 +1198,8 @@ body {
   border-block-start: 1px solid var(--chat-rule);
 }
 
-.said.md code {
+.said.md code,
+.row.ask .ask-code {
   padding: 0.12em 0.4em;
   border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-badge);
@@ -1271,6 +1272,24 @@ body {
 .note {
   font-size: 12.5px;
   color: var(--chat-ink-4);
+}
+
+/* The parts of a permission ask, one line each. The command shares reply
+   code's paint (`.said.md code` above) and is the one part that is a block:
+   it is the thing being approved. The `kind · paths` tail is metadata. */
+.row.ask .ask-code,
+.row.ask .ask-prose {
+  display: block;
+  margin-block: 0.35em;
+}
+
+.row.ask .ask-code {
+  padding: 0.35em 0.5em;
+}
+
+.row.ask .ask-metadata {
+  color: var(--chat-ink-4);
+  font-size: 0.85em;
 }
 
 /* A forwarded permission or elicitation request: the options as buttons.
