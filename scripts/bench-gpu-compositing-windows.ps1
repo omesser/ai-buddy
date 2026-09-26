@@ -18,13 +18,16 @@ $script:CoverProc = $null
 $script:CursorOk = $false
 $script:CursorError = ""
 $script:CursorScale = "N/A"
+$script:CursorNote = ""
+$script:PhysicalWidth = 0
 $script:ShotNoted = $false
 
 function Show-Usage {
     [Console]::Error.WriteLine(@"
-Usage: scripts\bench-gpu-compositing-windows.ps1 <env|baseline|idle|walking|chat|multi|hidden|matrix|parse-log> [--seconds N] [--walk-timeout N] [--shot FILE] [--out DIR] [--log FILE]
+Usage: scripts\bench-gpu-compositing-windows.ps1 <env|baseline|idle|walking|chat|multi|hidden|matrix|parse-log|aim-check> [--seconds N] [--walk-timeout N] [--shot FILE] [--out DIR] [--log FILE] [--physical-width N]
 
 parse-log counts mask_rebuild lines in --log and divides by --seconds.
+aim-check prints the walking-over cursor target for --log. It does not move the cursor.
 GPU% is dwm.exe engtype_3D when that counter exists, else nvidia-smi for the whole adapter.
 Checkout and a debug build on DESKTOP-UQIE144 are authorized.
 idle, walking, chat, hidden, and matrix launch ai-buddy and move the cursor. Wait for an explicit green light before those scenarios.
@@ -61,10 +64,15 @@ while ($i -lt $args.Count) {
             if ($i -ge $args.Count) { Show-Usage }
             $script:LogPath = [string]$args[$i]
         }
+        "--physical-width" {
+            $i++
+            if ($i -ge $args.Count) { Show-Usage }
+            $script:PhysicalWidth = [double]$args[$i]
+        }
         "--help" { Show-Usage }
         "-h" { Show-Usage }
         default {
-            if ($arg -in @("env", "baseline", "idle", "walking", "chat", "multi", "hidden", "matrix", "parse-log")) {
+            if ($arg -in @("env", "baseline", "idle", "walking", "chat", "multi", "hidden", "matrix", "parse-log", "aim-check")) {
                 if ($script:Scenario) { Show-Usage }
                 $script:Scenario = $arg
             }
@@ -371,17 +379,54 @@ function Get-MaskSince([string]$log, [int]$from) {
     return @(Get-LinesSince $log $from "mask_rebuild:").Count
 }
 
-function Get-SpriteCenter([string]$log) {
-    if (-not (Test-Path $log)) { return $null }
-    $line = Select-String -Path $log -Pattern "frame:" -ErrorAction SilentlyContinue | Select-Object -Last 1
-    if (-not $line) { return $null }
-    $text = $line.Line
+function Get-FrameCenter([string]$text) {
     if ($text -notmatch 'pos\((-?\d+),(-?\d+)\)') { return $null }
     $feetX = [int]$Matches[1]
     $feetY = [int]$Matches[2]
     if ($text -notmatch 'sprite\((-?\d+),(-?\d+)\)') { return $null }
     $spriteY = [int]$Matches[2]
-    return @{ X = $feetX; Y = [int](($spriteY + $feetY) / 2) }
+    $kind = ""
+    if ($text -match ' ([A-Za-z0-9_]+)#\d+') { $kind = $Matches[1] }
+    return @{ X = $feetX; Y = [int](($spriteY + $feetY) / 2); Kind = $kind }
+}
+
+function Get-SpriteCenter([string]$log, [string]$animation) {
+    if (-not (Test-Path $log)) { return $null }
+    $lines = @(Select-String -Path $log -Pattern "frame:" -ErrorAction SilentlyContinue)
+    if ($lines.Count -eq 0) { return $null }
+    $picked = $null
+    if ($animation -eq "walk") {
+        $picked = $lines | Where-Object { $_.Line -match ' (walk|ballwalk)#' } | Select-Object -Last 1
+        if (-not $picked) { return $null }
+    }
+    else {
+        $picked = $lines | Select-Object -Last 1
+    }
+    return Get-FrameCenter $picked.Line
+}
+
+function Get-OverlayWidth([string]$log) {
+    if (-not $log -or -not (Test-Path $log)) { return 0 }
+    $line = Select-String -Path $log -Pattern "overlay: \S+ covers \d+x\d+ at \(0,0\)" -ErrorAction SilentlyContinue | Select-Object -Last 1
+    if (-not $line) { return 0 }
+    if ($line.Line -notmatch 'covers (\d+)x') { return 0 }
+    return [double]$Matches[1]
+}
+
+# frame: lives in the overlay's point space. That matches SetCursorPos on this
+# panel when the overlay width equals the primary's physical width. DPI/96 on
+# a process that called SetProcessDPIAware is a different number, and multiplying
+# by it walks the point off the virtual screen.
+function Convert-FrameCursor([int]$x, [int]$y, [double]$overlayWidth, [double]$physicalWidth) {
+    $scale = 1.0
+    if ($overlayWidth -gt 0 -and $physicalWidth -gt 0) {
+        $scale = $physicalWidth / $overlayWidth
+    }
+    return @{
+        X     = [int][Math]::Round($x * $scale)
+        Y     = [int][Math]::Round($y * $scale)
+        Scale = $scale
+    }
 }
 
 function Initialize-Cursor {
@@ -395,10 +440,21 @@ public class BuddyGpuBench {
   public const uint MONITOR_DEFAULTTOPRIMARY = 1;
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetCursorPos(out POINT lpPoint);
   [DllImport("user32.dll")] public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+  [DllImport("user32.dll", CharSet=CharSet.Auto)] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
   [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
   [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO {
+    public int cbSize;
+    public RECT rcMonitor;
+    public RECT rcWork;
+    public uint dwFlags;
+  }
+  public static string LastMove = "";
   public static double PrimaryScale() {
     SetProcessDPIAware();
     IntPtr mon = MonitorFromPoint(new POINT(), MONITOR_DEFAULTTOPRIMARY);
@@ -406,12 +462,56 @@ public class BuddyGpuBench {
     if (GetDpiForMonitor(mon, 0, out dpiX, out dpiY) != 0 || dpiX == 0) return 0;
     return dpiX / 96.0;
   }
-  public static bool SetCursorPoints(int x, int y) {
-    double scale = PrimaryScale();
-    if (scale <= 0) return false;
-    int px = (int)Math.Round(x * scale);
-    int py = (int)Math.Round(y * scale);
-    return SetCursorPos(px, py);
+  public static int PrimaryPixelWidth() {
+    SetProcessDPIAware();
+    IntPtr mon = MonitorFromPoint(new POINT(), MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO info = new MONITORINFO();
+    info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+    if (!GetMonitorInfo(mon, ref info)) return 0;
+    return info.rcMonitor.Right - info.rcMonitor.Left;
+  }
+  static bool Near(POINT p, int x, int y) {
+    int dx = p.X - x;
+    int dy = p.Y - y;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx <= 1 && dy <= 1;
+  }
+  static void AbsoluteMove(int x, int y) {
+    int vx = GetSystemMetrics(76);
+    int vy = GetSystemMetrics(77);
+    int vw = GetSystemMetrics(78);
+    int vh = GetSystemMetrics(79);
+    if (vw <= 1 || vh <= 1) return;
+    int nx = (int)Math.Round((x - vx) * 65535.0 / (vw - 1));
+    int ny = (int)Math.Round((y - vy) * 65535.0 / (vh - 1));
+    if (nx < 0) nx = 0;
+    if (ny < 0) ny = 0;
+    mouse_event(0x0001 | 0x8000 | 0x4000, (uint)nx, (uint)ny, 0, UIntPtr.Zero);
+  }
+  public static bool MoveScreen(int x, int y) {
+    POINT after;
+    bool called = SetCursorPos(x, y);
+    int err = Marshal.GetLastWin32Error();
+    if (!GetCursorPos(out after)) {
+      LastMove = "GetCursorPos failed";
+      return false;
+    }
+    if (Near(after, x, y)) {
+      LastMove = "actual " + after.X + "," + after.Y;
+      return true;
+    }
+    AbsoluteMove(x, y);
+    if (!GetCursorPos(out after)) {
+      LastMove = "GetCursorPos failed";
+      return false;
+    }
+    if (Near(after, x, y)) {
+      LastMove = "actual " + after.X + "," + after.Y + " via absolute move";
+      return true;
+    }
+    LastMove = "target " + x + "," + y + " actual " + after.X + "," + after.Y + " set=" + called + " err=" + err;
+    return false;
   }
 }
 '@
@@ -437,13 +537,24 @@ public class BuddyGpuBench {
     $script:CursorScale = "{0:F2}" -f $scale
 }
 
-function Move-Cursor([int]$x, [int]$y) {
-    if (-not $script:CursorOk) { return $false }
-    return [BuddyGpuBench]::SetCursorPoints($x, $y)
+function Move-Cursor([int]$x, [int]$y, [string]$log) {
+    if (-not $script:CursorOk) {
+        $script:CursorNote = "cursor unavailable. $($script:CursorError)"
+        return $false
+    }
+    $overlay = Get-OverlayWidth $log
+    $physical = $script:PhysicalWidth
+    if ($physical -le 0) {
+        try { $physical = [BuddyGpuBench]::PrimaryPixelWidth() } catch { $physical = 0 }
+    }
+    $aim = Convert-FrameCursor $x $y $overlay $physical
+    $ok = [BuddyGpuBench]::MoveScreen($aim.X, $aim.Y)
+    $script:CursorNote = ("frame {0},{1} cursor {2},{3} scale={4:F2} dpi_scale={5} {6}" -f $x, $y, $aim.X, $aim.Y, $aim.Scale, $script:CursorScale, [BuddyGpuBench]::LastMove)
+    return $ok
 }
 
-function Invoke-Click([int]$x, [int]$y) {
-    if (-not (Move-Cursor $x $y)) { return $false }
+function Invoke-Click([int]$x, [int]$y, [string]$log) {
+    if (-not (Move-Cursor $x $y $log)) { return $false }
     Start-Sleep -Milliseconds 30
     [BuddyGpuBench]::mouse_event([BuddyGpuBench]::LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
     [BuddyGpuBench]::mouse_event([BuddyGpuBench]::LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
@@ -695,16 +806,16 @@ function Run-Walking {
         return
     }
     Sample-Row "walking" $log $script:Seconds "pointer away, walk frame seen"
-    $center = Get-SpriteCenter $log
+    $center = Get-SpriteCenter $log "walk"
     if (-not $center) {
-        Emit-Unstaged "walking-over" "walk frame seen but sprite center was not in the log"
+        Emit-Unstaged "walking-over" "no walk or ballwalk frame to aim at"
     }
-    elseif (-not (Move-Cursor $center.X $center.Y)) {
-        Emit-Unstaged "walking-over" "walk frame seen but SetCursorPos failed"
+    elseif (-not (Move-Cursor $center.X $center.Y $log)) {
+        Emit-Unstaged "walking-over" "cursor did not land on the sprite. $($script:CursorNote)"
     }
     else {
         Start-Sleep -Seconds 1
-        Sample-Row "walking-over" $log 5 "5s window, pointer on sprite center $($center.X),$($center.Y)"
+        Sample-Row "walking-over" $log 5 "5s window, pointer on sprite. $($script:CursorNote)"
     }
     Stop-App
 }
@@ -712,20 +823,20 @@ function Run-Walking {
 function Run-Chat {
     if (-not (Assert-WindowsScenario "chat")) { return }
     $log = Start-Overlay "chat"
-    $center = Get-SpriteCenter $log
+    $center = Get-SpriteCenter $log ""
     if (-not $center) {
         Emit-Unstaged "chat" "no frame line to aim a double-click"
         Stop-App
         return
     }
-    if (-not (Invoke-Click $center.X $center.Y)) {
-        Emit-Unstaged "chat" "SetCursorPos failed"
+    if (-not (Invoke-Click $center.X $center.Y $log)) {
+        Emit-Unstaged "chat" "cursor did not land on the sprite. $($script:CursorNote)"
         Stop-App
         return
     }
     Start-Sleep -Milliseconds 120
-    if (-not (Invoke-Click $center.X $center.Y)) {
-        Emit-Unstaged "chat" "second click failed"
+    if (-not (Invoke-Click $center.X $center.Y $log)) {
+        Emit-Unstaged "chat" "second click failed. $($script:CursorNote)"
         Stop-App
         return
     }
@@ -834,6 +945,30 @@ function Run-Hidden {
     Stop-App
 }
 
+function Invoke-AimCheck {
+    if (-not $script:LogPath) {
+        [Console]::Error.WriteLine("aim-check needs --log FILE")
+        exit 2
+    }
+    if (-not (Test-Path $script:LogPath)) {
+        [Console]::Error.WriteLine("no log $($script:LogPath)")
+        exit 2
+    }
+    $center = Get-SpriteCenter $script:LogPath "walk"
+    if (-not $center) {
+        Write-Host "aim=none"
+        exit 1
+    }
+    $overlay = Get-OverlayWidth $script:LogPath
+    $aim = Convert-FrameCursor $center.X $center.Y $overlay $script:PhysicalWidth
+    Write-Host "aim_kind=$($center.Kind)"
+    Write-Host "aim_x=$($center.X)"
+    Write-Host "aim_y=$($center.Y)"
+    Write-Host "cursor_x=$($aim.X)"
+    Write-Host "cursor_y=$($aim.Y)"
+    Write-Host ("scale={0:F2}" -f $aim.Scale)
+}
+
 function Invoke-ParseLog {
     if (-not $script:LogPath) {
         [Console]::Error.WriteLine("parse-log needs --log FILE")
@@ -858,6 +993,10 @@ New-Item -ItemType Directory -Force -Path $script:Out | Out-Null
 try {
     if ($script:Scenario -eq "parse-log") {
         Invoke-ParseLog
+        exit 0
+    }
+    if ($script:Scenario -eq "aim-check") {
+        Invoke-AimCheck
         exit 0
     }
 

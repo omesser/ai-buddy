@@ -105,7 +105,7 @@ Crop Task Manager's Performance GPU page during idle perched to about 280px wide
 - Power is `nvidia-smi` `power.draw` when that field is numeric. Those watts are the adapter, and ai-buddy has no GPU Engine row.
 - `mask_rebuild:` lines are `SetWindowRgn` calls. Per-call time stays in [#428](https://github.com/omesser/ai-buddy/issues/428).
 - `parse-log --seconds 2` on a 4-line fixture printed `mask_calls=4` and `mask_hz=2.00`. That fixture is not a Windows trace.
-- Cursor targets multiply `frame:` positions in points by the primary monitor DPI / 96.
+- Walking-over aims at the last `walk` or `ballwalk` frame. The cursor coordinate is that point times the primary's physical width over the overlay width in the log. `GetCursorPos` has to match.
 
 **Metrics**
 
@@ -115,15 +115,13 @@ An earlier attempt had a GPU-heavy fullscreen process on the adapter. This pass 
 |----------|----------|------------|---------|-----|-------|
 | Idle perched, cursor at (50,50) | 18.0 s | 0 | 0.00 | Task Manager GPU 0 Intel UHD 0%. NVIDIA GTX 1070 sidebar 9% at 49°C. `nvidia-smi` 12 to 17%, 13.3 to 15.1 W. ai-buddy absent from GPU Engine. dwm 3D about 1.2 to 2.8%. | 635 `walk#` frames in this window, pointer away. |
 | Walking, pointer away | 16.3 s quiet slice | 0 | 0.00 | `nvidia-smi` 3 to 4%, 13.0 to 14.5 W. ai-buddy absent. dwm 3D about 0.3%. | That slice had `walk_frames=0`. The session log has 10470 `walk#` frames, 2045 `climb#` frames, and 0 `mask_rebuild:` lines. |
-| Walking-over | aborted | N/A | N/A | N/A | `SetCursorPos` to the sprite center failed. The cursor stayed at (50,50). [#428](https://github.com/omesser/ai-buddy/issues/428) measured about 44.4 rebuilds/s with the cursor on the sprite. |
+| Walking-over | not measured | | | | The cursor stayed at (50,50). The aim is fixed in this script. Remeasure before filling this row. |
 | Chat open | not run | | | | |
 | Multi-monitor sample | not run | | | | |
 | Hidden | not run | | | | |
-| xperf frame time | not run | | | | GPU-Z and Afterburner were not used. |
+| xperf frame time | not run | | | | A separate power tool was not used. |
 
-The pointer stayed at (50,50), so those walk frames did not rebuild the region. Buddy pid 5760 was stopped. No `ai-buddy.exe` remained.
-
-**Status:** Partial. This section leaves [#430](https://github.com/omesser/ai-buddy/issues/430) open.
+The pointer stayed at (50,50), so those walk frames did not rebuild the region. Buddy pid 5760 was stopped. No `ai-buddy.exe` remained. Chat, a separate multi-monitor sample, hidden, and xperf were not run.
 
 ### Linux X11/Wayland (issue #425)
 
