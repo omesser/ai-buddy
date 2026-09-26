@@ -27,15 +27,9 @@
 //!    sends one; a page in the user's browser would have to, so refusing it
 //!    closes the DNS-rebinding hole the MCP spec warns about without having
 //!    to guess which origins are the user's own.
-//!
-//! On unix the same server also listens on `<data_dir>/mcp.sock`, mode 0600,
-//! and checks no token there: the file mode is the authorization. That is the
-//! transport for a Harness that drops the environment it is handed (#1020),
-//! so the shim can be told where to dial in `args` with no secret at rest.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, TcpListener};
-use std::path::{Path, PathBuf};
+use std::net::{IpAddr, TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::sync::OnceLock;
 use std::thread;
@@ -73,8 +67,6 @@ pub struct Call {
 pub struct Endpoint {
     pub url: String,
     token: String,
-    /// The unix socket path. `None` on Windows and when the bind failed.
-    pub sock: Option<PathBuf>,
 }
 
 impl Endpoint {
@@ -113,7 +105,7 @@ static ENDPOINT: OnceLock<Option<Endpoint>> = OnceLock::new();
 /// `None` is a bind or a token that failed: a session with no tools rather than an app that will not start.
 pub fn serve(calls: mpsc::Sender<Call>) -> Option<Endpoint> {
     ENDPOINT
-        .get_or_init(|| match start(calls, &data_sock()) {
+        .get_or_init(|| match start(calls) {
             Ok(endpoint) => Some(endpoint),
             Err(why) => {
                 eprintln!("mcp: no loopback server: {why}");
@@ -130,20 +122,7 @@ pub fn endpoint() -> Option<Endpoint> {
     ENDPOINT.get().cloned().flatten()
 }
 
-#[cfg(not(test))]
-fn data_sock() -> PathBuf {
-    ai_buddy_core::memory::data_dir().join("mcp.sock")
-}
-
-/// The test binary calls `serve` too, and binding the real path would take
-/// the socket out from under a running app.
-#[cfg(test)]
-fn data_sock() -> PathBuf {
-    std::env::temp_dir().join(format!("ai-buddy-{}-serve.sock", std::process::id()))
-}
-
-/// `sock` is a parameter so a test never binds the running app's socket.
-fn start(calls: mpsc::Sender<Call>, sock: &Path) -> std::io::Result<Endpoint> {
+fn start(calls: mpsc::Sender<Call>) -> std::io::Result<Endpoint> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes)
         .map_err(|why| std::io::Error::other(format!("no random bytes for a token: {why}")))?;
@@ -151,53 +130,15 @@ fn start(calls: mpsc::Sender<Call>, sock: &Path) -> std::io::Result<Endpoint> {
 
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     let url = format!("http://127.0.0.1:{}/mcp", listener.local_addr()?.port());
-    #[cfg(unix)]
-    let sock = serve_unix(sock, calls.clone())
-        .map_err(|why| eprintln!("mcp: no unix socket: {why}"))
-        .ok();
-    #[cfg(not(unix))]
-    let sock = {
-        let _ = sock;
-        None
-    };
     let endpoint = Endpoint {
         url: url.clone(),
         token: token.clone(),
-        sock,
     };
 
     thread::Builder::new()
         .name("mcp-http".into())
         .spawn(move || accept_loop(listener, token, calls))?;
     Ok(endpoint)
-}
-
-/// Bind `path` and serve token-less on it. A stale file from a previous run
-/// is removed first: the bind fails on an existing path, and a socket nobody
-/// listens on is exactly what a crash leaves behind.
-#[cfg(unix)]
-fn serve_unix(path: &Path, calls: mpsc::Sender<Call>) -> std::io::Result<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    use std::os::unix::net::UnixListener;
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let _ = std::fs::remove_file(path);
-    let listener = UnixListener::bind(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    thread::Builder::new()
-        .name("mcp-unix".into())
-        .spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { continue };
-                let calls = calls.clone();
-                let _ = thread::Builder::new()
-                    .name("mcp-unix-conn".into())
-                    .spawn(move || serve_connection(&stream, &stream, None, &calls));
-            }
-        })?;
-    Ok(path.to_path_buf())
 }
 
 fn accept_loop(listener: TcpListener, token: String, calls: mpsc::Sender<Call>) {
@@ -219,7 +160,7 @@ fn accept_loop(listener: TcpListener, token: String, calls: mpsc::Sender<Call>) 
         // so there is no fan-out here worth a pool.
         let _ = thread::Builder::new()
             .name("mcp-http-conn".into())
-            .spawn(move || serve_connection(&stream, &stream, Some(&token), &calls));
+            .spawn(move || serve_connection(stream, &token, &calls));
     }
 }
 
@@ -232,7 +173,7 @@ struct Request {
     body: Vec<u8>,
 }
 
-fn read_request<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<Option<Request>> {
+fn read_request(reader: &mut BufReader<&TcpStream>) -> std::io::Result<Option<Request>> {
     let mut start = String::new();
     if reader.read_line(&mut start)? == 0 {
         return Ok(None);
@@ -279,19 +220,15 @@ fn read_request<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<Option<Re
     }))
 }
 
-fn serve_connection<R: Read, W: Write>(
-    reader: R,
-    mut out: W,
-    token: Option<&str>,
-    calls: &mpsc::Sender<Call>,
-) {
-    let mut reader = BufReader::new(reader);
+fn serve_connection(stream: TcpStream, token: &str, calls: &mpsc::Sender<Call>) {
+    let mut reader = BufReader::new(&stream);
     loop {
         let request = match read_request(&mut reader) {
             Ok(Some(request)) => request,
             Ok(None) | Err(_) => return,
         };
         let (status, body) = answer(&request, token, calls);
+        let mut out = &stream;
         let head = format!(
             "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
             body.len()
@@ -304,20 +241,13 @@ fn serve_connection<R: Read, W: Write>(
 }
 
 /// The status line and body for one request, with the transport's own refusals
-/// ahead of any JSON-RPC. `token` is `None` where the transport itself is the
-/// authorization, and then no header is looked at.
-fn answer(
-    request: &Request,
-    token: Option<&str>,
-    calls: &mpsc::Sender<Call>,
-) -> (&'static str, Vec<u8>) {
+/// ahead of any JSON-RPC.
+fn answer(request: &Request, token: &str, calls: &mpsc::Sender<Call>) -> (&'static str, Vec<u8>) {
     if request.origin {
         return ("403 Forbidden", Vec::new());
     }
-    if let Some(token) = token {
-        if request.authorization.as_deref() != Some(&format!("Bearer {token}")) {
-            return ("401 Unauthorized", Vec::new());
-        }
+    if request.authorization.as_deref() != Some(&format!("Bearer {token}")) {
+        return ("401 Unauthorized", Vec::new());
     }
     // GET is where a client would open the server-initiated SSE stream. There
     // is nothing to push, and the MCP client SDKs treat 405 here as "this
@@ -682,24 +612,24 @@ mod tests {
         assert_eq!(
             answer(
                 &request("POST", Some("Bearer wrong"), false, "{}"),
-                Some("t"),
+                "t",
                 &tx
             )
             .0,
             "401 Unauthorized"
         );
         assert_eq!(
-            answer(&request("POST", None, false, "{}"), Some("t"), &tx).0,
+            answer(&request("POST", None, false, "{}"), "t", &tx).0,
             "401 Unauthorized"
         );
         // Refused before the token is even compared: a page that can send an
         // Origin has no business holding the token either way.
         assert_eq!(
-            answer(&request("POST", Some(good), true, "{}"), Some("t"), &tx).0,
+            answer(&request("POST", Some(good), true, "{}"), "t", &tx).0,
             "403 Forbidden"
         );
         assert_eq!(
-            answer(&request("GET", Some(good), false, ""), Some("t"), &tx).0,
+            answer(&request("GET", Some(good), false, ""), "t", &tx).0,
             "405 Method Not Allowed"
         );
         assert_eq!(
@@ -710,7 +640,7 @@ mod tests {
                     false,
                     r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#
                 ),
-                Some("t"),
+                "t",
                 &tx
             )
             .0,
@@ -726,7 +656,6 @@ mod tests {
         let endpoint = Endpoint {
             url: "http://127.0.0.1:1/mcp".to_string(),
             token: "secret".to_string(),
-            sock: None,
         };
         assert_eq!(endpoint.authorization(), "Bearer secret");
         assert!(!endpoint.url.contains("secret"));
@@ -737,14 +666,12 @@ mod tests {
     #[test]
     fn a_real_socket_serves_a_tool_call() {
         let (tx, loop_thread) = answering(json!({"success": true, "message": "on screen"}));
-        let sock = std::env::temp_dir().join(format!("ai-buddy-{}-tcp.sock", std::process::id()));
-        let endpoint = start(tx, &sock).expect("bound loopback");
-        let _ = std::fs::remove_file(&sock);
+        let endpoint = start(tx).expect("bound loopback");
         let address = endpoint
             .url
             .trim_start_matches("http://")
             .trim_end_matches("/mcp");
-        let mut stream = std::net::TcpStream::connect(address).expect("connected");
+        let mut stream = TcpStream::connect(address).expect("connected");
         let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"speak","arguments":{"message":"on screen"}}}"#;
         let request = format!(
             "POST /mcp HTTP/1.1\r\nHost: {address}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
@@ -773,53 +700,5 @@ mod tests {
         assert_eq!(value["result"]["structuredContent"]["success"], json!(true));
         let call = loop_thread.join().expect("the loop ran").expect("a call");
         assert_eq!(call.tool, "speak");
-    }
-
-    /// The unix socket is the transport a Harness that drops our environment
-    /// gets (#1020). Its file mode is the authorization, so no header.
-    #[cfg(unix)]
-    #[test]
-    fn the_unix_socket_answers_with_no_token_and_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        use std::os::unix::net::UnixStream;
-
-        let (tx, _rx) = mpsc::channel();
-        let path = std::env::temp_dir().join(format!("ai-buddy-{}.sock", std::process::id()));
-        let sock = serve_unix(&path, tx).expect("bound the socket");
-        assert_eq!(
-            std::fs::metadata(&sock)
-                .expect("a socket file")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-        let mut stream = UnixStream::connect(&sock).expect("connected");
-        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
-        let request = format!(
-            "POST /mcp HTTP/1.1\r\nHost: ai-buddy\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(request.as_bytes()).expect("wrote");
-        let mut reader = BufReader::new(&stream);
-        let mut status = String::new();
-        reader.read_line(&mut status).expect("a status line");
-        assert!(status.starts_with("HTTP/1.1 200"), "{status}");
-        let mut length = 0usize;
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).expect("a header");
-            if line.trim_end().is_empty() {
-                break;
-            }
-            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                length = value.trim().parse().expect("a length");
-            }
-        }
-        let mut payload = vec![0u8; length];
-        reader.read_exact(&mut payload).expect("a body");
-        let value: Value = serde_json::from_slice(&payload).expect("valid JSON");
-        assert_eq!(value["result"]["tools"].as_array().map(Vec::len), Some(7));
-        let _ = std::fs::remove_file(&sock);
     }
 }

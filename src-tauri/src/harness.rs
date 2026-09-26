@@ -149,24 +149,6 @@ fn takes_cursor_config(launch: &Launch) -> bool {
     launch.name == "cursor-agent"
 }
 
-/// The entry for `cursor-agent`'s config: the shim, told the socket in `args`.
-/// `None` without a socket (Windows, a failed bind) or without a shim, and
-/// then no config is written.
-fn cursor_entry() -> Option<crate::cursor_mcp::Entry> {
-    let sock = crate::mcp_http::endpoint()?.sock?;
-    Some(cursor_entry_for(&sock, mcp_stdio()?))
-}
-
-fn cursor_entry_for(sock: &Path, stdio: McpLaunch) -> crate::cursor_mcp::Entry {
-    let mut args = stdio.args;
-    args.push(ai_buddy_mcp_server::SOCK_FLAG.to_string());
-    args.push(sock.display().to_string());
-    crate::cursor_mcp::Entry {
-        command: stdio.path,
-        args,
-    }
-}
-
 /// The exported variable, else the Completer source row Settings saved.
 /// Exported-and-empty is not unexported. `AI_BUDDY_HARNESS=` is the kill
 /// switch, and falling through would spawn the Harness the export cleared.
@@ -1029,8 +1011,10 @@ impl Session {
     /// per process, so afterwards is too late (#1020). A failure is logged and
     /// the spawn goes ahead: a session without tools beats no session.
     fn install_cursor(&self, cwd: &Path) {
-        let Some(entry) = cursor_entry() else { return };
-        match crate::cursor_mcp::install(cwd, &entry) {
+        let Some(endpoint) = crate::mcp_http::endpoint() else {
+            return;
+        };
+        match crate::cursor_mcp::install(cwd, &endpoint.url, &endpoint.authorization()) {
             Ok(installed) => {
                 if let Ok(mut slot) = self.cursor.lock() {
                     slot.get_or_insert(installed);
@@ -4795,40 +4779,5 @@ mod tests {
             &launch(Some("cursor-agent acp --model gpt")).unwrap()
         ));
         assert!(!takes_cursor_config(&launch(Some("hermes")).unwrap()));
-    }
-
-    /// The entry names the shim's own args and then the socket, with no env:
-    /// the app binary keeps `--mcp-stdio`, a sidecar has nothing before the flag.
-    #[test]
-    fn the_cursor_entry_appends_the_socket_to_the_shim_args() {
-        let sock = Path::new("/data/mcp.sock");
-        let app = cursor_entry_for(
-            sock,
-            McpLaunch {
-                path: PathBuf::from("/Applications/ai-buddy"),
-                args: vec!["--mcp-stdio".into()],
-                env: Vec::new(),
-            },
-        );
-        assert_eq!(
-            app,
-            crate::cursor_mcp::Entry {
-                command: PathBuf::from("/Applications/ai-buddy"),
-                args: vec![
-                    "--mcp-stdio".into(),
-                    "--sock".into(),
-                    "/data/mcp.sock".into()
-                ],
-            }
-        );
-        let sidecar = cursor_entry_for(
-            sock,
-            McpLaunch {
-                path: PathBuf::from("/opt/ai-buddy-mcp"),
-                args: Vec::new(),
-                env: Vec::new(),
-            },
-        );
-        assert_eq!(sidecar.args, vec!["--sock", "/data/mcp.sock"]);
     }
 }

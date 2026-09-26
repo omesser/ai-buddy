@@ -77,17 +77,29 @@ Reversing this means a descriptor file with its permissions, staleness and
 cleanup, or accepting that a Harness which does not advertise the bit has no
 working tools.
 
-**A unix socket beside loopback is not that descriptor file (#1020).** A Harness
-that loads MCP servers only from its own approved config, `cursor-agent`, is
-handed neither variable: it passes nothing from its environment to a stdio
-server, and a token written into its config would be a secret at rest that also
-changes its approval hash every launch. So the app also serves the same dispatch
-on `<data_dir>/mcp.sock`, mode 0600, with no bearer token on that transport, and
-the config entry names only the shim and the socket path. The file this ADR
-rejected carried the token; this file carries none, so the permissions, staleness
-and cleanup it feared protect nothing and are not needed. The socket's mode is the
-same protection the token's environment relies on above: the same user, and no
-one else. The loopback path and the environment stay as they are for every other
-Harness. Windows has no unix sockets in Rust's standard library and the shim crate
-forbids `unsafe`, so a named pipe is out of scope there and `cursor-agent` on
-Windows keeps the gap.
+**For one Harness the endpoint does go in a file, and it is that Harness's own
+config (#1020).** `cursor-agent` reads `mcpServers` from neither `session/new`
+nor its environment. It loads servers only from an approved `.cursor/mcp.json`,
+so the only way to reach it is to write there. Attach merges one entry into
+`<cwd>/.cursor/mcp.json` holding the same loopback URL and `Authorization`
+header an HTTP-capable Harness is handed directly, then runs `cursor-agent mcp
+enable ai-buddy` before spawning `acp`.
+
+This is the reversal named above, taken deliberately and scoped to one Harness.
+The costs it predicted are the ones now paid, and they are paid rather than
+argued away. Permissions: the file is written 0600, because it holds a live
+credential. Staleness: the token is 32 fresh bytes per app run, so a copy that
+outlives the app authorises nothing. Cleanup: detach removes the entry, and the
+file and directory when attach created them.
+
+What it buys is that `cursor-agent` uses the same transport as every other
+Harness, on every platform ai-buddy ships. A unix socket with no token was built
+and measured first and would have kept the credential off disk entirely, but it
+is `cfg(unix)`, and leaving Windows without tools to avoid a 0600 file in a
+directory the user already controls is the worse trade.
+
+What remains is real and is not engineered around: while a session is attached
+to a user-set Working directory, a live token sits in that project's
+`.cursor/mcp.json`. It is the length of one session, it is owner-only, and it
+authorises the seven tools and nothing else. The shim and the two environment
+variables are untouched; `cursor-agent` no longer uses either.
