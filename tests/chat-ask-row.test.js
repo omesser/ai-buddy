@@ -1,10 +1,12 @@
-// The consent row is a question plus the options as buttons. Nesting the
-// buttons inside `.said` inherits `overflow-wrap: anywhere`, which in the
-// 420-point Chat window shrinks Yes/No to a single character. #908.
+// The consent row: what an ask says, one element per part, with the options
+// as buttons under it. The DOM shape is asserted on a stand-in document that
+// refuses innerHTML, because every word of an ask is untrusted.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+
+import { drawAskDetails } from "../src/chat-ask-row.js";
 
 const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
 const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
@@ -33,6 +35,79 @@ function fnBody(name) {
   }
   assert.fail(`${name} has no matching close`);
 }
+
+class Element {
+  constructor(tagName, ownerDocument) {
+    this.tagName = tagName.toUpperCase();
+    this.ownerDocument = ownerDocument;
+    this.className = "";
+    this.children = [];
+    this.textContent = "";
+  }
+
+  set innerHTML(_) {
+    throw new Error("untrusted text must not become HTML");
+  }
+
+  append(...children) {
+    this.children.push(...children);
+  }
+}
+
+const document = {
+  createElement(tagName) {
+    return new Element(tagName, this);
+  },
+};
+
+function drawn(ask) {
+  const body = document.createElement("div");
+  drawAskDetails(body, ask);
+  return body.children.map(({ tagName, className, textContent }) => ({
+    tagName,
+    className,
+    textContent,
+  }));
+}
+
+test("an execute ask draws its command as code and its kind and paths as metadata", () => {
+  assert.deepEqual(
+    drawn({
+      title: "Open <img src=x>",
+      kind: "execute",
+      content: ["open -a Calculator && <script>alert(1)</script>"],
+      input: { command: "not displayed twice" },
+      locations: ["/tmp/<report>"],
+    }),
+    [
+      { tagName: "DIV", className: "ask-title", textContent: "Open <img src=x>" },
+      {
+        tagName: "CODE",
+        className: "ask-code",
+        textContent: "open -a Calculator && <script>alert(1)</script>",
+      },
+      { tagName: "DIV", className: "ask-metadata", textContent: "execute · /tmp/<report>" },
+    ],
+  );
+});
+
+test("a prose question stays prose, and argument fallback is code", () => {
+  assert.deepEqual(
+    drawn({ title: "Question", kind: "other", content: ["Which branch? <b>main</b>"] }),
+    [
+      { tagName: "DIV", className: "ask-title", textContent: "Question" },
+      { tagName: "DIV", className: "ask-prose", textContent: "Which branch? <b>main</b>" },
+    ],
+  );
+  assert.deepEqual(
+    drawn({ title: "Run", kind: "execute", content: [], input: { command: "pwd" } }),
+    [
+      { tagName: "DIV", className: "ask-title", textContent: "Run" },
+      { tagName: "CODE", className: "ask-code", textContent: "command: pwd" },
+      { tagName: "DIV", className: "ask-metadata", textContent: "execute" },
+    ],
+  );
+});
 
 test("asked and elicited still mount the options under the question", () => {
   for (const name of ["asked", "elicited"]) {
