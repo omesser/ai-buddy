@@ -116,6 +116,7 @@ impl Notice {
         }
     }
 
+    /// Quiet, Due, or Dismissed from usable consent, the dismissal, and the latch.
     pub fn hint(&self, settings: &Settings) -> NamesHint {
         Standing {
             names_usable: self.names.usable(),
@@ -125,14 +126,13 @@ impl Notice {
         .into()
     }
 
-    /// The latch is set, so `hint` would read consent. The frame loop stays
-    /// quiet until then.
+    /// Whether this run was asked for names it could not give. The frame loop
+    /// stays quiet until then.
     pub fn armed(&self) -> bool {
         self.asked_unnamed.load(Ordering::Relaxed)
     }
 
-    /// The payload Chat should draw. The generation climbs only when the
-    /// derived hint changes, so a replay and a button answer share one count.
+    /// The payload Chat should draw.
     pub fn publish(&self, settings: &Settings) -> HintPush {
         let hint = self.hint(settings);
         let mut drawn = self
@@ -157,22 +157,18 @@ impl Notice {
         }
     }
 
-    /// The user pressed one of the notice's two buttons. `Dismiss` writes one
-    /// bool and saves it. `OpenSettings` writes nothing.
+    /// Record a button press and the notice Chat should draw after it.
     pub fn acted(
         &self,
         press: Press,
         settings: &Mutex<Settings>,
         path: &Path,
     ) -> io::Result<Acted> {
-        {
-            let mut held = settings.lock().map_err(poisoned)?;
-            if press == Press::Dismiss {
-                held.names_hint_dismissed = true;
-                held.save(path)?;
-            }
+        let mut held = settings.lock().map_err(poisoned)?;
+        if press == Press::Dismiss {
+            held.names_hint_dismissed = true;
+            held.save(path)?;
         }
-        let held = settings.lock().map_err(poisoned)?;
         Ok(Acted {
             push: self.publish(&held),
             then: press.then(),
@@ -448,15 +444,15 @@ mod tests {
     fn window_names_row() -> &'static str {
         #[cfg(target_os = "macos")]
         {
-            "consent_screen_recording"
+            crate::settings::form::CONSENT_SCREEN_RECORDING_ID
         }
         #[cfg(target_os = "windows")]
         {
-            "consent_window_titles"
+            crate::settings::form::CONSENT_WINDOW_NAMES_ID
         }
         #[cfg(target_os = "linux")]
         {
-            "consent_screen_cast"
+            crate::settings::form::CONSENT_PORTAL_SCREENCAST_ID
         }
     }
 }

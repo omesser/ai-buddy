@@ -518,16 +518,18 @@ pub struct RevealTarget {
 impl Reveal {
     /// Names the Privacy row for window names. Checking the box stays the user's.
     pub fn target(self) -> RevealTarget {
-        let row = consent::rows(|_| false)
-            .into_iter()
-            .find(|row| row.id == consent::CapabilityId::WindowNames)
-            .map(|row| row.row_id())
-            .expect("WindowNames is in the consent catalog");
         match self {
-            Self::WindowNamesConsent => RevealTarget {
-                tab: "Privacy".to_string(),
-                row,
-            },
+            Self::WindowNamesConsent => {
+                let row = consent::rows(|_| false)
+                    .into_iter()
+                    .find(|row| row.id == consent::CapabilityId::WindowNames)
+                    .map(|row| row.row_id())
+                    .expect("WindowNames is in the consent catalog");
+                RevealTarget {
+                    tab: "Privacy".to_string(),
+                    row,
+                }
+            }
         }
     }
 }

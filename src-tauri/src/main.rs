@@ -1283,9 +1283,9 @@ fn run_operation(
     }
 }
 
-/// Open or raise Settings aimed at one row. The zero-argument command keeps
-/// its signature. A window that is already open hears `settings-refresh` and
-/// takes the aim from the next snapshot.
+/// Open or raise Settings aimed at one row. An open window reloads from the
+/// next snapshot; one still loading has no listener, so the snapshot carries
+/// the aim.
 fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
     if let Some(state) = app.try_state::<SettingsState>() {
         if let Ok(mut slot) = state.reveal.lock() {
@@ -1299,7 +1299,7 @@ fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
     });
 }
 
-/// The notice's two buttons. Neither grants anything.
+/// The notice's two buttons.
 #[tauri::command]
 fn names_hint_act(
     action: String,

@@ -1570,10 +1570,6 @@ body {
   padding: 0 18px;
 }
 
-/* The agent's steps, between the log and the composer. Capped and scrolled
-   because `.log` is the only child that flexes, so in a 560-point window an
-   uncapped plan of a dozen steps eats the transcript. Five rows, then it
-   scrolls itself. */
 #names-hint {
   flex: 0 0 auto;
   display: grid;
@@ -1609,6 +1605,10 @@ body {
   cursor: pointer;
 }
 
+/* The agent's steps, between the log and the composer. Capped and scrolled
+   because `.log` is the only child that flexes, so in a 560-point window an
+   uncapped plan of a dozen steps eats the transcript. Five rows, then it
+   scrolls itself. */
 .plan {
   flex: 0 0 auto;
   max-height: calc(1.45em * 5);
