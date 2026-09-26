@@ -48,7 +48,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Harness integrations (ACP Completer) | ✅ (claude/codex/cursor-agent/grok/hermes/opencode/pi/goose named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Harness integrations (ACP Completer) | ✅ (claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | MCP server (buddy-side tools) | ✅ (loopback HTTP + stdio fallback) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | AI chat integration | ✅ (Summon chat surface shipped; #17 tracks polish/bugs) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
 | BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
@@ -418,14 +418,15 @@ sources).
 
 The mascot has an authored personality file (`personality.txt`) and a Director
 that picks Behaviors and spoken lines non-deterministically. The Character talks
-in-character while living on your windows — not Clippy (no claiming machine
-abilities, no promising actions). Not a chat-first app — Summon chat exists
-(#17 tracks polish/bugs), but idle personality-driven speech is the product center.
+in-character while living on your windows. Idle personality-driven speech is the
+product center; Summon chat exists (#17 tracks polish/bugs). When the user asks
+for something, the Director prompt invites using the tools available
+(Harness/MCP), then replying in-character (#987).
 Director proposes a Behavior name and
 optional spoken line; Static weights when no Completer is configured, HTTP
 Completer stand-in with API key/local server, Harness ACP Completer shipped
-(#433 2026-09-07, named claude/codex/cursor-agent/grok/hermes/opencode/pi/goose rows + custom ACP
-command per #556 2026-09-08; pi verified #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24). Each Instance has its own Director and
+(#433 2026-09-07, named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi rows + custom ACP
+command per #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26). Each Instance has its own Director and
 seed — two of the same Character don't move or speak in lockstep. Each Instance
 has its own user-authored Instance Prompt layer (#531 2026-09-08, ADR-0012)
 strengthening multi-instance personality differentiation; personality.txt remains
@@ -436,13 +437,17 @@ package-authored.
    that picks idle Behaviors + spoken lines non-deterministically, in-character.
    Completer contract: Behavior name on one line, optional spoken line on the
    next. `talk` animation plays when a proposal includes it. Universal rules
-   (stay in character, bubble length, no claiming machine abilities) injected in
-   `character_prompt`, not in the file. Unparsable reply becomes speech; failed
+   (stay in character, speech-bubble length, vary lines, react to the moment;
+   when asked for something, use the tools you have, then reply as above)
+   live in `app_instructions`, the app layer of `character_prompt`, not in
+   the personality file (#987). The prompt does not name the tools; the
+   invitation is the one sentence, and the catalog stays with the tools.
+   Unparsable reply becomes speech; failed
    wake falls back to Static. Engine keeps the sprite alive while the model
    thinks. Static weights when no Completer configured; HTTP Completer stand-in
    with API key/local server; Harness ACP Completer shipped (#433 2026-09-07,
-   named claude/codex/cursor-agent/grok/hermes/opencode/pi/goose rows + custom ACP command per
-   #556 2026-09-08; pi verified #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24). No other desktop pet ships authored personality
+   named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi rows + custom ACP command per
+   #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26). No other desktop pet ships authored personality
    + Director-driven non-deterministic idle speech.
 
 2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
@@ -450,12 +455,22 @@ package-authored.
    fade + hotkey hide. Window app name tracking. Local idle life without model.
 
 3. **Agent integrations (shipped).** Harness ACP Completer (#433 2026-09-07)
-   speaks to a spawned Harness as the session Completer; named claude/codex/
-   cursor-agent/grok/hermes/opencode/pi/goose rows + custom ACP command (#556 2026-09-08; pi
-   verified #628 2026-09-11, Chat-only / no MCP forward; grok verified #587 2026-09-09; codex verified
-   #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24). MCP server shipped (#117/#497 era +
-   #491 2026-09-08) serving loopback HTTP so Harness `speak` lands on screen;
-   `ai-buddy-mcp` stdio remains fallback. Summon chat surface shipped; #17 tracks polish/bugs. OpenPets
+   speaks to a spawned Harness as the session Completer. Named rows match the
+   README preset table: claude, codex, copilot, cursor-agent, grok, goose,
+   opencode, hermes, and pi, plus a custom ACP command (#556 2026-09-08).
+   Verification: pi ACP #628 2026-09-11; grok #587 2026-09-09; codex #623
+   2026-09-14; cursor-agent #762 2026-09-16; goose #971 2026-09-24 (#989);
+   copilot #1017 2026-09-26, smoked fresh and resumed on copilot 1.0.88 (#1016).
+   Pi's `initialize` advertises no HTTP MCP, and whether that attached session
+   lists ai-buddy's tools is unmeasured (#984, #1007, #1009). Settings can
+   write a stable project `.mcp.json` that names the loopback variables for Pi
+   (#1019); that file is not a measurement of the attached session's tool list.
+   `cursor-agent` ignores `mcpServers` on the handshake, so attach writes the
+   same loopback URL and bearer token into `<cwd>/.cursor/mcp.json` and runs
+   `cursor-agent mcp enable ai-buddy` before the session (#1024). MCP server
+   shipped (#117/#497 era + #491 2026-09-08) serving loopback HTTP so Harness
+   `speak` lands on screen; `ai-buddy-mcp` stdio remains fallback. Summon chat surface
+   shipped; #17 tracks polish/bugs. OpenPets
    *already ships* overlay pet + MCP (`openpets_status` / `openpets_react` /
    `openpets_say`) + plugin SDK. Closest *shipped* agent-pet is OpenPets;
    ai-buddy's shipped differentiators are personality-driven Director speech +
@@ -490,9 +505,10 @@ package-authored.
 - **~** = documented not shipped (MateEngine
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
   not ballistic Perch riding) OR unverified (no named ai-buddy Harness row
-  is in that state today; codex verified #623, pi verified #628, grok verified
-  #587, cursor-agent verified #762, goose verified #971).
-- **❌** = not found in cited sources as of 2026-09-24.
+  is in that state today; codex verified #623, pi verified ACP #628, grok verified
+  #587, cursor-agent verified #762, goose verified #971, copilot verified #1017).
+- **❌** = not found in cited sources. The ai-buddy column was checked against
+  main on 2026-09-26; the other columns were not re-checked on this pass.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
   has Steam 974 reviews 97% + GitHub 3,532 stars.
@@ -500,7 +516,13 @@ package-authored.
 ## Sources
 
 Capabilities marked ✅, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
-DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 24, 2026 (Harness `goose` named+verified per #971; prior: cursor-agent #762, pi #628, grok #587, codex #623).
+DESIGN.md, README.md, ADR-0008, ADR-0026, the Director prompt
+(`app_instructions` in `crates/core/src/director/prompt.rs`), and `git log` on
+main at `7fee5fa1` as of September 26, 2026 (Director tool invitation #987;
+Pi handshake #1007/#1009, tool listing unmeasured #984, project MCP file #1019
+checked and not treated as a listing; Harness `goose` named+verified #971 / #989;
+`copilot` named+verified #1017, smoked #1016; `cursor-agent` MCP through its own
+config #1024; prior ACP: cursor-agent #762, grok #587, codex #623, pi #628).
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,278; VPet-Simulator [App ID
