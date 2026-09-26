@@ -23,6 +23,7 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
+mod completer;
 mod consent;
 mod cursor_mcp;
 mod dev_flags;
@@ -37,7 +38,6 @@ mod pi_mcp;
 mod platform;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod secrets;
-mod session;
 mod session_log;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
@@ -216,7 +216,7 @@ struct InstanceState {
     /// running the same one.
     character: Arc<Character>,
     director: StaticDirector,
-    model: Option<Arc<ModelDirector<session::AnyCompleter>>>,
+    model: Option<Arc<ModelDirector<completer::AnyCompleter>>>,
     recent: Vec<String>,
     pace: Pace,
     since_wake: Duration,
@@ -2376,7 +2376,7 @@ fn apply_menu_action(
     action: menu::MenuAction,
     roster: &mut Roster,
     lives: &mut Vec<InstanceState>,
-    slots: &mut session::Slots,
+    slots: &mut completer::Slots,
     instance_id: &InstanceId,
     rules: &Arc<Mutex<HideRules>>,
     settings: &Arc<Mutex<Settings>>,
@@ -2550,7 +2550,7 @@ pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pa
 fn switch_instance(
     roster: &mut Roster,
     lives: &mut [InstanceState],
-    slots: &mut session::Slots,
+    slots: &mut completer::Slots,
     instance_id: &InstanceId,
     character: Arc<Character>,
     config: &model::DirectorConfig,
@@ -2564,7 +2564,7 @@ fn switch_instance(
         live.pace = paced(config, &live.character);
         // The old session is the previous Character's. A Wake still on the
         // wire would propose as them; drop it and ask for this opening turn.
-        session::retarget_model(
+        completer::retarget_model(
             slots,
             instance_id,
             &mut live.model,
@@ -2615,7 +2615,7 @@ fn spawn_live(
         director: StaticDirector::new(character.behaviors.clone(), seed),
         model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
-                session::completer_from(settings).expect("configured means a Completer exists"),
+                completer::completer_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
                 id.clone(),
                 character.name.clone(),
@@ -2884,7 +2884,8 @@ fn spawn_instances(
             // show the spend, which is #18's panel.
             model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
-                    session::completer_from(settings).expect("configured means a Completer exists"),
+                    completer::completer_from(settings)
+                        .expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                     id.clone(),
                     character.name.clone(),

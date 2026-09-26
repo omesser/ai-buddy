@@ -2,7 +2,7 @@
 //!
 //! One of two Completers. `harness.rs` is the attached Harness over ACP; this
 //! file is the chat-completions stand-in that stays for everyone who attaches
-//! nothing. `session` picks between them and holds the in-flight call. ADR-0008.
+//! nothing. `completer` picks between them and holds the in-flight call.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -671,7 +671,7 @@ impl Endpoint {
             }
             // A call dropped between two attempts must not become a fresh
             // request the frame loop can no longer reach.
-            if crate::session::abandoned() {
+            if crate::completer::abandoned() {
                 reply = Err(Unsent::Abandoned);
                 break;
             }
@@ -822,7 +822,7 @@ impl Endpoint {
                     .into_with_config()
                     .limit(STREAM_LIMIT)
                     .reader();
-                match read_stream(reader, crate::session::abandoned, think) {
+                match read_stream(reader, crate::completer::abandoned, think) {
                     Ok((streamed, marked)) => {
                         // Evidence, like the three dropped fields above it:
                         // this host marked its reasoning, so the next turn
@@ -1790,7 +1790,7 @@ fn think(line: &str) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::session::{abandoned, near_miss_line, retarget_model, Answered, Slots};
+    use crate::completer::{abandoned, near_miss_line, retarget_model, Answered, Slots};
     use ai_buddy_core::director::{Context, Happened, ModelDirector, Wake};
     use ai_buddy_core::roster::InstanceId;
     use std::sync::mpsc::{self, Receiver};

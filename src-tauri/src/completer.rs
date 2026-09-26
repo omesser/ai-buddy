@@ -18,7 +18,7 @@ use ai_buddy_core::roster::InstanceId;
 use crate::model::{blank, endpoint_from, tracing, DirectorSettings, Endpoint};
 
 /// Whichever Completer this process has: the attached Harness for every
-/// Instance (ADR-0008), else an HTTP `Endpoint` per Instance.
+/// Instance, else an HTTP `Endpoint` per Instance.
 /// An enum so `Endpoint`'s inherent methods keep their type.
 pub enum AnyCompleter {
     // Boxed: an `Endpoint` carries the whole session and the agent, and the
@@ -65,9 +65,9 @@ pub(crate) fn abandoned() -> bool {
     })
 }
 
-/// Every session call the app has on the wire. One slot per Character Instance.
-/// One registry, not one per Instance. Sessions stay per-Instance inside each
-/// `Endpoint` (ADR-0008). There is no cap. N Instances make N calls.
+/// One slot per Character Instance, in one registry.
+/// Each HTTP session stays inside that Instance's `Endpoint`. There is no cap,
+/// so N Instances make N calls.
 #[derive(Default)]
 pub struct Slots {
     slots: HashMap<InstanceId, Slot>,

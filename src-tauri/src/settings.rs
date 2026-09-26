@@ -2154,8 +2154,8 @@ pub fn key_code_name(key: char) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::completer;
     use crate::secrets::{MemoryStore, SecretStore, DIRECTOR_API_KEY};
-    use crate::session;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -2967,7 +2967,7 @@ mod tests {
             let id = "buddy".to_string();
             let mut slots = model::tests::slots_awaiting_a_wake(&id);
             let mut completer = None;
-            session::retarget_model(
+            completer::retarget_model(
                 &mut slots,
                 &id,
                 &mut completer,
@@ -3764,7 +3764,7 @@ mod tests {
                 let id = "buddy".to_string();
                 let mut slots = model::tests::slots_awaiting_a_wake(&id);
                 let mut completer = None;
-                session::retarget_model(
+                completer::retarget_model(
                     &mut slots,
                     &id,
                     &mut completer,
