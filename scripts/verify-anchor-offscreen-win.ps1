@@ -82,6 +82,25 @@ function Intersects($a, $b) {
   return ($a.Left -lt $b.Right) -and ($a.Right -gt $b.Left) -and ($a.Top -lt $b.Bottom) -and ($a.Bottom -gt $b.Top)
 }
 
+# Whether a visible window of the app counts as anchor pixels on the desktop.
+# $win carries Class, Title, Left, Top, Right, Bottom; $monitors are rects.
+function Test-AnchorOnDesktop($win, $monitors) {
+  # Tao, the window library under Tauri, registers this class for its event
+  # loop: a visible 16x16 window at the origin that draws nothing. Not the anchor.
+  if ($win.Class -eq "Tao Thread Event Target") { return $false }
+  if ($win.Title -eq "Settings") { return $false }
+  $w = $win.Right - $win.Left
+  $h = $win.Bottom - $win.Top
+  $onMonitor = $false
+  foreach ($mon in $monitors) {
+    if (Intersects $win $mon) { $onMonitor = $true }
+    $mw = $mon.Right - $mon.Left
+    $mh = $mon.Bottom - $mon.Top
+    if ($w -ge ($mw * 0.8) -and $h -ge ($mh * 0.8)) { return $false }
+  }
+  return $onMonitor
+}
+
 $monitors = [AnchorVerify]::Monitors()
 if ($monitors.Count -eq 0) { Fail "no monitors" }
 $pid32 = [uint32]$script:AppProc.Id
@@ -99,17 +118,11 @@ foreach ($hwnd in $wins) {
   $w = $rect.Right - $rect.Left
   $h = $rect.Bottom - $rect.Top
   Info ("hwnd {0} {1}x{2} at {3},{4} class={5} title={6}" -f $hwnd, $w, $h, $rect.Left, $rect.Top, $class, $title)
-  $onMonitor = $false
-  $coversMonitor = $false
-  foreach ($mon in $monitors) {
-    if (Intersects $rect $mon) { $onMonitor = $true }
-    $mw = $mon.Right - $mon.Left
-    $mh = $mon.Bottom - $mon.Top
-    if ($w -ge ($mw * 0.8) -and $h -ge ($mh * 0.8)) { $coversMonitor = $true }
+  $win = [pscustomobject]@{
+    Class = $class; Title = $title
+    Left = $rect.Left; Top = $rect.Top; Right = $rect.Right; Bottom = $rect.Bottom
   }
-  if (-not $onMonitor) { continue }
-  if ($coversMonitor) { continue }
-  if ($title -eq "Settings") { continue }
+  if (-not (Test-AnchorOnDesktop $win $monitors)) { continue }
   Write-Host "[FAIL] on-desktop hwnd $hwnd ${w}x${h} class=$class title=$title is the anchor surface" -ForegroundColor Red
   $failed = $true
 }
