@@ -142,6 +142,13 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
     })
 }
 
+/// `cursor-agent` loads MCP servers from its own project config and not from
+/// `session/new` (#1020). The preset and a custom `cursor-agent …` line both
+/// carry that name.
+fn takes_cursor_config(launch: &Launch) -> bool {
+    launch.name == "cursor-agent"
+}
+
 /// The exported variable, else the Completer source row Settings saved.
 /// Exported-and-empty is not unexported. `AI_BUDDY_HARNESS=` is the kill
 /// switch, and falling through would spawn the Harness the export cleared.
@@ -505,6 +512,10 @@ pub struct Session {
     /// wire. `shutdown` clears this first so a spawn that lands afterwards
     /// kills the child instead of storing it.
     wanted: AtomicBool,
+    /// What the first attach wrote into `cursor-agent`'s config, for
+    /// `shutdown` to take back. The first record is kept across respawns:
+    /// it is the one that knows what did not exist before us.
+    cursor: Mutex<Option<crate::cursor_mcp::Installed>>,
 }
 
 struct OpenedSession {
@@ -586,6 +597,7 @@ impl Session {
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
             wanted: AtomicBool::new(true),
+            cursor: Mutex::new(None),
         }
     }
 
@@ -979,6 +991,9 @@ impl Session {
     /// take it with us. `npx` does not reliably die on stdin EOF.
     pub fn shutdown(&self) {
         self.wanted.store(false, Ordering::SeqCst);
+        if let Some(installed) = self.cursor.lock().ok().and_then(|mut slot| slot.take()) {
+            installed.remove();
+        }
         let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
@@ -989,6 +1004,29 @@ impl Session {
                 self.launch.line(),
                 REAP.as_secs()
             );
+        }
+    }
+
+    /// Config and `enable` before the `acp` spawn. Cursor reads approvals once
+    /// per process, so afterwards is too late (#1020). A failure is logged and
+    /// the spawn goes ahead: a session without tools beats no session.
+    fn install_cursor(&self, cwd: &Path) {
+        let Some(endpoint) = crate::mcp_http::endpoint() else {
+            return;
+        };
+        match crate::cursor_mcp::install(cwd, &endpoint.url, &endpoint.authorization()) {
+            Ok(installed) => {
+                if let Ok(mut slot) = self.cursor.lock() {
+                    slot.get_or_insert(installed);
+                }
+            }
+            Err(why) => {
+                eprintln!("harness: cursor mcp: {why}");
+                return;
+            }
+        }
+        if let Err(why) = crate::cursor_mcp::enable(Path::new(&self.launch.argv[0]), cwd) {
+            eprintln!("harness: cursor mcp: {why}");
         }
     }
 
@@ -1059,6 +1097,9 @@ impl Session {
             }
             Err(error) => return Err(SpawnError::Failed(error.to_string())),
         };
+        if takes_cursor_config(&self.launch) {
+            self.install_cursor(cwd.as_path());
+        }
         let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
         let spawned = Wire::spawn(
@@ -4727,5 +4768,16 @@ mod tests {
             panic!("no stdio server to hand over");
         };
         assert!(unreachable.env.is_empty());
+    }
+
+    /// The preset and a custom line both spell the binary's name; `hermes`
+    /// takes its servers from `session/new` and needs no file.
+    #[test]
+    fn only_a_cursor_agent_launch_takes_the_cursor_config() {
+        assert!(takes_cursor_config(&launch(Some("cursor-agent")).unwrap()));
+        assert!(takes_cursor_config(
+            &launch(Some("cursor-agent acp --model gpt")).unwrap()
+        ));
+        assert!(!takes_cursor_config(&launch(Some("hermes")).unwrap()));
     }
 }

@@ -76,3 +76,30 @@ the same answer as before for a user with no app open, said out loud.
 Reversing this means a descriptor file with its permissions, staleness and
 cleanup, or accepting that a Harness which does not advertise the bit has no
 working tools.
+
+**For one Harness the endpoint does go in a file, and it is that Harness's own
+config (#1020).** `cursor-agent` reads `mcpServers` from neither `session/new`
+nor its environment. It loads servers only from an approved `.cursor/mcp.json`,
+so the only way to reach it is to write there. Attach merges one entry into
+`<cwd>/.cursor/mcp.json` holding the same loopback URL and `Authorization`
+header an HTTP-capable Harness is handed directly, then runs `cursor-agent mcp
+enable ai-buddy` before spawning `acp`.
+
+This is the reversal named above, taken deliberately and scoped to one Harness.
+The costs it predicted are the ones now paid, and they are paid rather than
+argued away. Permissions: the file is written 0600, because it holds a live
+credential. Staleness: the token is 32 fresh bytes per app run, so a copy that
+outlives the app authorises nothing. Cleanup: detach removes the entry, and the
+file and directory when attach created them.
+
+What it buys is that `cursor-agent` uses the same transport as every other
+Harness, on every platform ai-buddy ships. A unix socket with no token was built
+and measured first and would have kept the credential off disk entirely, but it
+is `cfg(unix)`, and leaving Windows without tools to avoid a 0600 file in a
+directory the user already controls is the worse trade.
+
+What remains is real and is not engineered around: while a session is attached
+to a user-set Working directory, a live token sits in that project's
+`.cursor/mcp.json`. It is the length of one session, it is owner-only, and it
+authorises the seven tools and nothing else. The shim and the two environment
+variables are untouched; `cursor-agent` no longer uses either.

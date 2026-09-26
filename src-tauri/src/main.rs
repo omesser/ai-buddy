@@ -24,6 +24,7 @@
 mod acp_wire;
 mod action_log;
 mod consent;
+mod cursor_mcp;
 mod dev_flags;
 mod frame_loop;
 mod harness;
