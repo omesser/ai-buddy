@@ -1977,6 +1977,7 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_buddy_core::director::{Context, Happened};
     use ai_buddy_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
@@ -2233,6 +2234,14 @@ mod tests {
                             );
                         }
                         "slow" | "load-slow" if prompts == 1 => pending_prompt = Some(id),
+                        // Works for a while and then answers, asking nothing.
+                        // A turn long enough for another wake to land inside
+                        // it, with no ask to confuse the two.
+                        "working" => {
+                            thread::sleep(ASK_WORK);
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -3798,6 +3807,139 @@ mod tests {
         session.answer_permission(&again.request, "allow");
         assert_eq!(second.join().unwrap(), Ok(Reply::whole("ok:allow")));
         assert_eq!(fx.settled(), (again.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    /// The Instance every slot test wakes. One buddy is enough: the rule
+    /// under test is per-Instance.
+    const WOKEN: &str = "buddy-1";
+
+    /// A session Director over this Harness, as the frame loop builds one.
+    fn harness_director(
+        session: &Arc<Session>,
+    ) -> Arc<ai_buddy_core::director::ModelDirector<crate::model::AnyCompleter>> {
+        Arc::new(ai_buddy_core::director::ModelDirector::new(
+            crate::model::AnyCompleter::Harness(Arc::clone(session)),
+            ["stroll", "nap"],
+            WOKEN,
+            "bmo",
+            false,
+        ))
+    }
+
+    fn woken(happened: Happened) -> Context {
+        Context {
+            happened,
+            ..crate::model::tests::wake_context()
+        }
+    }
+
+    /// Poll the slot the way the frame loop does, until an answer lands.
+    fn polled(slots: &mut crate::model::Slots) -> Option<crate::model::Answered> {
+        let id = WOKEN.to_string();
+        for _ in 0..300 {
+            if let Some(answered) = slots.take(&id) {
+                return Some(answered);
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        None
+    }
+
+    /// The line the Shell would remember, or `None` for a wake that failed.
+    fn said(answered: &crate::model::Answered) -> Option<&str> {
+        match &answered.wake {
+            Wake::Proposed(parsed) => parsed.dialogue.as_deref(),
+            Wake::Failed => None,
+        }
+    }
+
+    /// #1037. `Session::supersede` refuses to give a reactive turn up for an
+    /// ambient tick, so the Harness answers the chat turn. The slot must not
+    /// have thrown its claim on that answer away in the meantime, or the
+    /// reply the user is waiting on reaches nobody.
+    #[test]
+    fn an_ambient_tick_does_not_take_a_chat_turn_the_harness_keeps() {
+        let (fx, session) = Fixture::new("working");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::model::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        assert!(fx.wait_for("prompt", 1));
+        slots.wake(&id, harness_director(&session), woken(Happened::Ambient));
+
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("Hello"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the ambient tick was dropped");
+        session.shutdown();
+    }
+
+    /// #1038. The buddy has a question out to the user and the user touches
+    /// the sprite. Newest-wins is about the world moving past a moment; the
+    /// user mid-answer is not that, so the Poke is dropped instead.
+    #[test]
+    fn a_poke_does_not_take_a_turn_blocked_on_the_users_answer() {
+        let (fx, session) = Fixture::new("permission");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::model::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        let ask = fx.ask();
+        slots.wake(&id, harness_director(&session), woken(Happened::Poke));
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            fx.count("perm:cancelled"),
+            0,
+            "the ask was taken from under the user"
+        );
+
+        session.answer_permission(&ask.request, "allow");
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("ok:allow"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the Poke was dropped, not queued");
+        session.shutdown();
+    }
+
+    /// Newest-wins is otherwise untouched. A Poke over a turn that is only
+    /// thinking still takes it, which is the whole of ADR-0016.
+    #[test]
+    fn a_poke_still_takes_a_chat_turn_that_is_only_thinking() {
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::model::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        assert!(fx.wait_for("prompt", 1));
+        slots.wake(&id, harness_director(&session), woken(Happened::Poke));
+
+        let answered = polled(&mut slots).expect("the Poke's own answer");
+        assert_eq!(answered.context.happened, Happened::Poke);
+        assert_eq!(said(&answered), Some("Hello"));
+        assert!(fx.wait_for("cancel", 1));
         session.shutdown();
     }
 
