@@ -1576,7 +1576,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             heading: "Harness attachment".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
+                "Turn timeout: how long a session/prompt may run before session/cancel, not counting the time it waits on you to answer an ask, and started over once you answer. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
                 crate::harness::TURN_TIMEOUT.as_secs()
             )),
             status: None,
