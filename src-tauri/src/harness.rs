@@ -3990,6 +3990,47 @@ mod tests {
         session.shutdown();
     }
 
+    /// Mid-answer, a Throw and a Grab are the same hold as a Poke. The user
+    /// answers in Chat, and that turn continues. Neither gesture cancels it.
+    #[test]
+    fn a_throw_or_a_grab_does_not_take_a_turn_blocked_on_the_users_answer() {
+        for happened in [Happened::Throw, Happened::Grab] {
+            let (fx, session) = Fixture::new("permission");
+            let session = Arc::new(session);
+            let id = WOKEN.to_string();
+            let mut slots = crate::completer::Slots::new();
+            slots.wake(
+                &id,
+                harness_director(&session),
+                woken(Happened::Chat("hi".into())),
+            );
+            let ask = fx.ask();
+            assert_eq!(
+                slots.wake(&id, harness_director(&session), woken(happened.clone())),
+                crate::completer::Woke::Dropped,
+                "{happened:?} took the turn the user is answering"
+            );
+            thread::sleep(Duration::from_millis(300));
+            assert_eq!(
+                fx.count("perm:cancelled"),
+                0,
+                "{happened:?} took the ask from under the user"
+            );
+
+            session.answer_permission(&ask.request, "allow");
+            let answered = polled(&mut slots).expect("the chat turn's answer");
+            assert!(
+                matches!(answered.context.happened, Happened::Chat(_)),
+                "{happened:?} replaced the typed line with {:?}",
+                answered.context.happened
+            );
+            assert_eq!(said(&answered), Some("ok:allow"));
+            assert_eq!(fx.count("cancel"), 0, "{happened:?} cancelled the turn");
+            assert_eq!(fx.count("prompt"), 1, "{happened:?} was sent, not dropped");
+            session.shutdown();
+        }
+    }
+
     /// A Poke is a touch of the sprite, so a turn that is only thinking still
     /// gives way to it. Opening Chat does not. ADR-0016 stands for the touch.
     #[test]

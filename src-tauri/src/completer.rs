@@ -180,8 +180,8 @@ impl Slots {
         let reactive = claim != Claim::Ambient;
         let slot = self.slots.entry(id.clone()).or_default();
         if slot.waiting {
-            // The buddy asked the user a question and the user is mid-answer.
-            // Nothing the buddy decides on its own is newer than that.
+            // The user is mid-answer in Chat. A Poke, Throw, Grab, or Summon
+            // is dropped, and so is every other wake. The answer is owed first.
             if director.awaiting_user() {
                 return Woke::Dropped;
             }

@@ -46,7 +46,9 @@ still holds, except that:
 
 - **A call blocked on the user's own answer is not superseded, by anything.**
   Newest-wins abandons a moment the world has moved past. The user mid-answer
-  is not that. The buddy asked; the answer is owed.
+  is not that. The buddy asked, and the answer is owed in Chat. A Poke, a
+  Throw, a Grab, and a Summon are the same interruption here, and each is
+  dropped. The user answers, and that same turn continues.
 - **An ambient tick does not supersede a reactive call.** The Harness already
   refuses to give the turn up for one, so a slot that superseded anyway would
   throw away an answer that is still on its way. This is the rule the two
@@ -59,8 +61,7 @@ still holds, except that:
   newest-wins still lets them take that turn. A Summon opens Chat. The
   reply already on the wire is the one the user is about to read, so
   cancelling it to give the Summon a turn of its own throws that answer
-  away. While the call is blocked on the user's own answer, this difference
-  does not apply. Nothing takes that turn, and a Summon does not either.
+  away. That split holds only while the reply is still generating.
 
 The losing wake is **dropped**, not queued. ADR-0016 rejected a queue for a
 mascot and the reason holds here: a buddy working through a backlog of Pokes
@@ -84,7 +85,8 @@ is the truth for the HTTP lane: an endpoint has no way to ask.
   Summon does. Rejected. They are different acts. A Poke, like a Throw or
   a Grab, is the user touching the sprite, and it may take a turn that is
   only generating. A Summon opens Chat and must not cancel the reply
-  already on its way. While the user is mid-answer, neither takes the turn.
+  already on its way. While the user is mid-answer, a Poke, a Throw, a Grab,
+  and a Summon are all dropped.
 - **Bound the carve-out with a grace period.** It would stop an unanswered
   ask holding the slot forever. Rejected as a dial ADR-0016 exists to avoid,
   and unnecessary: `PendingAsks` replays an outstanding ask into any Chat
@@ -95,10 +97,10 @@ is the truth for the HTTP lane: an endpoint has no way to ask.
 
 ## Consequences
 
-An unanswered ask holds the Instance's slot. Pokes and Summons at the sprite
-do nothing at all until the user answers or rejects, and nothing on screen
-says so. That is the trade: a mascot that ignores a poke for a moment against
-a mascot that hangs up on its own question.
+An unanswered ask holds the Instance's slot. A Poke, a Throw, a Grab, and a
+Summon do nothing to that turn until the user answers or rejects in Chat, and
+nothing on screen says so. That is the trade: a mascot that ignores a gesture
+for a moment against a mascot that hangs up on its own question.
 
 A Summon that arrives while a reactive reply is still generating is dropped
 too. The Chat window still opens, because the slot does not open it. The
