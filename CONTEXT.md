@@ -133,6 +133,11 @@ _Avoid_: Brain, agent, planner. In user-facing Settings and README: the role
 name "Director" when it means the on/off switch or HTTP configuration — say
 "AI" / "AI on" for the toggle, "Model" / "API" for HTTP knobs instead
 
+**Director session**:
+The one conversation per Character Instance that proposes Behaviors and answers
+the Chat surface. `harness::Session` is the ACP process that holds it.
+_Avoid_: Harness session, chat thread
+
 **Proactive model call**:
 A Director session wake that fires because the buddy was left alone long
 enough, not because the user addressed it.
@@ -212,6 +217,11 @@ fill's timeout and turn ceiling. A Harness turn has its own budget
 `AI_BUDDY_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
 _Avoid_: Using "Completer" as Settings or README brand (say AI, Model, API, AI
 source, or Harness), or as synonym for HTTP-only fill
+
+**Settings draft**:
+The Settings window's uncommitted rows. A row that still matches what is live
+stays out of the patch.
+_Avoid_: Dirty form, unsaved settings
 
 **Turn ceiling**:
 The token bound on one HTTP Completer turn, thought and answer together. A
