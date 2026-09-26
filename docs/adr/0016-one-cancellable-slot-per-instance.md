@@ -1,5 +1,11 @@
 # The Shell owns one cancellable slot per Instance, and a superseded reply is never applied
 
+**Status:** Accepted, with one clause superseded by
+[ADR-0033](./0033-a-call-waiting-on-the-user-is-not-superseded.md): a call
+blocked on the user's own answer is not superseded, an ambient tick does not
+supersede a reactive call, and `wake` is no longer infallible — it says which
+of the two it did. Newest-wins otherwise stands as written.
+
 One `Slots` registry holds at most one session call per Character Instance, and
 starting a call *is* the cancellation of that Instance's previous one. `wake` is
 infallible: there is no busy to report, so there is no check a caller can

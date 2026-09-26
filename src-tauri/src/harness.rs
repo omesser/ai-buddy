@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -496,6 +496,11 @@ pub struct Session {
     /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
     /// name lands on whichever buddy is mid-reply.
     serving_instance: Mutex<Option<String>>,
+    /// Questions the Harness has put to the user that nothing has settled.
+    /// Raised and lowered by the wire's own events, which `end_turn` balances
+    /// by settling everything it still holds, so a turn that dies with an ask
+    /// out still leaves this at zero. Shared with the wire's reader thread.
+    asked: Arc<AtomicUsize>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
     withdrawing: Mutex<Option<String>>,
@@ -592,6 +597,7 @@ impl Session {
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
             serving_instance: Mutex::new(None),
+            asked: Arc::new(AtomicUsize::new(0)),
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
@@ -1103,10 +1109,11 @@ impl Session {
         }
         let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
+        let asked = Arc::clone(&self.asked);
         let spawned = Wire::spawn(
             self.launch.command(cwd),
             self.attach_timeout(),
-            Box::new(move |event| note_event(&data, &forward, event)),
+            Box::new(move |event| note_event(&data, &forward, &asked, event)),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -1324,6 +1331,17 @@ impl Completer for Session {
         }
         reply
     }
+
+    /// One child serves every Instance (ADR-0008) and one turn holds the wire
+    /// at a time, so an outstanding ask belongs to whichever Instance that
+    /// turn is for. Another buddy's wake is not held by this one's question.
+    fn awaiting_user(&self, instance: &str) -> bool {
+        self.asked.load(Ordering::SeqCst) > 0
+            && self
+                .serving_instance
+                .lock()
+                .is_ok_and(|serving| serving.as_deref() == Some(instance))
+    }
 }
 
 /// The one prompt the probe sends. Shaped like the last line of a Character
@@ -1534,7 +1552,7 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
 
 /// What the session stream said, into the Action Log, and a permission
 /// request on to the Chat surface. Runs on the wire thread.
-fn note_event(dir: &Path, forward: &Forward, event: Event) {
+fn note_event(dir: &Path, forward: &Forward, asked: &AtomicUsize, event: Event) {
     match event {
         // A tool call and a usage tick are logged and never forwarded, so a
         // turn shows the surface no phases. ADR-0028 bounds what a later
@@ -1566,6 +1584,7 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
+            asked.fetch_add(1, Ordering::SeqCst);
             forward(Forwarded::Ask(ask));
         }
         Event::Elicitation(form) => {
@@ -1574,9 +1593,13 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "elicitation_create",
                 json!({"request": form.request, "field": form.field}),
             );
+            asked.fetch_add(1, Ordering::SeqCst);
             forward(Forwarded::Form(form));
         }
         Event::PermissionSettled { request, option } => {
+            let _ = asked.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |out| {
+                Some(out.saturating_sub(1))
+            });
             forward(Forwarded::Settled { request, option })
         }
         // Forwarded and not logged. The Action Log points at the Harness's own
@@ -2566,6 +2589,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
+            &AtomicUsize::new(0),
             Event::Thought("Reading the roster".to_string()),
         );
 
@@ -2592,6 +2616,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
+            &AtomicUsize::new(0),
             Event::Plan(vec![PlanStep {
                 content: "read the roster".to_string(),
                 priority: "high".to_string(),
@@ -2621,7 +2646,12 @@ mod tests {
             let _ = tx.send(what);
         }) as Forward;
 
-        note_event(&dir, &forward, Event::Plan(Vec::new()));
+        note_event(
+            &dir,
+            &forward,
+            &AtomicUsize::new(0),
+            Event::Plan(Vec::new()),
+        );
 
         assert!(matches!(
             forwarded.try_recv(),
@@ -3817,9 +3847,9 @@ mod tests {
     /// A session Director over this Harness, as the frame loop builds one.
     fn harness_director(
         session: &Arc<Session>,
-    ) -> Arc<ai_buddy_core::director::ModelDirector<crate::model::AnyCompleter>> {
+    ) -> Arc<ai_buddy_core::director::ModelDirector<crate::completer::AnyCompleter>> {
         Arc::new(ai_buddy_core::director::ModelDirector::new(
-            crate::model::AnyCompleter::Harness(Arc::clone(session)),
+            crate::completer::AnyCompleter::Harness(Arc::clone(session)),
             ["stroll", "nap"],
             WOKEN,
             "bmo",
@@ -3830,12 +3860,12 @@ mod tests {
     fn woken(happened: Happened) -> Context {
         Context {
             happened,
-            ..crate::model::tests::wake_context()
+            ..crate::completer::tests::wake_context()
         }
     }
 
     /// Poll the slot the way the frame loop does, until an answer lands.
-    fn polled(slots: &mut crate::model::Slots) -> Option<crate::model::Answered> {
+    fn polled(slots: &mut crate::completer::Slots) -> Option<crate::completer::Answered> {
         let id = WOKEN.to_string();
         for _ in 0..300 {
             if let Some(answered) = slots.take(&id) {
@@ -3847,7 +3877,7 @@ mod tests {
     }
 
     /// The line the Shell would remember, or `None` for a wake that failed.
-    fn said(answered: &crate::model::Answered) -> Option<&str> {
+    fn said(answered: &crate::completer::Answered) -> Option<&str> {
         match &answered.wake {
             Wake::Proposed(parsed) => parsed.dialogue.as_deref(),
             Wake::Failed => None,
@@ -3863,7 +3893,7 @@ mod tests {
         let (fx, session) = Fixture::new("working");
         let session = Arc::new(session);
         let id = WOKEN.to_string();
-        let mut slots = crate::model::Slots::new();
+        let mut slots = crate::completer::Slots::new();
         slots.wake(
             &id,
             harness_director(&session),
@@ -3892,7 +3922,7 @@ mod tests {
         let (fx, session) = Fixture::new("permission");
         let session = Arc::new(session);
         let id = WOKEN.to_string();
-        let mut slots = crate::model::Slots::new();
+        let mut slots = crate::completer::Slots::new();
         slots.wake(
             &id,
             harness_director(&session),
@@ -3927,7 +3957,7 @@ mod tests {
         let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session);
         let id = WOKEN.to_string();
-        let mut slots = crate::model::Slots::new();
+        let mut slots = crate::completer::Slots::new();
         slots.wake(
             &id,
             harness_director(&session),

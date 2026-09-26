@@ -1449,24 +1449,36 @@ pub(crate) fn run_frame_loop(
                             live.happened = Happened::Ambient;
                             live.since_ambient = Duration::ZERO;
                             let payload = model.prompt(&context);
-                            // One panel for however many Instances are running,
-                            // so the newest call is what it shows. #18 owns the
-                            // panel; until then, last payload sent is the honest answer.
-                            if let Ok(mut inspect) = inspect.lock() {
-                                inspect.last_payload = Some(payload);
-                                inspect.wake_secs = live.pace.wait().as_secs();
+                            // Read before the `Context` is handed to the slot,
+                            // and applied only if the slot took the call.
+                            let caret = cancelled_caret(live.chat_turn, &context.happened);
+                            let chat_turn = matches!(context.happened, Happened::Chat(_));
+                            let cell = director::happened_cell(&context.happened);
+                            match slots.wake(&live.id, Arc::clone(model), context) {
+                                // The call on the wire is the truer one
+                                // (ADR-0033). This wake is dropped, not queued:
+                                // the bookkeeping above has already spent it.
+                                completer::Woke::Dropped => false,
+                                completer::Woke::Started => {
+                                    // One panel for however many Instances are running,
+                                    // so the newest call is what it shows. #18 owns the
+                                    // panel; until then, last payload sent is the honest answer.
+                                    if let Ok(mut inspect) = inspect.lock() {
+                                        inspect.last_payload = Some(payload);
+                                        inspect.wake_secs = live.pace.wait().as_secs();
+                                    }
+                                    // Starting a call cancels the one before it
+                                    // (ADR-0016). Tell a typed line on the wire its
+                                    // caret is cancelled, not that nothing came back (#681),
+                                    // and name the wake that cancelled it (#890).
+                                    if let Some(note) = caret {
+                                        let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
+                                    }
+                                    live.chat_turn = chat_turn;
+                                    live.happened_last = Some(cell);
+                                    was_addressed
+                                }
                             }
-                            // Starting a call cancels the one before it
-                            // (ADR-0016). Tell a typed line on the wire its
-                            // caret is cancelled, not that nothing came back (#681),
-                            // and name the wake that cancelled it (#890).
-                            if let Some(note) = cancelled_caret(live.chat_turn, &context.happened) {
-                                let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
-                            }
-                            live.chat_turn = matches!(context.happened, Happened::Chat(_));
-                            live.happened_last = Some(director::happened_cell(&context.happened));
-                            slots.wake(&live.id, Arc::clone(model), context);
-                            was_addressed
                         } else {
                             false
                         }

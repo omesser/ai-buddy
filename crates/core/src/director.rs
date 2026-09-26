@@ -146,6 +146,13 @@ pub fn reactive(happened: &Happened) -> bool {
 /// attached. Tests put a double here.
 pub trait Completer {
     fn complete(&self, request: &WakeRequest) -> Result<Reply, String>;
+
+    /// Whether this Completer has a question out to the user on `instance`'s
+    /// turn, so that turn is waiting on a person rather than on a model
+    /// (ADR-0033). An HTTP endpoint has no way to ask, hence the default.
+    fn awaiting_user(&self, _instance: &str) -> bool {
+        false
+    }
 }
 
 /// What a reply the token cap ended is marked with, in the one place it is
@@ -265,6 +272,13 @@ impl<C> ModelDirector<C> {
 }
 
 impl<C: Completer> ModelDirector<C> {
+    /// Whether this Instance's call is blocked on the user's own answer.
+    /// Asked of the Completer, which is the only layer that can see a
+    /// permission request or an elicitation form.
+    pub fn awaiting_user(&self) -> bool {
+        self.completer.awaiting_user(&self.instance)
+    }
+
     /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
         if self.opened.load(Ordering::SeqCst) {

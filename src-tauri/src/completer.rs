@@ -35,6 +35,13 @@ impl Completer for AnyCompleter {
             AnyCompleter::Harness(session) => session.complete(request),
         }
     }
+
+    fn awaiting_user(&self, instance: &str) -> bool {
+        match self {
+            AnyCompleter::Http(endpoint) => endpoint.awaiting_user(instance),
+            AnyCompleter::Harness(session) => session.awaiting_user(instance),
+        }
+    }
 }
 
 /// The Completer `configured` promises. Harness first: with one attached the
@@ -86,6 +93,14 @@ struct Slot {
     /// Whether the call answers something the user did, which is the whole of
     /// what the Thinking ellipsis asks.
     reactive: bool,
+}
+
+/// What `wake` did with the call it was handed. A dropped wake started no
+/// call, so the Shell must leave the caret and the turn bookkeeping alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Woke {
+    Started,
+    Dropped,
 }
 
 /// One worker's answer, stamped with the call it belongs to.
@@ -151,18 +166,33 @@ impl Slots {
     }
 
     /// Send this Character Prompt for `id`, abandoning whatever `id` had out.
-    /// Infallible. Starting a call is the cancellation of the previous one,
-    /// so there is no busy to report. Per-Instance newest-wins.
+    /// Per-Instance newest-wins, but for the two moments ADR-0033 carves out,
+    /// where the wake already on the wire is the truer one and the new wake
+    /// is dropped. Which of the two happened is the return.
     pub fn wake<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,
         director: Arc<ModelDirector<C>>,
         context: Context,
-    ) {
+    ) -> Woke {
+        let reactive = director::reactive(&context.happened);
         let slot = self.slots.entry(id.clone()).or_default();
+        if slot.waiting {
+            // The buddy asked the user a question and the user is mid-answer.
+            // Nothing the buddy decides on its own is newer than that.
+            if director.awaiting_user() {
+                return Woke::Dropped;
+            }
+            // An ambient tick is not news. The Harness refuses to give a
+            // reactive turn up for one (`Session::supersede`), so a slot that
+            // superseded anyway would drop an answer still on its way.
+            if !reactive && slot.reactive {
+                return Woke::Dropped;
+            }
+        }
         slot.supersede();
         slot.waiting = true;
-        slot.reactive = director::reactive(&context.happened);
+        slot.reactive = reactive;
         let epoch = slot.epoch;
         let tx = slot.tx.clone();
         let abandoned = Arc::clone(&slot.abandoned);
@@ -198,6 +228,7 @@ impl Slots {
                 },
             });
         });
+        Woke::Started
     }
 
     /// The reply for `id`, with the moment it was computed for.
@@ -547,7 +578,14 @@ pub(crate) mod tests {
         let id = "buddy".to_string();
 
         slots.wake(&id, answering("stroll", 120), wake_context());
-        slots.wake(&id, answering("nap", 0), wake_context());
+        slots.wake(
+            &id,
+            answering("nap", 0),
+            Context {
+                happened: Happened::Poke,
+                ..wake_context()
+            },
+        );
 
         let answered = polled(&mut slots, &id).expect("the newest call answers");
         assert_eq!(behavior_of(&answered.wake), "nap");
@@ -557,6 +595,32 @@ pub(crate) mod tests {
             slots.take(&id).is_none(),
             "the superseded reply must be dropped, not delivered a tick later"
         );
+    }
+
+    /// The other direction, which ADR-0033 turns around. A reactive call is an
+    /// answer the user is waiting for and an ambient tick is the buddy musing.
+    /// The muse is dropped rather than costing the user their answer.
+    #[test]
+    fn an_ambient_tick_does_not_supersede_a_reactive_call() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        slots.wake(
+            &id,
+            answering("stroll", 120),
+            Context {
+                happened: Happened::Poke,
+                ..wake_context()
+            },
+        );
+        assert_eq!(
+            slots.wake(&id, answering("nap", 0), wake_context()),
+            Woke::Dropped
+        );
+
+        let answered = polled(&mut slots, &id).expect("the Poke's own call answers");
+        assert_eq!(behavior_of(&answered.wake), "stroll");
+        assert_eq!(answered.context.happened, Happened::Poke);
     }
 
     /// A name nobody declared arrives as speech, so the name is the only
