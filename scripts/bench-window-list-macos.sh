@@ -6,8 +6,10 @@
 #
 # micro times the call from its own process against whatever is on the desktop
 # (scripts/bench-window-list-macos.swift) and needs no green light. idle and
-# riding launch ai-buddy on the live desktop and put prop windows on it, so they
+# riding launch ai-buddy on the live desktop and flood it with windows, so they
 # refuse to run unless AI_BUDDY_BENCH_GREEN_LIGHT=1 says the operator agreed.
+# The flood comes from scripts/window-flood-macos.swift (PR #1043); without
+# that file the added-window rows skip and say so.
 #
 # The per-call numbers for a running ai-buddy come from dtrace on SkyLight's
 # SLWindowListCopyWindowInfo: on macOS 26 CoreGraphics forwards to it and the
@@ -28,9 +30,10 @@ usage() {
 Usage: $0 <env|micro|idle|riding|matrix> [--seconds N] [--windows N] [--bin PATH] [--out DIR]
 
 env and micro touch nothing on screen. idle and riding launch ai-buddy and open
-prop windows, and need AI_BUDDY_BENCH_GREEN_LIGHT=1. matrix runs idle and
-riding twice each: on the desktop as found, and with --windows prop windows
-added. Per-call timing of the running app needs sudo for dtrace.
+windows, and need AI_BUDDY_BENCH_GREEN_LIGHT=1. matrix runs idle and riding
+twice each: on the desktop as found, and with --windows flood windows added by
+scripts/window-flood-macos.swift, skipped when that file is absent. Per-call
+timing of the running app needs sudo for dtrace.
 EOF
   exit 2
 }
@@ -71,7 +74,7 @@ case "$scenario" in
   env | micro) ;;
   *)
     if [ "${AI_BUDDY_BENCH_GREEN_LIGHT:-}" != 1 ]; then
-      echo "$scenario takes over the desktop (launches ai-buddy, opens prop windows)." >&2
+      echo "$scenario takes over the desktop (launches ai-buddy, opens windows)." >&2
       echo "Set AI_BUDDY_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
       exit 2
     fi
@@ -238,13 +241,21 @@ wait_state() {
   return 1
 }
 
-# Adds $windows prop windows and appends their pid to PROP_PIDS. A count of
-# 0 adds nothing, which is the "desktop as found" row.
-add_prop_windows() {
+flood=scripts/window-flood-macos.swift
+
+# Floods the display with $count windows and appends the flood's pid to
+# PROP_PIDS. A count of 0 adds nothing, which is the "desktop as found" row.
+# On failure ADD_REASON says why, so the row records it.
+add_flood_windows() {
   local count=$1
   local log=$2
+  ADD_REASON=""
   [ "$count" -gt 0 ] || return 0
-  swift scripts/windows-prop.swift "$count" $((seconds + 120)) > "$log" 2>&1 &
+  if [ ! -f "$flood" ]; then
+    ADD_REASON="skipped: $flood is not in this checkout (under review in #1043)"
+    return 1
+  fi
+  swift "$flood" "$count" $((seconds + 120)) > "$log" 2>&1 &
   PROP_PIDS="$PROP_PIDS $!"
   local _
   for _ in $(seq 1 40); do
@@ -253,7 +264,7 @@ add_prop_windows() {
     fi
     sleep 0.25
   done
-  echo "windows prop never reported, see $log" >&2
+  ADD_REASON="window flood never reported, see $log"
   return 1
 }
 
@@ -276,8 +287,8 @@ run_idle() {
   local extra=$1
   local name="idle+$extra"
   local log="$out/$name.log"
-  add_prop_windows "$extra" "$out/$name.props.log" || {
-    emit "$name" N/A N/A N/A N/A N/A "prop windows failed"
+  add_flood_windows "$extra" "$out/$name.flood.log" || {
+    emit "$name" N/A N/A N/A N/A N/A "$ADD_REASON"
     stop_props
     return 0
   }
@@ -301,8 +312,8 @@ run_riding() {
   local extra=$1
   local name="riding+$extra"
   local log="$out/$name.log"
-  add_prop_windows "$extra" "$out/$name.props.log" || {
-    emit "$name" N/A N/A N/A N/A N/A "prop windows failed"
+  add_flood_windows "$extra" "$out/$name.flood.log" || {
+    emit "$name" N/A N/A N/A N/A N/A "$ADD_REASON"
     stop_props
     return 0
   }
