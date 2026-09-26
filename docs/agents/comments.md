@@ -1,12 +1,33 @@
 # Comments
 
-Comments should say why, not what. We strive to keep them short and informative.
-A comment earns every line it takes.
+A comment says why. It stays short. It earns every line.
+
+The default ceiling is 3 lines per block. A public item keeps a one-line summary, so `cargo doc` and an IDE hover still say what the item is. A Rust `//!` module header is exempt. It documents the module. A `///` item doc is not exempt.
+
+Code comments are not audit logs or decision logs. Keep a longer record only when the implementation is weird and the record is what makes that implementation defensible.
+
+## Decide in this order
+
+1. Delete a block that restates what the code does.
+2. Delete a sentence that narrates how the code came to be. The pull request description holds that history.
+3. Keep a remaining why in at most 3 lines, in the present tense.
+4. Keep a bare issue or ADR number only when the code is not understandable without opening it. When the sentence already states the fact, drop the number.
+5. Keep the one-line summary on a public item.
+
+Stop when you do not understand the comment. Leave it alone.
+
+A block may run past 3 lines in four cases.
+
+- The implementation is weird, and the comment is what makes it defensible.
+- The block is a `ponytail:` marker. It names the ceiling, the cost, and the condition that changes it.
+- The block names a bound that looks arbitrary.
+- The block names a rejected alternative a reader would otherwise try again.
+
+If a comment exists because the code is unclear, fix the code in a different pull request. A comment edit stays comment-only.
 
 ## What earns the words
 
-A reason, a constraint, a rejected alternative, or a bound that looks arbitrary
-and is not. From `crates/core/src/character.rs`:
+`PERSONALITY_LIMIT` in `crates/core/src/character.rs` is the bound. #807 deleted this block. This page used to hold it up as the example.
 
 ```rust
 /// How long a Personality Prompt may be, in characters.
@@ -14,17 +35,30 @@ and is not. From `crates/core/src/character.rs`:
 /// The prompt is untrusted text that goes into every Character Prompt the
 /// Director sends, so an unbounded one spends a user's tokens and buries the
 /// sensing context under prose. Generous enough for a paragraph of personality.
-pub const PERSONALITY_LIMIT: usize = 2000;
 ```
 
-Five lines for a constant, and every one is load-bearing. Without them, 2000 is
-a number the next reader is free to change.
+The comment that ships is three lines.
+
+```rust
+/// How long a Personality Prompt may be, in characters. Untrusted text in every
+/// Character Prompt the Director sends, so an unbounded one spends tokens and
+/// buries sensing under prose. Generous enough for a paragraph of personality.
+pub(crate) const PERSONALITY_LIMIT: usize = 2000;
+```
+
+Without those lines, 2000 is a number the next reader is free to change.
+
+The Dock note on `a_walk_into_the_dock_climbs_onto_it_rather_than_behind_it` in `crates/core/src/engine.rs` is the constraint. Three lines. The fact is in the comment, so the block cites no issue.
+
+```rust
+/// The Dock is the one thing on screen drawn in front of the sprite, so a
+/// walk that carries on under it puts the sprite where nobody can see or
+/// grab it. Its side is a wall.
+```
 
 ## What does not
 
-A comment that restates the code. From a one-line getter this repository once
-shipped (`src-tauri/src/cast.rs`, dissolved in #94 — the example outlives the
-file):
+A comment that restates the code does not earn its length. From a one-line getter this repository once shipped (`src-tauri/src/cast.rs`, dissolved in #94). The example outlives the file.
 
 ```rust
 /// Every Animation's frames as `data:` URLs, for the webview to draw from.
@@ -35,43 +69,23 @@ file):
 pub fn art(&self) -> &BTreeMap<String, Vec<String>> {
 ```
 
-The module doc above it already said why the frames are `data:` URLs, and
-`src/main.js` already says the webview owns no state. The first line is the
-whole comment:
+The module doc above it already said why the frames are `data:` URLs, and `src/main.js` already says the webview owns no state. The first line is the whole comment.
 
 ```rust
 /// Every Animation's frames as `data:` URLs, for the webview to draw from.
 ```
 
-Delete the restatement. If the code needed it, simplify the code instead.
+Delete the restatement.
 
-## History goes in the commit message
+## History stays out of the comment
 
-Not how the bug was found, not what the code looked like before. `git log`
-keeps that, and keeps it better.
+Leave out how the bug was found and what the code used to do. A squash merge keeps the pull request title and drops the commit body, so that history does not reach `git log`. Put it in the pull request description when a reviewer needs it.
 
-The exception is a comment that stops the next reader putting the bug back.
-This one, from `crates/core/src/snapshot.rs`, reads as history and is not:
-
-```rust
-/// #39: the sprite used to come to rest at the bottom of the display, which
-/// is behind the Dock — the Dock draws above the overlay, so three quarters
-/// of the art disappeared under it. [...] The fix is upstream of the Engine: the
-/// rectangles it is handed are the usable part of each display, so the floor
-/// it already derives is the Dock's top edge.
-```
-
-That is a constraint on where the fix belongs, and it is why the test exists.
-
-An issue number is worth the four characters. `crates/core/src/engine.rs` ends
-a paragraph with `#39.` and points at the whole argument without retelling it.
-The retelling is what to leave out.
+A comment that stops the next reader putting the bug back is the exception. The Dock note above is that shape. It says where the sprite must not end up, and why.
 
 ## `ponytail:` comments
 
-The sanctioned exception. A deliberate shortcut with a known ceiling names the
-ceiling and the upgrade path, and that is worth the words. From
-`crates/core/src/memory.rs`:
+A deliberate shortcut with a known ceiling names the ceiling and the upgrade path. From `backup_path` in `crates/core/src/memory.rs`.
 
 ```rust
 /// ponytail: seconds since the epoch rather than a civil timestamp. It sorts
@@ -80,30 +94,18 @@ ceiling and the upgrade path, and that is worth the words. From
 /// the later one wins.
 ```
 
-The ceiling, what it costs, and the condition under which it changes. Without
-all three it is a shortcut nobody can price.
+The ceiling, the cost, and the condition under which it changes. Without all three it is a shortcut nobody can price. The summary above the marker is part of the same block. On `backup_path` that summary is two lines, and the marker adds four. The marker is the exception that keeps the block.
 
-## The ceiling
+## The lint
 
-`pre-commit` runs [ast-grep](https://ast-grep.github.io/) over every language it
-parses and rejects a comment block over 20 lines
-(`scripts/ast-grep/rules/comment-blocks.yml`). tree-sitter finds the comments,
-so a language this repository adds is understood on arrival.
+The bar on this page is 3 lines. `pre-commit` runs [ast-grep](https://ast-grep.github.io/) and rejects a comment block over 20 lines (`scripts/ast-grep/rules/comment-blocks.yml`). The rule file says the 20 is what the tree passes today, and that tightening it is a separate pull request. A green lint does not mean a block meets the 3-line bar. Module docs and `ponytail:` markers sit over 3 lines on purpose.
 
-Covered languages on ast-grep 0.45.3: Rust, JavaScript, TypeScript, Python,
-Bash, Swift, CSS, YAML, HTML.
+Each language has its own rule in that file. Adding a language means adding the rule.
 
-**PowerShell (`.ps1`) is intentionally ungated.** No off-the-shelf linter
-provides a comment-block ceiling. PSScriptAnalyzer in this repository gates
-Error/ParseError severity only; a custom Measure rule would be ours to own.
+Covered languages on ast-grep 0.45.3: Rust, JavaScript, TypeScript, Python, Bash, Swift, CSS, YAML, HTML.
 
-**TOML (`.toml`) is currently ungated** after #813 replaced the Python hook.
-Recovery is available: ast-grep `customLanguages` can wire `@ast-grep/lang-toml`
-(prebuilt npm library) without per-platform compilation. That wire-up is a
-follow-up choice, not this issue.
+**PowerShell (`.ps1`) is intentionally ungated.** No off-the-shelf linter provides a comment-block ceiling. PSScriptAnalyzer in this repository gates Error and ParseError severity only. A custom Measure rule would be ours to own.
 
-Agents must not assume `.ps1` or `.toml` files are ceiling-checked.
+**TOML (`.toml`) is ungated.** #813 replaced the Python hook, and ast-grep does not parse TOML. `customLanguages` can wire `@ast-grep/lang-toml` without a per-platform build. That wire-up is a separate change.
 
-The 20 is what the tree passes today, not the bar this page argues for. It comes
-down as #744's compaction lands. A Rust `//!` module header is exempt — it
-documents the module rather than a line of code — and `///` item docs are not.
+Do not assume a `.ps1` or `.toml` file is ceiling-checked.
