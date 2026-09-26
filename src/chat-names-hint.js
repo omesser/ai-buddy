@@ -24,25 +24,16 @@ export function createNamesNotice({ act }) {
   let hint = null;
 
   function receive(payload) {
-    const nextHint = typeof payload === "string" ? payload : payload?.hint;
-    const nextGen =
-      payload !== null && typeof payload === "object" ? payload.generation : undefined;
-
-    if (typeof nextGen === "number" && nextGen < generation) {
+    const nextHint = payload?.hint;
+    const nextGen = payload?.generation;
+    if (typeof nextHint !== "string" || typeof nextGen !== "number") {
+      return { changed: false, view: viewOf(hint) };
+    }
+    if (nextGen < generation || (nextGen === generation && nextHint === hint)) {
       return { changed: false, view: viewOf(hint) };
     }
 
-    if (typeof nextGen === "number") {
-      if (nextGen === generation && nextHint === hint) {
-        return { changed: false, view: viewOf(hint) };
-      }
-      generation = nextGen;
-    } else if (typeof nextHint === "string") {
-      // A button answer has no generation. Count it ahead of the last push
-      // so a replay of that push cannot put the notice back.
-      generation += 1;
-    }
-
+    generation = nextGen;
     const changed = nextHint !== hint;
     hint = nextHint;
     return { changed, view: viewOf(hint) };

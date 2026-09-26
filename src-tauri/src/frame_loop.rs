@@ -170,12 +170,7 @@ pub(crate) fn run_frame_loop(
         let mut tour_triggered = false;
         let mut schedule_mode = scheduler::ScheduleMode::Active;
         let mut was_visible = true;
-        // Cleared when a Chat surface starts listening, so that window is told
-        // the current notice. The generation climbs only when the derived hint
-        // itself changes, and a replay sends the same one again.
         let mut names_sent: Option<crate::names_hint::NamesHint> = None;
-        let mut names_seen: Option<crate::names_hint::NamesHint> = None;
-        let mut names_generation: u64 = 0;
 
         loop {
             // The tap follows the setting: checked and granted, it starts here
@@ -882,17 +877,9 @@ pub(crate) fn run_frame_loop(
                 );
                 let notice = crate::names_hint::live();
                 if notice.armed() {
-                    let hint = notice.hint(&settings_now);
-                    if names_seen != Some(hint) {
-                        names_generation += 1;
-                        names_seen = Some(hint);
-                    }
-                    if names_sent != Some(hint) {
-                        names_sent = Some(hint);
-                        let push = crate::names_hint::HintPush {
-                            hint,
-                            generation: names_generation,
-                        };
+                    let push = notice.publish(&settings_now);
+                    if names_sent != Some(push.hint) {
+                        names_sent = Some(push.hint);
                         for live in &lives {
                             let _ =
                                 app.emit_to(chat_label(&live.id), crate::names_hint::EVENT, push);

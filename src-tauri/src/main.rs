@@ -1305,7 +1305,7 @@ fn names_hint_act(
     action: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, SettingsState>,
-) -> Result<names_hint::NamesHint, String> {
+) -> Result<names_hint::HintPush, String> {
     let press = names_hint::Press::parse(&action)
         .ok_or_else(|| format!("unknown notice action: {action}"))?;
     let acted = names_hint::live()
@@ -1314,7 +1314,7 @@ fn names_hint_act(
     if let names_hint::Then::Reveal(reveal) = acted.then {
         open_settings_at(&app, reveal);
     }
-    Ok(acted.hint)
+    Ok(acted.push)
 }
 
 /// Open the Settings window. Native Shell furniture, so this runs on the

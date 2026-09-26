@@ -80,6 +80,13 @@ pub struct Notice {
     /// write true, so neither waits on the other.
     asked_unnamed: AtomicBool,
     names: &'static dyn NamesConsent,
+    /// The last hint a caller published, and how many times that hint changed.
+    drawn: Mutex<Drawn>,
+}
+
+struct Drawn {
+    hint: Option<NamesHint>,
+    generation: u64,
 }
 
 /// The app's one notice.
@@ -94,6 +101,10 @@ impl Notice {
         Self {
             asked_unnamed: AtomicBool::new(false),
             names,
+            drawn: Mutex::new(Drawn {
+                hint: None,
+                generation: 0,
+            }),
         }
     }
 
@@ -105,7 +116,6 @@ impl Notice {
         }
     }
 
-    /// What a Chat surface should draw right now.
     pub fn hint(&self, settings: &Settings) -> NamesHint {
         Standing {
             names_usable: self.names.usable(),
@@ -115,10 +125,28 @@ impl Notice {
         .into()
     }
 
-    /// Whether this run has already been asked for names it could not give.
-    /// The frame loop calls `hint` only once this is set, because `hint` reads consent.
+    /// The latch is set, so `hint` would read consent. The frame loop stays
+    /// quiet until then.
     pub fn armed(&self) -> bool {
         self.asked_unnamed.load(Ordering::Relaxed)
+    }
+
+    /// The payload Chat should draw. The generation climbs only when the
+    /// derived hint changes, so a replay and a button answer share one count.
+    pub fn publish(&self, settings: &Settings) -> HintPush {
+        let hint = self.hint(settings);
+        let mut drawn = self
+            .drawn
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if drawn.hint != Some(hint) {
+            drawn.generation = drawn.generation.saturating_add(1);
+            drawn.hint = Some(hint);
+        }
+        HintPush {
+            hint,
+            generation: drawn.generation,
+        }
     }
 
     /// `ai-buddy://windows` was read. The resource path sees no desktop, so
@@ -137,16 +165,16 @@ impl Notice {
         settings: &Mutex<Settings>,
         path: &Path,
     ) -> io::Result<Acted> {
-        let hint = {
+        {
             let mut held = settings.lock().map_err(poisoned)?;
             if press == Press::Dismiss {
                 held.names_hint_dismissed = true;
                 held.save(path)?;
             }
-            self.hint(&held)
-        };
+        }
+        let held = settings.lock().map_err(poisoned)?;
         Ok(Acted {
-            hint,
+            push: self.publish(&held),
             then: press.then(),
         })
     }
@@ -190,7 +218,7 @@ impl Press {
 /// The state after a press, and whatever only the Shell can still do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Acted {
-    pub hint: NamesHint,
+    pub push: HintPush,
     pub then: Then,
 }
 
@@ -312,6 +340,11 @@ mod tests {
         let on = Notice::new(&NAMES_ON);
         on.titles_were_read();
         assert_eq!(on.hint(&Settings::default()), NamesHint::Quiet);
+
+        let again = off.publish(&Settings::default());
+        let repeat = off.publish(&Settings::default());
+        assert_eq!(again.hint, NamesHint::Due);
+        assert_eq!(repeat, again);
     }
 
     #[test]
@@ -328,7 +361,7 @@ mod tests {
         let acted = notice
             .acted(Press::Dismiss, &settings, &path)
             .expect("saved");
-        assert_eq!(acted.hint, NamesHint::Dismissed);
+        assert_eq!(acted.push.hint, NamesHint::Dismissed);
 
         let loaded = Settings::load(&path);
         assert!(loaded.names_hint_dismissed);
@@ -363,7 +396,7 @@ mod tests {
         let open = notice
             .acted(Press::OpenSettings, &settings, &path)
             .expect("acted");
-        assert_eq!(open.hint, NamesHint::Due);
+        assert_eq!(open.push.hint, NamesHint::Due);
         assert_eq!(
             open.then,
             Then::Reveal(crate::settings::form::Reveal::WindowNamesConsent)
@@ -381,7 +414,8 @@ mod tests {
         let dismiss = notice
             .acted(Press::Dismiss, &settings, &path)
             .expect("acted");
-        assert_eq!(dismiss.hint, NamesHint::Dismissed);
+        assert_eq!(dismiss.push.hint, NamesHint::Dismissed);
+        assert_eq!(dismiss.push.generation, open.push.generation + 1);
         assert_eq!(dismiss.then, Then::Nothing);
         let loaded = Settings::load(&path);
         assert!(!loaded.use_window_names);
