@@ -159,11 +159,6 @@ See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env v
 Which Harness you attach changes what ai-buddy can do with it.
 Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./docs/DEVELOPMENT.md)); the run itself lives on the issue that did it.
 
-`codex` and `goose` carry no mark. Simple Icons has neither, and neither vendor
-grants one: OpenAI's guidelines say not to use the logo without permission, and
-Block ships Goose under Apache 2.0, whose section 6 withholds trademark rights.
-#1021 tracks it.
-
 | Harness | Command | Standing |
 |---|---|---|
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
@@ -292,10 +287,9 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 Harness brand marks identify each Harness and belong to their owners. The Grok
 logomark is xAI's own file from [their brand guidelines](https://x.ai/legal/brand-guidelines),
 used unaltered to refer to Grok, which those guidelines permit and may revoke.
-The Nous Research mark (`docs/readme/nous.svg`) identifies the Hermes Harness and
-was added in #683; its source file was not recorded at the time. Every other mark
-is served from [Simple Icons](https://simpleicons.org) (CC0, with each brand's
-trademark reserved to its owner).
+The Nous Research mark (`docs/readme/nous.svg`) identifies the Hermes Harness.
+Every other mark is served from [Simple Icons](https://simpleicons.org) (CC0,
+with each brand's trademark reserved to its owner).
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. ai-buddy is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
