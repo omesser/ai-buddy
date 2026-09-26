@@ -10,7 +10,8 @@
 #   --keep   leave the app running afterwards, with tracing on
 
 # Unattended: export AI_BUDDY_DIRECTOR_API_KEY to avoid Keychain prompts.
-# Export AI_BUDDY_CAPTURABLE=1 to test the hide-from-captures setting.
+# Capturable by default (ADR-0024); export AI_BUDDY_CAPTURABLE=0 to test the
+# hide-from-captures setting instead.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -322,9 +323,9 @@ STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
 
-# No crop of the sprite: the overlay refuses every screen capture, so the crop
-# would show the desktop where the sprite is. Eyeball the art, or run with
-# AI_BUDDY_CAPTURABLE=1.
+# No crop of the sprite: whether the capture shows it depends on the
+# capturable setting (visible by default; AI_BUDDY_CAPTURABLE=0 hides it).
+# Eyeball the art instead.
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
 for i in $(seq 1 "$DISPLAY_COUNT"); do
@@ -373,10 +374,13 @@ levels = {w["layer"] for w in windows}
 check(levels == {3}, "every overlay is at floating level", f"levels={sorted(levels)}")
 
 # The screen-share half of the hide rules, and the only part a machine can
-# check. NSWindowSharingNone is 0, and it keeps the Character out of every
-# screen share and recording without detecting one, which macOS cannot.
+# check. Default is capturable (ADR-0024): NSWindowSharingReadOnly is 1,
+# None is 0. AI_BUDDY_CAPTURABLE's off words (model::switch_from) force 0.
 sharing = {w["sharing"] for w in windows}
-check(sharing == {0}, "every overlay is excluded from screen capture",
+off_words = {"0", "off", "false", "no"}
+expected = 0 if os.environ.get("AI_BUDDY_CAPTURABLE", "").strip().lower() in off_words else 1
+label = "excluded from" if expected == 0 else "capturable for"
+check(sharing == {expected}, f"every overlay is {label} screen capture",
       f"sharing={sorted(sharing)}")
 
 # The origin has to match too: the right area of the wrong display is the same

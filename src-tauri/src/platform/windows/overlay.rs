@@ -4,8 +4,8 @@
 //! WS_EX_TRANSPARENT) float the overlay above other windows without stealing
 //! focus. SetWindowRgn carves the input region from the sprite's alpha mask
 //! and unions any hotspot rectangles the renderer reported so a control drawn
-//! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE excludes the
-//! overlay from screen capture.
+//! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
+//! when the capturable setting, on by default (ADR-0024), is turned off.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -34,7 +34,8 @@ pub fn read_mask_rebuild_stats() -> (u64, u64) {
     (count, total_ns)
 }
 
-/// Float above other windows, non-activating, excluded from screen capture.
+/// Float above other windows, non-activating. Capturable unless Presence or
+/// `AI_BUDDY_CAPTURABLE=0` excludes it from shares.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let raw_window_handle = match window.window_handle() {
@@ -154,9 +155,9 @@ fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// Apply capture policy based on user settings.
-/// The Presence "Hide from screenshots" checkbox writes the inverse:
-/// checked → `capturable = false` → WDA_EXCLUDEFROMCAPTURE.
+/// Apply capture policy from user settings. The Presence "Appear in
+/// screenshots and screen shares" checkbox binds directly: checked (the
+/// default) is `capturable = true`, which clears WDA_EXCLUDEFROMCAPTURE.
 fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
     // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
     // SetWindowDisplayAffinity is documented safe with valid HWNDs.

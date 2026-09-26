@@ -355,8 +355,9 @@ and malware.
 Do Not Disturb is not a hide rule. Being quiet is not being gone: the Character
 stays visible and stops starting things — Director proposals are refused and
 unprompted dialogue is not spoken — while Poke, Grab, and Throw still work. That
-is #84. Screen capture is not a hide rule either: the overlay is excluded from
-every capture at the window level, so there is nothing to fade.
+is #84. Screen capture is not a hide rule either: capturable is a window-level
+on/off switch, visible by default ([ADR-0024](./docs/adr/0024-capturable-by-default.md)),
+so there is nothing to fade.
 
 ### 9. Sensing: no permissions until they buy something
 

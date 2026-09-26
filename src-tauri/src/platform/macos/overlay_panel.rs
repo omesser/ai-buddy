@@ -42,8 +42,8 @@ fn overlay_panel_class() -> &'static AnyClass {
 }
 
 /// Make the overlay a floating, non-activating panel that follows the user
-/// across Spaces, stays out of the application switcher, and is never captured.
-/// No API reports a share, so the window opts out of capture; `AI_BUDDY_CAPTURABLE=1` gives that up for one run.
+/// across Spaces and stays out of the application switcher. Capturable by
+/// default (ADR-0024); Presence or `AI_BUDDY_CAPTURABLE=0` excludes it.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ptr = window
         .ns_window()
