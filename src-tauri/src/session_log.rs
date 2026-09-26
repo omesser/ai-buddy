@@ -118,7 +118,7 @@ pub fn forget(app: &tauri::AppHandle, instance: &str) {
 
 /// The Completer session behind `instance` was replaced, for the reason `why`.
 ///
-/// Turns, the Chat surface, and the Action Log move together. Call beside `model::retarget_model`.
+/// Turns, the Chat surface, and the Action Log move together. Call beside `session::retarget_model`.
 pub fn new_session(app: &tauri::AppHandle, instance: &str, why: &str) {
     forget(app, instance);
     crate::action_log::append(

@@ -37,6 +37,7 @@ mod pi_mcp;
 mod platform;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod secrets;
+mod session;
 mod session_log;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
@@ -215,25 +216,36 @@ struct InstanceState {
     /// running the same one.
     character: Arc<Character>,
     director: StaticDirector,
-    model: Option<Arc<ModelDirector<model::AnyCompleter>>>,
+    model: Option<Arc<ModelDirector<session::AnyCompleter>>>,
     recent: Vec<String>,
     pace: Pace,
     since_wake: Duration,
-    since_state: Duration,
     since_ambient: Duration,
     previous_idle: Duration,
-    last_state: Option<State>,
-    addressed: bool,
-    happened: Happened,
     /// Whether the call on the wire answers a typed line, so the surface can be
     /// told when newest-wins throws that answer away (ADR-0016). `Slots` knows
     /// only that a call is out, and the wake clears `happened` as it sends.
     chat_turn: bool,
+    /// The `Happened` that drove the last session wake, as `happened_cell`
+    /// names it. `None` until one has: nothing has been asked here yet.
+    happened_last: Option<&'static str>,
+    since_state: Duration,
+    last_state: Option<State>,
+    addressed: bool,
+    happened: Happened,
     pointer: Pointer,
     /// The last line spoken and which overlay showed it, so a crossing
     /// carries it (#178). See `carry_line`.
     spoken: Option<Spoken>,
     drawn_last: Option<Drawn>,
+    /// This tick's verbs, decided before any Instance is ticked. Held on the
+    /// Instance because `press_target` has to see every hit-test before any
+    /// pointer is told whether the press was its own.
+    verbs: Vec<Verb>,
+    /// The menu this Instance has open, and `None` when it has none. While it is
+    /// `Some`, the frame loop re-injects `Verb::Menu` every tick, which is what
+    /// holds the Instance still under the popup.
+    menu_hold: Option<MenuHold>,
     /// The subject of the last `engine:` line. `None` while the switch is off,
     /// so turning it on always opens with a line rather than waiting for the
     /// sprite to do something new.
@@ -246,17 +258,6 @@ struct InstanceState {
     /// falls a millisecond per millisecond and the window subtracts for itself;
     /// only a deadline that *moved* is worth a push.
     status_wake_ms: Option<u64>,
-    /// The `Happened` that drove the last session wake, as `happened_cell`
-    /// names it. `None` until one has: nothing has been asked here yet.
-    happened_last: Option<&'static str>,
-    /// This tick's verbs, decided before any Instance is ticked. Held on the
-    /// Instance because `press_target` has to see every hit-test before any
-    /// pointer is told whether the press was its own.
-    verbs: Vec<Verb>,
-    /// The menu this Instance has open, and `None` when it has none. While it is
-    /// `Some`, the frame loop re-injects `Verb::Menu` every tick, which is what
-    /// holds the Instance still under the popup.
-    menu_hold: Option<MenuHold>,
 }
 
 /// One open menu, from the frame loop's side.
@@ -2375,7 +2376,7 @@ fn apply_menu_action(
     action: menu::MenuAction,
     roster: &mut Roster,
     lives: &mut Vec<InstanceState>,
-    slots: &mut model::Slots,
+    slots: &mut session::Slots,
     instance_id: &InstanceId,
     rules: &Arc<Mutex<HideRules>>,
     settings: &Arc<Mutex<Settings>>,
@@ -2549,7 +2550,7 @@ pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pa
 fn switch_instance(
     roster: &mut Roster,
     lives: &mut [InstanceState],
-    slots: &mut model::Slots,
+    slots: &mut session::Slots,
     instance_id: &InstanceId,
     character: Arc<Character>,
     config: &model::DirectorConfig,
@@ -2563,7 +2564,7 @@ fn switch_instance(
         live.pace = paced(config, &live.character);
         // The old session is the previous Character's. A Wake still on the
         // wire would propose as them; drop it and ask for this opening turn.
-        model::retarget_model(
+        session::retarget_model(
             slots,
             instance_id,
             &mut live.model,
@@ -2614,7 +2615,7 @@ fn spawn_live(
         director: StaticDirector::new(character.behaviors.clone(), seed),
         model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
-                model::completer_from(settings).expect("configured means a Completer exists"),
+                session::completer_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
                 id.clone(),
                 character.name.clone(),
@@ -2883,7 +2884,7 @@ fn spawn_instances(
             // show the spend, which is #18's panel.
             model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
-                    model::completer_from(settings).expect("configured means a Completer exists"),
+                    session::completer_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                     id.clone(),
                     character.name.clone(),

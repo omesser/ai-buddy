@@ -23,7 +23,7 @@ use super::{
     apply_menu_action, cancelled_caret, chat_label, close_chat, describe_menu, dev_flags, harness,
     mcp_http, mcp_resources, menu, model, note_happened, open_chat, overlay_label, paced,
     place_overlays, platform, publish_instances, push_chat_opening, push_chat_openings,
-    remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
+    remember_instances, session, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
     ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
     MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
     CHAT_STATUS_EVENT, CHAT_UI_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
@@ -77,7 +77,7 @@ pub(crate) fn run_frame_loop(
             chat,
             mcp,
         } = extras;
-        let mut slots = model::Slots::new();
+        let mut slots = session::Slots::new();
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
             let installed: Vec<String> = characters.keys().cloned().collect();
@@ -654,7 +654,7 @@ pub(crate) fn run_frame_loop(
                             // Completer target changed, not Character. A Wake
                             // still on the wire would propose against the old
                             // host and session; drop it and open a new turn.
-                            model::retarget_model(
+                            session::retarget_model(
                                 &mut slots,
                                 &live.id,
                                 &mut live.model,
@@ -1216,7 +1216,7 @@ pub(crate) fn run_frame_loop(
                 // the line would be spoken as the model's own and pushed back
                 // into the session as its last turn (#610, `bubble.js`).
                 let mut truncated = false;
-                if let Some(model::Answered {
+                if let Some(session::Answered {
                     wake,
                     context,
                     near_miss,
@@ -2065,12 +2065,12 @@ pub(crate) fn run_frame_loop(
 /// one on the same Completer. Both halves or neither (ADR-0012, #679). Action
 /// Log and Chat stay with the caller: only it knows why the session was replaced.
 fn replace_session(
-    slots: &mut model::Slots,
+    slots: &mut session::Slots,
     live: &mut InstanceState,
     director: &model::DirectorSettings,
     configured: bool,
 ) {
-    model::retarget_model(
+    session::retarget_model(
         slots,
         &live.id,
         &mut live.model,
