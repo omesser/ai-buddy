@@ -19,8 +19,10 @@
 //! The entry is the same loopback URL and bearer token every other Harness
 //! gets (ADR-0023), which is what keeps this working on every platform ai-buddy
 //! ships. Both are new every app run, so the entry is rewritten and re-approved
-//! on each attach rather than set up once. `enable` is ~380ms and is dropped
-//! when the entry has not changed, so a second attach in one app run is free.
+//! on each attach rather than set up once. Rewriting is skipped when the entry
+//! is already what we would write, but `enable` runs every attach regardless,
+//! ~380ms. Approving twice is harmless: an unchanged entry hashes to the id
+//! Cursor already holds, so no second approval is recorded.
 //!
 //! The token is why the file is 0600 and why `remove` runs on detach: it is
 //! live credential for as long as the session is, and a stale copy authorises
