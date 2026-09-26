@@ -138,7 +138,7 @@ impl Slot {
 /// The trace line for a proposed Behavior name nobody declared.
 /// Carries the declared set so `prowll` beside `prowl` reads as a typo, beside
 /// `wave` as a model ignoring the contract. Workers interleave, so the Instance id leads.
-pub(crate) fn near_miss_line(id: &str, name: &str, behaviors: &[String]) -> String {
+fn near_miss_line(id: &str, name: &str, behaviors: &[String]) -> String {
     format!(
         "director: {id} {name} is no declared Behavior; declared: {}",
         behaviors.join(", ")
@@ -263,4 +263,386 @@ pub fn retarget_model(
             blank(),
         ))
     });
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::model::tests::with_env;
+    use crate::model::{config_from, resolve};
+    use ai_buddy_core::director::{
+        Completer, Context, Happened, ModelDirector, Reply, Wake, WakeRequest,
+    };
+    use ai_buddy_core::roster::InstanceId;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    /// A Context to stand in for a wake already on the wire. `pub(crate)` for
+    /// the `settings` tests, which retarget through the same call.
+    pub(crate) fn wake_context() -> Context {
+        use ai_buddy_core::engine::State;
+        use ai_buddy_core::sensing::Activity;
+        use std::time::UNIX_EPOCH;
+
+        Context {
+            activity: Activity {
+                frontmost_application: None,
+                switched: false,
+                idle: Duration::ZERO,
+                at: UNIX_EPOCH,
+                hour: 12,
+                minute: 0,
+                displays_asleep: false,
+            },
+            recent: Vec::new(),
+            personality: String::new(),
+            instance_prompt: String::new(),
+            state: State::Grounded,
+            happened: ai_buddy_core::director::Happened::Ambient,
+            standing: String::new(),
+        }
+    }
+
+    #[test]
+    fn retarget_drops_an_in_flight_wake_and_installs_the_new_completer() {
+        with_env(None, None, None, || {
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let config = config_from(&settings);
+            let mut slots = Slots::new();
+            let id = "buddy".to_string();
+            let saw = Arc::new(AtomicBool::new(false));
+            slots.wake(
+                &id,
+                Arc::new(ModelDirector::new(
+                    Watchful {
+                        saw: Arc::clone(&saw),
+                    },
+                    ["stroll"],
+                    id.clone(),
+                    "cat",
+                    false,
+                )),
+                wake_context(),
+            );
+            let mut model = None;
+
+            retarget_model(
+                &mut slots,
+                &id,
+                &mut model,
+                ["stroll"],
+                "cat",
+                &settings,
+                config.configured,
+            );
+
+            assert!(
+                waited_for(&saw),
+                "the old host must be told to stop generating"
+            );
+            thread::sleep(Duration::from_millis(50));
+            assert!(
+                slots.take(&id).is_none(),
+                "a Wake computed against the old target cannot answer the new one"
+            );
+            assert!(model.is_some());
+        });
+    }
+
+    #[test]
+    fn retarget_to_a_remote_without_a_key_leaves_static() {
+        with_env(None, None, None, || {
+            let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
+            let config = config_from(&settings);
+            let mut slots = Slots::new();
+            let mut model = None;
+            retarget_model(
+                &mut slots,
+                &"buddy".to_string(),
+                &mut model,
+                ["stroll"],
+                "cat",
+                &settings,
+                config.configured,
+            );
+            assert!(model.is_none());
+        });
+    }
+
+    #[test]
+    fn retarget_installs_when_configured_even_if_director_is_off() {
+        with_env(None, None, None, || {
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&settings);
+            config.enabled = false;
+            assert!(config.configured, "local needs no key");
+            let mut slots = Slots::new();
+            let mut model = None;
+            retarget_model(
+                &mut slots,
+                &"buddy".to_string(),
+                &mut model,
+                ["stroll"],
+                "cat",
+                &settings,
+                config.configured,
+            );
+            assert!(
+                model.is_some(),
+                "Director off must still leave a Completer for ToggleDirector"
+            );
+        });
+    }
+
+    /// The declared set is the half of the line a reader needs. Without it a
+    /// typo looks like a model ignoring the contract.
+    #[test]
+    fn a_near_miss_line_names_the_instance_and_what_was_declared() {
+        let line = super::near_miss_line(
+            "buddy-1",
+            "prowll",
+            &["prowl".to_string(), "wave".to_string()],
+        );
+
+        assert_eq!(
+            line,
+            "director: buddy-1 prowll is no declared Behavior; declared: prowl, wave"
+        );
+    }
+
+    /// A switch must not apply the old Character's reply, and must be able to
+    /// start the new opening before that POST returns.
+    #[test]
+    fn abandon_drops_a_wake_that_still_arrives() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+        slots.wake(&id, answering("stroll", 40), wake_context());
+        assert!(slots.waiting(&id), "the call is in flight");
+
+        slots.abandon(&id);
+        assert!(
+            !slots.waiting(&id),
+            "an abandoned call must not hold the next Character Prompt back"
+        );
+        thread::sleep(Duration::from_millis(80));
+        assert!(
+            slots.take(&id).is_none(),
+            "the abandoned Wake must not land on the new Character"
+        );
+    }
+
+    /// The ellipsis is for a turn the user is waiting on. An ambient wake is
+    /// nobody's question, and showing it would tell the user the buddy is busy
+    /// with them when it is not.
+    #[test]
+    fn only_a_reactive_call_is_thinking() {
+        let mut slots = Slots::new();
+        let (ambient, poked) = ("ambient".to_string(), "poked".to_string());
+
+        slots.wake(&ambient, answering("stroll", 200), wake_context());
+        slots.wake(
+            &poked,
+            answering("stroll", 200),
+            Context {
+                happened: Happened::Poke,
+                ..wake_context()
+            },
+        );
+
+        assert!(slots.waiting(&ambient) && !slots.thinking(&ambient));
+        assert!(slots.thinking(&poked));
+    }
+
+    /// Stands in for the SSE loop: checks between frames, without a server.
+    /// Spins far longer than a test should need.
+    struct Watchful {
+        saw: Arc<AtomicBool>,
+    }
+
+    impl Completer for Watchful {
+        fn complete(&self, _: &WakeRequest) -> Result<Reply, String> {
+            for _ in 0..400 {
+                if abandoned() {
+                    self.saw.store(true, Ordering::SeqCst);
+                    return Err("abandoned".to_string());
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Ok(Reply::whole("idle"))
+        }
+    }
+
+    fn waited_for(flag: &AtomicBool) -> bool {
+        for _ in 0..100 {
+            if flag.load(Ordering::SeqCst) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+
+    /// A Completer that answers with a fixed Behavior name after a delay, so
+    /// a test can tell one call apart from the one that superseded it.
+    struct Answers {
+        behavior: &'static str,
+        delay: Duration,
+    }
+
+    impl Completer for Answers {
+        fn complete(&self, _: &WakeRequest) -> Result<Reply, String> {
+            thread::sleep(self.delay);
+            Ok(Reply::whole(self.behavior))
+        }
+    }
+
+    fn answering(behavior: &'static str, delay_ms: u64) -> Arc<ModelDirector<Answers>> {
+        Arc::new(ModelDirector::new(
+            Answers {
+                behavior,
+                delay: Duration::from_millis(delay_ms),
+            },
+            ["stroll", "nap"],
+            "buddy",
+            "cat",
+            false,
+        ))
+    }
+
+    /// A registry with a call already out for `id`, long enough to still be
+    /// there when the test acts. `pub(crate)` for the `settings` tests, which
+    /// retarget through the same call.
+    pub(crate) fn slots_awaiting_a_wake(id: &InstanceId) -> Slots {
+        let mut slots = Slots::new();
+        slots.wake(id, answering("stroll", 200), wake_context());
+        slots
+    }
+
+    /// Poll the slot the way the frame loop does, until an answer lands.
+    fn polled(slots: &mut Slots, id: &InstanceId) -> Option<Answered> {
+        for _ in 0..200 {
+            if let Some(taken) = slots.take(id) {
+                return Some(taken);
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        None
+    }
+
+    fn behavior_of(wake: &Wake) -> &str {
+        match wake {
+            Wake::Proposed(proposal) => &proposal.behavior,
+            Wake::Failed => "failed",
+        }
+    }
+
+    /// The responsiveness this registry exists for: a Poke arriving while an
+    /// ambient wake is still out sends its own prompt at once, and the answer
+    /// the user gets is the one to what they just did.
+    #[test]
+    fn a_new_wake_supersedes_the_one_the_instance_had_on_the_wire() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        slots.wake(&id, answering("stroll", 120), wake_context());
+        slots.wake(&id, answering("nap", 0), wake_context());
+
+        let answered = polled(&mut slots, &id).expect("the newest call answers");
+        assert_eq!(behavior_of(&answered.wake), "nap");
+
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            slots.take(&id).is_none(),
+            "the superseded reply must be dropped, not delivered a tick later"
+        );
+    }
+
+    /// A name nobody declared arrives as speech, so the name is the only
+    /// thing that tells the two apart. The Action Log is written at `take`,
+    /// so the near-miss has to survive the trip.
+    #[test]
+    fn take_carries_the_near_miss_the_worker_saw() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        // `answering` declares stroll and nap, so cartwheel is neither.
+        slots.wake(&id, answering("cartwheel", 0), wake_context());
+
+        let answered = polled(&mut slots, &id).expect("the call answers");
+        assert_eq!(answered.near_miss.as_deref(), Some("cartwheel"));
+        assert_eq!(
+            behavior_of(&answered.wake),
+            "",
+            "a near miss is still played as speech"
+        );
+    }
+
+    /// The Wake and its Context cannot be separated, so nothing downstream can
+    /// read a proposal against a moment it was not computed for.
+    #[test]
+    fn take_hands_back_the_context_the_wake_was_computed_for() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+        let asked = Context {
+            happened: Happened::Poke,
+            standing: "Finder".to_string(),
+            ..wake_context()
+        };
+
+        slots.wake(&id, answering("stroll", 0), asked);
+
+        let carried = polled(&mut slots, &id).expect("the call answers").context;
+        assert_eq!(carried.happened, Happened::Poke);
+        assert_eq!(carried.standing, "Finder");
+    }
+
+    /// One registry, but the newest-wins latch is each Instance's own. Two
+    /// buddies poked at once are two conversations.
+    #[test]
+    fn one_instances_wake_leaves_anothers_slot_alone() {
+        let mut slots = Slots::new();
+        let (first, second) = ("first".to_string(), "second".to_string());
+
+        slots.wake(&first, answering("stroll", 0), wake_context());
+        slots.wake(&second, answering("nap", 0), wake_context());
+        // Supersedes `first` only. `second` has said nothing about it.
+        slots.wake(&first, answering("nap", 0), wake_context());
+
+        let theirs = polled(&mut slots, &second).expect("the second buddy still answers");
+        assert_eq!(behavior_of(&theirs.wake), "nap");
+        let ours = polled(&mut slots, &first).expect("the first buddy answers too");
+        assert_eq!(behavior_of(&ours.wake), "nap");
+    }
+
+    /// Superseding has to reach the worker, not just the epoch it answers on.
+    /// Closing the connection is what stops a generation. The worker holds
+    /// the socket, so a flag it never reads buys nothing.
+    #[test]
+    fn superseding_raises_the_flag_the_worker_reads() {
+        let saw = Arc::new(AtomicBool::new(false));
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        slots.wake(
+            &id,
+            Arc::new(ModelDirector::new(
+                Watchful {
+                    saw: Arc::clone(&saw),
+                },
+                ["stroll"],
+                id.clone(),
+                "cat",
+                false,
+            )),
+            wake_context(),
+        );
+        slots.wake(&id, answering("nap", 0), wake_context());
+
+        assert!(
+            waited_for(&saw),
+            "the superseded worker ran on without ever seeing that it had been dropped"
+        );
+    }
 }
