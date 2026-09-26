@@ -84,7 +84,32 @@ _Pending._
 ## GPU Compositing
 
 ### macOS Metal (issue #429)
-_Pending._
+
+Re-run with `AI_BUDDY_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing-macos.sh matrix --seconds 15` after `sudo -v`. The script refuses every scenario but `env` and `baseline` without that variable, because the rest launch ai-buddy on the live desktop, warp the cursor, or cover the main display. Written against `79cd3061`.
+
+**Tools:**
+
+- `scripts/bench-gpu-compositing-macos.sh`
+- GPU% is `ioreg -c IOAccelerator` `PerformanceStatistics` `Device Utilization %`, sampled once a second, no sudo. VRAM is `In use system memory` from the same dictionary, which on Apple silicon is the GPU's share of unified memory.
+- Watts and HW active residency are `sudo powermetrics --samplers gpu_power`, reduced by `scripts/parse-powermetrics.py`.
+- Frame rate is N/A. The compositor's presented rate needs Instruments (Metal System Trace). `ticks_hz` counts the engine's `frame:` lines instead, so it says how often the rAF loop ticked, not how often WindowServer composited.
+- Chat and hidden reuse `scripts/click-cursor.swift` and `scripts/fullscreen-window.swift` from `scripts/bench-wakeups-macos.sh`.
+
+**Environment:**
+
+- Mac15,7 (Apple M3 Pro, `AGXAcceleratorG15X`), macOS 26.7 (25G229)
+- Two displays, 60 Hz
+
+**Metrics:**
+
+| Scenario | GPU% (ioreg) | GPU active% (powermetrics) | Power W | VRAM MB | ticks/s | Notes |
+|----------|--------------|----------------------------|---------|---------|---------|-------|
+| Baseline (no ai-buddy) | 1.2 | 5.75 | 0.05 | 686 | N/A | 10 s window, `baseline --seconds 10` |
+| Idle perched | _Pending._ | | | | | Needs the green light |
+| Walking | _Pending._ | | | | | Needs the green light |
+| Chat open | _Pending._ | | | | | Needs the green light |
+| Multi-monitor | _Pending._ | | | | | Needs the green light |
+| Hidden (fullscreen) | _Pending._ | | | | | Needs the green light |
 
 ### Windows DWM (issue #430)
 _Pending._
