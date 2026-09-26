@@ -88,11 +88,11 @@ _Pending._
 
 ### Windows DWM (issue #430)
 
-The re-run command on DESKTOP-UQIE144 is `powershell -NoProfile -File scripts\bench-gpu-compositing-windows.ps1 matrix --seconds 15`. Checkout and a debug build on that machine are authorized. `matrix` launches ai-buddy, moves the cursor, and is the window for the Task Manager crop. Those steps wait for Oded's explicit green light.
+The re-run command on DESKTOP-UQIE144 is `powershell -NoProfile -File scripts\bench-gpu-compositing-windows.ps1 matrix --seconds 15`. The script waits for an explicit green light before it launches ai-buddy or moves the cursor. The primary DESKTOP table is the clean run after that green light, with MechWarrior Online closed.
 
 During idle perched, open Task Manager on the Performance GPU page and crop Desktop Window Manager's 3D engine to about 280px wide. Attach that crop with `gh pr comment --attach` in `file#alt` form. The script does not write the image. The image does not belong in the tree.
 
-The host is the workstation named in [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). The Linux VM block is the script check. The DESKTOP-UQIE144 block is a later green-lit capture. That capture did not run this script's `matrix`.
+The host is the workstation named in [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). The Linux VM block is the script check. The primary DESKTOP table is the clean run. The MechWarrior Online pass is an appendix. Its 14% and 56.74 W sample is not ai-buddy's GPU%.
 
 **Environment:**
 
@@ -115,7 +115,7 @@ The host is the workstation named in [mask-rebuild-baseline-windows.md](./mask-r
 - `scripts/bench-gpu-compositing-windows.ps1`
 - On Windows the GPU% order is `\GPU Engine(*)\Utilization Percentage` summed for `dwm.exe` `engtype_3D`, then WMI class `Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine`, then `nvidia-smi` for the whole adapter
 - Power from `nvidia-smi` `power.draw` when that field is numeric
-- `mask_rebuild:` lines as the `SetWindowRgn` call count. Per-call time stays in the [#428](https://github.com/omesser/ai-buddy/issues/428) study
+- `mask_rebuild:` lines as the `SetWindowRgn` call count. Per-call time stays in the [#428](https://github.com/omesser/ai-buddy/issues/428) study.
 - Cursor targets multiply `frame:` point positions by the primary monitor DPI / 96. The frame loop divides the OS cursor by that scale before the engine uses it
 - `dwm.exe` CPU as percent of one core. Read GPU% from the GPU% column
 
@@ -136,7 +136,7 @@ The baseline note from the script was `not Windows and nvidia-smi is not on PATH
 
 1. **GPU%, power, and xperf frame time are unread.** The script reported that this host is not Windows and that `nvidia-smi` is not on PATH. `xperf` and `wpr` are absent. A 0 in any of those columns would be a guess.
 
-2. **The mask columns are unread on this host.** [#428](https://github.com/omesser/ai-buddy/issues/428) on DESKTOP-UQIE144 measured 0.0 rebuilds/s idle with the cursor away, and about 44.4 rebuilds/s for a walk-attributed bout of about 5 seconds with the cursor on the sprite (223 rebuilds). Issue #430 expected 3 to 10 rebuilds/s while walking. The 44.4/s figure is that cursor-on bout. A Windows re-run of this script fills the mask columns, including the pointer-away walk and the 5 second pointer-on window. The script marks that window as 5 seconds. It marks the window aborted when the walk does not last.
+2. **The mask columns are unread on this VM.** The clean DESKTOP table has the pointer-away rates. [#428](https://github.com/omesser/ai-buddy/issues/428) measured about 44.4 rebuilds/s when a walk stayed under the cursor. This issue's walking-over row was aborted, so that 44.4/s figure stays in #428.
 
 3. **No Task Manager crop.** `--shot` printed `shot=N/A` and created no file.
 
@@ -159,29 +159,37 @@ seconds=2
 
 ### DESKTOP-UQIE144
 
-Green-lit capture on 2026-09-26, about 04:22 to 04:30 Asia/Jerusalem. Worktree `ai-buddy-430-gpu`, detached at `30647a6d593ae8a3bceb4525165782e3f05713d6`. That SHA is the readme commit on main. It is not this bench branch. Debug `ai-buddy.exe`, BMO, sprite 126×128, StaticDirector. `AI_BUDDY_TRACE_MASK_REBUILD=1`. Primary 3440×1440 at (0,0). Secondary 1200×1920 at (-1200,-209). The process log names both overlays and has no `mask_rebuild:` line. Evidence on that machine is `.verify/430-gpu/`. The idle crop there is `.verify/430-gpu/idle-gpu.png`. This checkout did not contain the PNG.
+Clean run on 2026-09-26, about 04:37 to 04:45 Asia/Jerusalem. Worktree `ai-buddy-430-gpu`, detached at `30647a6d593ae8a3bceb4525165782e3f05713d6`. That SHA is the readme commit on main. It does not contain `scripts/bench-gpu-compositing-windows.ps1`. The capture copied that script in from this branch and ran one session that mirrored it (trace flags, mask and frame parsing, sprite-center formula, `nvidia-smi`, and the GPU Engine counter) plus a Task Manager crop during the same Buddy lifetime. Debug `ai-buddy.exe`, BMO, sprite 126×128. `AI_BUDDY_TRACE_MASK_REBUILD=1` and `AI_BUDDY_TRACE_FRAMES=1` were set on pid 5760. Primary 3440×1440 at (0,0). Secondary 1200×1920 at (-1200,-209). `MWOClient.exe` was confirmed absent before the start and after the stop. Chrome and Grok Bot were up at low GPU%. Evidence on that machine is `.verify/430-gpu-clean/`. The idle crop there is `.verify/430-gpu-clean/idle-gpu.png` (919×824). This checkout did not contain the PNG.
 
-**Ambient contamination:**
-
-MechWarrior Online (`MWOClient.exe`) was borderless on the primary and often dominated NVIDIA 3D. GPU Engine samples for that process were about 84 to 86%. `nvidia-smi` spiked to 99% and about 149 W, then settled about 14 to 46% and about 44 to 57 W. Settings have `hide_in_fullscreen` true. Overlay windows stayed visible to `IsWindowVisible`, and the log still has zero `mask_rebuild:` lines. The sprite was likely hidden or occluded for hit-testing. GPU% below is system-level. It is not an ai-buddy attribution. ai-buddy pid 2004 never appeared in `\GPU Engine(*)\Utilization Percentage`. DWM pid 2060 showed about 0.8 to 1.9% 3D on the NVIDIA LUID while Buddy was up (about 1 to 2%).
-
-**Metrics:**
+**Metrics (clean, primary):**
 
 | Scenario | Duration | Mask calls | Mask Hz | GPU as read | Notes |
 |----------|----------|------------|---------|-------------|-------|
-| Idle perched, cursor at (50,50) | ~14.1 s | 0 | 0.00 | Task Manager GPU 0 Intel UHD 0%. The idle crop's sidebar shows GPU 1 NVIDIA GTX 1070 at 6% and 64 degrees. Across shots that sidebar was 6 to 93%. Quieter `nvidia-smi` sample 14%, 56.74 W, 64 degrees, 2221 MiB. DWM 3D about 0.8 to 1.9%. | Cursor away. 0/s matches the cursor-over gate. MWO on the primary. |
-| Walking | ~12.2 s | 0 | 0.00 | `nvidia-smi` 46%, 50.72 W. DWM 3D about 1.6%. | Aborted. No confirmed walk. No MCP bearer token. No `TRACE_FRAMES` sprite coordinates. |
-| Cursor sweep | ~10 s | 0 | 0.00 | Not sampled on its own | Primary bottom and the secondary. Still no `mask_rebuild:`. |
+| Idle perched, cursor at (50,50) | 18.0 s | 0 | 0.00 | Task Manager GPU 0 Intel UHD 0%. Sidebar GPU 1 NVIDIA GTX 1070 9% at 49 degrees. `nvidia-smi` 12 to 17%, 13.3 to 15.1 W, 49 degrees, about 1377 to 1403 MiB. ai-buddy absent from GPU Engine. dwm 3D about 1.2 to 2.8%. chrome about 0.2 to 4.3%. Grok Bot about 1.4 to 1.6%. | `SetCursorPos(50,50)` succeeded. This window also logged 635 `walk#` frames with the pointer away. |
+| Walking, pointer away | 16.3 s quiet slice | 0 | 0.00 | `nvidia-smi` 3 to 4%, 13.0 to 14.5 W, 49 degrees. ai-buddy absent. dwm 3D about 0.28 to 0.30%. Grok Bot about 1.4 to 1.5% 3D. | The 3 to 4% slice had `walk_frames=0`. It is an idle gap. The session log has 10470 `walk#` frames and 2045 `climb#` frames, and the whole log has 0 `mask_rebuild:` lines. |
+| Walking-over | aborted | N/A | N/A | N/A | `SetCursorPos` to the sprite center returned false. The cursor stayed at (50,50). No walking-over rate. [#428](https://github.com/omesser/ai-buddy/issues/428) measured about 44.4 rebuilds/s with the cursor on the sprite. |
 | Chat open | N/A | N/A | N/A | N/A | Not run |
 | Multi-monitor sample | N/A | N/A | N/A | N/A | Both displays were covered. No separate sample. |
-| Hidden, clean | N/A | N/A | N/A | N/A | MWO on the primary is contamination, not a staged hidden row. |
-| xperf frame time | N/A | N/A | N/A | N/A | GPU-Z, Afterburner, and xperf were not used. |
+| Hidden | N/A | N/A | N/A | N/A | Not staged |
+| xperf frame time | N/A | N/A | N/A | N/A | GPU-Z, Afterburner, and xperf were not used |
 
-Sustained walk-under-cursor region rates were not measured. [#428](https://github.com/omesser/ai-buddy/issues/428) on this same machine measured 0.0 rebuilds/s idle with the cursor away, and about 44.4 rebuilds/s for a walk-attributed bout of about 5 seconds with the cursor on the sprite (223 rebuilds). Issue #430 expected 3 to 10 rebuilds/s while walking. The 44.4/s figure is that study.
+The whole `buddy.log` has 0 `mask_rebuild:` lines. The trace flag was on in the process environment. The pointer never reached the sprite, which matches the cursor-over gate. Issue #430 expected 3 to 10 rebuilds/s while walking. The pointer-away walks in this log did not rebuild. The cursor-on rate remains the #428 figure.
 
-Buddy was force-killed after `CloseMainWindow` did not exit. No `ai-buddy.exe` was left running.
+Buddy pid 5760 was force-killed after `CloseMainWindow` did not exit. No `ai-buddy.exe` was left. `MWOClient.exe` was still absent.
 
-**Status:** Partial. This section leaves [#430](https://github.com/omesser/ai-buddy/issues/430) open. Idle mask rate with the cursor away is 0.00/s. Walking was aborted. NVIDIA utilization is MWO-contaminated, and ai-buddy has no GPU Engine row. A clean re-run is `matrix` on DESKTOP-UQIE144 with the game closed, after a green light. That re-run still owes chat, a staged hidden row, an xperf frame time, and a walk-under-cursor mask rate.
+**Contaminated appendix.** An earlier pass the same morning had MechWarrior Online borderless on the primary. Do not attribute it to ai-buddy. Evidence is `.verify/430-gpu/`.
+
+| Reading | Value | Why it is not Buddy's GPU% |
+|---------|-------|----------------------------|
+| `nvidia-smi` spike | 99%, about 149 W | MWOClient on the NVIDIA 3D engine, about 84 to 86% |
+| Quieter `nvidia-smi` | 14%, 56.74 W | Same pass, game still running |
+| NVIDIA sidebar | 6% in one crop, 6 to 93% across shots | Tracks the game, not a stable Buddy sample |
+| Intel GPU 0 | 0% | Task Manager main pane |
+| dwm 3D | about 0.8 to 1.9% | NVIDIA LUID, pid 2060 |
+| ai-buddy GPU Engine | absent | pid 2004 |
+| Mask rate | 0/s | Cursor away. The walk attempt had no confirmed walk |
+
+**Status:** Partial. This section leaves [#430](https://github.com/omesser/ai-buddy/issues/430) open. With the game closed, idle perched is mask 0.00/s and the pointer-away log is mask 0.00/s. Walking-over was not measured. Chat, a separate multi-monitor sample, a staged hidden row, and an xperf frame time are still open. GPU-Z and Afterburner were not used. The watts in the clean table are `nvidia-smi` on the GTX 1070, and ai-buddy has no GPU Engine row.
 
 ### Linux X11/Wayland (issue #425)
 
