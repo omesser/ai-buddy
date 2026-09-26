@@ -119,7 +119,7 @@ pub(super) fn resolve_animations(
     (animations, art)
 }
 
-/// Validate every `variant_of` and hand back the (variant, base) pairs worth linking.
+/// Validate every `variant_of` and hand back the (variant, base) pairs.
 /// A variant is more art for an Animation the engine already plays, never a new
 /// Behavior. A held last frame would stall; a variant of a variant nests a ring.
 pub(super) fn check_variants(
@@ -150,7 +150,7 @@ pub(super) fn check_variants(
     pairs
 }
 
-/// Validate every `left_of` and hand back the (strip, base) pairs worth linking.
+/// Validate every `left_of` and hand back the (strip, base) pairs.
 /// A left strip is the same walk drawn the other way, so the renderer swaps
 /// strips instead of mirroring a cheek mark. A different length would play two animations.
 pub(super) fn check_left_strips(
@@ -494,8 +494,8 @@ mod tests {
     }
 
     /// Hostile input: per-frame and per-Animation caps leave total masks unbounded,
-    /// and a shared frame is charged once. On-budget art is 256 megapixels and the
-    /// same comparison, so the package that would pass is not loaded.
+    /// and a shared frame is charged once. The on-budget package is 256 megapixels.
+    /// Passing it uses the same sum as the refusal, so that package is not loaded.
     #[test]
     fn a_character_whose_frames_outweigh_the_budget_is_rejected() {
         let frame = png_bytes(MAX_FRAME_SIDE, MAX_FRAME_SIDE);
