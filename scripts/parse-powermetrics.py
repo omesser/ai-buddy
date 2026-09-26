@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Reduce a `powermetrics --samplers tasks,cpu_power` capture (see
 scripts/bench-wakeups-macos.sh) to the numbers #431 asks for: wakeups/sec for
-a named process, package idle residency, and CPU power. Optionally splits by
+a named process, package idle residency, and CPU power. A `gpu_power` capture
+(scripts/bench-gpu-compositing-macos.sh) adds GPU power and GPU HW active
+residency. Optionally splits by
 what the app's frame log says was on screen each second, so one capture can
 answer more than one #423 scenario when a Behavior changes naturally during
 the sample.
@@ -78,6 +80,8 @@ def parse_samples(text, process, pid=None):
         e_idle = re.search(r"E-Cluster idle residency:\s*([\d.]+)%", block)
         p_idle = re.search(r"P-Cluster idle residency:\s*([\d.]+)%", block)
         pkg_power = re.search(r"CPU Power:\s*(\d+)\s*mW", block)
+        gpu_power = re.search(r"GPU Power:\s*(\d+)\s*mW", block)
+        gpu_active = re.search(r"GPU HW active residency:\s*([\d.]+)%", block)
 
         samples.append(
             {
@@ -89,6 +93,8 @@ def parse_samples(text, process, pid=None):
                 "e_idle_pct": float(e_idle.group(1)) if e_idle else None,
                 "p_idle_pct": float(p_idle.group(1)) if p_idle else None,
                 "pkg_power_mw": float(pkg_power.group(1)) if pkg_power else None,
+                "gpu_power_mw": float(gpu_power.group(1)) if gpu_power else None,
+                "gpu_active_pct": float(gpu_active.group(1)) if gpu_active else None,
             }
         )
     return samples
@@ -134,13 +140,15 @@ def summarize(samples, label):
     if n == 0:
         print("  no samples")
         return
-    wi, wp, cpu, e, p, pw = (
+    wi, wp, cpu, e, p, pw, gw, ga = (
         avg("wakeups_intr"),
         avg("wakeups_pkgidle"),
         avg("cpu_ms_s"),
         avg("e_idle_pct"),
         avg("p_idle_pct"),
         avg("pkg_power_mw"),
+        avg("gpu_power_mw"),
+        avg("gpu_active_pct"),
     )
     if wi is not None:
         print(f"  wakeups/sec (interrupt):      {wi:.2f}")
@@ -158,6 +166,10 @@ def summarize(samples, label):
         print(f"  P-Cluster idle residency avg: {p:.1f}%")
     if pw is not None:
         print(f"  Package CPU power avg:        {pw:.0f} mW")
+    if gw is not None:
+        print(f"  GPU power avg:                {gw:.0f} mW")
+    if ga is not None:
+        print(f"  GPU HW active residency avg:  {ga:.2f}%")
 
 
 def main():
