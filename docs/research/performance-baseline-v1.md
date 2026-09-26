@@ -85,7 +85,7 @@ _Pending._
 
 ### macOS Metal (issue #429)
 
-Re-run with `AI_BUDDY_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing-macos.sh matrix --seconds 15` after `sudo -v`. The script refuses every scenario but `env` and `baseline` without that variable, because the rest launch ai-buddy on the live desktop, warp the cursor, or cover the main display. Written against `79cd3061`.
+Re-run with `sudo -v && AI_BUDDY_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing-macos.sh matrix --seconds 15`. The script refuses every scenario but `env` and `baseline` without that variable, because the rest launch ai-buddy on the live desktop, warp the cursor, or cover the main display. Written against `79cd3061`.
 
 **Tools:**
 
@@ -99,17 +99,32 @@ Re-run with `AI_BUDDY_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing-macos.sh
 
 - Mac15,7 (Apple M3 Pro, `AGXAcceleratorG15X`), macOS 26.7 (25G229)
 - Two displays, 60 Hz
+- `target/debug/ai-buddy`, one 15 s window per scenario
 
 **Metrics:**
 
 | Scenario | GPU% (ioreg) | GPU active% (powermetrics) | Power W | VRAM MB | ticks/s | Notes |
 |----------|--------------|----------------------------|---------|---------|---------|-------|
-| Baseline (no ai-buddy) | 1.2 | 5.75 | 0.05 | 686 | N/A | 10 s window, `baseline --seconds 10` |
-| Idle perched | _Pending._ | | | | | Needs the green light |
-| Walking | _Pending._ | | | | | Needs the green light |
-| Chat open | _Pending._ | | | | | Needs the green light |
-| Multi-monitor | _Pending._ | | | | | Needs the green light |
-| Hidden (fullscreen) | _Pending._ | | | | | Needs the green light |
+| Baseline (no ai-buddy) | 0.3 | 5.50 | 0.06 | 565 | N/A | No ai-buddy running |
+| Idle perched | 0.6 | 6.13 | 0.06 | 708 | 52.73 | Pointer left alone, 791 ticks |
+| Walking | 0.8 | 7.33 | 0.04 | 672 | 52.40 | 209 walk frames during the sample |
+| Chat open | 0.3 | 5.68 | 0.03 | 678 | 53.00 | Summon logged at 960 923 |
+| Multi-monitor | 0.5 | 4.92 | 0.03 | 636 | 52.87 | Two displays, two overlays |
+| Hidden (fullscreen) | 0.0 | 4.80 | 0.03 | 540 | 1.07 | `presence: hidden`, 16 ticks |
+
+**What this refutes.**
+
+The issue predicted idle perched would hold 5-15% GPU and cost 0.5 to 2 W. It holds 0.6% and 0.06 W, the same wattage as an idle desktop with no ai-buddy on it. Fullscreen transparent compositing is not a measurable GPU cost on this machine.
+
+It also predicted multi-monitor would roughly double, two overlays being two compositing passes. Two displays measured 0.5% against one display's 0.6%. There is no doubling to find.
+
+Walking against idle was predicted to be similar, and is: 0.8% against 0.6%.
+
+**The noise floor is the result.** Every ai-buddy scenario falls between 0.3% and 0.8%. A 10 s baseline taken minutes earlier on the same idle desktop read 1.2%, above every one of them. The overlay's GPU compositing cost is smaller than this instrument's run-to-run spread, so these deltas rank nothing. Anyone optimizing against them is fitting noise.
+
+**What the hide rule actually saves.** GPU% does drop to 0.0 when a fullscreen app hides the sprite, which is what the issue asked to confirm. But the saving that shows up clearly is on the other axis: engine ticks collapse from roughly 53/s to 1.07/s. The hide rule earns its keep by stopping the rAF loop, not by sparing the compositor. That points the remaining #423 work at CPU wakeups (#431), not at compositing.
+
+**Limits.** One machine, Apple silicon, unified memory, and a debug build. An Intel Mac with a discrete GPU composites transparency differently and the issue's Intel Power Gadget route is unrun. `ticks_hz` is the engine's own loop, not presented frames; the compositor's real rate still needs Instruments.
 
 ### Windows DWM (issue #430)
 _Pending._
