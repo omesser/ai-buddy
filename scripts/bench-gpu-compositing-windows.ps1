@@ -26,6 +26,8 @@ Usage: scripts\bench-gpu-compositing-windows.ps1 <env|baseline|idle|walking|chat
 
 parse-log counts mask_rebuild lines in --log and divides by --seconds.
 GPU% is dwm.exe engtype_3D when that counter exists, else nvidia-smi for the whole adapter.
+Checkout and a debug build on DESKTOP-UQIE144 are authorized.
+idle, walking, chat, hidden, and matrix launch ai-buddy and move the cursor. Wait for an explicit green light before those scenarios.
 "@)
     exit 2
 }

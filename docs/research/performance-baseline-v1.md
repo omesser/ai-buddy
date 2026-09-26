@@ -88,9 +88,11 @@ _Pending._
 
 ### Windows DWM (issue #430)
 
-Re-run on Windows with `scripts/bench-gpu-compositing-windows.ps1 matrix --seconds 15`. During idle perched, open Task Manager on the Performance GPU page and crop Desktop Window Manager's 3D engine to about 280px wide. Attach that crop with `gh pr comment --attach` in `file#alt` form. The script does not write the image. The image does not belong in the tree.
+The re-run command on DESKTOP-UQIE144 is `powershell -NoProfile -File scripts\bench-gpu-compositing-windows.ps1 matrix --seconds 15`. Checkout and a debug build on that machine are authorized. `matrix` launches ai-buddy, moves the cursor, and is the window for the Task Manager crop. Those steps wait for Oded's explicit green light.
 
-The re-run host is Oded's DESKTOP-UQIE144, the workstation named in [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). This section records a cloud VM run. It does not record a run from that machine.
+During idle perched, open Task Manager on the Performance GPU page and crop Desktop Window Manager's 3D engine to about 280px wide. Attach that crop with `gh pr comment --attach` in `file#alt` form. The script does not write the image. The image does not belong in the tree.
+
+The host is the workstation named in [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). This section records a cloud VM run. It does not record a run from that machine.
 
 **Environment:**
 
@@ -155,7 +157,7 @@ seconds=2
 
 `parse-log --seconds 2` on a throwaway log with 4 `mask_rebuild:` lines printed `mask_calls=4` and `mask_hz=2.00`. That log was not produced by ai-buddy on Windows. It checks the counter.
 
-**Status:** Partial. This section leaves [#430](https://github.com/omesser/ai-buddy/issues/430) open. GPU%, power, xperf frame time, the Task Manager crop, and Windows mask rates for these scenarios are still open. Re-run the script on DESKTOP-UQIE144 to fill them.
+**Status:** Partial. This section leaves [#430](https://github.com/omesser/ai-buddy/issues/430) open. The bench script is ready. GPU%, power, xperf frame time, the Task Manager crop, and Windows mask rates stay open until Oded greens the DESKTOP `matrix`.
 
 ### Linux X11/Wayland (issue #425)
 
