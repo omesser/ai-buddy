@@ -87,7 +87,41 @@ _Pending._
 _Pending._
 
 ### Windows DWM (issue #430)
-_Pending._
+
+Re-run on the workstation in [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md):
+
+`powershell -NoProfile -File scripts\bench-gpu-compositing-windows.ps1 matrix --seconds 15`
+
+The script waits for an explicit green light before it launches ai-buddy or moves the cursor.
+
+A Linux cloud VM has no DWM, so it cannot measure GPU%, power, xperf frame time, or mask rate. The Windows desktop numbers are below.
+
+Crop Task Manager's Performance GPU page during idle perched to about 280px wide and attach it with `gh pr comment --attach` in `file#alt` form. The script does not write the image. The image does not belong in the tree.
+
+**Tools**
+
+- `scripts/bench-gpu-compositing-windows.ps1`
+- GPU% on Windows is `\GPU Engine(*)\Utilization Percentage` summed for `dwm.exe` `engtype_3D`, then WMI `Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine`, then `nvidia-smi` for the whole adapter.
+- Power is `nvidia-smi` `power.draw` when that field is numeric. Those watts are the adapter.
+- `mask_rebuild:` lines are `SetWindowRgn` calls. Per-call time stays in [#428](https://github.com/omesser/ai-buddy/issues/428).
+- `parse-log --seconds 2` on a 4-line fixture printed `mask_calls=4` and `mask_hz=2.00`. That fixture is not a Windows trace.
+- Walking-over aims at the last `walk` or `ballwalk` frame. The cursor coordinate is that point times the primary's physical width over the overlay width in the log. `GetCursorPos` has to match.
+
+**Metrics**
+
+`matrix --seconds 15` at `f1020b2f` on the workstation in the mask-rebuild doc. Evidence is `.verify/430-gpu-remeasure/` there. The logs stay out of the tree. GPU% is `dwm.exe` `engtype_3D`. Power is `nvidia-smi` `power.draw`. xperf frame time was not measured. No `ai-buddy.exe` was left running.
+
+| Scenario | GPU% | Power W | Mask calls | Mask Hz | Notes |
+|----------|------|---------|------------|---------|-------|
+| Baseline (no ai-buddy) | 5.5 | 14.2 | N/A | N/A | |
+| Idle perched, pointer at (2,2) | 3.8 | 16.8 | 0 | 0.00 | |
+| Walking, pointer away | 12.0 | 15.5 | 0 | 0.00 | walk_frames=742 |
+| Walking-over, 5 s | 8.0 | 14.1 | 0 | 0.00 | Cursor landed at 3438,1328. scale 1.00. actual 3438,1328. walk_frames=0, walk aborted on hover. |
+| Chat open | 5.5 | 14.2 | 17 | 1.13 | Summon logged. Pointer left on the sprite. |
+| Multi-monitor | 5.5 | 14.2 | 0 | 0.00 | screens=2 |
+| Hidden | 0.5 | 12.1 | 0 | 0.00 | Fullscreen cover. presence hidden. |
+
+Walking-over mask rate is 0.00/s because the walk aborted once the pointer was on the sprite. The aim hit.
 
 ### Linux X11/Wayland (issue #425)
 
