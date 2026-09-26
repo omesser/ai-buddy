@@ -18,22 +18,21 @@ const ask = {
   options: [],
 };
 
+// The row as one string, for the cases about wording and budget rather than shape.
 function askText(value) {
-  const { title, details, metadata } = askSays(value);
-  return [title, ...details.map(({ text }) => text), metadata].filter(Boolean).join("\n");
+  return askSays(value).map(({ text }) => text).join("\n");
 }
 
 test("the content is what the row says, under the title", () => {
   const says = askSays({ ...ask, content: ["Which branch should I push to?"] });
 
-  assert.deepEqual(says, {
-    title: "Question from MCP server",
-    details: [{ text: "Which branch should I push to?", code: false }],
-    metadata: "",
-  });
+  assert.deepEqual(says, [
+    { kind: "title", text: "Question from MCP server" },
+    { kind: "prose", text: "Which branch should I push to?" },
+  ]);
 });
 
-test("the arguments stand in when there is no content", () => {
+test("the arguments stand in when there is no content, and are code", () => {
   const says = askSays({
     ...ask,
     title: "Run a command",
@@ -41,33 +40,42 @@ test("the arguments stand in when there is no content", () => {
     input: { command: "rm -rf /", cwd: "/Users/oded" },
   });
 
-  assert.deepEqual(says, {
-    title: "Run a command",
-    details: [
-      { text: "command: rm -rf /", code: true },
-      { text: "cwd: /Users/oded", code: true },
-    ],
-    metadata: "execute",
-  });
+  assert.deepEqual(says, [
+    { kind: "title", text: "Run a command" },
+    { kind: "code", text: "command: rm -rf /" },
+    { kind: "code", text: "cwd: /Users/oded" },
+    { kind: "metadata", text: "execute" },
+  ]);
 });
 
-test("execute content carries a command, while other content is prose", () => {
+test("execute content is the command, while other content is prose", () => {
   assert.deepEqual(
     askSays({ ...ask, title: "Open Calculator", kind: "execute", content: ["open -a Calculator"] }),
-    {
-      title: "Open Calculator",
-      details: [{ text: "open -a Calculator", code: true }],
-      metadata: "execute",
-    },
+    [
+      { kind: "title", text: "Open Calculator" },
+      { kind: "code", text: "open -a Calculator" },
+      { kind: "metadata", text: "execute" },
+    ],
   );
+  assert.deepEqual(askSays({ ...ask, content: ["Which branch?"] }), [
+    { kind: "title", text: "Question from MCP server" },
+    { kind: "prose", text: "Which branch?" },
+  ]);
+});
+
+test("a cut keeps every part's kind, and marks the last one shown", () => {
+  const says = askSays({
+    ...ask,
+    kind: "edit",
+    content: ["why ".repeat(1000)],
+    locations: ["/a.rs"],
+  });
+
   assert.deepEqual(
-    askSays({ ...ask, content: ["Which branch?"] }),
-    {
-      title: "Question from MCP server",
-      details: [{ text: "Which branch?", code: false }],
-      metadata: "",
-    },
+    says.map(({ kind }) => kind),
+    ["title", "prose"],
   );
+  assert.ok(says.at(-1).text.endsWith("…"), says.at(-1).text);
 });
 
 test("content wins over the arguments rather than joining them", () => {

@@ -65,47 +65,28 @@ function argumentLines(input) {
   return first(named, ARGUMENTS, "arguments");
 }
 
-function withinBudget(title, details, metadata) {
-  const parts = [
-    { kind: "title", value: title },
-    ...details.map(({ text, code }) => ({ kind: "detail", value: text, code })),
-    { kind: "metadata", value: metadata },
-  ].filter(({ value }) => value);
-  const shown = [];
-  let remaining = DETAIL_LIMIT;
-  for (const part of parts) {
-    const available = remaining - (shown.length ? 1 : 0);
-    if (available <= 0) {
-      break;
-    }
-    const value = part.value.slice(0, available);
-    shown.push({ kind: part.kind, value, code: part.code });
-    remaining = available - value.length;
-    if (value.length < part.value.length) {
-      break;
-    }
-  }
-  if (shown.length < parts.length || shown.at(-1)?.value.length < parts.at(-1)?.value.length) {
-    const last = shown.at(-1);
-    last.value = `${last.value.slice(0, -1)}…`;
-  }
-  return {
-    title: shown.find(({ kind }) => kind === "title")?.value ?? "",
-    details: shown.filter(({ kind }) => kind === "detail").map(({ value, code }) => ({ text: value, code })),
-    metadata: shown.find(({ kind }) => kind === "metadata")?.value ?? "",
-  };
+// The row's budget, spent over the parts in order and cut once with an
+// ellipsis. Every part is one flat line, so joining and splitting on newline
+// loses nothing and leaves the cut where the old single string had it.
+function withinBudget(parts) {
+  const lines = clamp(parts.map(({ text }) => text).join("\n"), DETAIL_LIMIT).split("\n");
+  return lines.map((text, at) => ({ kind: parts[at].kind, text }));
 }
 
+// What the row draws, in order: `{ kind, text }` per line, `kind` one of
+// title, code, prose or metadata. Code is the thing being approved and gets a
+// `<code>` from the renderer; metadata is the `kind · paths` tail.
 export function askSays(ask) {
   // The title is untrusted too, and a verbose one would spend the row's budget
   // before the question arrived, from a merely chatty server.
   const title = clamp(flat(ask?.title ?? ""), VALUE_LIMIT);
   const content = (ask?.content ?? []).map(flat).filter(Boolean);
-  // Content takes precedence over repeated input. It can be a prose question;
-  // only execute content is a command. Fallback arguments are always code.
+  // Content first, arguments as the fallback, never both: a tool that sends
+  // its question as content usually repeats it in `input`. Content is a
+  // command only when the ask runs something; an argument line always is.
   const details = content.length > 0
-    ? content.map((text) => ({ text, code: ask?.kind === "execute" }))
-    : argumentLines(ask?.input).map((text) => ({ text, code: true }));
+    ? content.map((text) => ({ kind: ask?.kind === "execute" ? "code" : "prose", text }))
+    : argumentLines(ask?.input).map((text) => ({ kind: "code", text }));
 
   const paths = (ask?.locations ?? [])
     .map((where) => clamp(flat(where), VALUE_LIMIT))
@@ -122,9 +103,11 @@ export function askSays(ask) {
   // category, and the whole bug was a row that offered one in place of the
   // question. A path on its own is a fact worth drawing.
   if (!title && details.length === 0 && paths.length === 0) {
-    return { title: SILENT, details: [], metadata: "" };
+    return [{ kind: "prose", text: SILENT }];
   }
-  return withinBudget(title, details, about);
+  return withinBudget(
+    [{ kind: "title", text: title }, ...details, { kind: "metadata", text: about }].filter(({ text }) => text),
+  );
 }
 
 // An elicitation form's question. Same flattening as a permission ask: the

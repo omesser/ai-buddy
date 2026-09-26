@@ -1,21 +1,24 @@
+// Draws what an ask says into the consent row. Apart from chat.js for the
+// reason chat-ask.js gives: chat.js cannot load outside a webview, and this
+// can, so the DOM shape has a test.
+
 import { askSays } from "./chat-ask.js";
 
+// One element per part. Code is a real <code> so it shares the paint reply
+// code gets, and every part reaches the DOM through textContent only.
+const ELEMENT = {
+  title: ["div", "ask-title"],
+  code: ["code", "ask-code"],
+  prose: ["div", "ask-prose"],
+  metadata: ["div", "ask-metadata"],
+};
+
 export function drawAskDetails(body, ask) {
-  const says = askSays(ask);
-  const append = (tag, className, text) => {
+  for (const { kind, text } of askSays(ask)) {
+    const [tag, className] = ELEMENT[kind];
     const node = body.ownerDocument.createElement(tag);
     node.className = className;
     node.textContent = text;
     body.append(node);
-  };
-
-  if (says.title) {
-    append("div", "ask-title", says.title);
-  }
-  for (const detail of says.details) {
-    append(detail.code ? "code" : "div", detail.code ? "ask-code" : "ask-prose", detail.text);
-  }
-  if (says.metadata) {
-    append("div", "ask-metadata", says.metadata);
   }
 }

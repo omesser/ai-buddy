@@ -1,3 +1,7 @@
+// The consent row: what an ask says, one element per part, with the options
+// as buttons under it. The DOM shape is asserted on a stand-in document that
+// refuses innerHTML, because every word of an ask is untrusted.
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
