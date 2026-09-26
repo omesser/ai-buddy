@@ -2,8 +2,10 @@
 # Windows Spatial e2e - twin of verify-overlay-x11.sh
 #
 # Places a Notepad perch on the secondary display, grabs the buddy on the
-# primary, drops it 80px above the title bar, and asserts Perched plus
-# WS_EX_NOACTIVATE / WDA_EXCLUDEFROMCAPTURE / no focus steal.
+# primary, drops it 80px above the title bar, and asserts Perched, no focus
+# steal, and WS_EX_NOACTIVATE. WDA_EXCLUDEFROMCAPTURE only appears when
+# capture exclusion is on (off by default per ADR-0024), so its absence warns
+# rather than fails.
 #
 # Usage:
 #   .\scripts\verify-overlay-win.ps1
