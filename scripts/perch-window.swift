@@ -13,7 +13,11 @@
 // An optional window level makes the prop desktop furniture (Dock 20, menu bar
 // 24), the only way to check from a script that neither is a Perch. It quits on
 // its own, so an interrupted run leaves no stray window.
-// Usage: swift scripts/perch-window.swift [--fast] x y width height [level]
+
+// --glide never steps: the window slides side to side every frame for as long
+// as it lives, which keeps the Engine riding and the window poll at its ride
+// cadence, so a bench can sample that cadence for longer than one step.
+// Usage: swift scripts/perch-window.swift [--fast|--glide] x y width height [level]
 
 import AppKit
 
@@ -34,18 +38,25 @@ let flingPoints = stepPoints * Double(steps)
 /// be read as one.
 let reassertInterval = 0.05
 
-/// A backstop, not a schedule: the script kills this window when it is done
-/// with it, and this is what happens if the script never gets the chance.
-let quitAfter = 45.0
+/// How far a glide travels each way, and how much each frame moves it.
+let glidePoints = 200.0
+let glideStep = 2.0
+let glideInterval = 1.0 / 60.0
 
 var args = Array(CommandLine.arguments.dropFirst())
 let fast = args.first == "--fast"
-if fast { args.removeFirst() }
+let glide = args.first == "--glide"
+if fast || glide { args.removeFirst() }
+
+/// A backstop, not a schedule: the script kills this window when it is done
+/// with it, and this is what happens if the script never gets the chance.
+/// A glide lives through a whole bench sample, so it gets longer.
+let quitAfter = glide ? 180.0 : 45.0
 guard args.count == 4 || args.count == 5, let x = Double(args[0]), let y = Double(args[1]),
     let width = Double(args[2]), let height = Double(args[3])
 else {
     FileHandle.standardError.write(
-        Data("usage: perch-window.swift [--fast] x y width height [level]\n".utf8))
+        Data("usage: perch-window.swift [--fast|--glide] x y width height [level]\n".utf8))
     exit(2)
 }
 let level = args.count == 5 ? Int(args[4]) ?? 0 : 0
@@ -125,11 +136,23 @@ let moves: [(after: Double, top: Double)] =
     ? [(stepInterval, y + flingPoints)]
     : (1...steps).map { (stepInterval * Double($0), y + stepPoints * Double($0)) }
 
-for move in moves {
-    DispatchQueue.main.asyncAfter(deadline: .now() + move.after) {
-        let moved = Date()
-        window.setFrame(appKitRect(top: move.top), display: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + settle) { report(at: moved) }
+if glide {
+    var offset = 0.0
+    var direction = 1.0
+    Timer.scheduledTimer(withTimeInterval: glideInterval, repeats: true) { _ in
+        offset += glideStep * direction
+        if abs(offset) >= glidePoints { direction = -direction }
+        var frame = appKitRect(top: y)
+        frame.origin.x += offset
+        window.setFrame(frame, display: true)
+    }
+} else {
+    for move in moves {
+        DispatchQueue.main.asyncAfter(deadline: .now() + move.after) {
+            let moved = Date()
+            window.setFrame(appKitRect(top: move.top), display: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + settle) { report(at: moved) }
+        }
     }
 }
 

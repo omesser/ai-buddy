@@ -238,7 +238,58 @@ overlay: 1 display(s); sprite 126x128; BMO as BMO
 **Status:** Partial. This section leaves [#425](https://github.com/omesser/ai-buddy/issues/425) open. GPU% per scenario and compositor is still N/A. Two compositors, a Wayland row, and an uncomposited X11 row are still missing. X11 under xfwm4 has a mask-rate pair (idle 0.00/s, walking with the pointer away 0.00/s) and an X-server CPU proxy.
 
 ## WindowSource (issue #427)
-_Pending._
+
+Re-run the ungated half with `scripts/bench-window-list-macos.sh micro`. The gated half is `sudo -v && AI_BUDDY_BENCH_GREEN_LIGHT=1 scripts/bench-window-list-macos.sh matrix --seconds 15 --windows 100`; the script refuses `idle`, `riding`, and `matrix` without that variable because they launch ai-buddy on the live desktop and flood it with windows. Written against `8588715e`.
+
+**What the app does.** One poll is `CGWindowListCopyWindowInfo(OptionOnScreenOnly | ExcludeDesktopElements, 0)` plus a decode of every entry's bounds, number, layer, and (with Screen Recording consent) owner name, in `walk_visible` at `src-tauri/src/platform/macos/window_source.rs:78-80`. `SnapshotAssembler::assemble` reads it once per `POLL_INTERVAL` (100 ms, `crates/core/src/window_source.rs:10`) and once per `RIDE_POLL_INTERVAL` (16 ms, `crates/core/src/window_source.rs:15`) while any Instance reports `riding` (`src-tauri/src/frame_loop.rs:1317`, switched at `src-tauri/src/frame_loop.rs:1692`). The read is synchronous on the frame loop thread (`crates/core/src/snapshot.rs:84-87`), so a poll's cost lands inside the tick that makes it.
+
+**Tools:**
+
+- `scripts/bench-window-list-macos.swift` times the same call and decode from its own process against whatever is on the desktop. It opens nothing.
+- `scripts/bench-window-list-macos.sh` wraps it (`micro`) and, gated, samples a running ai-buddy with dtrace (`idle`, `riding`, `matrix`). The added windows come from `scripts/window-flood-macos.swift`, under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043); when that file is absent the added-window rows skip and say so. The ride comes from `scripts/perch-window.swift --glide`, which slides the perch every frame so `riding` stays on for the whole sample.
+- The issue's dtrace one-liner matches no probe on this machine: `dtrace: probe description pid<n>::CGWindowListCopyWindowInfo:entry does not match any probes`. On macOS 26 CoreGraphics forwards to SkyLight, and the pid provider lists `SLWindowListCopyWindowInfo` there. Probing that on the microbench counted 8439 calls in 4 s at 460 µs average, against the microbench's own 455 µs median, so the two instruments agree. `sudo` is required; System Integrity Protection prints a warning but lets the pid provider attach to an unsigned binary.
+- `xctrace record --template 'Time Profiler' --attach <pid> --time-limit 5s` records headless and its export names `SLWindowListCopyWindowInfo` in the sampled frames, so the issue's Instruments route works without opening Instruments. The script uses dtrace instead because it yields a call count and a per-call duration directly.
+
+**Environment:**
+
+- Mac15,7 (Apple M3 Pro), macOS 26.7 (25G229), two displays
+- The desktop as found: 53 on-screen windows under the app's options, 201 under the every-window option
+- `swift` interpreter and a `swiftc -O` build agree within run-to-run spread
+
+**Metrics (in-process microbenchmark, measured, opens nothing):**
+
+| Row | Windows | Median µs/poll | p95 µs | Max µs | µs/window | Notes |
+|-----|---------|----------------|--------|--------|-----------|-------|
+| `app-call` (the bare call, app's options) | 52 to 53 | 382 to 436 | 417 to 898 | 3298 to 3684 | 7.2 to 8.2 | Seven runs of 300 iterations |
+| `app` (call + decode, no names) | 52 to 53 | 404 to 468 | 447 to 910 | 1856 to 2060 | 7.7 to 8.8 | Eight runs; the consent-off path |
+| `app-names` (call + decode + owner name) | 52 to 53 | 424 to 517 | 448 to 715 | 1406 to 6851 | 8.1 to 9.8 | The consent-on path |
+| `all` (every window, every Space) | 201 | 1378 to 2269 | 2321 to 3893 | 5638 to 6105 | 6.9 to 11.3 | Nine runs over two days: 1.4 ms, 1.93 ms (400 iterations), and 2.27 ms are three separate runs of the same row |
+
+The `all` row is a range on purpose. Three runs, minutes to hours apart, put its median at 1.4, 1.93, and 2.27 ms. Max is the two runs that kept a file. A window-count figure from one run of this row is a snapshot of that desktop, not a property of the call.
+
+**Metrics (the app under dtrace, measured, one run each, `target/debug` build):**
+
+The operator approved one `matrix --seconds 15 --windows 100` run. Every number below is from that run, on a debug build of ai-buddy, and the +100 rows used the flood script under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043). Windows is the on-screen count under the app's options, read by the microbench beside the sample. Hz is dtrace's call count divided by 15 s.
+
+| Scenario | Windows | Poll Hz (target) | Median µs | p95 µs | Max µs | dtrace calls | Notes |
+|----------|---------|------------------|-----------|--------|--------|--------------|-------|
+| Idle perched, desktop as found | 55 | 9.80 (10) | 2169 | 5076 | 8057 | 147 | pointer left alone |
+| Idle perched, +100 flood windows | 155 | 9.80 (10) | 3925 | 6390 | 9347 | 147 | |
+| Walking | N/A | N/A | N/A | N/A | N/A | N/A | Not in the script. The poll rate depends on `riding` alone (`src-tauri/src/frame_loop.rs:1692`), so a walk polls at the idle cadence; a row would restate the idle one |
+| Riding a gliding perch, desktop as found | 56 | 45.40 (60) | 1500 | 4750 | 15165 | 681 | 378 distinct perched positions over the sample |
+| Riding a gliding perch, +100 flood windows | 156 | 40.20 (60) | 2785 | 10834 | 12796 | 603 | 296 distinct perched positions |
+
+**The in-app call is slower than the same call timed alone.** Measured: at 55 to 56 windows the app's median poll is 2169 µs idle and 1500 µs riding, against 404 µs for the microbench's `app` row at 52 windows in the same matrix run. That is 3.7 to 5.4 times the in-process figure. The worst riding sample at 56 windows took 15165 µs, against a 16667 µs frame at 60 Hz; two of 682 riding samples passed 8 ms. At 156 windows the riding p95 is 10834 µs, 65% of the frame, and the max 12796 µs. Whether a tick that contains one of those polls overran the frame is not measured: dtrace timed the call, not the tick. Why the app's call is slower than the microbench's is not measured either. A guess is that the debug build and the window server's per-process state both add to it. The microbench numbers say what the call costs at best, not what it costs ai-buddy.
+
+**Poll rate.** Measured: idle polls at 9.80 Hz against the 10 Hz target. Riding polls at 45.4 Hz on the desktop as found and 40.2 Hz with 100 windows added, against a 60 Hz target. What sits behind the shortfall is a guess: the debug build's frame loop not holding 60 Hz, rather than the poll. The poll's median at 56 windows is 1.5 ms, so by itself it cannot stretch a 16.7 ms frame to the 22 ms the 45.4 Hz rate implies. A release build measured with the same script would settle it.
+
+**Scaling, computed from the rows above.** Adding 100 windows raised the app's median poll by 1756 µs idle (17.6 µs per window) and by 1285 µs riding (12.9 µs per window). The microbench's own figure across 52 to 201 windows is 7 to 11 µs per window. Four counts under the app's options now exist (52 to 56, 155, 156, and the 201 every-window row), and the table is what stands in for the curve the issue asks to plot. Nothing is plotted.
+
+**What the CPU share is, computed from the rows above.** Idle at 55 windows, 9.8 Hz times 2.17 ms is 21 ms of one core a second. Riding at 56 windows, 45.4 Hz times 1.5 ms is 68 ms a second, 6.8% of one core. Riding at 156 windows, 40.2 Hz times 2.79 ms is 112 ms a second, 11% of one core. The issue's Activity Monitor CPU% for the whole process was not taken.
+
+**What this refutes.** The issue's hypothesis was about 50 µs per window. The measured figure is 7 to 11 µs per window in-process and 13 to 18 µs per added window in the app, and over 90% of a microbench poll is the call itself: the decode ai-buddy adds costs 30 to 50 µs at 53 windows, and reading the owner name adds another 20 to 50 µs. At 156 windows the app's median riding poll is 2.8 ms, not the 10 to 50 ms the issue predicted for 200 windows. The tail is another matter: a p95 of 10.8 ms and a max of 12.8 ms at 156 windows, and a 15.2 ms worst sample at 56, are within one frame each but leave little of it.
+
+**Limits.** One machine, one desktop, one run of the gated matrix, on a debug build. The microbench times a separate process and the app's calls are 3.7 to 5.4 times slower, so the microbench alone understates the cost. The `all` row's spread across nine runs is wider than the `app` row's, so window-count scaling on a busy desktop needs more than one run per count. Not produced: the Instruments Time Profiler screenshot the issue asks for (the headless `xctrace` recording exists, but a screenshot needs Instruments on the screen) and a plotted curve.
 
 ## Click-through mask (issue #428)
 
