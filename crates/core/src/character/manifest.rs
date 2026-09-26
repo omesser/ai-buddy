@@ -46,15 +46,9 @@ pub(super) struct DeclaredBehavior {
     pub(super) trigger: Option<Trigger>,
 }
 
-/// Read the Character Manifest.
-///
-/// TOML gives the container: keys are unique, values are typed, and comments
-/// are the parser's problem. Everything after that is still a closed set — a
-/// declaration the loader does not know is an error and never a guess.
-///
-/// `None` when the manifest is not TOML at all. That is one error, not one
-/// per declaration: past the first syntax mistake the parser would be
-/// guessing, and a guess would report mistakes the author has not made.
+/// Read the Character Manifest. TOML comments are the parser's problem, and
+/// `None` means it is not TOML at all: one error, not a guess past the first
+/// syntax mistake, which would report mistakes the author has not made.
 pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
     let mut declared = Declared::default();
 
@@ -148,13 +142,9 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
     Some(declared)
 }
 
-/// `[source]`: where the art came from, for whatever publishes it.
-///
-/// Nothing in the Engine reads this — it is carried for the gallery
-/// (`scripts/make-character-gallery.py`), which used to scrape the manifest's
-/// leading comment and so published art-production notes alongside the
-/// attribution. Validated here anyway, because the parser knows every
-/// declaration or it knows none.
+/// `[source]`: where the art came from, for `scripts/make-character-gallery.py`.
+/// The Engine does not read it. Validated anyway: the parser knows every
+/// declaration or none.
 fn parse_source(item: &Item, manifest: &str, declared: &mut Declared, errors: &mut Vec<String>) {
     let Some(table) = item.as_table_like() else {
         errors.push(
@@ -216,9 +206,8 @@ fn parse_source(item: &Item, manifest: &str, declared: &mut Declared, errors: &m
         );
     }
     // Silence about a license reads as permission to whoever publishes the
-    // art. Most shipped packages are MIT over art adapted from a pack that
-    // declares nothing, and that second half is the sentence a reader needs;
-    // only a required key makes an author write it.
+    // art, so the key is required. A pack often declares nothing; the author
+    // still has to write that, not leave the field out.
     if !table.contains_key("license") {
         errors.push(
             "[source] declares no license; name it, or say that none is \
@@ -308,7 +297,6 @@ fn parse_cursor(item: &Item, manifest: &str, declared: &mut Declared, errors: &m
     }
 }
 
-/// Parse a cursor reaction from its manifest name.
 fn parse_cursor_reaction(value: Option<&str>) -> Option<CursorReaction> {
     match value? {
         "indifferent" => Some(CursorReaction::Indifferent),
@@ -397,10 +385,9 @@ fn parse_animation(
         }
     }
 
-    // The table rather than `frames`: `frame_list` pushes this same message
-    // for a list written empty, and its every other refusal leaves the key
-    // present, so asking whether the author wrote one at all is what keeps the
-    // two sites to one error between them.
+    // The table rather than `frames`: `frame_list` already reports an empty
+    // list, and every other refusal leaves the key present, so this asks only
+    // whether the author wrote one at all.
     if !table.contains_key("frames") {
         errors.push(format!("animation {name:?} declares no frames"));
     }
@@ -417,10 +404,8 @@ fn parse_animation(
     })
 }
 
-/// An Animation's `frames` list.
-///
-/// Counted before the file names are copied out, so a list built to be long
-/// is rejected for its length alone.
+/// An Animation's `frames` list, counted before the names are copied, so a
+/// long list is rejected for its length alone.
 fn frame_list(
     name: &str,
     item: &Item,
@@ -527,10 +512,9 @@ fn parse_behavior(
     })
 }
 
-/// A Behavior's `play` list: Primitives by name, in play order.
-///
-/// A word that is not a Primitive is reported and dropped rather than
-/// abandoning the declaration, so the rest of the list is still checked.
+/// A Behavior's `play` list. A word that is not a Primitive is reported and
+/// dropped rather than abandoning the declaration, so the rest is still
+/// checked.
 fn play_list(name: &str, item: &Item, manifest: &str, errors: &mut Vec<String>) -> Vec<Primitive> {
     let Some(list) = item.as_array() else {
         errors.push(format!(
@@ -582,11 +566,9 @@ fn wrote(manifest: &str, span: Option<std::ops::Range<usize>>) -> Option<&str> {
     span.and_then(|span| manifest.get(span)).map(str::trim)
 }
 
-/// One trigger condition, or nothing when it is not one.
-///
-/// The application name is the rest of the line rather than one word, since
-/// "Google Chrome" is what the platform reports and an author writes what they
-/// see.
+/// One trigger condition, or nothing when it is not one. The application name
+/// is the rest of the line rather than one word: "Google Chrome" is what the
+/// platform reports, and an author writes what they see.
 fn parse_trigger(value: &str) -> Option<Trigger> {
     let (condition, rest) = value.split_once(char::is_whitespace)?;
     let rest = rest.trim();
@@ -606,11 +588,9 @@ fn parse_trigger(value: &str) -> Option<Trigger> {
     }
 }
 
-/// A span written as a count and a unit, as `30s` or `2m`.
-///
-/// Stripped as a suffix rather than split at the last byte: a manifest is
-/// untrusted text, and the last byte of "2\u{043c}" is the middle of a
-/// character, which splitting would panic on.
+/// A span as a count and a unit, as `30s` or `2m`. Stripped as a suffix, not
+/// split at the last byte: the last byte of "2\u{043c}" is the middle of a
+/// character, and splitting untrusted text there would panic.
 fn parse_duration(text: &str) -> Option<Duration> {
     let (count, seconds_each) = match (text.strip_suffix('s'), text.strip_suffix('m')) {
         (Some(count), _) => (count, 1),
@@ -645,8 +625,7 @@ mod tests {
                 .to_string()]
         );
 
-        // TOML has negative numbers where the old format had only digits, and
-        // a weight is a count.
+        // TOML integers can be negative, and a weight is a count.
         let negative = format!(
             "{}[behaviors.greet]\nplay = [\"react\"]\nweight = -3\n",
             declaring(&REQUIRED_ANIMATIONS)
@@ -798,13 +777,9 @@ mod tests {
         }
     }
 
-    /// `declares no frames` is pushed from two places — `parse_animation` for
-    /// a `frames` key nobody wrote, `frame_list` for one written empty — and
-    /// they add up to one error only because the key's presence decides which
-    /// can run. Every other way a frame list is refused leaves the key
-    /// present, so those are the cases that pin it: the refusal already said
-    /// what was wrong, and the missing-key error must not follow it. The
-    /// bound's own test asserts by name, which an extra error would satisfy.
+    /// A missing `frames` key and an empty list both say `declares no frames`,
+    /// and only the key's presence keeps them to one error. Other refusals
+    /// leave the key, so a name check would still pass if that error followed.
     #[test]
     fn a_frames_list_refused_for_another_reason_is_not_also_called_no_frames() {
         let over_the_bound = vec!["\"wave-0.png\""; MAX_FRAMES + 1].join(", ");
@@ -845,10 +820,9 @@ mod tests {
         assert_names(&twice, "greet");
     }
 
-    /// Hostile input: a frame reference is eight bytes of manifest and a whole
-    /// copy of the art in the renderer, so an unbounded frame count is a way to
-    /// hand the renderer an allocation it dies on. The bound is checked on both
-    /// sides so it cannot drift by one.
+    /// Hostile input: a frame name is a few manifest bytes and a full copy of
+    /// the art in the renderer, so an unbounded count dies on allocation. Both
+    /// sides of the bound are checked so it cannot drift by one.
     #[test]
     fn an_animation_with_more_frames_than_the_bound_is_rejected_by_name() {
         let repeat = |count: usize| {
@@ -867,10 +841,9 @@ mod tests {
         assert_names(&over, &format!("{} frames", MAX_FRAMES + 1));
     }
 
-    /// Hostile input: declarations written to confuse the loader rather than
-    /// to declare anything — TOML the parser accepts and the domain does not.
-    /// Each one is rejected by name, and none of them is guessed at, ignored,
-    /// or allowed to panic.
+    /// Hostile input: TOML the parser accepts and the domain does not. Each
+    /// declaration is rejected by name, and none is guessed at, ignored, or
+    /// allowed to panic.
     #[test]
     fn nonsense_declarations_are_each_rejected_by_name() {
         let manifest = format!(
