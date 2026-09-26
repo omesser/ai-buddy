@@ -43,7 +43,10 @@ three facts. Newest-wins still holds, except that:
 - **An ambient tick does not supersede a reactive call.** The Harness already
   refuses to give the turn up for one, so a slot that superseded anyway would
   throw away an answer that is still on its way. This is the rule the two
-  layers were disagreeing about, stated once.
+  layers were disagreeing about, stated once. The slot applies it to the HTTP
+  lane as well, where it is new rather than a reconciliation: there the tick
+  used to cancel the reactive call outright, and the user got the muse's answer
+  instead of the one to their Poke.
 
 The losing wake is **dropped**, not queued. ADR-0016 rejected a queue for a
 mascot and the reason holds here: a buddy working through a backlog of Pokes
