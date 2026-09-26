@@ -342,7 +342,7 @@ director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:l
 
 Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a buddy that went quiet is not a mystery.
 
-`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it spawns it, prints what `initialize` advertised, runs one fixed prompt, and says whether the reply parsed as a Behavior proposal. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
+`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it serves ai-buddy's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, says whether the reply parsed as a Behavior proposal, and says whether the Harness fetched the tool list. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
 
 ```sh
 AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
@@ -368,6 +368,7 @@ turn
   stop         end_turn
   reply        Wave | Hello from the probe.
   proposal     Wave | Hello from the probe.
+  mcp listed   yes, 1 tools/list request(s)
 ```
 
 `mcp` sits under the handshake because it is what the session was actually
@@ -376,8 +377,14 @@ handed, and `mcp http` above it is why: `hermes` advertises none on ACP
 That is the handshake bit alone — hermes speaks MCP over HTTP perfectly well as
 a client of someone else's server. A Harness that advertises HTTP MCP prints a
 `http://127.0.0.1:…/mcp` URL there instead — never the bearer token that
-reaches it — but only when a running app bound that listener, which a probe
-does not (ADR-0023).
+reaches it. The probe binds that listener itself before it attaches, so the
+Harness gets what the app would hand it. `mcp listed` under the turn is the
+Harness's side of it: whether it asked the endpoint for `tools/list` at all.
+A tool it then calls is answered through the same `dispatch` the app uses,
+against an empty desktop and no Instances, so `speak` comes back unsuccessful
+and `list_windows` empty; the probe prints each call as `mcp call`. A probe
+whose loopback bind failed says so in capitals under `mcp`, and nothing it
+reports about tools holds.
 
 The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. That stop reason is the probe's, not session teardown: a turn completed, which is not the same as the session ending. Dated transcripts belong on the issue that ran the probe. Update the README's [Harness Support](../README.md#harness-support) table when a named row's command or user-visible session behavior changes — not when a probe is re-run.
 

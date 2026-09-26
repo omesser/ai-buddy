@@ -184,14 +184,15 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 | `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy__` prefix. |
 | `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
 | `hermes` | Keeps shell, web search and extract, filesystem, and the user's own MCP servers via the vendor mcp subcommand that the probe did not exercise, lists no ask-user tool, and lists browser tools that the start-up CDP check marks unavailable. |
-| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Whether Pi then lists ai-buddy's tools is unmeasured (#984). |
+| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Handed ai-buddy's stdio server on `session/new`, it never asked for the tool list: `pi-acp` stores those servers and does not pass them to `pi` (#1019), which reads the project `.mcp.json` the app writes on Apply and the probe does not. |
 
 No Harness brings desktop control to an ACP session ai-buddy opens.
 
-`scripts/probe-harness.sh` starts no MCP endpoint of its own (#984), so a probe
-run cannot see ai-buddy's tools arrive. The Goose and Copilot rows read from a run
-patched to serve one, which confirms delivery of the tool list and not a call
-into it.
+`scripts/probe-harness.sh` serves ai-buddy's MCP endpoint and reports under
+`mcp listed` whether the Harness fetched the tool list (#984). Goose, Copilot
+and Codex fetched it on a stock run; Pi did not. That is delivery of the list,
+not a call into it, and the prefix a Harness shows its model came from the
+tool-class probe's own client.
 
 How they handle session differs, and changes what ai-buddy can do with them:
 

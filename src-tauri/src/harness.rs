@@ -1388,6 +1388,11 @@ pub fn run_probe() -> i32 {
 /// `run_probe` minus the environment, so the fake agent can run the whole of
 /// it in a test.
 fn probe(session: &Session) -> i32 {
+    // Served before attach, so `choose_mcp` takes the branch the app takes.
+    // Without it a Harness got the stdio shim with nothing to dial (#984).
+    let (calls, answers) = std::sync::mpsc::channel();
+    let served = crate::mcp_http::serve(calls).is_some();
+    thread::spawn(move || answer_probe_calls(answers));
     println!("probe-harness");
     println!("  harness      {}", session.launch.name);
     println!("  command      {}", session.launch.line());
@@ -1437,6 +1442,9 @@ fn probe(session: &Session) -> i32 {
         "  mcp          {}",
         mcp_server(&handshake).map_or_else(|| "none".to_string(), |choice| choice.label())
     );
+    if !served {
+        println!("  mcp          NO LOOPBACK LISTENER: the server above has nothing to dial, so no tool claim from this run holds");
+    }
     println!(
         "  authMethods  {}",
         if methods.is_empty() {
@@ -1450,7 +1458,7 @@ fn probe(session: &Session) -> i32 {
 
     println!("turn");
     println!("  prompt       {PROBE_PROMPT}");
-    match session.turn(&WakeRequest {
+    let code = match session.turn(&WakeRequest {
         prompt: PROBE_PROMPT.to_string(),
         // Reactive, because a probe is someone asking on purpose. Named for
         // the probe so the Action Log line cannot be read as a buddy's own wake.
@@ -1489,6 +1497,37 @@ fn probe(session: &Session) -> i32 {
             println!("  {why}");
             1
         }
+    };
+    // Reported after the turn: a Harness may fetch the list lazily. Zero
+    // means the Harness never asked, whatever `initialize` advertised.
+    match crate::mcp_http::tools_listed() {
+        0 => println!("  mcp listed   no, the Harness never asked for the tool list"),
+        n => println!("  mcp listed   yes, {n} tools/list request(s)"),
+    }
+    code
+}
+
+/// Answer the Harness's tool calls through the frame loop's `dispatch`,
+/// against an empty desktop and no Instances. `speak` reports that it
+/// reached nobody rather than a success nothing shows (ADR-0026).
+fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
+    use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext};
+    let memory_path = ai_buddy_core::memory::shared_path();
+    while let Ok(call) = calls.recv() {
+        println!("  mcp call     {}", call.tool);
+        let mut context = DispatchContext {
+            window_source: &ai_buddy_core::window_source::StubWindowSource,
+            memory_path: memory_path.clone(),
+            denylist: DenyList {
+                excluded_applications: Vec::new(),
+                filter_password_fields: true,
+            },
+            roster: &[],
+            expression: None,
+        };
+        let _ = call
+            .reply
+            .send(dispatch(&call.tool, call.arguments, &mut context));
     }
 }
 
@@ -2016,12 +2055,17 @@ mod tests {
         if let Some(cwd) = message.pointer("/params/cwd").and_then(Value::as_str) {
             record(count, &format!("cwd={cwd}"));
         }
-        if message
-            .pointer("/params/mcpServers")
-            .and_then(Value::as_array)
-            .is_some_and(|servers| !servers.is_empty())
+        // The transport of the first server handed over. An http entry says
+        // so; a stdio one names a command and no type.
+        if let Some(server) = message
+            .pointer("/params/mcpServers/0")
+            .filter(|server| !server.is_null())
         {
-            record(count, "mcp");
+            let transport = server
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("stdio");
+            record(count, &format!("mcp={transport}"));
         }
     }
 
@@ -4548,6 +4592,22 @@ mod tests {
         };
         assert_eq!(probe(&isolated_session(launch, dir.clone(), silent())), 2);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The probe hands a Harness that advertised `mcpCapabilities.http` the
+    /// same loopback URL the app would. Without a listener of its own,
+    /// `choose_mcp` fell through to a stdio shim with nothing to dial (#984).
+    #[test]
+    fn the_probe_serves_the_loopback_endpoint_before_it_attaches() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(probe(&session), 0);
+        session.shutdown();
+        assert_eq!(
+            fx.count("mcp=http"),
+            1,
+            "the fake advertised http and got the shim"
+        );
+        assert!(crate::mcp_http::endpoint().is_some());
     }
 
     /// `shutdown` kills and waits; a zero-length wait can only succeed if
