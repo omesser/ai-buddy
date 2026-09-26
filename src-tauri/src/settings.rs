@@ -2965,7 +2965,7 @@ mod tests {
             // What the frame loop does to put a Completer in front of a wake,
             // and what the wake itself sends.
             let id = "buddy".to_string();
-            let mut slots = model::tests::slots_awaiting_a_wake(&id);
+            let mut slots = completer::tests::slots_awaiting_a_wake(&id);
             let mut completer = None;
             completer::retarget_model(
                 &mut slots,
@@ -3762,7 +3762,7 @@ mod tests {
 
                 // What frame_loop.rs does with the payload.
                 let id = "buddy".to_string();
-                let mut slots = model::tests::slots_awaiting_a_wake(&id);
+                let mut slots = completer::tests::slots_awaiting_a_wake(&id);
                 let mut completer = None;
                 completer::retarget_model(
                     &mut slots,
