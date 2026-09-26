@@ -374,10 +374,13 @@ levels = {w["layer"] for w in windows}
 check(levels == {3}, "every overlay is at floating level", f"levels={sorted(levels)}")
 
 # The screen-share half of the hide rules, and the only part a machine can
-# check. NSWindowSharingReadOnly is 1: capturable by default per ADR-0024,
-# unless Presence opts out or AI_BUDDY_CAPTURABLE=0 forces the exclusion.
+# check. Default is capturable (ADR-0024): NSWindowSharingReadOnly is 1,
+# None is 0. AI_BUDDY_CAPTURABLE's off words (model::switch_from) force 0.
 sharing = {w["sharing"] for w in windows}
-check(sharing == {1}, "every overlay is capturable by default",
+off_words = {"0", "off", "false", "no"}
+expected = 0 if os.environ.get("AI_BUDDY_CAPTURABLE", "").strip().lower() in off_words else 1
+label = "excluded from" if expected == 0 else "capturable for"
+check(sharing == {expected}, f"every overlay is {label} screen capture",
       f"sharing={sorted(sharing)}")
 
 # The origin has to match too: the right area of the wrong display is the same
