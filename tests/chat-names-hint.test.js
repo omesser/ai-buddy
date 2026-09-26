@@ -27,6 +27,20 @@ test("quiet and dismissed hide the notice", () => {
   assert.equal(dismissed.receive({ hint: "dismissed", generation: 1 }).view.visible, false);
 });
 
+test("opening settings twice still accepts a later quiet", async () => {
+  const notice = createNamesNotice({
+    act: async () => ({ hint: "due", generation: 1 }),
+  });
+  notice.receive({ hint: "due", generation: 1 });
+  await notice.press("open-settings");
+  await notice.press("open-settings");
+
+  const quiet = notice.receive({ hint: "quiet", generation: 2 });
+
+  assert.equal(quiet.changed, true);
+  assert.equal(quiet.view.visible, false);
+});
+
 test("a lower generation does not replace a newer one", () => {
   const notice = createNamesNotice({ act: async () => "quiet" });
   notice.receive({ hint: "due", generation: 2 });

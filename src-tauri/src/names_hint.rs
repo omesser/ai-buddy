@@ -241,9 +241,13 @@ impl WindowSource for Watching<'_> {
     }
 
     fn read(&self) -> WorldGeometry {
-        let geometry = self.desktop.read();
-        // An empty desktop is a session with nothing open, not a missing name.
-        // `owner` alone: a named desktop can still hold a window with no title.
+        self.desktop.read()
+    }
+
+    fn snapshot(&self) -> WorldGeometry {
+        // `snapshot` drops windows when the platform declares no geometry.
+        // Arming from `read` would treat that empty tool result as nameless.
+        let geometry = self.desktop.snapshot();
         let nameless = !geometry.windows.is_empty()
             && geometry.windows.iter().all(|window| window.owner.is_none());
         if nameless && !self.notice.names.usable() {
@@ -271,12 +275,13 @@ mod tests {
 
     struct Desktop {
         windows: Vec<WindowRect>,
+        geometry: bool,
     }
 
     impl WindowSource for Desktop {
         fn capabilities(&self) -> Capabilities {
             Capabilities {
-                window_geometry: true,
+                window_geometry: self.geometry,
                 absolute_positioning: false,
             }
         }
@@ -309,7 +314,12 @@ mod tests {
         let settings = Settings::default();
 
         let empty = Notice::new(&NAMES_OFF);
-        let empty_read = empty.watching(&Desktop { windows: vec![] }).read();
+        let empty_read = empty
+            .watching(&Desktop {
+                windows: vec![],
+                geometry: true,
+            })
+            .snapshot();
         assert!(empty_read.windows.is_empty());
         assert_eq!(empty.hint(&settings), NamesHint::Quiet);
 
@@ -317,18 +327,30 @@ mod tests {
         let _ = named
             .watching(&Desktop {
                 windows: vec![window(Some("Terminal"))],
+                geometry: true,
             })
-            .read();
+            .snapshot();
         assert_eq!(named.hint(&settings), NamesHint::Quiet);
 
         let nameless = Notice::new(&NAMES_OFF);
         let nameless_read = nameless
             .watching(&Desktop {
                 windows: vec![window(None)],
+                geometry: true,
             })
-            .read();
+            .snapshot();
         assert_eq!(nameless_read.windows.len(), 1);
         assert_eq!(nameless.hint(&settings), NamesHint::Due);
+
+        let withheld = Notice::new(&NAMES_OFF);
+        let cleared = withheld
+            .watching(&Desktop {
+                windows: vec![window(None)],
+                geometry: false,
+            })
+            .snapshot();
+        assert!(cleared.windows.is_empty());
+        assert_eq!(withheld.hint(&settings), NamesHint::Quiet);
     }
 
     #[test]
