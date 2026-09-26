@@ -357,10 +357,13 @@ fn read_resource(params: &Value) -> Result<Value, (i64, String)> {
         .find(|resource| resource.uri == uri)
         .ok_or_else(|| (-32602, format!("unknown resource: {uri}")))?;
     let text = match uri {
-        mcp_resources::WINDOWS_URI => mcp_resources::window_titles_text(
-            crate::platform::list_window_titles(),
-            &mcp_resources::live_denylist(),
-        ),
+        mcp_resources::WINDOWS_URI => {
+            crate::names_hint::live().titles_were_read();
+            mcp_resources::window_titles_text(
+                crate::platform::list_window_titles(),
+                &mcp_resources::live_denylist(),
+            )
+        }
         mcp_resources::MEMORY_URI => mcp_resources::memory_text(),
         mcp_resources::ACTION_LOG_URI => mcp_resources::action_log_text(),
         _ => return Err((-32602, format!("unknown resource: {uri}"))),

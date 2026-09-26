@@ -501,6 +501,37 @@ pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 pub const HARNESS_CWD_ID: &str = "harness_cwd";
 
+/// A place in Settings the Shell can send the user to. A capability, not a
+/// tab index: the per-OS row id stays in the consent catalog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reveal {
+    WindowNamesConsent,
+}
+
+/// Where to send the page. The tab is its title, which `selectTab` already takes.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct RevealTarget {
+    pub tab: String,
+    pub row: String,
+}
+
+impl Reveal {
+    /// Names the Privacy row for window names. Checking the box stays the user's.
+    pub fn target(self) -> RevealTarget {
+        let row = consent::rows(|_| false)
+            .into_iter()
+            .find(|row| row.id == consent::CapabilityId::WindowNames)
+            .map(|row| row.row_id())
+            .expect("WindowNames is in the consent catalog");
+        match self {
+            Self::WindowNamesConsent => RevealTarget {
+                tab: "Privacy".to_string(),
+                row,
+            },
+        }
+    }
+}
+
 /// The two Completer-source titles the file does not spell the same way: Model
 /// API (wire: empty string) and Harness · Custom (wire: `custom`), which
 /// defers to the command line beside it.
