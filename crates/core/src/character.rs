@@ -240,13 +240,9 @@ impl Animation {
     }
 }
 
-/// What must be true of the Free tier before a Behavior may be picked.
+/// What must be true before a Behavior may be picked.
 ///
-/// The closed set is the Free tier itself: an author can gate on how long the
-/// user has been away and on which application they are in, because those are
-/// the only two things ADR-0005 lets ai-buddy know for nothing. A condition is
-/// a declaration like any other, so a trigger the loader does not recognise is
-/// rejected rather than quietly never firing.
+/// An unknown trigger is rejected rather than quietly never firing.
 ///
 /// ponytail: no time-of-day condition, though the Director's context carries
 /// the time. `std` has no local time, and a trigger written as "22 to 6" that

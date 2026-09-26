@@ -51,7 +51,7 @@ pub(crate) fn auth_retry_placeholder() -> String {
 
 /// How long a Harness `session/prompt` may run before `session/cancel`.
 /// Twenty seconds cancelled a web lookup. Forever leaves a hung child.
-/// Two minutes covers a lookup and still maps expiry to cancel (ADR-0017).
+/// Two minutes covers a lookup and still maps expiry to cancel.
 pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Settings / `AI_BUDDY_HARNESS_TURN_TIMEOUT` still wins when set.
@@ -160,12 +160,13 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
 }
 
 impl Launch {
-    /// The child, inheriting our environment. ADR-0010. No provider key, no
-    /// `CLAUDE_CONFIG_DIR`, no `--bare`. The `pi` preset adds the loopback URL
-    /// and token, because `pi-acp` forwards `process.env` to `pi` and the
-    /// project file names those variables instead of the values. Own process
-    /// group once `own_interrupt` has taken Ctrl+C, so a SIGINT on `cargo run`
-    /// misses it.
+    /// The child, inheriting our environment. No provider key in it, because
+    /// one overrides a subscription login with no prompt. No `CLAUDE_CONFIG_DIR`
+    /// and no `--bare`, because both cut the child off from the login the user
+    /// already has. The `pi` preset adds the loopback URL and token, because
+    /// `pi-acp` forwards `process.env` to `pi` and the project file names those
+    /// variables instead of the values. Own process group once `own_interrupt`
+    /// has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
     fn command(&self, cwd: &AttachCwd) -> Command {
         let mut command = Command::new(&self.argv[0]);
         command.args(&self.argv[1..]).current_dir(cwd.as_path());
@@ -1336,7 +1337,7 @@ const REAP: Duration = Duration::from_secs(2);
 
 /// Attach the configured Harness and run one turn, with no overlay.
 /// Exit 2 means never asked, 1 means asked and unanswered, 0 is `end_turn`.
-/// A Harness that is not signed in names the command the user runs (ADR-0010).
+/// A Harness that is not signed in names the command for the user's terminal.
 pub fn run_probe() -> i32 {
     // No settings file on this path. `dev_flags::seed` is where the exported
     // timeout is read.
@@ -1355,7 +1356,7 @@ pub fn run_probe() -> i32 {
         // from the data folder, so a probe `remember` writes the real `memory.md`.
         SessionDataDir::probe(),
         // Named, never answered. Only a click on the Chat surface may answer a
-        // permission request (ADR-0017), and the probe has no surface. The ask
+        // permission request (ADR-0022), and the probe has no surface. The ask
         // times out with the turn, which is itself the report.
         Arc::new(Box::new(|forwarded| match forwarded {
             Forwarded::Ask(ask) => println!(
@@ -2844,8 +2845,9 @@ mod tests {
         });
     }
 
-    /// ADR-0010 rules 4 and 5, as code. The child gets our environment as
-    /// it is, with no key set, no config dir moved, and no `--bare`.
+    /// No provider key in the child environment, and no `CLAUDE_CONFIG_DIR`
+    /// or `--bare`. A key overrides a subscription login with no prompt, and
+    /// those two cut the child off from the login the user already has.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
         for name in [

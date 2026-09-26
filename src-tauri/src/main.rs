@@ -123,7 +123,7 @@ const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// Forwarded `session/request_permission` to every open Chat surface. The
 /// session is shared and the Shell does not know which window the user is
-/// looking at; first answer wins, never answered here (ADR-0010).
+/// looking at. The first answer wins. ai-buddy never answers it (ADR-0018).
 const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
 /// A forwarded `elicitation/create` form. Same fan-out as a permission ask:
@@ -1542,8 +1542,8 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
 }
 
 /// Draw one forwarded permission request on every Chat surface, visible and
-/// unminimized. ADR-0010 forbids choosing an option. ADR-0013: only a Chat
-/// surface can draw the options; a bubble can only point at a window that is not open.
+/// unminimized. ai-buddy never answers it (ADR-0018). Only a Chat surface draws
+/// the options. A bubble can only point at a window that is not open.
 fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;
@@ -1579,7 +1579,7 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     );
     // Do Not Disturb wins even over a question with a deadline: opening this
     // window activates ai-buddy. The turn then times out, and never an
-    // answer of ours (ADR-0010).
+    // answer of ours (ADR-0018).
     if do_not_disturb(app) {
         return;
     }
@@ -1726,8 +1726,8 @@ struct ChatOpening {
     host: String,
     /// Which Chat UI design the user picked: "minimal", "terminal", or "glass".
     chat_ui: String,
-    /// A Harness is attached but not signed in: the command that fixes it,
-    /// for the user's own terminal. The third state ADR-0010 names.
+    /// A Harness is attached but not signed in. Names the login command for
+    /// the user's own terminal.
     login: Option<String>,
     /// Which Harness is attached, when one is. Used to name it in the fourth
     /// empty state (needs authentication).
@@ -1753,8 +1753,8 @@ struct ChatOpening {
 #[derive(Clone, Serialize)]
 struct ChatHarness {
     name: String,
-    /// Attached but not signed in: the command that fixes it, for the user's
-    /// own terminal. The third state ADR-0010 names.
+    /// Attached but not signed in. Names the login command for the user's
+    /// own terminal.
     login: Option<String>,
     /// Whether the child is up. Set and dead is the state the Chat surface
     /// could not tell from attached before #474, and it is a lie worth more
@@ -2115,7 +2115,7 @@ fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
     })
 }
 
-/// Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
+/// Spatial Layer state one Chat surface draws in its status bar.
 /// Compared field by field to decide whether to push, so nothing in here
 /// changes on a tick where the bar would not.
 #[derive(Clone, PartialEq, Serialize)]
@@ -3856,8 +3856,8 @@ mod tests {
         assert!(!harness.alive);
     }
 
-    /// The HTTP half, and the rule that guards it: ADR-0010 forbids drawing a
-    /// credential, and a base URL is where one hides in plain sight.
+    /// The HTTP half, and the rule that guards it. A credential is never
+    /// drawn, and a base URL is where one hides in plain sight.
     #[test]
     fn chat_opening_names_the_endpoint_without_its_userinfo() {
         let mut roster = Roster::new();

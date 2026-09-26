@@ -121,10 +121,10 @@ pub struct DirectorInspect {
     pub wake_secs: u64,
     pub last_payload: Option<String>,
     /// The attached Harness, when `AI_BUDDY_HARNESS` named one. Its `login`
-    /// is the third Chat state ADR-0010 names: attached, not authenticated.
+    /// is set when attached but not authenticated, and it names the command.
     pub harness: Option<crate::harness::HarnessInspect>,
-    /// The HTTP Completer in force: the model, and the host without its
-    /// scheme, path or userinfo. Never the key (ADR-0010 rule 7).
+    /// The HTTP Completer in force. The model, and the host without its
+    /// scheme, path or userinfo. A credential is not logged or shown.
     pub model: String,
     pub host: String,
 }

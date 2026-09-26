@@ -131,7 +131,7 @@ test("bubble placement stays above sprite by default", () => {
 });
 
 // Near the ceiling the bubble inverts below the sprite at the same mirrored
-// distance when above would cover the face (ADR-0013).
+// distance when above would cover the face.
 test("bubble inverts below sprite at ceiling when above would cover face", () => {
   const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
   const bubbleSize = { width: 200, height: 100 };

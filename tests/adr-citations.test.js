@@ -11,29 +11,10 @@ import { test } from "node:test";
 
 const repo = new URL("..", import.meta.url);
 
-// The forty #924 left standing. Each one wants a rule, a state or a tier that
-// the superseding ADR dropped as "implementation detail that belongs
-// elsewhere" and that nothing live picked up, so repointing the number would
-// only move the reader to a document that does not carry the claim either.
-// #962 is the argument. Fix a site, lower the count here; an entry that has
-// gone stale is the failure telling you the work landed.
-const KNOWN_STALE = {
-  "Cargo.toml": 1,
-  "crates/core/src/character.rs": 1,
-  "crates/core/src/sensing.rs": 1,
-  "src-tauri/Cargo.toml": 1,
-  "src-tauri/src/acp_wire.rs": 2,
-  "src-tauri/src/harness.rs": 5,
-  "src-tauri/src/main.rs": 8,
-  "src-tauri/src/model.rs": 2,
-  "src-tauri/src/platform/macos/sensing.rs": 1,
-  "src-tauri/src/settings.rs": 8,
-  "src-tauri/src/settings/form.rs": 5,
-  "src/bubble.js": 1,
-  "src/chat-ui.css": 1,
-  "src/main.css": 2,
-  "tests/bubble.test.js": 1,
-};
+// Empty on purpose. A code citation of a superseded ADR fails this test.
+// Markdown, `docs/` and `.agents/` stay exempt. Narrating a supersession is
+// what prose is for, and a Dated page keeps the link it shipped with.
+const KNOWN_STALE = {};
 
 const tracked = (...args) =>
   execFileSync("git", ["ls-files", "-z", ...args], {
@@ -79,7 +60,7 @@ function citedStale(superseded) {
   return counts;
 }
 
-test("no code cites a superseded ADR beyond the #962 backlog", () => {
+test("no code cites a superseded ADR", () => {
   const superseded = supersededAdrs();
   assert.ok(superseded.size > 0, "the ADR status lines still parse");
   assert.deepEqual(

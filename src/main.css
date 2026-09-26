@@ -19,7 +19,7 @@ body {
 }
 
 /* The bubble is a piece of the chat surface's panel, carried out onto the
-   desktop (ADR-0013). The overlay loads no chat-ui.css and takes no `.chat-ui-*`
+   desktop. The overlay loads no chat-ui.css and takes no `.chat-ui-*`
    class, so only the shared snippet crosses and a Chat UI class cannot reach here. */
 .bubble {
   --bubble-panel: var(--shared-panel);
@@ -63,7 +63,7 @@ body {
 
 /* One element, two modes. Only the child the mode names is drawn, so the two
    can never be on screen together, which as two elements with overlapping
-   fades they were. One bubble, not two objects (ADR-0013, "One bubble for both states"). */
+   fades they were. One bubble, not two objects. */
 
 .bubble:not([data-mode="speech"]) .bubble-content,
 .bubble:not([data-mode="speech"]) .bubble-more,

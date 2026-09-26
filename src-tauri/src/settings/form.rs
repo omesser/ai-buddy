@@ -984,12 +984,12 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 /// Which mind answers a wake, and what the current attachment is doing.
 ///
 /// One variable owns both rows because `AI_BUDDY_HARNESS` spells the whole
-/// choice in one value — a preset name or a command line (ADR-0017) — so
+/// choice in one value, a preset name or a command line (ADR-0022), so
 /// freezing them apart would offer an edit the launch throws away (#272).
 ///
-/// No credential row of any kind, now or later: the Harness signs itself in
-/// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
-/// command the state line names is text, and nothing here runs it.
+/// No credential row of any kind, now or later. The Harness signs itself in
+/// and ai-buddy holds nothing for it (ADR-0018). The login command the state
+/// line names is text, and nothing here runs it.
 ///
 /// The page draws these rows and commits them on Apply, the same batch as
 /// the HTTP endpoint (#663).
@@ -1062,9 +1062,8 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
 ///
 /// The URL and the token are shown in plain text. @omesser decided that on
 /// #577: the token authorises loopback access to an app already on the user's
-/// screen, and what ADR-0010 protects against is a credential reaching a log,
-/// a trace, or a file another local user can read - none of which a Settings
-/// row is.
+/// screen, and a credential must not reach a log, a trace, or a file another
+/// local user can read - none of which a Settings row is.
 ///
 /// Separate from the "AI source" picker above, which chooses the mind that
 /// answers a wake. This one changes nothing about the app: a BYO user has no
@@ -3445,8 +3444,8 @@ mod tests {
         });
     }
 
-    /// ADR-0010 rules 1 and 6: no field here ever asks for a Harness
-    /// credential, and the login command is words the user runs themselves.
+    /// No field here asks for a Harness password, token, or API key. The
+    /// login command is words the user runs in their own terminal.
     #[test]
     fn the_completer_source_asks_for_no_credential() {
         crate::model::tests::with_harness(None, || {
@@ -3454,7 +3453,7 @@ mod tests {
             for row in &source_section(&description).rows {
                 assert!(
                     !matches!(row, FormRow::SecureField { .. }),
-                    "the Harness signs itself in; ADR-0010 forbids a field for it"
+                    "the Harness signs itself in; a credential is never asked for"
                 );
             }
         });
