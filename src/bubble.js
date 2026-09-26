@@ -160,7 +160,7 @@ export function createBubbleMachine(io) {
   };
 }
 
-// The bubble sits above the head (ADR-0013). At the ceiling, when the clamp
+// The bubble sits above the head. At the ceiling, when the clamp
 // would cover the Character's face, invert: put the bubble under the Character
 // at the same mirrored vertical distance.
 export function placeBubble(spriteRect, bubbleSize, displayBounds) {

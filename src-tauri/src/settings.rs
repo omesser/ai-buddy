@@ -68,7 +68,8 @@ pub struct SettingsView {
     /// Custom. The exported variable outranks the file, as on the endpoint
     /// rows (#272). The command line beside it is a `development_texts` row.
     pub harness: String,
-    /// What the attachment is doing, in the three states ADR-0010 names.
+    /// What the attachment is doing. Not attached, attached but not signed in,
+    /// or attached.
     pub harness_state: String,
     /// The registration box's Harness picker, snippet and instructions (#577).
     /// The picker is the file's alone - no variable owns it, because nothing
@@ -244,10 +245,9 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 
 /// What the Completer source row says about the attachment.
 ///
-/// Three states rather than two: ADR-0010 makes attached-but-not-authenticated
-/// its own, and the fix is one command in the user's own terminal. Named here
-/// and never run — ai-buddy holds no credential for the Harness and asks for
-/// none (ADR-0010 rules 1 and 6).
+/// Not attached, attached but not signed in, or attached and answering.
+/// Not signed in names the login command for the user's own terminal.
+/// ai-buddy holds no credential (ADR-0018), asks for none, and runs no login.
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
         None => "Not attached. The HTTP endpoint below is the AI brain.".to_string(),
@@ -1613,10 +1613,10 @@ impl fmt::Debug for SettingsPatch {
 /// A custom command line as a log may carry it: the program, and how many
 /// arguments followed.
 ///
-/// The key beside it is fingerprinted; this one is not, because ADR-0010's
-/// seventh rule forbids logging *or fingerprinting* a Harness credential, and
-/// a flag on a command line is somewhere a token can sit. The program name is
-/// a binary, so it is the one word that cannot be one.
+/// The key beside it is fingerprinted. This one is not. A Harness credential
+/// is not logged, printed, or fingerprinted, and a flag on a command line is
+/// somewhere a token can sit. The program name is a binary, so it is the one
+/// word that cannot be one.
 fn command_line_debug(line: &str) -> String {
     let mut words = line.split_whitespace();
     match words.next() {
@@ -1754,9 +1754,8 @@ impl Settings {
     /// command line under `custom`, the preset name otherwise, and `None` for
     /// Off.
     ///
-    /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both
-    /// (ADR-0017). A blank command line under `custom` is Off rather than a
-    /// spawn of nothing.
+    /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both.
+    /// A blank command line under `custom` is Off rather than a spawn of nothing.
     pub fn harness_source(&self) -> Option<String> {
         match self.harness.trim() {
             "" => None,
@@ -4255,8 +4254,9 @@ mod tests {
         });
     }
 
-    /// ADR-0010's three states, and rule 6 in the third: the login command is
-    /// named for the user's own terminal and nothing here runs it.
+    /// Not attached, attached with a session, or attached but not signed in.
+    /// The login command is named for the user's own terminal and nothing
+    /// here runs it.
     #[test]
     fn the_source_row_reads_the_three_attachment_states() {
         assert!(harness_state(None).contains("Not attached"));
@@ -4284,7 +4284,7 @@ mod tests {
         assert!(line.contains("`claude /login`"), "got {line:?}");
         assert!(
             !line.to_lowercase().contains("api key") && !line.to_lowercase().contains("password"),
-            "ADR-0010: no credential is ever asked for, got {line:?}"
+            "a credential is never asked for, got {line:?}"
         );
     }
 
@@ -4749,8 +4749,9 @@ mod tests {
         });
     }
 
-    /// ADR-0010 rule 7: a flag on a custom command line is somewhere a token
-    /// can sit, and the key beside it is already fingerprinted (#452).
+    /// A Harness credential is not logged or fingerprinted. A flag on a
+    /// custom command line is somewhere a token can sit, and the key beside
+    /// it is already fingerprinted (#452).
     #[test]
     fn a_custom_command_line_is_not_logged_verbatim() {
         let mut patch = SettingsPatch::default();

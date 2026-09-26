@@ -12,9 +12,8 @@
 //! - `CGDisplayIsAsleep` on the main display. A session Director does not
 //!   wake while the lid is closed or the screens have gone to sleep.
 //!
-//! Anything richer — the frontmost window's title, its contents, the clipboard —
-//! is the Ambient or On-Demand tier, behind consent per ADR-0005 and out of
-//! scope for v1.
+//! A window title and the clipboard stay unread here, and so do screen
+//! contents. Screen capture is not this module (ADR-0031).
 
 use std::time::Duration;
 

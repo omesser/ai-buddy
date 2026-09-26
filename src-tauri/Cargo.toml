@@ -47,7 +47,7 @@ serde_json = "1"
 # on `://` by hand. Already in the tree through the crates above; this only
 # names the edge.
 url = "2"
-# The official ACP SDK: the attached Harness is spoken to over it (ADR-0017).
+# The official ACP SDK. The attached Harness is spoken to over it (ADR-0022).
 # Its futures need an executor, and that executor lives on one thread in
 # `acp_wire.rs`: a current-thread tokio runtime, `rt` + `sync` + `macros` and
 # nothing more. tokio was already in the tree through Tauri. The frame loop

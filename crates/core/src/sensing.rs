@@ -1,6 +1,6 @@
 //! The Free sensing tier: the frontmost application's name, how long the user
-//! has been idle, and the time of day (ADR-0005), none of it costing a permission
-//! prompt. Titles, screen content and the clipboard are absent by construction.
+//! has been idle, and the time of day, none of it costing a permission prompt.
+//! Titles, screen content and the clipboard are absent by construction.
 
 use std::time::{Duration, SystemTime};
 
