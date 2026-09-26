@@ -1,124 +1,73 @@
 # A call waiting on the user is not superseded
 
 **Supersedes:** one clause of
-[ADR-0016](./0016-one-cancellable-slot-per-instance.md). Per-Instance
-newest-wins stands as written for a touch of the sprite and for a line the
-user typed. The moments carved out of it here are the ones where the wake
-already on the wire is the truer one.
+[ADR-0016](./0016-one-cancellable-slot-per-instance.md). Starting a call no
+longer always cancels the Instance's previous one.
 
 ## Context
 
-ADR-0016 made starting a call the cancellation of that Instance's previous
-one, and named the outcome in its own consequences: "a question nobody
-answered is withdrawn by the next `open_turn`". That sentence was written
-about a question the buddy asked the model. The Harness asks the user
-questions too, as a `session/request_permission` or an `elicitation/create`,
-and the turn then sits on the wire for as long as a person takes to read it.
-#1001 removed the timeout on that wait, so the window is unbounded. The Poke
-is the likeliest thing to arrive inside it: the ask is on screen and the
-sprite is right there.
+The Harness asks the user questions through `session/request_permission` and
+`elicitation/create`. Since #1001 the turn waits for the answer with no
+timeout.
 
-The slot cannot see any of this. `Slots::wake` supersedes on the strength of
-one fact, that a newer wake exists. `Session::supersede` decides the same
-question over on the Harness side from a different fact, `serving_reactive`,
-and already refuses one case the slot does not: an ambient tick may not take
-a turn that answers something the user did.
-
-Those two rules disagreeing is a bug on its own, with no ask involved. The
-Harness keeps the chat turn and answers it; the slot has already moved its
-epoch, so `take` drops that answer as a superseded moment. The turn is paid
-for, the reply is generated, and nobody is told. Add an ask and the window
-grows from milliseconds to however long the user reads, which is why the
-defect shows up as "the Harness's answer after a permission ask never reaches
-Chat" (#1037) and as "a Poke kills the turn I was answering" (#1038). One
-cause, two symptoms.
+`Slots::wake` replaced a call whenever a newer wake arrived. `Session::supersede`
+refused to give up a reactive turn to an ambient tick. When the two disagreed,
+the Harness kept the turn and answered it, and `take` dropped that answer
+because the slot had already moved its epoch. That lost the answer after a
+permission ask (#1037). A Poke during an ask cancelled the turn the user was
+answering (#1038).
 
 ## Decision
 
-Whether a wake may take a slot is decided in one place, `Slots::wake`, from
-three facts: whether the call on the wire is waiting on the user, whether it
-is reactive, and what kind of moment the new wake is. The kind is
-`director::claim`, one exhaustive classification over `Happened` with no
-wildcard arm, so a new event cannot compile until someone says which it is:
-an **Interaction** with the sprite (Poke, Throw, Grab, Perch), an **Opener**
-of a surface (Summon), a typed **Line** (Chat), or **Ambient**. Newest-wins
-still holds, except that:
+`Slots::wake` alone decides whether a new wake replaces the call on the wire.
+`director::claim` puts every `Happened` in one of four classes with an
+exhaustive match, so a new event does not compile until someone classes it.
+Poke, Throw, Grab, and Perch are Interactions. Summon is an Opener. Chat is a
+Line. An ambient tick is Ambient.
 
-- **A call blocked on the user's own answer is not superseded, by anything.**
-  Newest-wins abandons a moment the world has moved past. The user mid-answer
-  is not that. The buddy asked, and the answer is owed in Chat. A Poke, a
-  Throw, a Grab, and a Summon are the same interruption here, and each is
-  dropped. The user answers, and that same turn continues.
-- **An ambient tick does not supersede a reactive call.** The Harness already
-  refuses to give the turn up for one, so a slot that superseded anyway would
-  throw away an answer that is still on its way. This is the rule the two
-  layers were disagreeing about, stated once. The slot applies it to the HTTP
-  lane as well, where it is new rather than a reconciliation: there the tick
-  used to cancel the reactive call outright, and the user got the muse's answer
-  instead of the one to their Poke.
-- **A Summon does not supersede a reactive call that is still generating.**
-  A Poke, a Throw, and a Grab are the user touching the sprite, and
-  newest-wins still lets them take that turn. A Summon opens Chat. The
-  reply already on the wire is the one the user is about to read, so
-  cancelling it to give the Summon a turn of its own throws that answer
-  away. That split holds only while the reply is still generating.
+- While the call waits on the user's answer, every new wake is dropped.
+- While a reactive call is still generating, an Opener or Ambient wake is
+  dropped. An Interaction or a Line replaces the call.
+- Otherwise the newest wake wins, as ADR-0016 says.
 
-The losing wake is **dropped**, not queued. ADR-0016 rejected a queue for a
-mascot and the reason holds here: a buddy working through a backlog of Pokes
-the user has forgotten making is worse than a buddy that missed one.
+A dropped wake is not queued. `Completer::awaiting_user` reports the wait. It
+defaults to false, because an HTTP endpoint cannot ask.
 
-The Completer answers the first fact, because it is the only layer that can
-see a permission request. `Completer::awaiting_user` defaults to false, which
-is the truth for the HTTP lane: an endpoint has no way to ask.
+The ambient rule is new on the HTTP lane. There a tick used to cancel the
+reactive call, and the user got the tick's reply instead of the answer to
+their Poke.
 
 ## Considered Options
 
-- **A carve-out for the ask alone.** It fixes #1038 and leaves #1037 half
-  fixed, because the slot would still take a turn the Harness keeps whenever
-  an ambient tick lands inside a merely slow turn. Two fixes sharing one
-  premise is the premise asking to be looked at.
-- **Queue the dropped wake and run it when the ask settles.** The user
-  answers a question and is then poked by their own gesture from a minute
-  ago. ADR-0016's reason for refusing a queue does not weaken here.
-- **Rank a Summon above a Poke.** A Summon is the user asking for the
-  buddy, so it would outrank a Poke, and a Poke would give way wherever a
-  Summon does. Rejected. They are different acts. A Poke, like a Throw or
-  a Grab, is the user touching the sprite, and it may take a turn that is
-  only generating. A Summon opens Chat and must not cancel the reply
-  already on its way. While the user is mid-answer, a Poke, a Throw, a Grab,
-  and a Summon are all dropped.
-- **Bound the carve-out with a grace period.** It would stop an unanswered
-  ask holding the slot forever. Rejected as a dial ADR-0016 exists to avoid,
-  and unnecessary: `PendingAsks` replays an outstanding ask into any Chat
-  window that opens and opens one when none is on screen, so the user always
-  has a row to answer or reject.
-- **Have the Shell check before calling `wake`.** The shape ADR-0016 removed.
-  A rule the caller must remember is correct only while there is one caller.
+- **Exempt only a call waiting on the user.** That fixes #1038 but not #1037,
+  because an ambient tick would still replace a slow reactive turn.
+- **Queue the dropped wake.** ADR-0016 rejected queues, and its reason holds.
+  The user would get replies to gestures made a minute earlier.
+- **Let a Summon replace a reply still generating.** The operator rejected
+  this. A Summon opens Chat to read that reply, so cancelling it defeats the
+  Summon.
+- **Put a time limit on the wait.** Rejected as the kind of setting ADR-0016
+  avoids. `PendingAsks` shows an open question in any Chat window, and opens
+  one if none is showing.
+- **Check before each call to `wake`.** ADR-0016 removed that shape, because
+  every new caller has to remember the check.
 
 ## Consequences
 
-An unanswered ask holds the Instance's slot. A Poke, a Throw, a Grab, and a
-Summon do nothing to that turn until the user answers or rejects in Chat, and
-nothing on screen says so. That is the trade: a mascot that ignores a gesture
-for a moment against a mascot that hangs up on its own question.
+An unanswered question holds the slot. Every new wake for that Instance is
+dropped until the user answers or rejects it, and nothing on screen says so.
 
-A Summon that arrives while a reactive reply is still generating is dropped
-too. The Chat window still opens, because the slot does not open it. The
-reply on the wire is the one that lands. A Poke, a Throw, or a Grab in that
-same stretch still takes the turn.
+A dropped Summon still opens Chat, because the slot does not open windows.
 
-`wake` now says whether it started a call. The Shell applies the turn
-bookkeeping — the cancelled-caret note, `chat_turn`, `happened_last` — only
-when it did, so a dropped wake leaves the caret of the turn still running
-where it is. That is why the superseded-ask caret #1038 described no longer
-appears: the ask is not superseded.
+`wake` returns `Woke::Started` or `Woke::Dropped`. The Shell updates the caret,
+`chat_turn`, and `happened_last` only on `Started`, so a dropped wake leaves
+the running turn's caret in place.
 
-An ambient tick that lands inside a reactive turn is now spent rather than
-sent. The pace still advances, so the buddy's ambient cadence is unchanged;
-one muse is skipped when the buddy was already busy answering the user.
+An ambient tick during a reactive turn is skipped. The pace still advances, so
+the ambient cadence does not change.
 
 ## References
 
-- ADR-0016: [The Shell owns one cancellable slot per Instance](./0016-one-cancellable-slot-per-instance.md), the clause narrowed here
-- ADR-0008: [One Harness session](./0008-one-harness-session.md), why one child's outstanding ask belongs to one Instance
-- #1037 (the answer that never reached Chat), #1038 (the Poke that hung up), #1001 (the turn clock during a user ask)
+- [ADR-0016](./0016-one-cancellable-slot-per-instance.md), the clause narrowed here
+- [ADR-0008](./0008-one-harness-session.md), why an open question belongs to one Instance
+- #1037, #1038, #1001

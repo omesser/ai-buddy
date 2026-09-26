@@ -186,8 +186,8 @@ How a wake is actually sent — one cancellable slot per Instance, where startin
 a call is the cancellation of that Instance's previous one — is
 [ADR-0016](./docs/adr/0016-one-cancellable-slot-per-instance.md).
 [ADR-0033](./docs/adr/0033-a-call-waiting-on-the-user-is-not-superseded.md)
-names the calls that rule does not cancel. Those are a question the user is
-mid-answer to, an ambient tick, and a Summon over a reply still generating.
+makes two exceptions. Nothing replaces a call waiting on the user's answer,
+and neither an ambient tick nor a Summon replaces a reply still generating.
 What the
 convention it replaced cost the user in latency, and what else buys any back, is
 [research](./docs/research/director-in-flight-and-latency.md).
