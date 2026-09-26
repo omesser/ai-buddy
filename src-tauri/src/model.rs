@@ -124,7 +124,7 @@ pub struct DirectorInspect {
     /// is set when attached but not authenticated, and it names the command.
     pub harness: Option<crate::harness::HarnessInspect>,
     /// The HTTP Completer in force. The model, and the host without its
-    /// scheme, path or userinfo. Never the key.
+    /// scheme, path or userinfo. A credential is not logged or shown.
     pub model: String,
     pub host: String,
 }

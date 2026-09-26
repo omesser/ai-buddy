@@ -68,7 +68,8 @@ pub struct SettingsView {
     /// Custom. The exported variable outranks the file, as on the endpoint
     /// rows (#272). The command line beside it is a `development_texts` row.
     pub harness: String,
-    /// What the attachment is doing. Not attached, not signed in, or attached.
+    /// What the attachment is doing. Not attached, attached but not signed in,
+    /// or attached.
     pub harness_state: String,
     /// The registration box's Harness picker, snippet and instructions (#577).
     /// The picker is the file's alone - no variable owns it, because nothing
@@ -1753,9 +1754,8 @@ impl Settings {
     /// command line under `custom`, the preset name otherwise, and `None` for
     /// Off.
     ///
-    /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both
-    /// (ADR-0022). A blank command line under `custom` is Off rather than a
-    /// spawn of nothing.
+    /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both.
+    /// A blank command line under `custom` is Off rather than a spawn of nothing.
     pub fn harness_source(&self) -> Option<String> {
         match self.harness.trim() {
             "" => None,

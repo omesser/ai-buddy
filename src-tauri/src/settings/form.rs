@@ -984,7 +984,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 /// Which mind answers a wake, and what the current attachment is doing.
 ///
 /// One variable owns both rows because `AI_BUDDY_HARNESS` spells the whole
-/// choice in one value — a preset name or a command line (ADR-0022) — so
+/// choice in one value, a preset name or a command line (ADR-0022), so
 /// freezing them apart would offer an edit the launch throws away (#272).
 ///
 /// No credential row of any kind, now or later. The Harness signs itself in
