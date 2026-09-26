@@ -134,11 +134,36 @@ pub struct WakeRequest {
     pub blank: bool,
 }
 
+/// What kind of moment a wake is, which is what decides whether it may take
+/// the call its Instance already has on the wire (ADR-0033). A property of
+/// the event, so a new `Happened` cannot compile until someone classes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Claim {
+    /// The user did something to the sprite. It takes a call that is only thinking.
+    Interaction,
+    /// The user opened a surface to read what the buddy says. It must not
+    /// cancel the response it was opened for.
+    Opener,
+    /// The user typed a line. It takes a call that is only thinking.
+    Line,
+    /// The buddy musing on its own account. It never takes a reactive call.
+    Ambient,
+}
+
+pub fn claim(happened: &Happened) -> Claim {
+    match happened {
+        Happened::Poke | Happened::Throw | Happened::Grab | Happened::Perch => Claim::Interaction,
+        Happened::Summon => Claim::Opener,
+        Happened::Chat(_) => Claim::Line,
+        Happened::Ambient => Claim::Ambient,
+    }
+}
+
 /// Whether this wake answers something the user did.
 /// One definition, because the Shell's slot bookkeeping and the Completer
 /// request must not disagree about the same wake.
 pub fn reactive(happened: &Happened) -> bool {
-    *happened != Happened::Ambient
+    claim(happened) != Claim::Ambient
 }
 
 /// Completes a Character Prompt.

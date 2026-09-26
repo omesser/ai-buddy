@@ -12,7 +12,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
-use ai_buddy_core::director::{self, Completer, Context, ModelDirector, Reply, Wake, WakeRequest};
+use ai_buddy_core::director::{
+    self, Claim, Completer, Context, ModelDirector, Reply, Wake, WakeRequest,
+};
 use ai_buddy_core::roster::InstanceId;
 
 use crate::model::{blank, endpoint_from, tracing, DirectorSettings, Endpoint};
@@ -174,7 +176,8 @@ impl Slots {
         director: Arc<ModelDirector<C>>,
         context: Context,
     ) -> Woke {
-        let reactive = director::reactive(&context.happened);
+        let claim = director::claim(&context.happened);
+        let reactive = claim != Claim::Ambient;
         let slot = self.slots.entry(id.clone()).or_default();
         if slot.waiting {
             // The buddy asked the user a question and the user is mid-answer.
@@ -182,16 +185,16 @@ impl Slots {
             if director.awaiting_user() {
                 return Woke::Dropped;
             }
-            // An ambient tick is not news. The Harness refuses to give a
-            // reactive turn up for one (`Session::supersede`), so a slot that
-            // superseded anyway would drop an answer still on its way.
-            if !reactive && slot.reactive {
-                return Woke::Dropped;
-            }
-            // A Summon opens Chat. A Poke, Throw, or Grab touches the sprite
-            // and still takes a turn that is only generating. Opening the
-            // surface must not cancel the reply already on its way.
-            if slot.reactive && matches!(context.happened, director::Happened::Summon) {
+            // A reply the user is waiting for gives way to a touch of the
+            // sprite or a typed line, not to opening Chat to read it or to a
+            // muse. The Harness refuses a reactive turn to an ambient tick
+            // anyway (`Session::supersede`), so superseding would drop an
+            // answer still on its way.
+            let takes_a_reply = match claim {
+                Claim::Interaction | Claim::Line => true,
+                Claim::Opener | Claim::Ambient => false,
+            };
+            if slot.reactive && !takes_a_reply {
                 return Woke::Dropped;
             }
         }

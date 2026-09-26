@@ -35,8 +35,14 @@ cause, two symptoms.
 
 ## Decision
 
-Whether a wake may take a slot is decided in one place, `Slots::wake`.
-Newest-wins still holds, except that:
+Whether a wake may take a slot is decided in one place, `Slots::wake`, from
+three facts: whether the call on the wire is waiting on the user, whether it
+is reactive, and what kind of moment the new wake is. The kind is
+`director::claim`, one exhaustive classification over `Happened` with no
+wildcard arm, so a new event cannot compile until someone says which it is:
+an **Interaction** with the sprite (Poke, Throw, Grab, Perch), an **Opener**
+of a surface (Summon), a typed **Line** (Chat), or **Ambient**. Newest-wins
+still holds, except that:
 
 - **A call blocked on the user's own answer is not superseded, by anything.**
   Newest-wins abandons a moment the world has moved past. The user mid-answer
