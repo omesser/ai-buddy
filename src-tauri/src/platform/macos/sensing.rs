@@ -13,7 +13,7 @@
 //!   wake while the lid is closed or the screens have gone to sleep.
 //!
 //! A window title and the clipboard stay unread here, and so do screen
-//! contents. ADR-0031 dropped screen capture.
+//! contents. Screen capture is not this module (ADR-0031).
 
 use std::time::Duration;
 

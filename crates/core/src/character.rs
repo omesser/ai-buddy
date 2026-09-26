@@ -242,9 +242,7 @@ impl Animation {
 
 /// What must be true before a Behavior may be picked.
 ///
-/// An author can gate on idle and on the frontmost application. The enum is
-/// that closed set, so an unknown trigger is rejected rather than quietly
-/// never firing.
+/// An unknown trigger is rejected rather than quietly never firing.
 ///
 /// ponytail: no time-of-day condition, though the Director's context carries
 /// the time. `std` has no local time, and a trigger written as "22 to 6" that

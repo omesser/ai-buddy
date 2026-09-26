@@ -123,7 +123,7 @@ const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// Forwarded `session/request_permission` to every open Chat surface. The
 /// session is shared and the Shell does not know which window the user is
-/// looking at; first answer wins, never answered here (ADR-0018).
+/// looking at. The first answer wins. ai-buddy never answers it (ADR-0018).
 const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
 /// A forwarded `elicitation/create` form. Same fan-out as a permission ask:

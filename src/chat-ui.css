@@ -1,8 +1,8 @@
 @import url("./chat-shared.css");
 
-/* One Chat UI ships and this file is its single definition: :root names the
-   tokens, one .chat-ui-* block sets them, the rules consume them (ADR-0019).
-   No colour, font or radius literal outside one; chat-ui-tokens.test.js checks. */
+/* One Chat UI ships and this file is its single definition. :root names the
+   tokens, one .chat-ui-* block sets them, and the rules consume them.
+   No colour, font or radius literal outside one. chat-ui-tokens.test.js checks. */
 
 /* Named, not set. System keywords carry no literal, so this block passes the
    hook that guards the ones below it, and a typo in the root class leaves a
