@@ -46,9 +46,9 @@ pub(super) struct DeclaredBehavior {
     pub(super) trigger: Option<Trigger>,
 }
 
-/// Read the Character Manifest. TOML comments are the parser's problem, and
-/// `None` means it is not TOML at all: one error, not a guess past the first
-/// syntax mistake, which would report mistakes the author has not made.
+/// Read the Character Manifest. `None` means it is not TOML at all: one error,
+/// not a guess past the first syntax mistake, which would report mistakes the
+/// author has not made.
 pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
     let mut declared = Declared::default();
 
@@ -309,7 +309,6 @@ fn parse_cursor_reaction(value: Option<&str>) -> Option<CursorReaction> {
     }
 }
 
-/// One `[animations.<name>]` table.
 fn parse_animation(
     name: &str,
     item: &Item,
@@ -451,7 +450,6 @@ fn frame_list(
     Some(frames)
 }
 
-/// One `[behaviors.<name>]` table.
 fn parse_behavior(
     name: &str,
     item: &Item,
@@ -566,9 +564,9 @@ fn wrote(manifest: &str, span: Option<std::ops::Range<usize>>) -> Option<&str> {
     span.and_then(|span| manifest.get(span)).map(str::trim)
 }
 
-/// One trigger condition, or nothing when it is not one. The application name
-/// is the rest of the line rather than one word: "Google Chrome" is what the
-/// platform reports, and an author writes what they see.
+/// The application name is the rest of the line rather than one word.
+/// "Google Chrome" is what the platform reports, and an author writes what
+/// they see.
 fn parse_trigger(value: &str) -> Option<Trigger> {
     let (condition, rest) = value.split_once(char::is_whitespace)?;
     let rest = rest.trim();
@@ -841,9 +839,7 @@ mod tests {
         assert_names(&over, &format!("{} frames", MAX_FRAMES + 1));
     }
 
-    /// Hostile input: TOML the parser accepts and the domain does not. Each
-    /// declaration is rejected by name, and none is guessed at, ignored, or
-    /// allowed to panic.
+    /// None of these is guessed at, ignored, or allowed to panic.
     #[test]
     fn nonsense_declarations_are_each_rejected_by_name() {
         let manifest = format!(
