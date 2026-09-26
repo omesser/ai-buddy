@@ -3,8 +3,9 @@
 **Status:** Accepted, with one clause superseded by
 [ADR-0033](./0033-a-call-waiting-on-the-user-is-not-superseded.md): a call
 blocked on the user's own answer is not superseded, an ambient tick does not
-supersede a reactive call, and `wake` is no longer infallible — it says which
-of the two it did. Newest-wins otherwise stands as written.
+supersede a reactive call, a Summon does not cancel a reactive reply that is
+still generating, and `wake` is no longer infallible. It says whether the
+call started. Newest-wins otherwise stands as written.
 
 One `Slots` registry holds at most one session call per Character Instance, and
 starting a call *is* the cancellation of that Instance's previous one. `wake` is

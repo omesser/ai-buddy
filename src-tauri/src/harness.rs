@@ -3950,8 +3950,48 @@ mod tests {
         session.shutdown();
     }
 
-    /// Newest-wins is otherwise untouched. A Poke over a turn that is only
-    /// thinking still takes it, which is the whole of ADR-0016.
+    /// The same hold as a Poke. The user is mid-answer, so a Summon does not
+    /// take the turn either. The two differ only while a reply is still
+    /// generating.
+    #[test]
+    fn a_summon_does_not_take_a_turn_blocked_on_the_users_answer() {
+        let (fx, session) = Fixture::new("permission");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        let ask = fx.ask();
+        assert_eq!(
+            slots.wake(&id, harness_director(&session), woken(Happened::Summon),),
+            crate::completer::Woke::Dropped,
+            "opening Chat took the turn the user is answering"
+        );
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            fx.count("perm:cancelled"),
+            0,
+            "the ask was taken from under the user"
+        );
+
+        session.answer_permission(&ask.request, "allow");
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("ok:allow"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the Summon was dropped, not queued");
+        session.shutdown();
+    }
+
+    /// A Poke is a touch of the sprite, so a turn that is only thinking still
+    /// gives way to it. Opening Chat does not. ADR-0016 stands for the touch.
     #[test]
     fn a_poke_still_takes_a_chat_turn_that_is_only_thinking() {
         let (fx, session) = Fixture::new("slow");
@@ -3970,6 +4010,39 @@ mod tests {
         assert_eq!(answered.context.happened, Happened::Poke);
         assert_eq!(said(&answered), Some("Hello"));
         assert!(fx.wait_for("cancel", 1));
+        session.shutdown();
+    }
+
+    /// Opening Chat is not a touch of the sprite. A reply already generating
+    /// is the one the user is about to read, so the Summon is dropped and
+    /// the turn on the wire is not cancelled.
+    #[test]
+    fn a_summon_does_not_take_a_chat_turn_that_is_only_thinking() {
+        let (fx, session) = Fixture::new("working");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        assert!(fx.wait_for("prompt", 1));
+        assert_eq!(
+            slots.wake(&id, harness_director(&session), woken(Happened::Summon),),
+            crate::completer::Woke::Dropped,
+            "opening Chat cancelled the reply already on its way"
+        );
+
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("Hello"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the Summon was dropped, not queued");
         session.shutdown();
     }
 

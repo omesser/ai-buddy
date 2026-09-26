@@ -165,10 +165,9 @@ impl Slots {
         Self::default()
     }
 
-    /// Send this Character Prompt for `id`, abandoning whatever `id` had out.
-    /// Per-Instance newest-wins, but for the two moments ADR-0033 carves out,
-    /// where the wake already on the wire is the truer one and the new wake
-    /// is dropped. Which of the two happened is the return.
+    /// Send this Character Prompt for `id`. Newest-wins, except where ADR-0033
+    /// keeps the wake on the wire: mid-answer, an ambient tick, or a Summon
+    /// over a reply still generating. The return says whether this one started.
     pub fn wake<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,
@@ -187,6 +186,12 @@ impl Slots {
             // reactive turn up for one (`Session::supersede`), so a slot that
             // superseded anyway would drop an answer still on its way.
             if !reactive && slot.reactive {
+                return Woke::Dropped;
+            }
+            // A Summon opens Chat. A Poke, Throw, or Grab touches the sprite
+            // and still takes a turn that is only generating. Opening the
+            // surface must not cancel the reply already on its way.
+            if slot.reactive && matches!(context.happened, director::Happened::Summon) {
                 return Woke::Dropped;
             }
         }

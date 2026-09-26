@@ -2,8 +2,9 @@
 
 **Supersedes:** one clause of
 [ADR-0016](./0016-one-cancellable-slot-per-instance.md). Per-Instance
-newest-wins stands as written for every call the buddy makes on its own
-account. Two moments are carved out of it here.
+newest-wins stands as written for a touch of the sprite and for a line the
+user typed. The moments carved out of it here are the ones where the wake
+already on the wire is the truer one.
 
 ## Context
 
@@ -34,8 +35,8 @@ cause, two symptoms.
 
 ## Decision
 
-Whether a wake may take a slot is decided in one place, `Slots::wake`, from
-three facts. Newest-wins still holds, except that:
+Whether a wake may take a slot is decided in one place, `Slots::wake`.
+Newest-wins still holds, except that:
 
 - **A call blocked on the user's own answer is not superseded, by anything.**
   Newest-wins abandons a moment the world has moved past. The user mid-answer
@@ -47,6 +48,13 @@ three facts. Newest-wins still holds, except that:
   lane as well, where it is new rather than a reconciliation: there the tick
   used to cancel the reactive call outright, and the user got the muse's answer
   instead of the one to their Poke.
+- **A Summon does not supersede a reactive call that is still generating.**
+  A Poke, a Throw, and a Grab are the user touching the sprite, and
+  newest-wins still lets them take that turn. A Summon opens Chat. The
+  reply already on the wire is the one the user is about to read, so
+  cancelling it to give the Summon a turn of its own throws that answer
+  away. While the call is blocked on the user's own answer, this difference
+  does not apply. Nothing takes that turn, and a Summon does not either.
 
 The losing wake is **dropped**, not queued. ADR-0016 rejected a queue for a
 mascot and the reason holds here: a buddy working through a backlog of Pokes
@@ -65,11 +73,12 @@ is the truth for the HTTP lane: an endpoint has no way to ask.
 - **Queue the dropped wake and run it when the ask settles.** The user
   answers a question and is then poked by their own gesture from a minute
   ago. ADR-0016's reason for refusing a queue does not weaken here.
-- **Let a Summon interrupt where a Poke may not.** A Summon is the user
-  asking for the buddy, so it has the better claim of the two. Rejected
-  because the buddy is already mid-question *to that same user*, and a
-  Summon that silently discards the question the user was answering is the
-  defect wearing a different verb. Uniform beats a dial, per ADR-0016.
+- **Rank a Summon above a Poke.** A Summon is the user asking for the
+  buddy, so it would outrank a Poke, and a Poke would give way wherever a
+  Summon does. Rejected. They are different acts. A Poke, like a Throw or
+  a Grab, is the user touching the sprite, and it may take a turn that is
+  only generating. A Summon opens Chat and must not cancel the reply
+  already on its way. While the user is mid-answer, neither takes the turn.
 - **Bound the carve-out with a grace period.** It would stop an unanswered
   ask holding the slot forever. Rejected as a dial ADR-0016 exists to avoid,
   and unnecessary: `PendingAsks` replays an outstanding ask into any Chat
@@ -84,6 +93,11 @@ An unanswered ask holds the Instance's slot. Pokes and Summons at the sprite
 do nothing at all until the user answers or rejects, and nothing on screen
 says so. That is the trade: a mascot that ignores a poke for a moment against
 a mascot that hangs up on its own question.
+
+A Summon that arrives while a reactive reply is still generating is dropped
+too. The Chat window still opens, because the slot does not open it. The
+reply on the wire is the one that lands. A Poke, a Throw, or a Grab in that
+same stretch still takes the turn.
 
 `wake` now says whether it started a call. The Shell applies the turn
 bookkeeping — the cancelled-caret note, `chat_turn`, `happened_last` — only
