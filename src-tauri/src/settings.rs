@@ -1755,7 +1755,7 @@ impl Settings {
     /// Off.
     ///
     /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both
-    /// (ADR-0017). A blank command line under `custom` is Off rather than a
+    /// (ADR-0022). A blank command line under `custom` is Off rather than a
     /// spawn of nothing.
     pub fn harness_source(&self) -> Option<String> {
         match self.harness.trim() {

@@ -1,5 +1,5 @@
 //! The ACP wire. The official SDK and its executor, on one thread.
-//! No SDK type leaves the file. Reversing the crate choice (ADR-0017)
+//! No SDK type leaves the file. Reversing the crate choice (ADR-0022)
 //! rewrites this file only. The frame loop never sees it (ADR-0004).
 
 use std::collections::BTreeMap;

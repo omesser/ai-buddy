@@ -15,14 +15,12 @@ const repo = new URL("..", import.meta.url);
 // `.agents/` are exempt. Fix a site, lower the count here. An entry at zero
 // is deleted. A count that no longer matches the tree fails this test.
 const KNOWN_STALE = {
-  "Cargo.toml": 1,
-  "src-tauri/Cargo.toml": 1,
-  "src-tauri/src/acp_wire.rs": 2,
-  "src-tauri/src/harness.rs": 5,
+  "src-tauri/src/acp_wire.rs": 1,
+  "src-tauri/src/harness.rs": 3,
   "src-tauri/src/main.rs": 7,
   "src-tauri/src/model.rs": 2,
-  "src-tauri/src/settings.rs": 8,
-  "src-tauri/src/settings/form.rs": 5,
+  "src-tauri/src/settings.rs": 7,
+  "src-tauri/src/settings/form.rs": 4,
 };
 
 const tracked = (...args) =>

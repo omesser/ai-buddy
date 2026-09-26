@@ -51,7 +51,7 @@ pub(crate) fn auth_retry_placeholder() -> String {
 
 /// How long a Harness `session/prompt` may run before `session/cancel`.
 /// Twenty seconds cancelled a web lookup. Forever leaves a hung child.
-/// Two minutes covers a lookup and still maps expiry to cancel (ADR-0017).
+/// Two minutes covers a lookup and still maps expiry to cancel.
 pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Settings / `AI_BUDDY_HARNESS_TURN_TIMEOUT` still wins when set.
@@ -1355,7 +1355,7 @@ pub fn run_probe() -> i32 {
         // from the data folder, so a probe `remember` writes the real `memory.md`.
         SessionDataDir::probe(),
         // Named, never answered. Only a click on the Chat surface may answer a
-        // permission request (ADR-0017), and the probe has no surface. The ask
+        // permission request (ADR-0022), and the probe has no surface. The ask
         // times out with the turn, which is itself the report.
         Arc::new(Box::new(|forwarded| match forwarded {
             Forwarded::Ask(ask) => println!(
