@@ -6,12 +6,12 @@ Double-clicking the buddy opens its Chat surface: the same conversation that dri
 
 - `summon-verb` double-click records `verbs:.*Summon` in the frame/trace log.
 - `summon-chat-open` a Chat window for that buddy appears (when the session can show windows).
-- `summon-status` the Chat status bar shows plain-language activity; Behavior/State values appear under the Advanced details section.
+- `summon-status` the Chat status bar shows plain-language activity; Behavior/State values appear under Advanced.
 
 ## How to get to it (user POV)
 
 - Double-click the sprite body. (Only this path emits the `verbs:.*Summon` trace; other paths open Chat without the verb.)
-- Or choose the speech bubble's **Open chat** control when a bubble is showing.
+- Or choose the speech bubble's **Open chat** control when speech is truncated.
 - Or select **Chat…** from the tray icon menu.
 
 ## Driving it with verify-overlay helpers
