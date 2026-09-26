@@ -1542,8 +1542,8 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
 }
 
 /// Draw one forwarded permission request on every Chat surface, visible and
-/// unminimized. ADR-0010 forbids choosing an option. ADR-0013: only a Chat
-/// surface can draw the options; a bubble can only point at a window that is not open.
+/// unminimized. ADR-0010 forbids choosing an option. Only a Chat surface can
+/// draw the options. A bubble can only point at a window that is not open.
 fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;

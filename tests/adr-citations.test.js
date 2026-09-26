@@ -19,14 +19,10 @@ const KNOWN_STALE = {
   "src-tauri/Cargo.toml": 1,
   "src-tauri/src/acp_wire.rs": 2,
   "src-tauri/src/harness.rs": 5,
-  "src-tauri/src/main.rs": 8,
+  "src-tauri/src/main.rs": 7,
   "src-tauri/src/model.rs": 2,
   "src-tauri/src/settings.rs": 8,
   "src-tauri/src/settings/form.rs": 5,
-  "src/bubble.js": 1,
-  "src/chat-ui.css": 1,
-  "src/main.css": 2,
-  "tests/bubble.test.js": 1,
 };
 
 const tracked = (...args) =>
