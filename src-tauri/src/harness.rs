@@ -2016,12 +2016,17 @@ mod tests {
         if let Some(cwd) = message.pointer("/params/cwd").and_then(Value::as_str) {
             record(count, &format!("cwd={cwd}"));
         }
-        if message
-            .pointer("/params/mcpServers")
-            .and_then(Value::as_array)
-            .is_some_and(|servers| !servers.is_empty())
+        // The transport of the first server handed over. An http entry says
+        // so; a stdio one names a command and no type.
+        if let Some(server) = message
+            .pointer("/params/mcpServers/0")
+            .filter(|server| !server.is_null())
         {
-            record(count, "mcp");
+            let transport = server
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("stdio");
+            record(count, &format!("mcp={transport}"));
         }
     }
 
@@ -4548,6 +4553,22 @@ mod tests {
         };
         assert_eq!(probe(&isolated_session(launch, dir.clone(), silent())), 2);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The probe hands a Harness that advertised `mcpCapabilities.http` the
+    /// same loopback URL the app would. Without a listener of its own,
+    /// `choose_mcp` fell through to a stdio shim with nothing to dial (#984).
+    #[test]
+    fn the_probe_serves_the_loopback_endpoint_before_it_attaches() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(probe(&session), 0);
+        session.shutdown();
+        assert_eq!(
+            fx.count("mcp=http"),
+            1,
+            "the fake advertised http and got the shim"
+        );
+        assert!(crate::mcp_http::endpoint().is_some());
     }
 
     /// `shutdown` kills and waits; a zero-length wait can only succeed if
