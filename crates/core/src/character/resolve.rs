@@ -12,8 +12,8 @@ use super::{
 };
 
 /// Check every declared Animation against package art and decode what passes.
-/// Headers before masks: the pixel budget sums IHDR sizes, so over-budget art
-/// is refused before a mask is built. Decoding makes a Character renderable by construction.
+/// Headers before masks, so over-budget art is refused before a mask is built.
+/// A bad frame is rejected here, not after the loader has already called the Character valid.
 pub(super) fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
@@ -151,8 +151,8 @@ pub(super) fn check_variants(
 }
 
 /// Validate every `left_of` and hand back the (strip, base) pairs worth linking.
-/// A left strip is the same walk cycle drawn facing the other way, same length
-/// as its base; the renderer swaps strips instead of mirroring a mark on one cheek.
+/// A left strip is the same walk drawn the other way, so the renderer swaps
+/// strips instead of mirroring a cheek mark. A different length would play two animations.
 pub(super) fn check_left_strips(
     declared: &BTreeMap<String, DeclaredAnimation>,
     errors: &mut Vec<String>,
