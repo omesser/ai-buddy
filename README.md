@@ -159,13 +159,18 @@ See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env v
 Which Harness you attach changes what ai-buddy can do with it.
 Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./docs/DEVELOPMENT.md)); the run itself lives on the issue that did it.
 
+`codex` and `goose` carry no mark. Simple Icons has neither, and neither vendor
+grants one: OpenAI's guidelines say not to use the logo without permission, and
+Block ships Goose under Apache 2.0, whose section 6 withholds trademark rights.
+#1021 tracks it.
+
 | Harness | Command | Standing |
 |---|---|---|
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
 | `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Zed's adapter (`codex-acp`); no first-party ACP mode. Fresh and resumed sessions both work. |
 | <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> `copilot` | `copilot --acp` | First-party, GitHub. `copilot` alone is the interactive TUI, so the flag is the whole of the row; `copilot --help` lists `--acp` and not the `--stdio` this table used to name, and the two argv answer `initialize` alike. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (#1016). |
 | <img src="https://cdn.simpleicons.org/cursor" width="14" alt="" /> `cursor-agent` | `cursor-agent acp` | First-party. `cursor-agent` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh sessions work. Every attach opens a fresh session, because it advertises no `loadSession`. |
-| `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh and resumed sessions both work. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="./docs/readme/grok-on-dark.svg" /><img src="./docs/readme/grok-on-light.svg" width="14" alt="" /></picture> `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh and resumed sessions both work. |
 | `goose` | `goose acp` | First-party, Block. `goose` alone is the interactive CLI, so the subcommand is the whole of the row. Fresh and resumed sessions both work, smoked on goose 1.51.0. |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
@@ -283,6 +288,14 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 - [docs/adr/](./docs/adr/) — ADRs
 
 ## Prior Art and Attribution
+
+Harness brand marks identify each Harness and belong to their owners. The Grok
+logomark is xAI's own file from [their brand guidelines](https://x.ai/legal/brand-guidelines),
+used unaltered to refer to Grok, which those guidelines permit and may revoke.
+The Nous Research mark (`docs/readme/nous.svg`) identifies the Hermes Harness and
+was added in #683; its source file was not recorded at the time. Every other mark
+is served from [Simple Icons](https://simpleicons.org) (CC0, with each brand's
+trademark reserved to its owner).
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. ai-buddy is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
