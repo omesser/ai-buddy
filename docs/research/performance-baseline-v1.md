@@ -238,7 +238,50 @@ overlay: 1 display(s); sprite 126x128; BMO as BMO
 **Status:** Partial. This section leaves [#425](https://github.com/omesser/ai-buddy/issues/425) open. GPU% per scenario and compositor is still N/A. Two compositors, a Wayland row, and an uncomposited X11 row are still missing. X11 under xfwm4 has a mask-rate pair (idle 0.00/s, walking with the pointer away 0.00/s) and an X-server CPU proxy.
 
 ## WindowSource (issue #427)
-_Pending._
+
+Re-run the ungated half with `scripts/bench-window-list-macos.sh micro`. The gated half is `sudo -v && AI_BUDDY_BENCH_GREEN_LIGHT=1 scripts/bench-window-list-macos.sh matrix --seconds 15 --windows 100`; the script refuses `idle`, `riding`, and `matrix` without that variable because they launch ai-buddy on the live desktop and open prop windows on it. Written against `8588715e`.
+
+**What the app does.** One poll is `CGWindowListCopyWindowInfo(OptionOnScreenOnly | ExcludeDesktopElements, 0)` plus a decode of every entry's bounds, number, layer, and (with Screen Recording consent) owner name, in `walk_visible` at `src-tauri/src/platform/macos/window_source.rs:78-80`. `SnapshotAssembler::assemble` reads it once per `POLL_INTERVAL` (100 ms, `crates/core/src/window_source.rs:10`) and once per `RIDE_POLL_INTERVAL` (16 ms, `crates/core/src/window_source.rs:15`) while any Instance reports `riding` (`src-tauri/src/frame_loop.rs:1317`, switched at `src-tauri/src/frame_loop.rs:1692`). The read is synchronous on the frame loop thread (`crates/core/src/snapshot.rs:84-87`), so a poll's cost lands inside the tick that makes it.
+
+**Tools:**
+
+- `scripts/bench-window-list-macos.swift` times the same call and decode from its own process against whatever is on the desktop. It opens nothing.
+- `scripts/bench-window-list-macos.sh` wraps it (`micro`) and, gated, samples a running ai-buddy with dtrace (`idle`, `riding`, `matrix`). Prop windows come from `scripts/windows-prop.swift`; the ride from `scripts/perch-window.swift --glide`, which slides the perch every frame so `riding` stays on for the whole sample.
+- The issue's dtrace one-liner matches no probe on this machine: `dtrace: probe description pid<n>::CGWindowListCopyWindowInfo:entry does not match any probes`. On macOS 26 CoreGraphics forwards to SkyLight, and the pid provider lists `SLWindowListCopyWindowInfo` there. Probing that on the microbench counted 8439 calls in 4 s at 460 µs average, against the microbench's own 455 µs median, so the two instruments agree. `sudo` is required; System Integrity Protection prints a warning but lets the pid provider attach to an unsigned binary.
+- `xctrace record --template 'Time Profiler' --attach <pid> --time-limit 5s` records headless and its export names `SLWindowListCopyWindowInfo` in the sampled frames, so the issue's Instruments route works without opening Instruments. The script uses dtrace instead because it yields a call count and a per-call duration directly.
+
+**Environment:**
+
+- Mac15,7 (Apple M3 Pro), macOS 26.7 (25G229), two displays
+- The desktop as found: 53 on-screen windows under the app's options, 201 under the every-window option
+- `swift` interpreter and a `swiftc -O` build agree within run-to-run spread
+
+**Metrics (ungated, measured):**
+
+| Row | Windows | Median µs/poll | p95 µs | µs/window | Notes |
+|-----|---------|----------------|--------|-----------|-------|
+| `app-call` (the bare call, app's options) | 53 | 382 to 436 | 417 to 898 | 7.2 to 8.2 | Six runs of 300 iterations |
+| `app` (call + decode, no names) | 53 | 409 to 468 | 447 to 910 | 7.7 to 8.8 | Seven runs; the consent-off path |
+| `app-names` (call + decode + owner name) | 53 | 429 to 517 | 476 to 715 | 8.1 to 9.8 | The consent-on path |
+| `all` (every window, every Space) | 201 | 1378 to 2221 | 2321 to 3860 | 6.9 to 11.1 | Second count from the same desktop |
+
+**Metrics (gated, unmeasured):**
+
+| Scenario | Poll Hz | µs/poll | Notes |
+|----------|---------|---------|-------|
+| Idle perched, desktop as found | N/A | N/A | Needs the screen; run `matrix` |
+| Idle perched, +100 prop windows | N/A | N/A | Needs the screen; run `matrix` |
+| Walking | N/A | N/A | Not in the script. The poll rate depends on `riding` alone (`src-tauri/src/frame_loop.rs:1692`), so a walk polls at the idle cadence; a row would restate the idle one |
+| Riding a gliding perch, desktop as found | N/A | N/A | Needs the screen; run `matrix` |
+| Riding a gliding perch, +100 prop windows | N/A | N/A | Needs the screen; run `matrix` |
+
+**What this refutes.** The issue's hypothesis was about 50 µs per window. The measured figure is 7 to 11 µs per window, and over 90% of a poll is the call itself: the decode ai-buddy adds costs 30 to 50 µs at 53 windows, and reading the owner name adds another 20 to 50 µs. At the 201-window count the poll is 1.4 to 2.2 ms, not the 10 to 50 ms the issue predicted for 200 windows.
+
+**What that costs the tick, computed from the rows above.** At 53 windows and 10 Hz the poll spends about 4 ms of CPU a second. At 60 Hz it spends about 25 ms a second, 2.5% of one core, and each poll takes under 3% of a 16 ms tick. At 201 windows and 60 Hz a median poll takes 9 to 14% of the tick and a p95 poll 15 to 24%. That leaves the "riding 100+ windows drops frames" question open rather than settled: the gated rows are the only thing that can say whether those p95 polls stack with the rest of the tick.
+
+**Two points are not a curve.** 53 and 201 are what this desktop offered. The two window counts also differ in what they list (on-screen versus every Space), so the per-window figure is consistent between them but not proven linear. The `--windows` prop in the gated matrix is what adds a third count under the app's own options.
+
+**Limits.** One machine, one desktop, in-process timing from a separate process rather than from inside ai-buddy. The gated rows would put dtrace on the app itself. The `all` row's spread (1378 to 2221 µs across seven runs minutes apart) is wider than the `app` row's, so window-count scaling measured on a busy desktop needs more than one run per count.
 
 ## Click-through mask (issue #428)
 
