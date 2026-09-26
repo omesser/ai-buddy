@@ -85,6 +85,9 @@ function Intersects($a, $b) {
 # Whether a visible window of the app counts as anchor pixels on the desktop.
 # $win carries Class, Title, Left, Top, Right, Bottom; $monitors are rects.
 function Test-AnchorOnDesktop($win, $monitors) {
+  # Tao, the window library under Tauri, registers this class for its event
+  # loop: a visible 16x16 window at the origin that draws nothing. Not the anchor.
+  if ($win.Class -eq "Tao Thread Event Target") { return $false }
   if ($win.Title -eq "Settings") { return $false }
   $w = $win.Right - $win.Left
   $h = $win.Bottom - $win.Top
