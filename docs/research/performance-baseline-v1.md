@@ -102,26 +102,26 @@ Crop Task Manager's Performance GPU page during idle perched to about 280px wide
 
 - `scripts/bench-gpu-compositing-windows.ps1`
 - GPU% on Windows is `\GPU Engine(*)\Utilization Percentage` summed for `dwm.exe` `engtype_3D`, then WMI `Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine`, then `nvidia-smi` for the whole adapter.
-- Power is `nvidia-smi` `power.draw` when that field is numeric. Those watts are the adapter, and ai-buddy has no GPU Engine row.
+- Power is `nvidia-smi` `power.draw` when that field is numeric. Those watts are the adapter.
 - `mask_rebuild:` lines are `SetWindowRgn` calls. Per-call time stays in [#428](https://github.com/omesser/ai-buddy/issues/428).
 - `parse-log --seconds 2` on a 4-line fixture printed `mask_calls=4` and `mask_hz=2.00`. That fixture is not a Windows trace.
 - Walking-over aims at the last `walk` or `ballwalk` frame. The cursor coordinate is that point times the primary's physical width over the overlay width in the log. `GetCursorPos` has to match.
 
 **Metrics**
 
-An earlier attempt had a GPU-heavy fullscreen process on the adapter. This pass ran after that process was cleared. The measured tree was worktree `ai-buddy-430-gpu`, detached at `30647a6d593ae8a3bceb4525165782e3f05713d6`. That commit is the readme on main and does not contain this bench script, so the capture copied the script in. The binary was a debug `ai-buddy.exe` running BMO, sprite 126×128, with the trace flags on, pid 5760. The primary display was 3440×1440 at (0,0), and the secondary was 1200×1920 at (-1200,-209). The idle Task Manager crop is attached on the pull request.
+`matrix --seconds 15` at `f1020b2f` on the workstation in the mask-rebuild doc. Evidence is `.verify/430-gpu-remeasure/` there. The logs stay out of the tree. GPU% is `dwm.exe` `engtype_3D`. Power is `nvidia-smi` `power.draw`. xperf frame time was not measured. No `ai-buddy.exe` was left running.
 
-| Scenario | Duration | Mask calls | Mask Hz | GPU | Notes |
-|----------|----------|------------|---------|-----|-------|
-| Idle perched, cursor at (50,50) | 18.0 s | 0 | 0.00 | Task Manager GPU 0 Intel UHD 0%. NVIDIA GTX 1070 sidebar 9% at 49°C. `nvidia-smi` 12 to 17%, 13.3 to 15.1 W. ai-buddy absent from GPU Engine. dwm 3D about 1.2 to 2.8%. | 635 `walk#` frames in this window, pointer away. |
-| Walking, pointer away | 16.3 s quiet slice | 0 | 0.00 | `nvidia-smi` 3 to 4%, 13.0 to 14.5 W. ai-buddy absent. dwm 3D about 0.3%. | That slice had `walk_frames=0`. The session log has 10470 `walk#` frames, 2045 `climb#` frames, and 0 `mask_rebuild:` lines. |
-| Walking-over | not measured | | | | The cursor stayed at (50,50). The aim is fixed in this script. Remeasure before filling this row. |
-| Chat open | not run | | | | |
-| Multi-monitor sample | not run | | | | |
-| Hidden | not run | | | | |
-| xperf frame time | not run | | | | A separate power tool was not used. |
+| Scenario | GPU% | Power W | Mask calls | Mask Hz | Notes |
+|----------|------|---------|------------|---------|-------|
+| Baseline (no ai-buddy) | 5.5 | 14.2 | N/A | N/A | |
+| Idle perched, pointer at (2,2) | 3.8 | 16.8 | 0 | 0.00 | |
+| Walking, pointer away | 12.0 | 15.5 | 0 | 0.00 | walk_frames=742 |
+| Walking-over, 5 s | 8.0 | 14.1 | 0 | 0.00 | Cursor landed at 3438,1328. scale 1.00. actual 3438,1328. walk_frames=0, walk aborted on hover. |
+| Chat open | 5.5 | 14.2 | 17 | 1.13 | Summon logged. Pointer left on the sprite. |
+| Multi-monitor | 5.5 | 14.2 | 0 | 0.00 | screens=2 |
+| Hidden | 0.5 | 12.1 | 0 | 0.00 | Fullscreen cover. presence hidden. |
 
-The pointer stayed at (50,50), so those walk frames did not rebuild the region. Buddy pid 5760 was stopped. No `ai-buddy.exe` remained. Chat, a separate multi-monitor sample, hidden, and xperf were not run.
+Walking-over mask rate is 0.00/s because the walk aborted once the pointer was on the sprite. The aim hit.
 
 ### Linux X11/Wayland (issue #425)
 
