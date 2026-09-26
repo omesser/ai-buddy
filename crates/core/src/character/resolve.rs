@@ -11,21 +11,9 @@ use super::{
     SHOWN_LOOP_BEHAVIORS,
 };
 
-/// Check every declared Animation against the art the package carries, and
-/// decode what passes. Art the loader cannot open or that changes size
-/// mid-sequence draws a broken sprite rather than a Character, and art too
-/// large to be a sprite, or too much of it, asks the renderer for memory no
-/// Character needs. All of them are rejections.
-///
-/// Headers first, masks second: the pixel budget is a sum of IHDR sizes, so
-/// an over-budget package is refused before any mask is built. Decoding a
-/// package we are about to reject would spend the memory the bound exists
-/// to refuse.
-///
-/// Decoding here rather than in the renderer is what makes a loaded Character
-/// renderable by construction: art the mask cannot be built from is one more
-/// rejection naming its frame, instead of a Character the loader declared
-/// valid and the renderer then refused.
+/// Check every declared Animation against package art and decode what passes.
+/// Headers before masks: the pixel budget sums IHDR sizes, so over-budget art
+/// is refused before a mask is built. Decoding makes a Character renderable by construction.
 pub(super) fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
@@ -131,14 +119,9 @@ pub(super) fn resolve_animations(
     (animations, art)
 }
 
-/// Validate every `variant_of` declaration and hand back the (variant, base)
-/// pairs worth linking.
-///
-/// A variant is more art for an Animation the engine already plays, never a
-/// new Behavior. A drawn member plays for as long as the engine keeps asking
-/// for the Animation, so one that holds its last frame would stall there, and
-/// a variant of a variant would leave a ring inside a ring: both are
-/// rejected.
+/// Validate every `variant_of` and hand back the (variant, base) pairs worth linking.
+/// A variant is more art for an Animation the engine already plays, never a new
+/// Behavior. A held last frame would stall; a variant of a variant nests a ring.
 pub(super) fn check_variants(
     declared: &BTreeMap<String, DeclaredAnimation>,
     errors: &mut Vec<String>,
@@ -167,15 +150,9 @@ pub(super) fn check_variants(
     pairs
 }
 
-/// Validate every `left_of` declaration and hand back the (strip, base) pairs
-/// worth linking.
-///
-/// A left strip is the same walk cycle drawn facing the other way (#345), so
-/// the renderer swaps strips instead of mirroring one — which is the whole
-/// point for art with a mark on one cheek. Same length as its base, then, or
-/// the two headings would play different animations; a strip of a strip and
-/// two strips for one base are both an author asking for a heading nothing
-/// selects. Frame size is checked in `load`, where the art has been read.
+/// Validate every `left_of` and hand back the (strip, base) pairs worth linking.
+/// A left strip is the same walk cycle drawn facing the other way, same length
+/// as its base; the renderer swaps strips instead of mirroring a mark on one cheek.
 pub(super) fn check_left_strips(
     declared: &BTreeMap<String, DeclaredAnimation>,
     errors: &mut Vec<String>,
@@ -213,11 +190,9 @@ pub(super) fn check_left_strips(
     pairs
 }
 
-/// One frame's dimensions, from the PNG header alone.
-///
-/// Header only: it is bounded work whatever the file claims, and it never
-/// inflates a compressed image, so the size bounds are checked before
-/// `AlphaMask::from_png` decodes a pixel.
+/// One frame's dimensions, from the PNG header alone. Bounded work whatever
+/// the file claims, and it never inflates a compressed image, so size bounds
+/// run before `AlphaMask::from_png` decodes a pixel.
 fn art_size(bytes: &[u8]) -> Result<(u32, u32), String> {
     let reader = png::Decoder::new(std::io::Cursor::new(bytes))
         .read_info()
@@ -226,12 +201,9 @@ fn art_size(bytes: &[u8]) -> Result<(u32, u32), String> {
     Ok((info.width, info.height))
 }
 
-/// Check that every Behavior can be played to an end.
-///
-/// A chain that comes back to a Behavior it has already run would hold the
-/// sprite for ever. Walking each chain iteratively, and remembering what has
-/// already been walked, keeps the check linear and takes no stack, so a package
-/// built to be deep is rejected rather than crashing.
+/// Check that every Behavior can be played to an end. A chain that returns to
+/// a Behavior already run would hold the sprite forever. The walk is iterative
+/// and remembers what it walked, so a deep package is rejected rather than crashing the stack.
 pub(super) fn resolve_behaviors(
     declared: BTreeMap<String, DeclaredBehavior>,
     errors: &mut Vec<String>,
@@ -387,10 +359,9 @@ mod tests {
         );
     }
 
-    /// Hostile input: a chain far deeper than any author would write, ending in
-    /// a loop. A loader that walked it by recursion would exhaust the stack
-    /// instead of reporting anything. Two thousand links is past a typical
-    /// debug stack; the proof is the rejection, not the length of the TOML.
+    /// Hostile input: a chain deeper than an author would write, ending in a loop.
+    /// Recursion would exhaust the stack instead of reporting it. Two thousand
+    /// links is past a typical debug stack; the proof is the rejection, not the length of the TOML.
     #[test]
     fn a_very_deep_chain_ending_in_a_loop_is_rejected_rather_than_crashing() {
         const DEPTH: u32 = 2_000;
@@ -429,10 +400,9 @@ mod tests {
         );
     }
 
-    /// The wording is the behavior here, not the refusal: an Animation that is
-    /// a variant of itself is also a variant of a variant, so losing the
-    /// self-reference guard would still reject it — with the ring message,
-    /// which names a mistake the author did not make.
+    /// The wording is the behavior, not the refusal: a variant of itself is also
+    /// a variant of a variant, so dropping the self-reference guard still rejects
+    /// it with the ring message, which names a mistake the author did not make.
     #[test]
     fn an_animation_that_is_a_variant_of_itself_is_rejected_by_name() {
         let manifest = format!(
@@ -501,7 +471,7 @@ mod tests {
 
     /// Hostile input: a header claiming a frame no screen could hold. Nothing
     /// decompresses it here, but a renderer that trusts the declared size
-    /// allocates it (user story 48).
+    /// allocates it.
     #[test]
     fn a_frame_too_large_to_be_a_sprite_is_rejected_by_name() {
         let mut package = art();
@@ -523,16 +493,9 @@ mod tests {
         );
     }
 
-    /// Hostile input: `MAX_FRAME_SIDE` bounds one frame and `MAX_FRAMES` one
-    /// Animation, but a Character may declare any number of Animations, so
-    /// neither bounds the masks the renderer holds for the whole Character. A
-    /// frame two Animations share is one mask, so it is charged once (user
-    /// story 48).
-    ///
-    /// The package that sits on the budget is not loaded: that is 256
-    /// megapixels of masks, and the check that it *would* load is the same
-    /// arithmetic the over-budget path already uses. The refusal is the
-    /// behavior; headers name the frames, so nothing inflates them.
+    /// Hostile input: per-frame and per-Animation caps leave total masks unbounded,
+    /// and a shared frame is charged once. On-budget art is 256 megapixels and the
+    /// same comparison, so the package that would pass is not loaded.
     #[test]
     fn a_character_whose_frames_outweigh_the_budget_is_rejected() {
         let frame = png_bytes(MAX_FRAME_SIDE, MAX_FRAME_SIDE);
@@ -572,10 +535,9 @@ mod tests {
         );
     }
 
-    /// #345: a left strip stands in for its base whenever the sprite travels
-    /// left, so anything that would leave the two playing differently — a base
-    /// that is not declared, a strip of a strip, a different length — is the
-    /// author's to fix before the package loads.
+    /// A left strip stands in for its base when the sprite travels left, so a
+    /// missing base, a strip of a strip, or a different length — anything that
+    /// would play the two differently — is the author's to fix before the package loads.
     #[test]
     fn a_left_strip_of_nothing_itself_a_strip_or_another_length_is_rejected_by_name() {
         let manifest = format!(
