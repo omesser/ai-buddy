@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Attach the configured Harness and run one ACP turn, with no sprite: spawn the
-# Harness, print what `initialize` advertised, and report whether the reply
-# parsed as a Behavior proposal. Never prints a credential.
+# Attach the configured Harness and run one ACP turn, with no sprite: serve
+# ai-buddy's MCP endpoint, spawn the Harness, print what `initialize`
+# advertised, report whether the reply parsed as a Behavior proposal, and
+# whether the Harness fetched the tool list. Never prints a credential.
 # Usage: AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
 #   Reads AI_BUDDY_HARNESS, AI_BUDDY_HARNESS_CWD, and AI_BUDDY_MCP_BIN, the same
 #   three `cargo run` reads.

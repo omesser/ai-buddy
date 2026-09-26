@@ -195,13 +195,10 @@ pub trait WindowSource {
     }
 }
 
-/// Every other platform for now. Windows is stubbed deliberately (`docs/SPEC.md`
-/// puts it out of scope for v1), so the Spatial Layer meets a platform that
-/// declares nothing and degrades, rather than one that is missing.
-#[cfg(not(target_os = "macos"))]
+/// A desktop with nothing on it. What a process with no platform walk hands
+/// dispatch, so `list_windows` answers with no windows rather than a guess.
 pub struct StubWindowSource;
 
-#[cfg(not(target_os = "macos"))]
 impl WindowSource for StubWindowSource {
     fn capabilities(&self) -> Capabilities {
         Capabilities::default()

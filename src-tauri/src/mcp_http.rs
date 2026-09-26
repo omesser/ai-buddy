@@ -30,6 +30,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::OnceLock;
 use std::thread;
@@ -99,6 +100,15 @@ impl Endpoint {
 }
 
 static ENDPOINT: OnceLock<Option<Endpoint>> = OnceLock::new();
+
+/// How many `tools/list` requests this run has answered. The one sign, short
+/// of a tool call, that a Harness took the server it was handed.
+static LISTED: AtomicUsize = AtomicUsize::new(0);
+
+/// `tools/list` requests answered so far this run.
+pub fn tools_listed() -> usize {
+    LISTED.load(Ordering::Relaxed)
+}
 
 /// Bind loopback and serve, once per app run.
 ///
@@ -298,16 +308,19 @@ pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<Stri
             "serverInfo": {"name": "ai-buddy", "version": env!("CARGO_PKG_VERSION")},
         })),
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({
-            "tools": list_tools()
-                .into_iter()
-                .map(|tool| json!({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "inputSchema": tool.input_schema,
-                }))
-                .collect::<Vec<_>>(),
-        })),
+        "tools/list" => {
+            LISTED.fetch_add(1, Ordering::Relaxed);
+            Ok(json!({
+                "tools": list_tools()
+                    .into_iter()
+                    .map(|tool| json!({
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.input_schema,
+                    }))
+                    .collect::<Vec<_>>(),
+            }))
+        }
         "tools/call" => Ok(call_tool(&params, calls)),
         "resources/list" => Ok(list_resources()),
         "resources/read" => read_resource(&params),
