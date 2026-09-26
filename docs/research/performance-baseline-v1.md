@@ -87,7 +87,75 @@ _Pending._
 _Pending._
 
 ### Windows DWM (issue #430)
-_Pending._
+
+Re-run on Windows with `scripts/bench-gpu-compositing-windows.ps1 matrix --seconds 15`. During idle perched, open Task Manager on the Performance GPU page and crop Desktop Window Manager's 3D engine to about 280px wide. Attach that crop with `gh pr comment --attach` in `file#alt` form. The script does not write the image. The image does not belong in the tree.
+
+The re-run host is Oded's DESKTOP-UQIE144, the workstation named in [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). This section records a cloud VM run. It does not record a run from that machine.
+
+**Environment:**
+
+- Ubuntu 24.04.4 LTS
+- Kernel 6.12.94+ on a cloud VM
+- The bench printed `windows=False`, `nvidia_smi=absent`, `xperf=absent`, `wpr=absent`, `dwm_pid=N/A`, and `screens=N/A`
+- No `ai-buddy.exe` and no Desktop Window Manager
+
+**Measurement limitations:**
+
+- GPU% is N/A. The host is not Windows, so the GPU Engine counter and `dwm.exe` are absent. `nvidia-smi` is not on PATH.
+- Power is N/A. The power reading is `nvidia-smi` `power.draw`, and that tool is absent.
+- xperf frame time is N/A. `xperf` and `wpr` are not on PATH. When either tool is present, the script still leaves this column N/A. It does not decode an ETL into a frame time.
+- Mask cells are N/A. `SetWindowRgn` is not on this host. Rates already published for DESKTOP-UQIE144 stay in the [#428](https://github.com/omesser/ai-buddy/issues/428) study.
+- The Task Manager crop was not taken.
+- Idle, walking, chat, multi-monitor, and hidden were not staged. Those rows did not launch a process.
+
+**Tools:**
+
+- `scripts/bench-gpu-compositing-windows.ps1`
+- On Windows the GPU% order is `\GPU Engine(*)\Utilization Percentage` summed for `dwm.exe` `engtype_3D`, then WMI class `Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine`, then `nvidia-smi` for the whole adapter
+- Power from `nvidia-smi` `power.draw` when that field is numeric
+- `mask_rebuild:` lines as the `SetWindowRgn` call count. Per-call time stays in the [#428](https://github.com/omesser/ai-buddy/issues/428) study
+- Cursor targets multiply `frame:` point positions by the primary monitor DPI / 96. The frame loop divides the OS cursor by that scale before the engine uses it
+- `dwm.exe` CPU as percent of one core. Read GPU% from the GPU% column
+
+**Metrics (`matrix --seconds 2` on this VM):**
+
+| Scenario | GPU% | Power W | xperf frame ms | Mask calls | Mask Hz | dwm CPU% | Notes |
+|----------|------|---------|----------------|------------|---------|----------|-------|
+| Baseline (no ai-buddy) | N/A | N/A | N/A | N/A | N/A | N/A | Tool sample only. No DWM |
+| Idle perched | N/A | N/A | N/A | N/A | N/A | N/A | Not staged |
+| Walking | N/A | N/A | N/A | N/A | N/A | N/A | Not staged |
+| Chat open | N/A | N/A | N/A | N/A | N/A | N/A | Not staged |
+| Multi-monitor | N/A | N/A | N/A | N/A | N/A | N/A | Not staged |
+| Hidden (fullscreen) | N/A | N/A | N/A | N/A | N/A | N/A | Not staged |
+
+The baseline note from the script was `not Windows and nvidia-smi is not on PATH`. Every other note was `not Windows. DWM compositing is not on this host`.
+
+**Findings:**
+
+1. **GPU%, power, and xperf frame time are unread.** The script reported that this host is not Windows and that `nvidia-smi` is not on PATH. `xperf` and `wpr` are absent. A 0 in any of those columns would be a guess.
+
+2. **The mask columns are unread on this host.** [#428](https://github.com/omesser/ai-buddy/issues/428) on DESKTOP-UQIE144 measured 0.0 rebuilds/s idle with the cursor away, and about 44.4 rebuilds/s for a walk-attributed bout of about 5 seconds with the cursor on the sprite (223 rebuilds). Issue #430 expected 3 to 10 rebuilds/s while walking. The 44.4/s figure is that cursor-on bout. A Windows re-run of this script fills the mask columns, including the pointer-away walk and the 5 second pointer-on window. The script marks that window as 5 seconds. It marks the window aborted when the walk does not last.
+
+3. **No Task Manager crop.** `--shot` printed `shot=N/A` and created no file.
+
+**Evidence:**
+
+```
+os=Ubuntu 24.04.4 LTS
+windows=False
+nvidia_smi=absent
+xperf=absent
+wpr=absent
+dwm_pid=N/A
+xperf_frame_ms=N/A
+xperf_frame_reason=xperf and wpr are not on PATH
+cursor_scale=N/A
+seconds=2
+```
+
+`parse-log --seconds 2` on a throwaway log with 4 `mask_rebuild:` lines printed `mask_calls=4` and `mask_hz=2.00`. That log was not produced by ai-buddy on Windows. It checks the counter.
+
+**Status:** Partial. This section leaves [#430](https://github.com/omesser/ai-buddy/issues/430) open. GPU%, power, xperf frame time, the Task Manager crop, and Windows mask rates for these scenarios are still open. Re-run the script on DESKTOP-UQIE144 to fill them.
 
 ### Linux X11/Wayland (issue #425)
 
