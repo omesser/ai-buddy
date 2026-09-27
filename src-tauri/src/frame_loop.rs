@@ -13,6 +13,7 @@ use ai_buddy_core::roster::{InstanceId, Roster};
 use ai_buddy_core::scheduler;
 use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::SnapshotAssembler;
+use ai_buddy_core::speech;
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
@@ -1349,6 +1350,7 @@ pub(crate) fn run_frame_loop(
                 // and a verb left behind would be replayed next tick.
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.proposal = proposal;
+                world.bubble_visible = live.speech.visible_at(std::time::Instant::now());
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
@@ -1733,6 +1735,15 @@ pub(crate) fn run_frame_loop(
                     frame.dialogue.as_deref(),
                     owner,
                     Instant::now(),
+                );
+                let overlay_drops_the_bubble = !presence.visible && presence.fade_ms == 0;
+                speech::note_speech(
+                    &mut live.speech,
+                    Instant::now(),
+                    dialogue.as_deref(),
+                    asking,
+                    presence.visible,
+                    overlay_drops_the_bubble,
                 );
 
                 placed.push(Placed {
