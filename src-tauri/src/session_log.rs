@@ -45,12 +45,11 @@ impl Log {
         Self::default()
     }
 
-    /// Finished thinking still waiting here belongs to a turn nothing filed,
-    /// such as a cancelled one, so the typed line drops it.
+    /// Thinking still waiting here belongs to a turn nothing filed: one that
+    /// was cancelled, or one this line cuts off mid-thought. Either way the
+    /// typed line drops it.
     pub fn remember_you(&mut self, instance: &str, text: impl Into<String>, at: SystemTime) {
-        if self.thinking.as_ref().is_some_and(|thinking| thinking.over) {
-            self.thinking = None;
-        }
+        self.thinking = None;
         self.turns
             .entry(instance.to_string())
             .or_default()
@@ -433,6 +432,20 @@ mod tests {
         let mut log = Log::new();
         log.think("Half a thought", UNIX_EPOCH);
         log.think("", UNIX_EPOCH);
+        log.remember_you("buddy-1", "next question", UNIX_EPOCH);
+        log.remember_them("buddy-1", Some("answer".into()), None, UNIX_EPOCH);
+
+        let who: Vec<_> = log.replay("buddy-1").iter().map(|t| t.who).collect();
+        assert_eq!(who, [Who::You, Who::Them]);
+    }
+
+    /// Production change that would fail this: a turn the typed line cut off
+    /// mid-thought, whose thinking never got its empty settle, filing that
+    /// thinking above the typed question's reply.
+    #[test]
+    fn a_typed_line_drops_thinking_cut_off_mid_stream() {
+        let mut log = Log::new();
+        log.think("Half a thought", UNIX_EPOCH);
         log.remember_you("buddy-1", "next question", UNIX_EPOCH);
         log.remember_them("buddy-1", Some("answer".into()), None, UNIX_EPOCH);
 
