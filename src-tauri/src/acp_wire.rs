@@ -3,7 +3,9 @@
 //! rewrites this file only. The frame loop never sees it (ADR-0004).
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Command;
 use std::sync::mpsc::{self as sync_mpsc, RecvTimeoutError};
 use std::sync::Mutex;
@@ -11,8 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
-    AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock,
-    CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
+    AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
+    ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
     ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
     ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema, EnvVariable, Error,
     ErrorCode, HttpHeader, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
@@ -33,6 +35,10 @@ const CANCEL_GRACE: Duration = Duration::from_secs(2);
 /// How long `authenticate` may block. A browser login is the user, not a
 /// stalled child, and a turn's budget would abandon it.
 const SIGN_IN_WAIT: Duration = Duration::from_secs(5 * 60);
+
+/// Bound on `session/close` for a session we will not keep. A stuck agent
+/// must not hold the next open for the whole turn budget.
+const CLOSE_WAIT: Duration = Duration::from_secs(2);
 
 /// The MCP server `session/new` is told about.
 /// The loopback server is the shipped path (ADR-0023). Stdio is the fallback
@@ -407,6 +413,10 @@ enum Msg {
         method_id: String,
         reply: sync_mpsc::Sender<Result<(), String>>,
     },
+    Close {
+        session_id: String,
+        reply: sync_mpsc::Sender<Result<(), String>>,
+    },
     Shutdown,
 }
 
@@ -592,6 +602,24 @@ impl Wire {
         match rx.recv_timeout(SIGN_IN_WAIT) {
             Ok(result) => result,
             Err(RecvTimeoutError::Timeout) => Err("sign-in timed out".to_string()),
+            Err(RecvTimeoutError::Disconnected) => Err("harness exited".to_string()),
+        }
+    }
+
+    /// `session/close` for a session this process will not store. Best effort:
+    /// a Harness that has no close capability answers with an error, and the
+    /// caller still drops the id.
+    pub fn close(&self, session_id: &str) -> Result<(), String> {
+        let (reply, rx) = sync_mpsc::channel();
+        self.tx
+            .send(Msg::Close {
+                session_id: session_id.to_string(),
+                reply,
+            })
+            .map_err(|_| "harness exited".to_string())?;
+        match rx.recv_timeout(CLOSE_WAIT) {
+            Ok(result) => result,
+            Err(RecvTimeoutError::Timeout) => Err("session/close timed out".to_string()),
             Err(RecvTimeoutError::Disconnected) => Err("harness exited".to_string()),
         }
     }
@@ -809,39 +837,98 @@ struct PendingElicit {
     responder: Responder<CreateElicitationResponse>,
 }
 
-/// Commands until `Shutdown`, EOF, or the caller hanging up.
+type InflightAuth<'a> = (
+    Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>,
+    sync_mpsc::Sender<Result<(), String>>,
+);
+
+/// Commands until shutdown. `authenticate` stays in flight beside them: a
+/// device flow can sit for minutes, and awaiting it here would queue every
+/// other Instance's `session/new`.
 async fn serve(
     cx: &ConnectionTo<Agent>,
     mut rx: mpsc::UnboundedReceiver<Msg>,
     mut incoming: mpsc::UnboundedReceiver<Incoming>,
     on_event: &OnEvent,
 ) {
+    let mut auth: Option<InflightAuth<'_>> = None;
     loop {
-        let command = tokio::select! {
-            command = rx.recv() => match command {
-                Some(command) => command,
-                None => break,
-            },
-            // History replayed by `session/load`, and anything said between
-            // turns. Not ours to keep.
-            _ = incoming.recv() => continue,
-            () = cx.incoming_closed() => break,
+        enum Step {
+            Auth(Result<(), String>),
+            Command(Msg),
+            Stop,
+        }
+        let step = {
+            // Copied before the future borrows `auth`. The `if` below would
+            // otherwise fight that borrow, and the device flow would go back
+            // to being the only command the loop can run.
+            let waiting = auth.is_some();
+            let auth_fut = async {
+                match auth.as_mut() {
+                    Some((fut, _)) => fut.as_mut().await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                biased;
+                outcome = auth_fut, if waiting => Step::Auth(outcome),
+                command = rx.recv() => match command {
+                    Some(command) => Step::Command(command),
+                    None => Step::Stop,
+                },
+                // History replayed by `session/load`, and anything said between
+                // turns. Not ours to keep.
+                _ = incoming.recv() => continue,
+                () = cx.incoming_closed() => Step::Stop,
+            }
         };
-        match command {
-            Msg::Open {
+        match step {
+            Step::Stop => {
+                if let Some((_, reply)) = auth.take() {
+                    let _ = reply.send(Err("harness exited".to_string()));
+                }
+                break;
+            }
+            Step::Auth(outcome) => {
+                if let Some((_, reply)) = auth.take() {
+                    let _ = reply.send(outcome);
+                }
+            }
+            Step::Command(Msg::Authenticate { method_id, reply }) => {
+                if auth.is_some() {
+                    let _ = reply.send(Err("sign-in already in progress".to_string()));
+                    continue;
+                }
+                // `async move` copies the `&ConnectionTo`. The method id is
+                // owned, so the request does not borrow the command.
+                auth = Some((
+                    Box::pin(async move {
+                        match cx
+                            .send_request(AuthenticateRequest::new(method_id))
+                            .block_task()
+                            .await
+                        {
+                            Ok(_) => Ok(()),
+                            Err(error) => Err(error.message),
+                        }
+                    }),
+                    reply,
+                ));
+            }
+            Step::Command(Msg::Open {
                 load,
                 cwd,
                 mcp,
                 reply,
-            } => {
+            }) => {
                 let opened = open(cx, load, &cwd, mcp).await;
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
-            Msg::Prompt {
+            Step::Command(Msg::Prompt {
                 session_id,
                 text,
                 reply,
-            } => {
+            }) => {
                 let id = SessionId::new(session_id);
                 let outcome = turn(cx, &id, &mut rx, &mut incoming, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
@@ -850,13 +937,9 @@ async fn serve(
                     break;
                 }
             }
-            // No turn is running, so there is no ask to answer and nothing to
-            // cancel.
-            Msg::Cancel | Msg::Answer { .. } | Msg::AnswerElicitation { .. } => {}
-            Msg::Authenticate { method_id, reply } => {
-                // `AuthMethodId` is an owned string. A borrow would have to be `'static`.
+            Step::Command(Msg::Close { session_id, reply }) => {
                 let outcome = cx
-                    .send_request(AuthenticateRequest::new(method_id))
+                    .send_request(CloseSessionRequest::new(session_id))
                     .block_task()
                     .await;
                 let _ = reply.send(match outcome {
@@ -864,7 +947,15 @@ async fn serve(
                     Err(error) => Err(error.message),
                 });
             }
-            Msg::Shutdown => break,
+            // No turn is running, so there is no ask to answer and nothing to
+            // cancel.
+            Step::Command(Msg::Cancel | Msg::Answer { .. } | Msg::AnswerElicitation { .. }) => {}
+            Step::Command(Msg::Shutdown) => {
+                if let Some((_, reply)) = auth.take() {
+                    let _ = reply.send(Err("harness exited".to_string()));
+                }
+                break;
+            }
         }
     }
 }
@@ -1050,6 +1141,9 @@ async fn turn(
                 // Not sent under `session/prompt`. The click hears it now,
                 // instead of waiting out the sign-in budget on a dropped message.
                 Some(Msg::Authenticate { reply, .. }) => {
+                    let _ = reply.send(Err("a turn is in flight".to_string()));
+                }
+                Some(Msg::Close { reply, .. }) => {
                     let _ = reply.send(Err("a turn is in flight".to_string()));
                 }
                 None => {

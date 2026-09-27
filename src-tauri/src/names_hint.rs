@@ -164,13 +164,18 @@ impl Notice {
         settings: &Mutex<Settings>,
         path: &Path,
     ) -> io::Result<Acted> {
-        let mut held = settings.lock().map_err(poisoned)?;
+        let push = {
+            let mut held = settings.lock().map_err(poisoned)?;
+            if press == Press::Dismiss {
+                held.names_hint_dismissed = true;
+            }
+            self.publish(&held)
+        };
         if press == Press::Dismiss {
-            held.names_hint_dismissed = true;
-            held.save(path)?;
+            crate::settings::flush_settings(settings, path)?;
         }
         Ok(Acted {
-            push: self.publish(&held),
+            push,
             then: press.then(),
         })
     }
