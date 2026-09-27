@@ -35,6 +35,26 @@ function installUrlFor(missing, harnessName) {
   return urls[harnessName] || null;
 }
 
+// No login means no actions, even if `sign_in` is still on the opening.
+// `kind` is not a button. The shell already decided which methods are.
+export function loginPresentation(opening) {
+  if (!opening?.configured || !opening.enabled || !opening.login) {
+    return { command: null, actions: [] };
+  }
+  const raw = Array.isArray(opening.sign_in) ? opening.sign_in : [];
+  const actions = [];
+  for (const item of raw) {
+    if (!item || typeof item.id !== "string" || item.id === "") {
+      continue;
+    }
+    if (typeof item.label !== "string" || item.label === "") {
+      continue;
+    }
+    actions.push({ id: item.id, label: item.label });
+  }
+  return { command: opening.login, actions };
+}
+
 // Configured is not ready. A named Harness whose child never came up, or
 // whose launcher is missing, must not enable Ask {name} the way a live
 // session does. HTTP Completer mode has no harness object.
@@ -75,6 +95,7 @@ export function landingCopy(opening) {
       lede: `${name} needs login, or you can switch to a different Harness:`,
       command: opening.login,
       hint: "Or run this in your terminal:",
+      signIn: loginPresentation(opening).actions,
     };
   }
 
@@ -84,6 +105,7 @@ export function landingCopy(opening) {
       lede: "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.",
       command: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -93,6 +115,7 @@ export function landingCopy(opening) {
       lede: "Turn AI back on in Settings, or connect a Harness below.",
       command: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -104,6 +127,7 @@ export function landingCopy(opening) {
       lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
       command: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -113,6 +137,7 @@ export function landingCopy(opening) {
       lede: `${name} is starting up. Chat will be ready in a moment.`,
       command: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -122,6 +147,7 @@ export function landingCopy(opening) {
       lede: `${name} is set but has not come up. Static weights answer until it does. Pick a different Harness below.`,
       command: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -130,5 +156,6 @@ export function landingCopy(opening) {
     lede: "Turn AI back on in Settings, or connect a Harness below.",
     command: null,
     hint: null,
+    signIn: [],
   };
 }

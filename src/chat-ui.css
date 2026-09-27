@@ -1406,6 +1406,28 @@ body {
   box-sizing: border-box;
 }
 
+/* `display: flex` would beat the hidden attribute and leave a stale row. */
+#landing-sign-in:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sign-in-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--chat-accent);
+  border-radius: var(--chat-radius-control);
+  background: transparent;
+  color: var(--chat-accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: center;
+}
+
 .empty .hint {
   font-size: 12px;
   color: var(--chat-ink-3);

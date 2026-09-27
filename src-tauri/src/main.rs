@@ -1734,6 +1734,9 @@ struct ChatOpening {
     /// A Harness is attached but not signed in. Names the login command for
     /// the user's own terminal.
     login: Option<String>,
+    /// Agent methods the landing can run in-app. Omitted when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sign_in: Vec<harness::SignIn>,
     /// Which Harness is attached, when one is. Used to name it in the fourth
     /// empty state (needs authentication).
     harness_name: Option<String>,
@@ -1824,6 +1827,7 @@ fn chat_opening_layers(
             .harness
             .as_ref()
             .and_then(|attached| attached.login.clone()),
+        sign_in: harness::sign_in_actions(),
         harness_name: inspect
             .harness
             .as_ref()
@@ -1919,6 +1923,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .as_ref()
             .and_then(|read| read.harness.as_ref())
             .and_then(|attached| attached.login.clone()),
+        sign_in: harness::sign_in_actions(),
         harness_name: inspect
             .as_ref()
             .and_then(|read| read.harness.as_ref())
@@ -2006,6 +2011,30 @@ fn select_harness(
     patch.set_text(settings::TextField::Harness, &harness);
     settings_session(&app, &state).apply(patch)?;
     Ok(harness::login_hint(&harness))
+}
+
+/// In-app sign-in for one advertised agent method. Keyed by the Instance id a
+/// wake carries. The display name would open a slot nothing later loads.
+#[tauri::command]
+fn sign_in(
+    instance: String,
+    method_id: String,
+    state: tauri::State<'_, SettingsState>,
+) -> Result<(), String> {
+    let character = state.instances.lock().ok().and_then(|rows| {
+        rows.iter()
+            .find(|row| row.id == instance)
+            .map(|row| row.character.clone())
+    });
+    // A missing row must not open a session under an empty Character. Wakes
+    // key the slot on both, and an empty Character would not be the one they load.
+    let Some(character) = character else {
+        return Err("unknown instance".to_string());
+    };
+    let Some(session) = harness::attached() else {
+        return Err(harness::LOST.to_string());
+    };
+    session.sign_in(&method_id, &instance, &character, model::blank())
 }
 
 /// Push a full opening to an already-open Chat surface, without creating
@@ -3247,6 +3276,7 @@ fn main() {
             elicitation_answer,
             open_link,
             select_harness,
+            sign_in,
             show_settings,
             settings_snapshot,
             settings_event
@@ -3898,6 +3928,67 @@ mod tests {
         assert_eq!(harness.name, "codex");
         assert_eq!(harness.missing.as_deref(), Some("npx"));
         assert!(!harness.alive);
+    }
+
+    /// The landing payload while login is still required. The fragment is the
+    /// button list, not a value recomputed while asserting.
+    #[test]
+    fn a_login_opening_carries_agent_sign_in_and_omits_it_otherwise() {
+        use agent_client_protocol::schema::v1::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
+        use std::collections::HashMap;
+
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let inspect = model::DirectorInspect {
+            harness: Some(crate::harness::HarnessInspect {
+                name: "codex".to_string(),
+                login: Some("codex login".to_string()),
+                alive: true,
+                ..Default::default()
+            }),
+            ..stub_inspect()
+        };
+        let mut env = HashMap::new();
+        env.insert("TOKEN".to_string(), "super-secret".to_string());
+        let offered = vec![
+            AuthMethod::Agent(AuthMethodAgent::new("chatgpt", "ChatGPT")),
+            AuthMethod::Terminal(
+                AuthMethodTerminal::new("term", "Outside")
+                    .args(vec!["--not-stored".to_string()])
+                    .env(env),
+            ),
+        ];
+        let json_of = |methods: Vec<AuthMethod>| {
+            let mut found = String::new();
+            crate::harness::with_sign_in_gate(Some("codex login"), methods, || {
+                found = serde_json::to_string(&chat_opening_from(instance, &inspect, ""))
+                    .expect("opening serializes");
+            });
+            found
+        };
+        let json = json_of(offered);
+        assert!(
+            json.contains(r#""sign_in":[{"id":"chatgpt","label":"ChatGPT"}]"#),
+            "{json}"
+        );
+        assert!(json.contains(r#""login":"codex login""#), "{json}");
+        assert!(!json.contains("super-secret"), "{json}");
+        assert!(!json.contains("--not-stored"), "{json}");
+
+        let terminal_only = json_of(vec![AuthMethod::Terminal(AuthMethodTerminal::new(
+            "term", "Outside",
+        ))]);
+        assert!(
+            terminal_only.contains(r#""login":"codex login""#),
+            "{terminal_only}"
+        );
+        assert!(!terminal_only.contains("\"sign_in\""), "{terminal_only}");
+
+        let empty = json_of(vec![]);
+        assert!(empty.contains(r#""login":"codex login""#), "{empty}");
+        assert!(!empty.contains("\"sign_in\""), "{empty}");
     }
 
     /// The HTTP half, and the rule that guards it. A credential is never

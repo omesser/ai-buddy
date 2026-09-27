@@ -11,14 +11,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
-    AuthMethod, CancelNotification, ClientCapabilities, ContentBlock, CreateElicitationRequest,
-    CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
-    ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
-    ElicitationPropertySchema, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
-    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock,
+    CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
+    ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
+    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema, EnvVariable, Error,
+    ErrorCode, HttpHeader, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
+    McpServerHttp, McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -29,6 +29,10 @@ use tokio::sync::mpsc;
 /// After `session/cancel`, how long the turn lock waits for the `cancelled`
 /// reply before it is given back regardless.
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
+
+/// How long `authenticate` may block. A browser login is the user, not a
+/// stalled child, and a turn's budget would abandon it.
+const SIGN_IN_WAIT: Duration = Duration::from_secs(5 * 60);
 
 /// The MCP server `session/new` is told about.
 /// The loopback server is the shipped path (ADR-0023). Stdio is the fallback
@@ -71,7 +75,6 @@ pub struct Handshake {
 pub struct AgentMethodId(String);
 
 impl AgentMethodId {
-    #[allow(dead_code)]
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -115,15 +118,14 @@ impl AuthOffer {
 }
 
 /// An in-app sign-in the landing can show. The id is an agent method's.
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SignIn {
     pub id: AgentMethodId,
     pub label: String,
 }
 
-/// Keep the kind. A blank agent id is not sendable, and a terminal method's
-/// args and env never leave this function.
+/// One `AuthMethod` as an `AuthOffer`. A blank agent id is not sendable, and
+/// a terminal method's args and env never leave this function.
 pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
     match method {
         AuthMethod::Agent(agent) => {
@@ -156,7 +158,6 @@ pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
 
 /// Agent methods with a visible name, in advertisement order, while login is
 /// still required. Terminal and unrecognized methods are not buttons.
-#[allow(dead_code)]
 pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<SignIn> {
     if !login_active {
         return Vec::new();
@@ -382,6 +383,10 @@ enum Msg {
         request: String,
         answer: ElicitationAnswer,
     },
+    Authenticate {
+        method_id: String,
+        reply: sync_mpsc::Sender<Result<(), String>>,
+    },
     Shutdown,
 }
 
@@ -554,6 +559,23 @@ impl Wire {
             request: request.to_string(),
             option: option.to_string(),
         });
+    }
+
+    /// `authenticate` for an agent method, and nothing else. The response body
+    /// is not a session: the caller still has to open one.
+    pub fn authenticate(&self, method_id: &str) -> Result<(), String> {
+        let (reply, rx) = sync_mpsc::channel();
+        self.tx
+            .send(Msg::Authenticate {
+                method_id: method_id.to_string(),
+                reply,
+            })
+            .map_err(|_| "harness exited".to_string())?;
+        match rx.recv_timeout(SIGN_IN_WAIT) {
+            Ok(result) => result,
+            Err(RecvTimeoutError::Timeout) => Err("sign-in timed out".to_string()),
+            Err(RecvTimeoutError::Disconnected) => Err("harness exited".to_string()),
+        }
     }
 
     /// The user's pick on a forwarded elicitation form. Decline is valid.
@@ -792,6 +814,17 @@ async fn serve(
             // No turn is running, so there is no ask to answer and nothing to
             // cancel.
             Msg::Cancel | Msg::Answer { .. } | Msg::AnswerElicitation { .. } => {}
+            Msg::Authenticate { method_id, reply } => {
+                // `AuthMethodId` is an owned string. A borrow would have to be `'static`.
+                let outcome = cx
+                    .send_request(AuthenticateRequest::new(method_id))
+                    .block_task()
+                    .await;
+                let _ = reply.send(match outcome {
+                    Ok(_) => Ok(()),
+                    Err(error) => Err(error.message),
+                });
+            }
             Msg::Shutdown => break,
         }
     }
@@ -974,6 +1007,11 @@ async fn turn(
                 }
                 Some(Msg::Open { reply, .. }) => {
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
+                }
+                // Not sent under `session/prompt`. The click hears it now,
+                // instead of waiting out the sign-in budget on a dropped message.
+                Some(Msg::Authenticate { reply, .. }) => {
+                    let _ = reply.send(Err("a turn is in flight".to_string()));
                 }
                 None => {
                     end_turn(&mut asks, &mut forms, &mut thought, on_event);
