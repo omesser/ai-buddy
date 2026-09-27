@@ -6,7 +6,7 @@ This document covers toolchains, verification, trace variables, Character Packag
 
 ```sh
 # Clone and run
-git clone https://github.com/omesser/ai-buddy.git fidget
+git clone https://github.com/omesser/fidget.git fidget
 cd fidget
 cargo run -p fidget
 ```
@@ -414,7 +414,7 @@ Settings → Do Not Disturb → Sound is the mute. On by default; off takes effe
 
 ### Reply Contract Measurements
 
-**Size and the reply contract, measured** (from `measure_the_reply_contract_failure_rate` test in `src-tauri/src/model.rs`). See [main README archived version](https://github.com/omesser/ai-buddy/blob/main/README.md) lines 450–490 for detailed measurement methodology and results.
+**Size and the reply contract, measured** (from `measure_the_reply_contract_failure_rate` test in `src-tauri/src/model.rs`). See [main README archived version](https://github.com/omesser/fidget/blob/main/README.md) lines 450–490 for detailed measurement methodology and results.
 
 ## Character Packages
 
@@ -432,7 +432,7 @@ A Character Package is a directory or `.zip` archive holding a `character.manife
 
 #### Declaring where the art came from
 
-`[source]` is the one part of the manifest documented before v2, because the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html) publishes it. A package that omits it shows up there with no attribution.
+`[source]` is the one part of the manifest documented before v2, because the [Character Gallery](https://omesser.github.io/fidget/characters.html) publishes it. A package that omits it shows up there with no attribution.
 
 ```toml
 [source]

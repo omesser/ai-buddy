@@ -1,6 +1,6 @@
 # Windows Click-Through Mask Rebuild Baseline
 
-Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-pixel cost of rebuilding the Windows DWM click-through region when the sprite animation frame changes.
+Benchmark for issue [#428](https://github.com/omesser/fidget/issues/428): per-pixel cost of rebuilding the Windows DWM click-through region when the sprite animation frame changes.
 
 ## Environment
 

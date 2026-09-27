@@ -16,7 +16,7 @@ test("the bundle identifier and product name are Fidget", () => {
   const conf = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
   assert.equal(conf.productName, "Fidget");
   assert.equal(conf.identifier, "dev.omesser.fidget");
-  assert.equal(conf.plugins.updater.endpoints[0].includes("github.com/omesser/ai-buddy/"), true);
+  assert.equal(conf.plugins.updater.endpoints[0].includes("github.com/omesser/fidget/"), true);
 });
 
 test("the names notice calls the on-screen presence a fidget", () => {

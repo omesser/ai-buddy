@@ -1,6 +1,6 @@
 # Performance Baseline v1
 
-Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/ai-buddy/issues/423) for context and child benchmarks.
+Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/fidget/issues/423) for context and child benchmarks.
 
 ## Linux (issue #432)
 
@@ -55,7 +55,7 @@ Baseline X server (60s sample, PID 1594):
 
 2. **VM measurement constraints.** C-state residency and system-wide wakeup counting unavailable. Context switches are a coarse proxy. Bare-metal measurements would provide more accurate power impact data.
 
-3. **Comparison to macOS target.** macOS issue [#431](https://github.com/omesser/ai-buddy/issues/431) targets ~60 wakeups/sec idle. Linux VM shows 4.5x higher rate. Unknown how much is VM overhead vs real difference.
+3. **Comparison to macOS target.** macOS issue [#431](https://github.com/omesser/fidget/issues/431) targets ~60 wakeups/sec idle. Linux VM shows 4.5x higher rate. Unknown how much is VM overhead vs real difference.
 
 4. **Untested scenarios.** Walking, chat open, and window state changes require GUI automation not feasible in headless VM. Multi-monitor testing requires different environment.
 
@@ -143,7 +143,7 @@ Crop Task Manager's Performance GPU page during idle perched to about 280px wide
 - `scripts/bench-gpu-compositing-windows.ps1`
 - GPU% on Windows is `\GPU Engine(*)\Utilization Percentage` summed for `dwm.exe` `engtype_3D`, then WMI `Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine`, then `nvidia-smi` for the whole adapter.
 - Power is `nvidia-smi` `power.draw` when that field is numeric. Those watts are the adapter.
-- `mask_rebuild:` lines are `SetWindowRgn` calls. Per-call time stays in [#428](https://github.com/omesser/ai-buddy/issues/428).
+- `mask_rebuild:` lines are `SetWindowRgn` calls. Per-call time stays in [#428](https://github.com/omesser/fidget/issues/428).
 - `parse-log --seconds 2` on a 4-line fixture printed `mask_calls=4` and `mask_hz=2.00`. That fixture is not a Windows trace.
 - Walking-over aims at the last `walk` or `ballwalk` frame. The cursor coordinate is that point times the primary's physical width over the overlay width in the log. `GetCursorPos` has to match.
 
@@ -194,7 +194,7 @@ Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `-
 - `intel_gpu_top`, `radeontop`, `glxinfo -B`
 - `xfconf-query` for xfwm4 compositing and vblank
 - `xrandr` for screen count and refresh
-- `mask_rebuild:` lines as the XShapeCombineMask call count. Per-call time stays in the [#428](https://github.com/omesser/ai-buddy/issues/428) study.
+- `mask_rebuild:` lines as the XShapeCombineMask call count. Per-call time stays in the [#428](https://github.com/omesser/fidget/issues/428) study.
 - `/proc/<pid>/stat` utime+stime for `xfwm4` and `Xtigervnc`, as percent of one core over the sample window. This is a proxy for where the software composite lands. It is not GPU%.
 
 **Metrics (15s windows, except the aborted pointer-on-sprite window at 5s):**
@@ -204,7 +204,7 @@ Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `-
 | Baseline (no fidget) | N/A | N/A | N/A | 0.0 | 0.0 | No client, so no mask caller |
 | Idle perched | N/A | 0 | 0.00 | 0.9 | 35.0 | Pointer at (2,2) |
 | Walking | N/A | 0 | 0.00 | 1.1 | 46.7 | Pointer away. 457 `walk` frames |
-| Pointer on sprite, walk aborted | N/A | 22 | 4.40 | 0.2 | 5.6 | 5s only. 8 `walk` frames, then react and talk. Not a sustained walk rate. That rate is [#428](https://github.com/omesser/ai-buddy/issues/428) |
+| Pointer on sprite, walk aborted | N/A | 22 | 4.40 | 0.2 | 5.6 | 5s only. 8 `walk` frames, then react and talk. Not a sustained walk rate. That rate is [#428](https://github.com/omesser/fidget/issues/428) |
 | Chat open | N/A | 17 | 1.13 | 0.3 | 3.4 | `Summon` logged. Pointer left on the sprite |
 | Multi-monitor | N/A | N/A | N/A | N/A | N/A | xrandr reports 1 display |
 | Hidden (fullscreen) | N/A | 0 | 0.00 | 0.0 | 0.8 | Log line `presence: hidden over 500ms` |
@@ -213,11 +213,11 @@ Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `-
 
 **Findings:**
 
-1. **GPU% is unread.** The vendor tools exit because the VM has no DRM node. Publishing a 0 here would be a guess. The renderer string is llvmpipe with acceleration off, and the app log repeats the DRI3 failure from the [#432](https://github.com/omesser/ai-buddy/issues/432) run.
+1. **GPU% is unread.** The vendor tools exit because the VM has no DRM node. Publishing a 0 here would be a guess. The renderer string is llvmpipe with acceleration off, and the app log repeats the DRI3 failure from the [#432](https://github.com/omesser/fidget/issues/432) run.
 
 2. **X server CPU is the number that moves.** Baseline 0.0%, idle perched 35.0%, walking with the pointer away 46.7%, hidden 0.8%. `xfwm4` stays near 1% or below. Inference from the renderer string: with llvmpipe and no DRM device, that CPU is the software paint of the overlay inside `Xtigervnc`. A bare-metal run with `radeontop`, `intel_gpu_top`, or `nvidia-smi` replaces the N/A column.
 
-3. **XShapeCombineMask stays at 0/s while the pointer is off the sprite.** Idle is 0 calls in 15s. Walking is 0 calls in 15s across 457 walk frames. The walking rate in this run is that 0.00/s. A later 5s window put the pointer on the sprite and the walk aborted. It logged 22 mask calls (4.40/s) and 8 walk frames, then react and talk. 4.40/s is that aborted window, not a sustained walk under the cursor. [#428](https://github.com/omesser/ai-buddy/issues/428) measured 26.7 rebuilds/s when a walk stayed under the cursor. This issue leaves per-call time to that study.
+3. **XShapeCombineMask stays at 0/s while the pointer is off the sprite.** Idle is 0 calls in 15s. Walking is 0 calls in 15s across 457 walk frames. The walking rate in this run is that 0.00/s. A later 5s window put the pointer on the sprite and the walk aborted. It logged 22 mask calls (4.40/s) and 8 walk frames, then react and talk. 4.40/s is that aborted window, not a sustained walk under the cursor. [#428](https://github.com/omesser/fidget/issues/428) measured 26.7 rebuilds/s when a walk stayed under the cursor. This issue leaves per-call time to that study.
 
 4. **Chat open is a real Summon, with the pointer still on the sprite.** 17 mask calls in 15s (1.13/s). X server CPU in that window is 3.4%. The pointer was not parked away, so the mask rate is the cursor-over rate during chat, and the CPU drop against idle is under that same condition.
 
@@ -235,7 +235,7 @@ overlay: 1 display(s); sprite 126x128; BMO as BMO
 
 `glxinfo -B` during idle perched: `OpenGL renderer string: llvmpipe (LLVM 20.1.2, 256 bits)`, `Accelerated: no`. The same window shows `intel_gpu_top` and `radeontop` failing for lack of a device.
 
-**Status:** Partial. This section leaves [#425](https://github.com/omesser/ai-buddy/issues/425) open. GPU% per scenario and compositor is still N/A. Two compositors, a Wayland row, and an uncomposited X11 row are still missing. X11 under xfwm4 has a mask-rate pair (idle 0.00/s, walking with the pointer away 0.00/s) and an X-server CPU proxy.
+**Status:** Partial. This section leaves [#425](https://github.com/omesser/fidget/issues/425) open. GPU% per scenario and compositor is still N/A. Two compositors, a Wayland row, and an uncomposited X11 row are still missing. X11 under xfwm4 has a mask-rate pair (idle 0.00/s, walking with the pointer away 0.00/s) and an X-server CPU proxy.
 
 ## WindowSource (issue #427)
 
@@ -246,7 +246,7 @@ Re-run the ungated half with `scripts/bench-window-list-macos.sh micro`. The gat
 **Tools:**
 
 - `scripts/bench-window-list-macos.swift` times the same call and decode from its own process against whatever is on the desktop. It opens nothing.
-- `scripts/bench-window-list-macos.sh` wraps it (`micro`) and, gated, samples a running fidget with dtrace (`idle`, `riding`, `matrix`). The added windows come from `scripts/window-flood-macos.swift`, under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043); when that file is absent the added-window rows skip and say so. The ride comes from `scripts/perch-window.swift --glide`, which slides the perch every frame so `riding` stays on for the whole sample.
+- `scripts/bench-window-list-macos.sh` wraps it (`micro`) and, gated, samples a running fidget with dtrace (`idle`, `riding`, `matrix`). The added windows come from `scripts/window-flood-macos.swift`, under review in [#1043](https://github.com/omesser/fidget/pull/1043); when that file is absent the added-window rows skip and say so. The ride comes from `scripts/perch-window.swift --glide`, which slides the perch every frame so `riding` stays on for the whole sample.
 - The issue's dtrace one-liner matches no probe on this machine: `dtrace: probe description pid<n>::CGWindowListCopyWindowInfo:entry does not match any probes`. On macOS 26 CoreGraphics forwards to SkyLight, and the pid provider lists `SLWindowListCopyWindowInfo` there. Probing that on the microbench counted 8439 calls in 4 s at 460 µs average, against the microbench's own 455 µs median, so the two instruments agree. `sudo` is required; System Integrity Protection prints a warning but lets the pid provider attach to an unsigned binary.
 - `xctrace record --template 'Time Profiler' --attach <pid> --time-limit 5s` records headless and its export names `SLWindowListCopyWindowInfo` in the sampled frames, so the issue's Instruments route works without opening Instruments. The script uses dtrace instead because it yields a call count and a per-call duration directly.
 
@@ -269,7 +269,7 @@ The `all` row is a range on purpose. Three runs, minutes to hours apart, put its
 
 **Metrics (the app under dtrace, measured, one run each, `target/debug` build):**
 
-The operator approved one `matrix --seconds 15 --windows 100` run. Every number below is from that run, on a debug build of fidget, and the +100 rows used the flood script under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043). Windows is the on-screen count under the app's options, read by the microbench beside the sample. Hz is dtrace's call count divided by 15 s.
+The operator approved one `matrix --seconds 15 --windows 100` run. Every number below is from that run, on a debug build of fidget, and the +100 rows used the flood script under review in [#1043](https://github.com/omesser/fidget/pull/1043). Windows is the on-screen count under the app's options, read by the microbench beside the sample. Hz is dtrace's call count divided by 15 s.
 
 | Scenario | Windows | Poll Hz (target) | Median µs | p95 µs | Max µs | dtrace calls | Notes |
 |----------|---------|------------------|-----------|--------|--------|--------------|-------|

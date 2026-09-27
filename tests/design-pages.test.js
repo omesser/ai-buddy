@@ -37,7 +37,7 @@ test("cues.html carries noindex and a visible Dated class line", () => {
   assert.match(html, /<meta name="robots" content="noindex">/);
   assert.match(
     html,
-    /Dated proposal · <a href="https:\/\/github\.com\/omesser\/ai-buddy\/issues\/277">#277<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
+    /Dated proposal · <a href="https:\/\/github\.com\/omesser\/fidget\/issues\/277">#277<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
   );
 });
 
@@ -79,7 +79,7 @@ test("window-titles-hint.html carries noindex and a visible Dated class line", (
   assert.match(html, /<meta name="robots" content="noindex">/);
   assert.match(
     html,
-    /Dated proposal · <a href="https:\/\/github\.com\/omesser\/ai-buddy\/issues\/916">#916<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
+    /Dated proposal · <a href="https:\/\/github\.com\/omesser\/fidget\/issues\/916">#916<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
   );
 });
 

@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues live in GitHub Issues on `omesser/ai-buddy`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues on `omesser/fidget`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
