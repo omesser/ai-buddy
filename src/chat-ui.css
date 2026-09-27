@@ -1393,17 +1393,18 @@ body {
   max-width: 36ch;
 }
 
+/* Text to copy, not a control: no border or accent, so it cannot pass for a
+   third sign-in button. */
 .empty .command {
   font-family: var(--chat-mono);
   font-size: 12.5px;
   background: var(--chat-fill);
-  color: var(--chat-accent);
-  padding: 10px 14px;
+  color: var(--chat-ink);
+  padding: 6px 10px;
   border-radius: var(--chat-radius-control);
-  border: 1px solid var(--chat-line);
-  margin: 8px 0;
-  width: 100%;
-  box-sizing: border-box;
+  margin: 4px 0 8px;
+  user-select: all;
+  cursor: text;
 }
 
 /* `display: flex` would beat the hidden attribute and leave a stale row. */

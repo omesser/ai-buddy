@@ -404,6 +404,7 @@ function attached(opening) {
   httpOff.hidden = true;
 
   paintSignIn([]);
+  document.getElementById("landing-sign-in-label").hidden = true;
 
   if (ready) {
     return true;
@@ -427,6 +428,9 @@ function attached(opening) {
 
     title.textContent = copy.title;
     lede.textContent = copy.lede;
+    const signInLabel = document.getElementById("landing-sign-in-label");
+    signInLabel.textContent = copy.signInLabel ?? "";
+    signInLabel.hidden = !copy.signInLabel;
     if (copy.command) {
       command.textContent = copy.command;
       command.hidden = false;

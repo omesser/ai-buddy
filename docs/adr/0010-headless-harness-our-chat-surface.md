@@ -143,6 +143,11 @@ touching attachment may not:
 8. Modify, repackage, or wrap a Harness binary, or disable one of its
    authentication methods.
 
+An ACP auth method of kind `agent` does not break rule 6. The Chat button sends
+its id to `authenticate`, the Harness runs its own browser or device flow, and
+no credential passes through ai-buddy (#1000). A `terminal` method stays a named
+command.
+
 The Chat surface therefore distinguishes three states rather than two. Not
 attached is the `empty-none` copy it already draws. Attached but not
 authenticated names the one command that fixes it, read from ACP's

@@ -89,13 +89,18 @@ export function landingCopy(opening) {
   const harness = opening?.harness;
   const missing = harness?.missing;
 
+  // Buttons are the first tier and the command the second. With no button,
+  // the command is the only path, so it drops the "Or".
   if (opening?.configured && opening.enabled && opening.login) {
+    const signIn = loginPresentation(opening).actions;
+    const buttons = signIn.length > 0;
     return {
       title: `${name} needs login`,
       lede: `${name} needs login, or you can switch to a different Harness:`,
       command: opening.login,
-      hint: "Or run this in your terminal:",
-      signIn: loginPresentation(opening).actions,
+      signInLabel: buttons ? "Login using:" : null,
+      hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
+      signIn,
     };
   }
 
@@ -104,6 +109,7 @@ export function landingCopy(opening) {
       title: "Connect a Harness to get started",
       lede: "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.",
       command: null,
+      signInLabel: null,
       hint: null,
       signIn: [],
     };
@@ -114,6 +120,7 @@ export function landingCopy(opening) {
       title: "Chat is switched off",
       lede: "Turn AI back on in Settings, or connect a Harness below.",
       command: null,
+      signInLabel: null,
       hint: null,
       signIn: [],
     };
@@ -126,6 +133,7 @@ export function landingCopy(opening) {
       title: `${name} needs \`${missing}\``,
       lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
       command: null,
+      signInLabel: null,
       hint: null,
       signIn: [],
     };
@@ -136,6 +144,7 @@ export function landingCopy(opening) {
       title: `Initializing ${name}…`,
       lede: `${name} is starting up. Chat will be ready in a moment.`,
       command: null,
+      signInLabel: null,
       hint: null,
       signIn: [],
     };
@@ -146,6 +155,7 @@ export function landingCopy(opening) {
       title: `${name} is not running`,
       lede: `${name} is set but has not come up. Static weights answer until it does. Pick a different Harness below.`,
       command: null,
+      signInLabel: null,
       hint: null,
       signIn: [],
     };
@@ -155,6 +165,7 @@ export function landingCopy(opening) {
     title: "Chat is switched off",
     lede: "Turn AI back on in Settings, or connect a Harness below.",
     command: null,
+    signInLabel: null,
     hint: null,
     signIn: [],
   };

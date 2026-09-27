@@ -162,7 +162,8 @@ test("needs-auth still names the login command", () => {
   });
   assert.equal(copy.title, "Codex needs login");
   assert.equal(copy.command, "codex login");
-  assert.equal(copy.hint, "Or run this in your terminal:");
+  assert.equal(copy.signInLabel, null);
+  assert.equal(copy.hint, "Run this in a terminal:");
 });
 
 test("needs-login offers agent sign-in beside the terminal command", () => {
@@ -192,7 +193,8 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
   });
   const copy = landingCopy(opening);
   assert.equal(copy.command, "codex login");
-  assert.equal(copy.hint, "Or run this in your terminal:");
+  assert.equal(copy.signInLabel, "Login using:");
+  assert.equal(copy.hint, "Or run this in a terminal:");
   assert.deepEqual(copy.signIn, [
     { id: "chatgpt", label: "ChatGPT" },
     { id: "apikey", label: "API Key" },
@@ -204,7 +206,8 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
   assert.deepEqual(loginPresentation(bare).actions, []);
   const bareCopy = landingCopy(bare);
   assert.equal(bareCopy.command, "codex login");
-  assert.equal(bareCopy.hint, "Or run this in your terminal:");
+  assert.equal(bareCopy.signInLabel, null);
+  assert.equal(bareCopy.hint, "Run this in a terminal:");
   assert.deepEqual(bareCopy.signIn, []);
 
   assert.deepEqual(
