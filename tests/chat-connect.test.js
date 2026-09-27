@@ -195,6 +195,10 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
   assert.equal(copy.command, "codex login");
   assert.equal(copy.signInLabel, "Login using:");
   assert.equal(copy.hint, "Or run this in a terminal:");
+  assert.equal(
+    copy.signInWaiting,
+    "Finish signing in in your browser. Any code on that page came from Codex, so continue only if you just clicked this button.",
+  );
   assert.deepEqual(copy.signIn, [
     { id: "chatgpt", label: "ChatGPT" },
     { id: "apikey", label: "API Key" },
@@ -208,6 +212,7 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
   assert.equal(bareCopy.command, "codex login");
   assert.equal(bareCopy.signInLabel, null);
   assert.equal(bareCopy.hint, "Run this in a terminal:");
+  assert.equal(bareCopy.signInWaiting, null);
   assert.deepEqual(bareCopy.signIn, []);
 
   assert.deepEqual(

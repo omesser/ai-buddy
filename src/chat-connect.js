@@ -100,6 +100,11 @@ export function landingCopy(opening) {
       command: opening.login,
       signInLabel: buttons ? "Login using:" : null,
       hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
+      // The Harness opens the browser itself and may prefill a code there that
+      // never reaches us (grok's inline flow). The click is what the user vouches for.
+      signInWaiting: buttons
+        ? `Finish signing in in your browser. Any code on that page came from ${name}, so continue only if you just clicked this button.`
+        : null,
       signIn,
     };
   }

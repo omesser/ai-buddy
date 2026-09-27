@@ -365,7 +365,7 @@ if (typeof window !== "undefined") {
 // so it reads as waiting.
 // One button per agent method. Rebuilt on every paint so a later opening
 // cannot leave a method that is no longer offered.
-function paintSignIn(actions) {
+function paintSignIn(actions, waiting) {
   const host = document.getElementById("landing-sign-in");
   host.replaceChildren();
   for (const action of actions) {
@@ -374,7 +374,17 @@ function paintSignIn(actions) {
     button.className = "sign-in-btn";
     button.textContent = action.label;
     button.addEventListener("click", () => {
-      invoke("sign_in", { instance, methodId: action.id }).catch((why) => note(String(why)));
+      const pending = document.createElement("p");
+      pending.className = "hint sign-in-waiting";
+      pending.textContent = waiting;
+      button.after(pending);
+      button.disabled = true;
+      invoke("sign_in", { instance, methodId: action.id })
+        .catch((why) => note(String(why)))
+        .finally(() => {
+          pending.remove();
+          button.disabled = false;
+        });
     });
     host.append(button);
   }
@@ -424,7 +434,7 @@ function attached(opening) {
     const command = document.getElementById("landing-command");
     const hint = document.getElementById("landing-hint");
     const copy = landingCopy(opening);
-    paintSignIn(copy.signIn);
+    paintSignIn(copy.signIn, copy.signInWaiting);
 
     title.textContent = copy.title;
     lede.textContent = copy.lede;
