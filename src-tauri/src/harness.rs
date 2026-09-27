@@ -382,6 +382,9 @@ pub struct HarnessInspect {
     pub missing: Option<String>,
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     pub initializing: bool,
+    /// Why the last spawn gave no wire, when the launcher was there to run.
+    /// The sentence Chat, Settings and the wake all show.
+    pub failed: Option<String>,
     /// What the last turn came back with, when it came back with an error, and
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive, and authenticated, so nothing else here tells it apart.
@@ -2256,6 +2259,14 @@ mod tests {
         // runs; end that line so the first reply is a line of its own.
         println!();
         record(count, "spawn");
+        // A launcher that dies before it reads a byte, the way `npx` does when
+        // dyld cannot load `node`.
+        if script == "abort-at-start" {
+            eprintln!(
+                "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib"
+            );
+            std::process::abort();
+        }
         let spawns = recorded(count, "spawn");
         let mut session = "fresh-id".to_string();
         let mut pending_prompt: Option<Value> = None;
@@ -4589,6 +4600,28 @@ mod tests {
         assert_eq!(inspect.missing.as_deref(), Some(NOPE));
         assert!(!inspect.alive);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A launcher that is on `PATH` and dies before `initialize` is not
+    /// missing, so only `failed` can tell Chat and Settings why nothing runs.
+    #[test]
+    fn spawn_preflight_names_a_launcher_that_dies_at_startup() {
+        let (fx, session) = Fixture::new("abort-at-start");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
+            Ok(Forwarded::AttachSettled) => {}
+            other => panic!("expected AttachSettled, got {other:?}"),
+        }
+        let inspect = session.inspect();
+        assert!(!inspect.alive && !inspect.initializing && inspect.missing.is_none());
+        let failed = inspect.failed.expect("the landing has no reason to show");
+        let exited = format!("`{}` exited before initialize", session.launch.line());
+        assert!(failed.starts_with(&exited), "{failed}");
+        #[cfg(unix)]
+        assert!(failed.contains("SIGABRT"), "no exit status in {failed}");
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
     }
 
     /// Initializing gates chat during ACP handshake. Set true at spawn_preflight,
