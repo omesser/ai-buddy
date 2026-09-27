@@ -149,9 +149,23 @@ function createView(id) {
       ctx.font = "14px system-ui, sans-serif";
       const { lines, truncated } = wrapText(text, 260, ctx.measureText.bind(ctx));
       view.bubbleContent.textContent = lines.join("\n");
+      more.textContent = "Open chat";
+      bubble.removeAttribute("data-ask");
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
+      show("speech");
+    },
+    // The question waiting in Chat (ADR-0033). The last word is the control;
+    // where the overlay cannot take that click it is plain text, and Summon
+    // still opens Chat.
+    showAsk() {
+      view.bubbleContent.textContent = clickableOffArt
+        ? "Question for you in the "
+        : "Question for you in the chat";
+      more.textContent = "chat";
+      bubble.setAttribute("data-ask", "");
+      bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
     },
     hideSpeech() {

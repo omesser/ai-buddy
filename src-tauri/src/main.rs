@@ -301,6 +301,9 @@ struct SpritePlacement<'a> {
     /// has on the wire. #119: grace and min-hold are in the webview so the
     /// Engine stays tick-pure. False on every overlay but the bubble owner's.
     thinking: bool,
+    /// On this tick only: a touch was dropped because a question waits on the
+    /// user (ADR-0033), so the bubble points at Chat. False off the bubble owner.
+    asking: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were
     /// showing on the tick the answer changes.
@@ -334,6 +337,7 @@ impl<'a> SpritePlacement<'a> {
             mirror: instance.mirror,
             dialogue: instance.dialogue.as_ref().filter(|_| bubble).cloned(),
             thinking: bubble && instance.thinking,
+            asking: bubble && instance.asking,
             bubble,
             cue: instance.cue.filter(|_| bubble).map(Cue::name),
         }
@@ -407,6 +411,7 @@ struct Placed {
     mirror: i8,
     dialogue: Option<String>,
     thinking: bool,
+    asking: bool,
     cue: Option<Cue>,
     /// The overlay that draws the bubble, decided once from the feet
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
@@ -4307,6 +4312,7 @@ mod tests {
             mirror: 1,
             dialogue: Some("Yare yare daze.".to_string()),
             thinking: true,
+            asking: true,
             cue: Some(Cue::Poke),
             owner: Some(1),
             mask: ai_buddy_core::overlay::AlphaMask::from_png(PATCHY, 128)
@@ -4316,12 +4322,17 @@ mod tests {
         let owner = SpritePlacement::new(&placed, right, 1);
         assert_eq!(owner.dialogue.as_deref(), Some("Yare yare daze."));
         assert!(owner.thinking);
+        assert!(owner.asking);
         assert!(owner.bubble);
         assert_eq!(owner.cue, Some("poke"));
 
         let elsewhere = SpritePlacement::new(&placed, left, 0);
         assert_eq!(elsewhere.dialogue, None, "no line to latch off the owner");
         assert!(!elsewhere.thinking, "no indicator to arm off the owner");
+        assert!(
+            !elsewhere.asking,
+            "one pointer to Chat, not one per display"
+        );
         assert!(!elsewhere.bubble);
         assert_eq!(elsewhere.cue, None, "or the cue sounds once per display");
 

@@ -100,6 +100,18 @@ body {
   white-space: pre-wrap;
 }
 
+/* The pointer to a question waiting in Chat: one sentence whose last word is
+   the control, so both run inline and the word takes the sentence's size. */
+.bubble[data-mode="speech"][data-ask] .bubble-content,
+.bubble[data-mode="speech"][data-ask][data-more] .bubble-more {
+  display: inline;
+}
+
+.bubble[data-ask] .bubble-more {
+  margin-top: 0;
+  font-size: inherit;
+}
+
 /* The tail is the same sandwich as the box: a ring triangle with a fill
    triangle over it, since a lone --bubble-panel spike would vanish on exactly
    the grounds the ring exists for. 10px tall, the gap placeBubble leaves. */

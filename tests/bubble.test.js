@@ -263,6 +263,10 @@ function machineHarness() {
       surface = null;
       calls.push("hideSpeech");
     },
+    showAsk() {
+      surface = "speech";
+      calls.push("showAsk");
+    },
     showThinking() {
       surface = "thinking";
       calls.push("showThinking");
@@ -455,6 +459,31 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
     ["showSpeech:hi", "hideSpeech", "showSpeech:again"],
     "the indicator never appeared",
   );
+});
+
+// A Poke dropped because the user owes an answer (ADR-0033) points at Chat.
+// It carries a control, so it stays up for the longest reading window.
+test("an asking pulse points at Chat for the longest reading window", () => {
+  const { machine, calls, advance, placement, surface } = machineHarness();
+
+  machine.event(placement({ asking: true }));
+  machine.event(placement({}));
+  machine.frame(placement({ thinking: true }));
+  assert.deepEqual(calls, ["showAsk"], "latched like a line, and speech wins");
+
+  advance(bubbleDuration("a".repeat(1000)) - 1);
+  assert.equal(surface(), "speech", "still up to be clicked");
+  advance(1);
+  assert.deepEqual(calls, ["showAsk", "hideSpeech"]);
+});
+
+test("a hidden sprite drops the asking pulse rather than queueing it", () => {
+  const { machine, calls, placement } = machineHarness();
+
+  machine.event(placement({ asking: true }));
+  machine.frame(placement({ visible: false }));
+  machine.frame(placement({}));
+  assert.deepEqual(calls, []);
 });
 
 // --- #178: one overlay owns the bubble; the rest draw the art only. ---

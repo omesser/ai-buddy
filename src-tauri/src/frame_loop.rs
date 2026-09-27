@@ -1430,6 +1430,7 @@ pub(crate) fn run_frame_loop(
                 // Cloned because the wake below resets `live.happened` before
                 // the trace at the end of this Instance's turn reads it.
                 let happened = live.happened.clone();
+                let mut asking = false;
                 let reactive_wake =
                     if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
                         if director::session_due(
@@ -1467,12 +1468,21 @@ pub(crate) fn run_frame_loop(
                             // and applied only if the slot took the call.
                             let caret = cancelled_caret(live.chat_turn, &context.happened);
                             let chat_turn = matches!(context.happened, Happened::Chat(_));
+                            let touched =
+                                director::claim(&context.happened) == director::Claim::Interaction;
                             let cell = director::happened_cell(&context.happened);
                             match slots.wake(&live.id, Arc::clone(model), context) {
                                 // The call on the wire is the truer one
                                 // (ADR-0033). This wake is dropped, not queued:
                                 // the bookkeeping above has already spent it.
                                 completer::Woke::Dropped => false,
+                                // A touch the buddy cannot answer yet points at
+                                // the question. A Summon already opens Chat, a
+                                // typed line is already in it, and a tick is nobody's.
+                                completer::Woke::AwaitingUser => {
+                                    asking = touched;
+                                    false
+                                }
                                 completer::Woke::Started => {
                                     // One panel for however many Instances are running,
                                     // so the newest call is what it shows. #18 owns the
@@ -1709,6 +1719,7 @@ pub(crate) fn run_frame_loop(
                     mirror: if drawn.mirrored { -1 } else { 1 },
                     dialogue,
                     thinking,
+                    asking,
                     cue: frame.cue,
                     owner,
                     mask: drawn.mask.clone(),

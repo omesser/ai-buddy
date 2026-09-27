@@ -71,6 +71,7 @@ export function createBubbleMachine(io) {
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
 
   let pendingDialogue = null;
+  let pendingAsk = false;
   let speechTimer = null;
   let speechShowing = false;
   let graceTimer = null;
@@ -110,27 +111,32 @@ export function createBubbleMachine(io) {
     // Every delivered placement, straight from the event listener.
     event(placement) {
       if (placement.dialogue) pendingDialogue = placement.dialogue;
+      if (placement.asking) pendingAsk = true;
     },
 
     // The newest placement, once per drawn frame.
     frame(placement) {
       const dialogue = pendingDialogue;
+      const ask = pendingAsk && !dialogue;
       pendingDialogue = null;
+      pendingAsk = false;
 
       // A hidden sprite speaks to nobody; the pulse is consumed, not queued,
       // or the line would pop up whenever the sprite next fades in.
-      if (dialogue && placement.visible) {
+      if ((dialogue || ask) && placement.visible) {
         hideThinkingNow();
         if (speechTimer !== null) cancel(speechTimer);
         speechShowing = true;
-        io.showSpeech(dialogue);
+        if (ask) io.showAsk();
+        else io.showSpeech(dialogue);
+        // The pointer to Chat carries a control, so it gets the longest window.
         speechTimer = schedule(() => {
           speechTimer = null;
           speechShowing = false;
           io.hideSpeech();
           // Only now may a turn still in flight surface its indicator.
           if (thinking && graceTimer === null && !thinkingShown) armGrace();
-        }, bubbleDuration(dialogue));
+        }, ask ? MAX_DURATION_MS : bubbleDuration(dialogue));
       }
 
       thinking = Boolean(placement.thinking && placement.visible);
@@ -155,6 +161,7 @@ export function createBubbleMachine(io) {
       }
       speechShowing = false;
       pendingDialogue = null;
+      pendingAsk = false;
       io.hideSpeech();
     },
   };
