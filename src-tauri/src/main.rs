@@ -2521,7 +2521,7 @@ fn bring_roster_to_display(
         })
         .collect();
     let Some(landings) =
-        ai_buddy_core::engine::bring_landings(&feet, &width_of, monitors, floors, cursor)
+        fidget_core::engine::bring_landings(&feet, &width_of, monitors, floors, cursor)
     else {
         return;
     };
