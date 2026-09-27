@@ -1570,6 +1570,41 @@ body {
   padding: 0 18px;
 }
 
+#names-hint {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  padding: 8px 18px 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* A grid display would beat the hidden attribute. */
+#names-hint[hidden] {
+  display: none;
+}
+
+#names-hint h2,
+#names-hint p {
+  margin: 0;
+}
+
+#names-hint .names-hint-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#names-hint button {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill-soft);
+  color: var(--chat-ink);
+  cursor: pointer;
+}
+
 /* The agent's steps, between the log and the composer. Capped and scrolled
    because `.log` is the only child that flexes, so in a 560-point window an
    uncapped plan of a dozen steps eats the transcript. Five rows, then it

@@ -548,7 +548,11 @@ if (typeof document !== "undefined") {
           currentForm = snapshot.form;
           currentValues = snapshot.view;
           draft = pruneDraft(draft, currentValues);
-          renderCurrentTab();
+          if (snapshot.reveal) {
+            showReveal(snapshot.reveal);
+          } else {
+            renderCurrentTab();
+          }
         }
       } catch (err) {
         if (lastSnapshotPromise === currentLoad) {
@@ -591,6 +595,26 @@ if (typeof document !== "undefined") {
     if (tab) {
       render(panel, tab, { ...currentValues, ...draft }, emitEvent, stage);
     }
+  }
+
+  // Points at a row. Does not check the box: the user still has to.
+  function showReveal(reveal) {
+    if (!currentForm || !panel) return;
+    const tablist = document.querySelector('[role="tablist"]');
+    const tabs = tablist ? Array.from(tablist.querySelectorAll('[role="tab"]')) : [];
+    currentTabIndex = selectTab(currentForm, reveal.tab);
+    for (let j = 0; j < tabs.length; j++) {
+      tabs[j].setAttribute("aria-selected", String(j === currentTabIndex));
+    }
+    if (tabs[currentTabIndex]) {
+      panel.setAttribute("aria-label", tabs[currentTabIndex].textContent);
+    }
+    renderCurrentTab();
+    const row = panel.querySelector(`[data-row="${reveal.row}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    if (!row.hasAttribute("tabindex")) row.tabIndex = -1;
+    row.focus();
   }
 
   if (tablist && panel) {

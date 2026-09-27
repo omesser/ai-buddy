@@ -33,6 +33,7 @@ mod mcp_http;
 mod mcp_resources;
 mod menu;
 mod model;
+mod names_hint;
 mod package;
 mod pi_mcp;
 mod platform;
@@ -307,6 +308,9 @@ struct SettingsState {
     ops: mpsc::Sender<SettingsOp>,
     rules: Arc<Mutex<HideRules>>,
     secrets: Arc<dyn SecretStore>,
+    /// Taken by the next snapshot. A window that is still loading has no
+    /// listeners, so an event aimed at it would be gone.
+    reveal: Mutex<Option<settings::form::Reveal>>,
 }
 
 /// How long a hold survives without hearing anything. A backstop: `Closed`
@@ -536,6 +540,8 @@ struct SettingsSnapshot {
     form: settings::form::FormDescription,
     /// Keyed by form row id, which is what `src/settings.js` indexes (#875).
     view: std::collections::BTreeMap<String, settings::RowValue>,
+    /// One shot, cleared by this read. Absent when nothing asked to point.
+    reveal: Option<settings::form::RevealTarget>,
 }
 
 #[tauri::command]
@@ -560,9 +566,16 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
         installed: view.installed.clone(),
         ..settings::form::Live::current()
     };
+    let reveal = state
+        .reveal
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take())
+        .map(settings::form::Reveal::target);
     Ok(SettingsSnapshot {
         form: settings::form::describe_with(&live),
         view: view.row_values(),
+        reveal,
     })
 }
 
@@ -1269,6 +1282,40 @@ fn run_operation(
             operation: op.as_str().to_string(),
         }),
     }
+}
+
+/// Open or raise Settings aimed at one row. An open window reloads from the
+/// next snapshot; one still loading has no listener, so the snapshot carries
+/// the aim.
+fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
+    if let Some(state) = app.try_state::<SettingsState>() {
+        if let Ok(mut slot) = state.reveal.lock() {
+            *slot = Some(reveal);
+        }
+    }
+    show_settings(app.clone());
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        platform::refresh_settings(&handle);
+    });
+}
+
+/// The notice's two buttons.
+#[tauri::command]
+fn names_hint_act(
+    action: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SettingsState>,
+) -> Result<names_hint::HintPush, String> {
+    let press = names_hint::Press::parse(&action)
+        .ok_or_else(|| format!("unknown notice action: {action}"))?;
+    let acted = names_hint::live()
+        .acted(press, &state.settings, &state.path)
+        .map_err(|why| why.to_string())?;
+    if let names_hint::Then::Reveal(reveal) = acted.then {
+        open_settings_at(&app, reveal);
+    }
+    Ok(acted.push)
 }
 
 /// Open the Settings window. Native Shell furniture, so this runs on the
@@ -3202,6 +3249,7 @@ fn main() {
             chat_send,
             chat_prompt,
             chat_ready,
+            names_hint_act,
             permission_answer,
             elicitation_answer,
             open_link,
@@ -3479,6 +3527,7 @@ fn main() {
                 ops: ops_tx,
                 rules: Arc::clone(&rules),
                 secrets: Arc::clone(&secrets),
+                reveal: Mutex::new(None),
             });
             app.manage(Arc::clone(&rules));
 

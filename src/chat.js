@@ -5,6 +5,7 @@
 import { elicitSays } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
 import { canAnswer, landingCopy } from "./chat-connect.js";
+import { createNamesNotice } from "./chat-names-hint.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
@@ -26,6 +27,7 @@ const instance = chat.label.replace(/^chat-/, "");
 const log = document.getElementById("log");
 const thought = document.getElementById("thought");
 const plan = document.getElementById("plan");
+const namesHintEl = document.getElementById("names-hint");
 const empty = document.getElementById("empty");
 const composer = document.getElementById("composer");
 const line = document.getElementById("line");
@@ -74,6 +76,40 @@ function paint() {
 // order it took them and refuses a line typed while one is still waiting, so
 // the oldest row takes the next answer and the newest takes a refusal.
 const turns = createChatTurns();
+
+const names = createNamesNotice({
+  act: (action) => invoke("names_hint_act", { action }),
+});
+
+function paintNames(painted) {
+  if (!painted.changed || !namesHintEl) return;
+  const view = painted.view;
+  namesHintEl.replaceChildren();
+  if (view.visible) {
+    const heading = document.createElement("h2");
+    heading.textContent = view.heading;
+    const body = document.createElement("p");
+    body.textContent = view.body;
+    const actions = document.createElement("div");
+    actions.className = "names-hint-actions";
+    for (const button of view.buttons) {
+      const node = document.createElement("button");
+      node.type = "button";
+      node.textContent = button.label;
+      node.addEventListener("click", () => {
+        names
+          .press(button.action)
+          .then(paintNames)
+          .catch((why) => {
+            console.error("chat: the notice did not reach the shell:", why);
+          });
+      });
+      actions.append(node);
+    }
+    namesHintEl.append(heading, body, actions);
+  }
+  namesHintEl.hidden = !view.visible;
+}
 
 function el(cls, tag) {
   const node = document.createElement(tag || "div");
@@ -733,6 +769,14 @@ async function start() {
     "chat-session",
     ({ payload }) => {
       newSession(payload);
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "names-hint",
+    ({ payload }) => {
+      paintNames(names.receive(payload));
     },
     { target: chat.label },
   );

@@ -1927,6 +1927,11 @@ pub struct Settings {
     /// per-app rather than per-Instance: a second buddy spawned later sees
     /// this flag set.
     pub first_run_tour_shown: bool,
+    /// The user dismissed the window-names notice. One dismissal is for good.
+    /// No form row: the notice's own button writes it, and a file from before
+    /// the field existed must still parse.
+    #[serde(default)]
+    pub names_hint_dismissed: bool,
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
 }
@@ -1969,6 +1974,7 @@ impl Default for Settings {
             use_window_names: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
+            names_hint_dismissed: false,
             chat_ui: "minimal".to_string(),
         }
     }
@@ -2228,6 +2234,7 @@ mod tests {
             use_window_names: false,
             use_input_monitoring: true,
             first_run_tour_shown: false,
+            names_hint_dismissed: false,
         };
         settings.save(&path).expect("save");
 
@@ -2563,6 +2570,7 @@ mod tests {
             use_window_names: false,
             use_input_monitoring: false,
             first_run_tour_shown: false,
+            names_hint_dismissed: false,
         };
         let view = SettingsView::from_parts(
             &settings,

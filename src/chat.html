@@ -228,6 +228,10 @@
       </div>
     </section>
 
+    <!-- Outside #log: newSession replaces the log's children, and this notice
+         has to be able to leave when names start working. -->
+    <div id="names-hint" hidden></div>
+
     <!-- The agent's steps while the turn runs, replaced whole on each update
          and taken away when the turn ends. No `aria-live`: the list rewrites
          itself on every step, so a live region would read it all out again. -->

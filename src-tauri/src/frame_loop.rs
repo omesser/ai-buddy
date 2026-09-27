@@ -170,6 +170,7 @@ pub(crate) fn run_frame_loop(
         let mut tour_triggered = false;
         let mut schedule_mode = scheduler::ScheduleMode::Active;
         let mut was_visible = true;
+        let mut names_sent: Option<crate::names_hint::NamesHint> = None;
 
         loop {
             // The tap follows the setting: checked and granted, it starts here
@@ -712,6 +713,7 @@ pub(crate) fn run_frame_loop(
                         if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
                             live.status_last = None;
                         }
+                        names_sent = None;
                         continue;
                     }
                     // A saved Instance Prompt. Already inside the bound, which
@@ -873,6 +875,17 @@ pub(crate) fn run_frame_loop(
                     &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
                 );
+                let notice = crate::names_hint::live();
+                if notice.armed() {
+                    let push = notice.publish(&settings_now);
+                    if names_sent != Some(push.hint) {
+                        names_sent = Some(push.hint);
+                        for live in &lives {
+                            let _ =
+                                app.emit_to(chat_label(&live.id), crate::names_hint::EVENT, push);
+                        }
+                    }
+                }
                 if let Some(description) = menu::replace_if_changed(&mut last_menu, description) {
                     tray_actions = description.actions.clone();
                     let handle = app.clone();
@@ -2105,13 +2118,14 @@ fn answer_tool_call(
     source: &dyn WindowSource,
     excluded_applications: Vec<String>,
 ) {
+    let watched = crate::names_hint::live().watching(source);
     let live: Vec<InstanceInfo> = roster
         .list()
         .into_iter()
         .map(|(id, name)| InstanceInfo { id, name })
         .collect();
     let mut context = DispatchContext {
-        window_source: source,
+        window_source: &watched,
         memory_path: ai_buddy_core::memory::shared_path(),
         denylist: DenyList {
             excluded_applications,
