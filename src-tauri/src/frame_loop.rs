@@ -800,6 +800,7 @@ pub(crate) fn run_frame_loop(
                             busy: false,
                             reacting_to: None,
                             you: false,
+                            thought: false,
                             at: None,
                             error: None,
                             superseded_by: None,
@@ -825,6 +826,7 @@ pub(crate) fn run_frame_loop(
                             busy: false,
                             reacting_to: None,
                             you: false,
+                            thought: false,
                             at: None,
                             error: None,
                             superseded_by: None,
@@ -845,6 +847,7 @@ pub(crate) fn run_frame_loop(
                             busy: true,
                             reacting_to: None,
                             you: false,
+                            thought: false,
                             at: None,
                             error: None,
                             superseded_by: None,
@@ -1392,11 +1395,15 @@ pub(crate) fn run_frame_loop(
                             busy: false,
                             reacting_to,
                             you: false,
+                            thought: false,
                             at: None,
                             error,
                             superseded_by: None,
                         },
                     );
+                } else if applied {
+                    // A wake with no line still thought what its window showed.
+                    session_log::remember_thinking(&app, &live.id);
                 }
 
                 let became_perched = live.last_state.is_some()

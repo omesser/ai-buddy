@@ -1633,20 +1633,16 @@ fn forward_form(app: &tauri::AppHandle, form: harness::ElicitationForm) {
     }
 }
 
-/// Show the latest thought in every open Chat surface, from whichever
-/// Completer is on the wire — Harness, or HTTP marked reasoning (#611).
-/// Every one: the session is shared and the wire does not say whose turn is on it.
-fn show_thought(app: &tauri::AppHandle, line: String) {
-    for label in app.webview_windows().into_keys() {
-        if label.starts_with("chat-") {
-            let _ = app.emit_to(label, CHAT_THOUGHT_EVENT, &line);
-        }
-    }
+/// Show the thought so far in the thinking Instance's Chat surface, from
+/// either Completer lane (#611). The session log holds it until that
+/// Instance's wake files it (ADR-0034).
+fn show_thought(app: &tauri::AppHandle, instance: &str, line: String) {
+    session_log::think(app, instance, &line, SystemTime::now());
+    let _ = app.emit_to(chat_label(instance), CHAT_THOUGHT_EVENT, &line);
 }
 
-/// Show the agent's plan in every open Chat surface, for the reason
-/// `show_thought` gives: the session is shared and the wire does not say whose
-/// turn is on it.
+/// Show the agent's plan in every open Chat surface: the session is shared and
+/// the wire does not say whose turn is on it.
 fn show_plan(app: &tauri::AppHandle, steps: &[harness::PlanStep]) {
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
@@ -2156,6 +2152,9 @@ struct ChatReply {
     /// the webview itself, so a true here on that path would duplicate it.
     #[serde(default)]
     you: bool,
+    /// A replayed Thinking row, with the thought in `said` (ADR-0034). Live
+    /// thinking arrives on `CHAT_THOUGHT_EVENT` instead.
+    thought: bool,
     /// Milliseconds since the epoch when the line was said. `None` on a live
     /// emit so the surface stamps wall-clock now; replay fills this from
     /// `Turn.at` so a line said before Chat opened keeps that moment.
@@ -2182,6 +2181,7 @@ fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
         busy: false,
         reacting_to: None,
         you: false,
+        thought: false,
         at: None,
         error: None,
         superseded_by: Some(happened_cell(by)),
@@ -2254,7 +2254,8 @@ fn chat_ready(
                     said: turn.said,
                     busy: false,
                     reacting_to: turn.reacting_to,
-                    you: turn.you,
+                    you: turn.who == session_log::Who::You,
+                    thought: turn.who == session_log::Who::Thinking,
                     error: None,
                     superseded_by: None,
                     at: Some(
@@ -3464,7 +3465,9 @@ fn main() {
                     harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
                     }
-                    harness::Forwarded::Thought(line) => show_thought(&forward_to, line),
+                    harness::Forwarded::Thought { instance, line } => {
+                        show_thought(&forward_to, &instance, line)
+                    }
                     harness::Forwarded::Plan(steps) => show_plan(&forward_to, &steps),
                     harness::Forwarded::AttachSettled => {
                         if let Some(state) = forward_to.try_state::<SettingsState>() {
@@ -3477,7 +3480,9 @@ fn main() {
             // completes at a time — a Harness attached is the Completer
             // (ADR-0008) — so the strip is never written by both.
             let thought_to = app.handle().clone();
-            model::on_thought(Box::new(move |line| show_thought(&thought_to, line)));
+            model::on_thought(Box::new(move |instance, line| {
+                show_thought(&thought_to, instance, line)
+            }));
             let director = match settings::director_settings(&settings, secrets.as_ref()) {
                 Ok(director) => director,
                 Err(why) => {

@@ -1130,6 +1130,53 @@ body {
   line-height: var(--shared-type-leading);
 }
 
+/* A Thinking row is the turn's working, not its answer (ADR-0034): the title
+   is the handle, and the text is muted behind a rule. Tokens only, so the
+   minimal, terminal and glass blocks recolour it without a rule of their own. */
+.thinking-toggle {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.thinking-toggle::before {
+  content: "▸";
+  font-size: 10px;
+  color: var(--chat-ink-4);
+}
+
+.thinking-toggle[aria-expanded="true"]::before {
+  content: "▾";
+}
+
+.thinking-toggle:hover .who-label,
+.thinking-toggle:hover::before {
+  color: var(--chat-ink-2);
+}
+
+.thinking-toggle:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+.row.thinking .said {
+  max-width: 94%;
+  padding: 1px 0 1px 11px;
+  border-inline-start: 2px solid var(--chat-line);
+  color: var(--chat-ink-3);
+  font-size: 12.5px;
+  line-height: var(--shared-type-leading);
+}
+
+.row.thinking .said[hidden] {
+  display: none;
+}
+
 .caret {
   display: inline-block;
   width: 7px;
@@ -1673,63 +1720,6 @@ body {
 
 .plan > [data-status="completed"] {
   color: var(--chat-ink-4);
-}
-
-/* Five lines stay reserved for the whole turn, so a wrapping delta cannot move
-   the transcript under the reader. Longer thinking scrolls inside the box. */
-.thought {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-  padding: 0 18px;
-  font-size: 12.5px;
-  font-style: italic;
-  color: var(--chat-ink-4);
-}
-
-/* Column-reverse fills the reserved box from the composer upwards. A short
-   thought sits on the composer instead of stranding four blank lines under it,
-   and a thought past five lines stays pinned to the words being written now,
-   which a scroll container anchored at the top would scroll out of sight. */
-.thought-text {
-  display: flex;
-  flex-direction: column-reverse;
-  height: calc(1.45em * 5);
-  overflow-y: auto;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  line-height: 1.45;
-}
-
-/* Back to a block: `text-overflow` has no effect on a flex container. */
-.thought.is-collapsed .thought-text {
-  display: block;
-  height: 1.45em;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.thought-toggle {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--chat-ink-3);
-  font: inherit;
-  font-style: normal;
-  line-height: 1.45;
-  cursor: pointer;
-}
-
-.thought-toggle:hover {
-  color: var(--chat-ink);
-}
-
-.thought-toggle:focus-visible {
-  outline: 2px solid var(--chat-accent);
-  outline-offset: 2px;
 }
 
 .composer {

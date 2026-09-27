@@ -1,5 +1,7 @@
 # A Harness's thinking is transient status, not a line anything keeps
 
+**Status:** Superseded by [ADR-0034](./0034-harness-thinking-is-a-row-in-the-chat-log.md)
+
 ## Context
 
 Harnesses stream their reasoning over ACP as `agent_thought_chunk`, and every

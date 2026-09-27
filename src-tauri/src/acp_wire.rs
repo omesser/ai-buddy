@@ -283,10 +283,13 @@ pub enum Event {
     /// One `elicitation/create` form. Separate from `Permission` because the
     /// answer is accept-content or decline, not a permission `optionId`.
     Elicitation(ElicitationForm),
-    /// The thinking so far, for the Chat surface. Transient (ADR-0025):
-    /// each one replaces the last, the strip scrolls inside a fixed box,
-    /// and nothing keeps them. No log line is made from one.
-    Thought(String),
+    /// The whole thinking so far, for the Chat surface's Thinking row
+    /// (ADR-0034). Each one replaces the last; the Action Log gets none.
+    /// `session` is the turn's, because one child serves every Instance.
+    Thought {
+        session: String,
+        text: String,
+    },
     /// A forwarded ask that can no longer be answered. Every open Chat
     /// surface was given the ask, so every one of them has to hear this.
     PermissionSettled {
@@ -970,7 +973,7 @@ async fn turn(
             biased;
             message = incoming.recv() => match message {
                 Some(Incoming::Update(update)) => {
-                    note_update(update, &mut said, &mut thought, on_event)
+                    note_update(update, session, &mut said, &mut thought, on_event)
                 }
                 Some(Incoming::Ask(request, responder)) => {
                     let ask = permission_ask(&request, responder.id().to_string());
@@ -986,12 +989,12 @@ async fn turn(
                     on_event(Event::Elicitation(form));
                 }
                 None => {
-                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
+                    end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             response = &mut finished => {
-                end_turn(&mut asks, &mut forms, &mut thought, on_event);
+                end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 return match response {
                     Ok(response) => outcome(response.stop_reason, said),
                     Err(error) if auth_refused(&error) => Err(TurnError::AuthRequired),
@@ -1002,14 +1005,14 @@ async fn turn(
             command = rx.recv() => match command {
                 Some(Msg::Cancel) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
-                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
+                    end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 }
                 // Shutdown is not Cancel (#634). The turn leaves with the wire
                 // rather than looping for a `cancelled` stop the Harness may
                 // never send. The reply is lost. The sender kills the child next.
                 Some(Msg::Shutdown) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
-                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
+                    end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
                 Some(Msg::Answer { request, option }) => {
@@ -1050,12 +1053,12 @@ async fn turn(
                     let _ = reply.send(Err("a turn is in flight".to_string()));
                 }
                 None => {
-                    end_turn(&mut asks, &mut forms, &mut thought, on_event);
+                    end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             () = cx.incoming_closed() => {
-                end_turn(&mut asks, &mut forms, &mut thought, on_event);
+                end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 return Err(TurnError::Lost);
             }
         }
@@ -1185,7 +1188,13 @@ fn elicitation_response(
 /// One session update, into the turn's text or an `Event`.
 /// Text-only in both chunk arms, so a resource-only turn comes back empty.
 /// That is a gap (ADR-0028), not a decision to settle into.
-fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, on_event: &OnEvent) {
+fn note_update(
+    update: SessionUpdate,
+    session: &SessionId,
+    said: &mut String,
+    thought: &mut String,
+    on_event: &OnEvent,
+) {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
@@ -1223,12 +1232,15 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
         }),
         // Never into `said`. That is the Director's reply, whose first line
         // has to parse as a Behavior name and whose rest the buddy says out
-        // loud. Reasoning is neither, so it leaves by its own door (ADR-0025).
+        // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
                 thought.push_str(&text.text);
                 if let Some(shown) = thought_to_show(thought) {
-                    on_event(Event::Thought(shown.to_string()));
+                    on_event(Event::Thought {
+                        session: session.0.to_string(),
+                        text: shown.to_string(),
+                    });
                 }
             }
         }
@@ -1238,10 +1250,9 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
 
 /// The thought so far, once it holds something other than whitespace.
 ///
-/// The strip scrolls inside a fixed box (`.thought-text` in `chat-ui.css`),
-/// so older lines stay on the wire instead of being cut here. Blank lines
-/// stay too: a paragraph break is something the harness wrote. `None` while
-/// an adapter has streamed only empty thinking blocks.
+/// Every line stays, blank ones too: the Thinking row draws the whole thought,
+/// and a paragraph break is something the harness wrote. `None` while an
+/// adapter has streamed only empty thinking blocks.
 pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
     if thought.trim().is_empty() {
         None
@@ -1251,9 +1262,10 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
 }
 
 /// Close out what this side was holding for a turn that is over.
-/// Open questions get the protocol-mandated `cancelled` reply. Thought and
-/// plan go dark because the Chat surface keeps neither of its own (ADR-0025).
+/// Open questions get the protocol-mandated `cancelled` reply. The empty
+/// thought says the turn stopped thinking; the plan goes dark.
 fn end_turn(
+    session: &SessionId,
     asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
     forms: &mut Vec<PendingElicit>,
     thought: &mut String,
@@ -1280,7 +1292,10 @@ fn end_turn(
     }
     if !thought.is_empty() {
         thought.clear();
-        on_event(Event::Thought(String::new()));
+        on_event(Event::Thought {
+            session: session.0.to_string(),
+            text: String::new(),
+        });
     }
     // Unconditional. Nothing here remembers whether the turn planned, and
     // threading a flag through every exit path in the turn loop would buy
@@ -1334,7 +1349,13 @@ mod tests {
         let mut said = String::new();
         let mut thought = String::new();
         for update in updates {
-            note_update(update, &mut said, &mut thought, &on_event);
+            note_update(
+                update,
+                &SessionId::new("s"),
+                &mut said,
+                &mut thought,
+                &on_event,
+            );
         }
         let events = seen.lock().unwrap().clone();
         (said, events)
@@ -1344,7 +1365,7 @@ mod tests {
         events
             .iter()
             .map(|event| match event {
-                Event::Thought(line) => line.as_str(),
+                Event::Thought { text, .. } => text.as_str(),
                 other => panic!("expected a thought, got {other:?}"),
             })
             .collect()
@@ -1505,7 +1526,7 @@ mod tests {
 
     /// A thought reaches the Shell and never the answer. `said` is the
     /// Director's reply, whose first line has to parse as a Behavior name
-    /// and whose rest is spoken out loud. A thought is neither (ADR-0025).
+    /// and whose rest is spoken out loud. A thought is neither (ADR-0034).
     #[test]
     fn a_thought_is_an_event_and_never_part_of_the_answer() {
         let (said, events) = drive(vec![
@@ -1533,8 +1554,8 @@ mod tests {
         );
     }
 
-    /// The strip scrolls inside five lines (#994). The wire sends the whole
-    /// thought, so a sixth line and a blank in the middle both survive.
+    /// The wire sends the whole thought (#994), so a sixth line and a blank in
+    /// the middle both survive.
     #[test]
     fn a_thought_keeps_every_line_including_a_blank() {
         let (_, events) = drive(vec![
@@ -1554,25 +1575,31 @@ mod tests {
         );
     }
 
-    /// The strip lives exactly as long as the turn that fills it. Nothing on
-    /// the Chat surface knows when a Harness stopped thinking. A turn that
-    /// ends without an answer would otherwise leave its last thought on screen.
+    /// Nothing on the Chat surface knows when a Harness stopped thinking. A turn
+    /// that ends without an answer would otherwise leave its row streaming.
     #[test]
     fn the_thinking_goes_dark_when_the_turn_ends() {
         let (seen, on_event) = collector();
         let mut thought = "Reading the roster".to_string();
-        end_turn(&mut Vec::new(), &mut Vec::new(), &mut thought, &on_event);
+        let session = SessionId::new("s");
+        end_turn(
+            &session,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut thought,
+            &on_event,
+        );
         assert!(matches!(
             seen.lock().unwrap().as_slice(),
-            [Event::Thought(line), Event::Plan(steps)]
-                if line.is_empty() && steps.is_empty()
+            [Event::Thought { text, .. }, Event::Plan(steps)]
+                if text.is_empty() && steps.is_empty()
         ));
 
-        // A turn that thought nothing has nothing to take away, and a strip
-        // that was never shown should not be told to hide. The plan clear is
+        // A turn that thought nothing has no row to close. The plan clear is
         // unconditional, so it is all that is left.
         let (seen, on_event) = collector();
         end_turn(
+            &session,
             &mut Vec::new(),
             &mut Vec::new(),
             &mut String::new(),
@@ -1585,8 +1612,8 @@ mod tests {
     }
 
     /// Nothing to show is not a thought. Adapters stream signature-only
-    /// thinking blocks whose text is empty, and a blank strip that opens and
-    /// shuts is worse than one that never opened.
+    /// thinking blocks whose text is empty, and a blank Thinking row is worse
+    /// than none.
     #[test]
     fn a_thought_with_no_words_raises_nothing() {
         let (_, events) = drive(vec![thinking("   \n")]);

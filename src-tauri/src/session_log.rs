@@ -1,7 +1,7 @@
 //! Current-session Chat turns, held because `emit_to` only reaches windows that
 //! exist. Permission asks already wait on `PendingAsks`; Speech of this
 //! Completer session belongs in the same log (ADR-0018) even when Chat was
-//! never opened.
+//! never opened, and so does the thinking that led to it (ADR-0034).
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -9,18 +9,35 @@ use std::time::SystemTime;
 
 use tauri::{Emitter, Manager};
 
+/// Whose row a remembered turn is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Who {
+    You,
+    Them,
+    Thinking,
+}
+
 #[derive(Clone)]
 pub struct Turn {
-    pub you: bool,
+    pub who: Who,
     pub said: Option<String>,
     pub reacting_to: Option<String>,
     /// When the line was said, not when Chat later opened. Replay stamps from this.
     pub at: SystemTime,
 }
 
+/// The thinking of an Instance's turn on the wire, waiting here until that
+/// Instance's wake is remembered.
+struct Thinking {
+    text: String,
+    at: SystemTime,
+    over: bool,
+}
+
 #[derive(Default)]
 pub struct Log {
     turns: BTreeMap<String, Vec<Turn>>,
+    thinking: BTreeMap<String, Thinking>,
 }
 
 impl Log {
@@ -28,19 +45,60 @@ impl Log {
         Self::default()
     }
 
+    /// Thinking still waiting here belongs to a turn nothing filed: one that
+    /// was cancelled, or one this line cuts off mid-thought. Either way the
+    /// typed line drops it.
     pub fn remember_you(&mut self, instance: &str, text: impl Into<String>, at: SystemTime) {
+        self.thinking.remove(instance);
         self.turns
             .entry(instance.to_string())
             .or_default()
             .push(Turn {
-                you: true,
+                who: Who::You,
                 said: Some(text.into()),
                 reacting_to: None,
                 at,
             });
     }
 
-    /// Behavior-only wakes have no words; ADR-0018 holds nothing for those.
+    /// The whole thought so far, or an empty one when the turn stops thinking.
+    /// A thought after that is the next turn's, so the unkept one is dropped.
+    pub fn think(&mut self, instance: &str, text: &str, at: SystemTime) {
+        match self.thinking.get_mut(instance) {
+            Some(thinking) if text.is_empty() => thinking.over = true,
+            _ if text.is_empty() => {}
+            Some(thinking) if !thinking.over => thinking.text = text.to_string(),
+            _ => {
+                self.thinking.insert(
+                    instance.to_string(),
+                    Thinking {
+                        text: text.to_string(),
+                        at,
+                        over: false,
+                    },
+                );
+            }
+        }
+    }
+
+    /// File this Instance's waiting thinking under the wake that just
+    /// arrived, spoken or not.
+    pub fn remember_thinking(&mut self, instance: &str) {
+        if let Some(thinking) = self.thinking.remove(instance) {
+            self.turns
+                .entry(instance.to_string())
+                .or_default()
+                .push(Turn {
+                    who: Who::Thinking,
+                    said: Some(thinking.text),
+                    reacting_to: None,
+                    at: thinking.at,
+                });
+        }
+    }
+
+    /// The turn's thinking goes in above it. A wake with no words holds
+    /// nothing else (ADR-0018).
     pub fn remember_them(
         &mut self,
         instance: &str,
@@ -48,6 +106,7 @@ impl Log {
         reacting_to: Option<String>,
         at: SystemTime,
     ) {
+        self.remember_thinking(instance);
         let Some(said) = said else {
             return;
         };
@@ -55,7 +114,7 @@ impl Log {
             .entry(instance.to_string())
             .or_default()
             .push(Turn {
-                you: false,
+                who: Who::Them,
                 said: Some(said),
                 reacting_to,
                 at,
@@ -71,6 +130,7 @@ impl Log {
     /// One Instance, not all of them: wiping the others would empty windows still standing.
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
+        self.thinking.remove(instance);
     }
 }
 
@@ -89,6 +149,14 @@ pub fn remember_you(
     at: SystemTime,
 ) {
     with_log(app, |log| log.remember_you(instance, text, at));
+}
+
+pub fn think(app: &tauri::AppHandle, instance: &str, text: &str, at: SystemTime) {
+    with_log(app, |log| log.think(instance, text, at));
+}
+
+pub fn remember_thinking(app: &tauri::AppHandle, instance: &str) {
+    with_log(app, |log| log.remember_thinking(instance));
 }
 
 pub fn remember_them(
@@ -152,7 +220,7 @@ mod tests {
 
         let turns = log.replay("buddy-1");
         assert_eq!(turns.len(), 1);
-        assert!(!turns[0].you);
+        assert_eq!(turns[0].who, Who::Them);
         assert_eq!(turns[0].said.as_deref(), Some("hello from the bubble"));
         assert_eq!(turns[0].reacting_to.as_deref(), Some("when poked"));
     }
@@ -212,9 +280,9 @@ mod tests {
         let turns = log.replay("buddy-1");
         assert_eq!(turns.len(), 3);
         assert!(turns[0].reacting_to.is_some());
-        assert!(turns[1].you);
+        assert_eq!(turns[1].who, Who::You);
         assert_eq!(turns[1].said.as_deref(), Some("what are you standing on?"));
-        assert!(!turns[2].you);
+        assert_eq!(turns[2].who, Who::Them);
         assert_eq!(turns[2].said.as_deref(), Some("the desktop floor"));
     }
 
@@ -275,5 +343,183 @@ mod tests {
         assert_ne!(turns[0].at, turns[1].at);
         assert_ne!(turns[0].at, SystemTime::now());
         assert_ne!(turns[1].at, SystemTime::now());
+    }
+
+    /// Production change that would fail this: a reopened Chat showing the
+    /// answer without the thinking that led to it (ADR-0034), or a thought
+    /// kept as each partial text the wire sent rather than the whole one.
+    #[test]
+    fn thinking_is_kept_above_the_reply_it_led_to() {
+        let mut log = Log::new();
+        let first = UNIX_EPOCH + Duration::from_secs(1_000);
+        log.remember_you("buddy-1", "what are you standing on?", first);
+        log.think("buddy-1", "Reading", first);
+        log.think(
+            "buddy-1",
+            "Reading the roster",
+            first + Duration::from_secs(2),
+        );
+        log.think("buddy-1", "", first + Duration::from_secs(3));
+        log.remember_them(
+            "buddy-1",
+            Some("the desktop floor".into()),
+            None,
+            first + Duration::from_secs(4),
+        );
+
+        let turns = log.replay("buddy-1");
+        let kept: Vec<_> = turns
+            .iter()
+            .map(|t| (t.who, t.said.as_deref(), t.at))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                (Who::You, Some("what are you standing on?"), first),
+                (Who::Thinking, Some("Reading the roster"), first),
+                (
+                    Who::Them,
+                    Some("the desktop floor"),
+                    first + Duration::from_secs(4)
+                ),
+            ]
+        );
+    }
+
+    /// Production change that would fail this: a cancelled turn's thinking,
+    /// which nothing filed, surfacing above the next turn's reply instead.
+    #[test]
+    fn a_cancelled_turns_thinking_gives_way_to_the_next_turns() {
+        let mut log = Log::new();
+        let later = UNIX_EPOCH + Duration::from_secs(60);
+        log.think("buddy-1", "Should I nap?", UNIX_EPOCH);
+        log.think("buddy-1", "", UNIX_EPOCH);
+        log.think("buddy-1", "Checking the desk", later);
+        log.remember_them("buddy-1", Some("on it".into()), None, later);
+
+        let turns = log.replay("buddy-1");
+        assert_eq!(turns[0].who, Who::Thinking);
+        assert_eq!(turns[0].said.as_deref(), Some("Checking the desk"));
+        assert_eq!(turns[0].at, later);
+        assert_eq!(turns.len(), 2);
+    }
+
+    /// Production change that would fail this: a turn with thinking and no
+    /// line losing the thinking too, which is the only trace that turn left.
+    #[test]
+    fn thinking_is_kept_when_the_turn_said_nothing() {
+        let mut log = Log::new();
+        log.think("buddy-1", "Weighing a nap", UNIX_EPOCH);
+        log.remember_them("buddy-1", None, None, UNIX_EPOCH);
+
+        let turns = log.replay("buddy-1");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].who, Who::Thinking);
+    }
+
+    /// Production change that would fail this: a wake that moved the sprite and
+    /// said nothing dropping the thinking the live window showed, or leaving it
+    /// to land above the next, unrelated reply.
+    #[test]
+    fn a_wake_that_says_nothing_keeps_its_thinking_and_no_more() {
+        let mut log = Log::new();
+        log.think("buddy-1", "Should I nap?", UNIX_EPOCH);
+        log.think("buddy-1", "", UNIX_EPOCH);
+        log.remember_thinking("buddy-1");
+        log.remember_them("buddy-1", Some("hi".into()), None, UNIX_EPOCH);
+
+        let who: Vec<_> = log.replay("buddy-1").iter().map(|t| t.who).collect();
+        assert_eq!(who, [Who::Thinking, Who::Them]);
+    }
+
+    /// Production change that would fail this: a typed question's reply, which
+    /// thought nothing, filed under the thinking of a turn that was cancelled.
+    #[test]
+    fn a_typed_line_drops_thinking_nothing_filed() {
+        let mut log = Log::new();
+        log.think("buddy-1", "Half a thought", UNIX_EPOCH);
+        log.think("buddy-1", "", UNIX_EPOCH);
+        log.remember_you("buddy-1", "next question", UNIX_EPOCH);
+        log.remember_them("buddy-1", Some("answer".into()), None, UNIX_EPOCH);
+
+        let who: Vec<_> = log.replay("buddy-1").iter().map(|t| t.who).collect();
+        assert_eq!(who, [Who::You, Who::Them]);
+    }
+
+    /// Production change that would fail this: a turn the typed line cut off
+    /// mid-thought, whose thinking never got its empty settle, filing that
+    /// thinking above the typed question's reply.
+    #[test]
+    fn a_typed_line_drops_thinking_cut_off_mid_stream() {
+        let mut log = Log::new();
+        log.think("buddy-1", "Half a thought", UNIX_EPOCH);
+        log.remember_you("buddy-1", "next question", UNIX_EPOCH);
+        log.remember_them("buddy-1", Some("answer".into()), None, UNIX_EPOCH);
+
+        let who: Vec<_> = log.replay("buddy-1").iter().map(|t| t.who).collect();
+        assert_eq!(who, [Who::You, Who::Them]);
+    }
+
+    /// Production change that would fail this: the old session's thinking
+    /// landing above the new session's first reply.
+    #[test]
+    fn a_replaced_session_forgets_thinking_still_on_the_wire() {
+        let mut log = Log::new();
+        log.think("buddy-1", "From the old session", UNIX_EPOCH);
+        log.forget("buddy-1");
+        log.remember_them("buddy-1", Some("fresh".into()), None, UNIX_EPOCH);
+
+        let who: Vec<_> = log.replay("buddy-1").iter().map(|t| t.who).collect();
+        assert_eq!(who, [Who::Them]);
+    }
+
+    /// Production change that would fail this: thinking waiting in one slot
+    /// for whichever Instance wakes next, so two Instances thinking at once on
+    /// the HTTP lane file each other's thinking above their replies.
+    #[test]
+    fn two_instances_thinking_at_once_file_to_their_own_replies() {
+        let mut log = Log::new();
+        log.think("buddy-a", "A reads the roster", UNIX_EPOCH);
+        log.think("buddy-b", "B checks the desk", UNIX_EPOCH);
+        log.think("buddy-a", "A reads the roster twice", UNIX_EPOCH);
+        log.think("buddy-b", "", UNIX_EPOCH);
+        log.remember_them("buddy-b", Some("B answers".into()), None, UNIX_EPOCH);
+        log.think("buddy-a", "", UNIX_EPOCH);
+        log.remember_them("buddy-a", Some("A answers".into()), None, UNIX_EPOCH);
+
+        let kept = |instance| {
+            log.replay(instance)
+                .into_iter()
+                .map(|t| (t.who, t.said))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            kept("buddy-a"),
+            [
+                (Who::Thinking, Some("A reads the roster twice".into())),
+                (Who::Them, Some("A answers".into())),
+            ]
+        );
+        assert_eq!(
+            kept("buddy-b"),
+            [
+                (Who::Thinking, Some("B checks the desk".into())),
+                (Who::Them, Some("B answers".into())),
+            ]
+        );
+    }
+
+    /// Production change that would fail this: a line typed to one buddy, or
+    /// one buddy's replaced session, dropping another buddy's thinking.
+    #[test]
+    fn one_instances_typed_line_or_new_session_keeps_anothers_thinking() {
+        let mut log = Log::new();
+        log.think("buddy-b", "B checks the desk", UNIX_EPOCH);
+        log.remember_you("buddy-a", "hello A", UNIX_EPOCH);
+        log.forget("buddy-a");
+        log.remember_them("buddy-b", Some("B answers".into()), None, UNIX_EPOCH);
+
+        let who: Vec<_> = log.replay("buddy-b").iter().map(|t| t.who).collect();
+        assert_eq!(who, [Who::Thinking, Who::Them]);
     }
 }

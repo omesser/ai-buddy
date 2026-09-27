@@ -630,7 +630,8 @@ impl Endpoint {
     /// Send `prompt` as the next session turn and read the reply.
     /// Takes `url` so the probe can show both xAI paths and `complete` can retry.
     /// A fallback retries the same session snapshot; a succeeded drop latches.
-    pub fn post(&self, url: &str, prompt: &str) -> Result<Reply, String> {
+    /// `instance` is whose Chat surface a streamed thought is drawn in.
+    pub fn post(&self, url: &str, prompt: &str, instance: &str) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
         let mut wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
@@ -639,7 +640,7 @@ impl Endpoint {
         };
         let mut effort = self.takes_effort.load(Ordering::SeqCst);
         let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
-        let mut reply = self.send(url, &snapshot, wire, effort, cap);
+        let mut reply = self.send(url, &snapshot, wire, effort, cap, instance);
         // A loop rather than one retry: three guarded fields, and a validator
         // strict enough to refuse two would otherwise lose the wake. Bounded
         // by the field count so a body that keeps naming one cannot post forever.
@@ -680,7 +681,7 @@ impl Endpoint {
                 Field::Effort => effort = false,
                 Field::Cap => cap = false,
             }
-            reply = self.send(url, &snapshot, wire, effort, cap);
+            reply = self.send(url, &snapshot, wire, effort, cap, instance);
             // Evidence, not a guess: the server rejected the field and the
             // request without it worked. A misread 400 fails twice and settles
             // nothing, and neither does a stream that merely broke.
@@ -750,6 +751,7 @@ impl Endpoint {
         wire: Wire,
         effort: bool,
         cap: bool,
+        instance: &str,
     ) -> Result<Reply, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
@@ -822,7 +824,9 @@ impl Endpoint {
                     .into_with_config()
                     .limit(STREAM_LIMIT)
                     .reader();
-                match read_stream(reader, crate::completer::abandoned, think) {
+                match read_stream(reader, crate::completer::abandoned, |line| {
+                    think(instance, line)
+                }) {
                     Ok((streamed, marked)) => {
                         // Evidence, like the three dropped fields above it:
                         // this host marked its reasoning, so the next turn
@@ -965,7 +969,7 @@ impl Completer for Endpoint {
             trace_block("prompt", prompt);
             eprintln!("director: waiting for model");
         }
-        let result = match self.post(&self.url, prompt) {
+        let result = match self.post(&self.url, prompt, &request.instance) {
             Ok(reply) => {
                 if tracing() {
                     trace_block("model", &reply.text);
@@ -980,7 +984,7 @@ impl Completer for Endpoint {
                     if tracing() {
                         eprintln!("director: trying {alt}");
                     }
-                    match self.post(&alt, prompt) {
+                    match self.post(&alt, prompt, &request.instance) {
                         Ok(reply) => {
                             if tracing() {
                                 trace_block("model", &reply.text);
@@ -1236,7 +1240,7 @@ fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     println!("POST {url}");
-    match endpoint.post(url, PING) {
+    match endpoint.post(url, PING, "probe") {
         Ok(reply) => {
             println!("  ok {}", clip_body(&reply.text));
             println!();
@@ -1437,7 +1441,7 @@ enum Truncation {
     /// Answer started but will not parse. #302: do not speak or half-parse.
     MidSentence(String),
     /// Bytes in `content` with no reasoning mark. Not Speech. No v1
-    /// heuristic onto the thought strip.
+    /// heuristic onto the Thinking row.
     Unmarked(String),
 }
 
@@ -1482,9 +1486,9 @@ fn read_stream(
 ) -> Result<(Streamed, bool), String> {
     let mut thinking = String::new();
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
-    // The Chat surface keeps no thought of its own, so what this turn
-    // thought stays until the turn ends (ADR-0025). Same path as the
-    // draw, so all-whitespace thinking takes away nothing.
+    // The empty thought tells the Chat surface this turn stopped thinking
+    // (ADR-0034). Same path as the draw, so all-whitespace thinking, which
+    // opened no row, closes none.
     if crate::acp_wire::thought_to_show(&thinking).is_some() {
         thought("");
     }
@@ -1578,7 +1582,7 @@ struct Event {
     delta: Option<String>,
     /// Thinking it adds, if the server marked any as thinking. Never `delta`:
     /// that is the reply, whose first line has to parse as a Behavior name and
-    /// whose rest the buddy says out loud (ADR-0025).
+    /// whose rest the buddy says out loud (ADR-0034).
     thought: Option<String>,
     /// It says the server is done, so an end of body after it is a whole
     /// reply rather than a connection cut.
@@ -1676,9 +1680,8 @@ fn content_from_body(body: &str) -> Result<String, String> {
         }
     }
     // Anthropic `/v1/messages`. `thinking` blocks are marked reasoning, not
-    // the answer. They are not drawn: a whole body arrives after the turn is
-    // over, and the strip holds only the line a running turn is writing, which
-    // the end of that turn takes away (ADR-0025). Text blocks are the reply.
+    // the answer. Not yet drawn: a whole body arrives after the turn is over,
+    // and the Thinking row is fed by streamed deltas. Text blocks are the reply.
     if let Some(blocks) = value["content"].as_array() {
         let mut text = String::new();
         for block in blocks {
@@ -1760,30 +1763,25 @@ fn classify_truncation(content: &str, marked_thought: bool) -> Truncation {
 ///
 /// Unset in the probe and the tests, which have no Chat surface to draw on.
 ///
-/// ponytail: one door for every Instance, so two Instances thinking at once
-/// overwrite each other's line and the first to finish takes the strip away.
-/// The unattributed half is ADR-0025's own decision and holds on both lanes:
-/// the strip has no Instance to address. The overlap is this lane's alone —
-/// `Session::turn` holds a lock, so one Harness child serves one turn at a
-/// time (ADR-0008), while `Slots` gives every Instance its own thread and its
-/// own endpoint. A thought is worth reading only while it is being thought,
-/// which is why this is left. The upgrade, if two buddies on the wire at once
-/// ever becomes the common case, is to name the Instance on the event and let
-/// the surface pick.
-static THOUGHT: std::sync::OnceLock<Box<dyn Fn(String) + Send + Sync>> = std::sync::OnceLock::new();
+/// One door for every Instance, so each thought names its Instance: `Slots`
+/// gives every Instance its own thread and endpoint, so two can think at once.
+static THOUGHT: std::sync::OnceLock<ThoughtDoor> = std::sync::OnceLock::new();
+
+/// The Instance whose turn thought, and the whole thought so far.
+pub type ThoughtDoor = Box<dyn Fn(&str, String) + Send + Sync>;
 
 /// Hand the Completer lane the door to every open Chat surface. The first
 /// door wins and a later one is dropped: the Shell opens exactly one, and a
 /// second caller would be a test racing the app it is testing.
-pub fn on_thought(door: Box<dyn Fn(String) + Send + Sync>) {
+pub fn on_thought(door: ThoughtDoor) {
     let _ = THOUGHT.set(door);
 }
 
-/// Draw `line` as what the Completer is thinking right now, or take the strip
-/// away when it is empty. Nothing keeps it (ADR-0025).
-fn think(line: &str) {
+/// Draw `line` as what `instance`'s turn has thought so far, or end that
+/// turn's thinking when it is empty (ADR-0034).
+fn think(instance: &str, line: &str) {
     if let Some(door) = THOUGHT.get() {
-        door(line.to_string());
+        door(instance, line.to_string());
     }
 }
 
@@ -2231,7 +2229,7 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
-            endpoint.post(&url, "hello").unwrap().text,
+            endpoint.post(&url, "hello", "buddy-1").unwrap().text,
             "stroll\nhey",
             "the refusal costs a second POST, not the wake"
         );
@@ -2243,7 +2241,9 @@ pub(crate) mod tests {
             "the retry drops the field the server just named"
         );
 
-        endpoint.post(&url, "what just happened: poked").unwrap();
+        endpoint
+            .post(&url, "what just happened: poked", "buddy-1")
+            .unwrap();
         let next_wake = seen.recv().expect("the next wake");
         assert!(
             !next_wake.contains("reasoning_effort"),
@@ -2269,7 +2269,9 @@ pub(crate) mod tests {
         };
         endpoint.streams.store(false, Ordering::SeqCst);
 
-        endpoint.post(&url, "hello").expect("the stub answers");
+        endpoint
+            .post(&url, "hello", "buddy-1")
+            .expect("the stub answers");
         let asked: serde_json::Value =
             serde_json::from_str(&seen.recv().expect("the request")).expect("the request is JSON");
         assert_eq!(
@@ -2289,7 +2291,7 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
-            endpoint.post(&url, "hello").unwrap().text,
+            endpoint.post(&url, "hello", "buddy-1").unwrap().text,
             "stroll\nhey",
             "the refusal costs a second POST, not the wake"
         );
@@ -2301,7 +2303,9 @@ pub(crate) mod tests {
             "the retry renames the cap rather than dropping it"
         );
 
-        endpoint.post(&url, "what just happened: poked").unwrap();
+        endpoint
+            .post(&url, "what just happened: poked", "buddy-1")
+            .unwrap();
         let next_wake = seen.recv().expect("the next wake");
         assert!(
             next_wake.contains(r#""max_completion_tokens""#),
@@ -2447,7 +2451,7 @@ pub(crate) mod tests {
         streamed_with_thoughts(sse).0
     }
 
-    /// How a whole stream ended, and every line the thought strip was told to draw.
+    /// How a whole stream ended, and every thought the Chat surface was told to draw.
     fn streamed_with_thoughts(sse: &str) -> (Streamed, Vec<String>) {
         let drawn = std::cell::RefCell::new(Vec::new());
         let (ended, _) = read_stream(
@@ -2611,10 +2615,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Thinking reaches the strip and never the reply, so nothing the buddy
-    /// says out loud was thought at it (ADR-0025). The strip is handed the
-    /// whole thought, blank lines included, and the end of the turn takes
-    /// it away.
+    /// Thinking reaches the Chat surface and never the reply, so nothing the
+    /// buddy says out loud was thought at it (ADR-0034). It is handed the whole
+    /// thought, blank lines included, and an empty one when the turn ends.
     #[test]
     fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
         let sse = concat!(
