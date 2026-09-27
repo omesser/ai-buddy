@@ -55,11 +55,15 @@ their Poke.
 ## Consequences
 
 An unanswered question holds the slot. Every new wake for that Instance is
-dropped until the user answers or rejects it, and nothing on screen says so.
+dropped until the user answers or rejects it. A dropped Poke, Throw, Grab, or
+Perch shows a bubble that reads "Question for you in the chat", and "chat"
+opens Chat, where `PendingAsks` shows the question. An ambient tick shows
+nothing, and neither does a dropped Summon or typed line, whose Chat is open.
 
 A dropped Summon still opens Chat, because the slot does not open windows.
 
-`wake` returns `Woke::Started` or `Woke::Dropped`. The Shell updates the caret,
+`wake` returns `Woke::Started`, `Woke::Dropped`, or `Woke::AwaitingUser`,
+which is a drop because the user owes an answer. The Shell updates the caret,
 `chat_turn`, and `happened_last` only on `Started`, so a dropped wake leaves
 the running turn's caret in place.
 

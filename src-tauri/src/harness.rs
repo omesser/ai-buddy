@@ -3929,7 +3929,11 @@ mod tests {
             woken(Happened::Chat("hi".into())),
         );
         let ask = fx.ask();
-        slots.wake(&id, harness_director(&session), woken(Happened::Poke));
+        assert_eq!(
+            slots.wake(&id, harness_director(&session), woken(Happened::Poke)),
+            crate::completer::Woke::AwaitingUser,
+            "the Poke is held for the answer the user owes"
+        );
         thread::sleep(Duration::from_millis(300));
         assert_eq!(
             fx.count("perm:cancelled"),
@@ -3967,7 +3971,7 @@ mod tests {
         let ask = fx.ask();
         assert_eq!(
             slots.wake(&id, harness_director(&session), woken(Happened::Summon),),
-            crate::completer::Woke::Dropped,
+            crate::completer::Woke::AwaitingUser,
             "opening Chat took the turn the user is answering"
         );
         thread::sleep(Duration::from_millis(300));
@@ -4007,7 +4011,7 @@ mod tests {
             let ask = fx.ask();
             assert_eq!(
                 slots.wake(&id, harness_director(&session), woken(happened.clone())),
-                crate::completer::Woke::Dropped,
+                crate::completer::Woke::AwaitingUser,
                 "{happened:?} took the turn the user is answering"
             );
             thread::sleep(Duration::from_millis(300));

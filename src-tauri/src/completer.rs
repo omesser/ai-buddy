@@ -103,6 +103,8 @@ struct Slot {
 pub enum Woke {
     Started,
     Dropped,
+    /// Dropped because the call on the wire waits on the user's answer.
+    AwaitingUser,
 }
 
 /// One worker's answer, stamped with the call it belongs to.
@@ -183,7 +185,7 @@ impl Slots {
             // The user is mid-answer in Chat. A Poke, Throw, Grab, or Summon
             // is dropped, and so is every other wake. The answer is owed first.
             if director.awaiting_user() {
-                return Woke::Dropped;
+                return Woke::AwaitingUser;
             }
             // A reply the user is waiting for gives way to a touch of the
             // sprite or a typed line, not to opening Chat to read it or to a
