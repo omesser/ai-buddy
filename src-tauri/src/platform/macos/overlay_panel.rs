@@ -91,3 +91,31 @@ fn sharing_type() -> NSWindowSharingType {
         NSWindowSharingType::None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shape `tao` registers as `TaoWindow`: an NSWindow plus one BOOL.
+    fn tao_window_shape() -> &'static AnyClass {
+        let superclass = AnyClass::get(c"NSWindow").expect("AppKit always defines NSWindow");
+        let mut builder = ClassBuilder::new(c"AiBuddyTaoWindowShape", superclass)
+            .expect("registered once per test binary");
+        builder.add_ivar::<Bool>(c"focusable");
+        builder.register()
+    }
+
+    #[test]
+    fn the_panel_keeps_the_tao_window_layout_it_replaces() {
+        let tao = tao_window_shape();
+        let panel = overlay_panel_class();
+
+        let focusable = panel
+            .instance_variable(c"focusable")
+            .expect("tao still reads its focusable ivar after the swap");
+        let tao_focusable = tao.instance_variable(c"focusable").unwrap();
+        assert_eq!(focusable.offset(), tao_focusable.offset());
+        assert_eq!(focusable.type_encoding(), tao_focusable.type_encoding());
+        assert_eq!(panel.instance_size(), tao.instance_size());
+    }
+}
