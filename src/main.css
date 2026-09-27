@@ -279,6 +279,7 @@ body {
   overflow: hidden;
   background: transparent;
   color: inherit;
+  /* Same hue as Send, so the caret reads as part of the control. */
   caret-color: var(--shared-accent);
   user-select: text;
   -webkit-user-select: text;

@@ -249,6 +249,11 @@ test("the empty composer says talk to me and Send is a triangle, not a link", ()
   assert.doesNotMatch(js, /send\.className = "bubble-more"/);
   assert.match(css, /\.quick-message-send \{[^}]*width:\s*28px;\s*height:\s*28px;[^}]*border-radius:\s*50%;[^}]*background:\s*var\(--shared-accent\)/s);
   assert.match(css, /\.quick-message-field::placeholder \{[^}]*color:\s*#8b93a7/s);
+  assert.match(
+    css,
+    /\.quick-message-field \{[^}]*caret-color:\s*var\(--shared-accent\)/s,
+    "the caret after autofocus is the accent from the focused still",
+  );
   assert.match(css, /\.quick-message-send svg[\s\S]*fill:\s*#14171e/);
   assert.doesNotMatch(
     css,
