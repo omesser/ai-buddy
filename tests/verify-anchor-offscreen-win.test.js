@@ -10,15 +10,12 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { resolvePwsh } from "./pwsh-resolve.js";
+
 const script = join(import.meta.dirname, "..", "scripts", "verify-anchor-offscreen-win.ps1");
 
-function pwshBin() {
-  const found = spawnSync("bash", ["-lc", "command -v pwsh"], { encoding: "utf8" });
-  const path = found.stdout.trim();
-  return found.status === 0 && path ? path : null;
-}
-
-const pwsh = pwshBin();
+const resolved = resolvePwsh();
+const skip = resolved.kind === "ready" ? false : resolved.reason;
 
 const LOADER = `
 $tokens = $null; $errors = $null
@@ -37,7 +34,7 @@ foreach ($win in $scene.windows) {
 `;
 
 function decide(monitors, windows) {
-  const run = spawnSync(pwsh, ["-NoProfile", "-NonInteractive", "-Command", LOADER], {
+  const run = spawnSync(resolved.command, [...resolved.args, "-NoProfile", "-NonInteractive", "-Command", LOADER], {
     encoding: "utf8",
     input: JSON.stringify({ monitors, windows }),
     env: { ...process.env, ANCHOR_SCRIPT: script },
@@ -67,7 +64,7 @@ const onDesktopAnchor = { Name: "onDesktopAnchor", Class: "Tauri Window", Title:
 
 test(
   "a parked anchor beside Tao's event-loop window reads as off the desktop",
-  { skip: pwsh ? false : "pwsh is not installed" },
+  { skip },
   () => {
     assert.deepEqual(decide(monitors, [parkedAnchor, taoEventTarget, overlay, settings]), {
       parkedAnchor: false,
@@ -80,7 +77,7 @@ test(
 
 test(
   "an anchor still on a monitor reads as on the desktop",
-  { skip: pwsh ? false : "pwsh is not installed" },
+  { skip },
   () => {
     assert.deepEqual(decide(monitors, [onDesktopAnchor, taoEventTarget]), {
       onDesktopAnchor: true,
