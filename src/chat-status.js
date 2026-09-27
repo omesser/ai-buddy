@@ -43,7 +43,7 @@ export function statusCells(status, msLeft) {
   };
 }
 
-// Plain-language status for first-time readers: what the character is doing right
+// Plain-language status for first-time readers: what the fidget is doing right
 // now, without Primitive/State vocabulary.
 export function plainStatus(status, msLeft) {
   if (!status) {

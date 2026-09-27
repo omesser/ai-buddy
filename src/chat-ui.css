@@ -1803,7 +1803,7 @@ body {
   overflow: hidden;
 }
 
-/* Plain-language status: what the character is doing, without Primitive/State
+/* Plain-language status: what the fidget is doing, without Primitive/State
    vocabulary. The default reading for first-time users. */
 .bar .plain {
   flex: 1 1 auto;
