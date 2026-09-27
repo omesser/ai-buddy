@@ -188,3 +188,63 @@ export function landingCopy(opening) {
     signIn: [],
   };
 }
+
+// A bare URL, and the punctuation that ends the sentence around it rather than
+// the URL. `http` too: the scheme check is `platform::open_url`'s, in Rust.
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`]+/g;
+const URL_TAIL = /[.,;:!?)\]]+$/;
+
+// A landing sentence as text, code and link segments: backticks mark a
+// command, a bare URL a link. Not Markdown, which would eat the backslashes
+// and underscores of a path the Shell names in a failure.
+export function inlineSegments(text) {
+  const segments = [];
+  const push = (kind, piece) => {
+    const last = segments.at(-1);
+    if (kind === "text" && last?.kind === "text") {
+      last.text += piece;
+    } else if (piece !== "") {
+      segments.push({ kind, text: piece });
+    }
+  };
+  const parts = String(text ?? "").split("`");
+  // With an odd number of backticks the last one has no partner and stays.
+  const closed = parts.length % 2 === 1 ? parts.length : parts.length - 1;
+  parts.forEach((part, i) => {
+    if (i % 2 === 1 && i < closed) {
+      push("code", part);
+      return;
+    }
+    const plain = i % 2 === 1 ? `\`${part}` : part;
+    let from = 0;
+    for (const found of plain.matchAll(URL_IN_TEXT)) {
+      const url = found[0].replace(URL_TAIL, "");
+      push("text", plain.slice(from, found.index));
+      push("link", url);
+      from = found.index + url.length;
+    }
+    push("text", plain.slice(from));
+  });
+  return segments;
+}
+
+// Draw `text` into `parent` as its segments, through `textContent` only: the
+// Shell's failure sentence is untrusted. A link is a reply link (`.md-link`),
+// so the log's click listener hands it to `open_link` rather than navigating.
+export function drawInline(parent, text, doc = globalThis.document) {
+  parent.replaceChildren(
+    ...inlineSegments(text).map(({ kind, text: piece }) => {
+      if (kind === "text") {
+        return doc.createTextNode(piece);
+      }
+      const node = doc.createElement(kind === "code" ? "code" : "span");
+      node.textContent = piece;
+      if (kind === "link") {
+        node.className = "md-link";
+        node.dataset.href = piece;
+        node.title = piece;
+      }
+      return node;
+    }),
+  );
+}

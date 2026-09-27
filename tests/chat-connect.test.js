@@ -5,6 +5,7 @@ import { test } from "node:test";
 import {
   canAnswer,
   composerPlaceholder,
+  inlineSegments,
   landingCopy,
   loginPresentation,
 } from "../src/chat-connect.js";
@@ -34,7 +35,7 @@ function npxOpening(name) {
 }
 
 test("chat.js paints the landing from the helper, and does not celebrate a pick", () => {
-  assert.match(js, /import \{ canAnswer, landingCopy \} from "\.\/chat-connect\.js"/);
+  assert.match(js, /import \{ canAnswer, drawInline, landingCopy \} from "\.\/chat-connect\.js"/);
   assert.match(js, /canAnswer\(opening\)/);
   assert.match(js, /landingCopy\(opening\)/);
   assert.doesNotMatch(js, /is the AI brain now/);
@@ -258,4 +259,62 @@ test("unconfigured and switched-off copy is unchanged", () => {
     }).title,
     "Chat is switched off",
   );
+});
+
+test("a backticked command becomes a code segment without its backticks", () => {
+  assert.deepEqual(inlineSegments("Run `node --version` in a terminal."), [
+    { kind: "text", text: "Run " },
+    { kind: "code", text: "node --version" },
+    { kind: "text", text: " in a terminal." },
+  ]);
+});
+
+test("a URL becomes a link, leaving the full stop after it as text", () => {
+  assert.deepEqual(inlineSegments("Install from https://nodejs.org/. Then retry."), [
+    { kind: "text", text: "Install from " },
+    { kind: "link", text: "https://nodejs.org/" },
+    { kind: "text", text: ". Then retry." },
+  ]);
+  assert.deepEqual(inlineSegments("see (http://x.ai/docs),"), [
+    { kind: "text", text: "see (" },
+    { kind: "link", text: "http://x.ai/docs" },
+    { kind: "text", text: ")," },
+  ]);
+});
+
+test("code and a link in one sentence each keep their kind", () => {
+  const copy = landingCopy({
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "codex",
+    harness: { name: "codex", session: null, alive: false, login: null, missing: "npx" },
+  });
+  const kinds = inlineSegments(copy.lede).filter((s) => s.kind !== "text");
+  assert.deepEqual(kinds, [
+    { kind: "code", text: "npx" },
+    { kind: "code", text: "npx" },
+    { kind: "link", text: "https://nodejs.org/" },
+  ]);
+});
+
+test("a URL inside backticks stays code, not a link", () => {
+  assert.deepEqual(inlineSegments("`curl https://x.ai/`"), [
+    { kind: "code", text: "curl https://x.ai/" },
+  ]);
+});
+
+test("an unmatched backtick reads as itself", () => {
+  assert.deepEqual(inlineSegments("run `a` then `b"), [
+    { kind: "text", text: "run " },
+    { kind: "code", text: "a" },
+    { kind: "text", text: " then `b" },
+  ]);
+});
+
+test("markup and other schemes stay text", () => {
+  assert.deepEqual(inlineSegments('<img src=x onerror="alert(1)"> javascript:alert(1)'), [
+    { kind: "text", text: '<img src=x onerror="alert(1)"> javascript:alert(1)' },
+  ]);
+  assert.deepEqual(inlineSegments(null), []);
 });

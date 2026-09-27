@@ -5,7 +5,7 @@
 import { elicitSays } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
 import { mountChatAppearance } from "./chat-appearance.js";
-import { canAnswer, landingCopy } from "./chat-connect.js";
+import { canAnswer, drawInline, landingCopy } from "./chat-connect.js";
 import { createNamesNotice } from "./chat-names-hint.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
@@ -376,7 +376,7 @@ function paintSignIn(actions, waiting) {
     button.addEventListener("click", () => {
       const pending = document.createElement("p");
       pending.className = "hint sign-in-waiting";
-      pending.textContent = waiting;
+      drawInline(pending, waiting);
       button.after(pending);
       button.disabled = true;
       invoke("sign_in", { instance, methodId: action.id })
@@ -436,15 +436,15 @@ function attached(opening) {
     const copy = landingCopy(opening);
     paintSignIn(copy.signIn, copy.signInWaiting);
 
-    title.textContent = copy.title;
-    lede.textContent = copy.lede;
+    drawInline(title, copy.title);
+    drawInline(lede, copy.lede);
     const signInLabel = document.getElementById("landing-sign-in-label");
     signInLabel.textContent = copy.signInLabel ?? "";
     signInLabel.hidden = !copy.signInLabel;
     if (copy.command) {
       command.textContent = copy.command;
       command.hidden = false;
-      hint.textContent = copy.hint;
+      drawInline(hint, copy.hint);
       hint.hidden = false;
     } else {
       command.hidden = true;
@@ -604,7 +604,7 @@ function showWho(opening) {
   document.getElementById("character").textContent = opening.character;
   // Refilled on every opening, not only the first: the Completer source can
   // move, and a mode label that keeps the mode it opened with is a lie.
-  document.getElementById("mind-text").textContent = mindLine(opening);
+  drawInline(document.getElementById("mind-text"), mindLine(opening));
   for (const node of document.querySelectorAll(".i-name")) {
     node.textContent = opening.name;
   }
