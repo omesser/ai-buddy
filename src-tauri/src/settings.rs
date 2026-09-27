@@ -1412,7 +1412,7 @@ pub struct RosterPatch {
     pub character: Option<String>,
 }
 
-/// What a Retarget rebuilds: HTTP knobs, the Harness launch, and the proactive switch.
+/// HTTP knobs, Harness launch, and the proactive switch, in one Apply.
 #[derive(Clone, Default, Deserialize, PartialEq)]
 pub struct CompleterPatch {
     pub director_enabled: Option<bool>,

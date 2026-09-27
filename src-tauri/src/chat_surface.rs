@@ -18,12 +18,12 @@ pub(crate) const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// The event telling one Chat surface that the session behind it was replaced,
 /// carrying why in the words the log prints. `chat.js` says what the window
-/// does with it, and why. #476.
+/// does with it, and why.
 pub(crate) const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// Forwarded `session/request_permission` to every open Chat surface. The
 /// session is shared and the Shell does not know which window the user is
-/// looking at. The first answer wins. ai-buddy never answers it (ADR-0018).
+/// looking at. The first answer wins. ai-buddy never answers it.
 pub(crate) const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
 /// A forwarded `elicitation/create` form. Same fan-out as a permission ask:
@@ -32,11 +32,11 @@ pub(crate) const CHAT_ELICITATION_EVENT: &str = "chat-elicitation";
 
 /// The Harness's latest thought, for the strip above the composer. Each one
 /// replaces the last; an empty line is the turn saying it has stopped
-/// thinking, which takes the strip away (ADR-0025).
+/// thinking, which takes the strip away.
 pub(crate) const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 
 /// The event carrying the agent's plan to every open Chat surface. Each one
-/// replaces the whole list, and an empty one is the turn taking it away (#697).
+/// replaces the whole list, and an empty one is the turn taking it away.
 pub(crate) const CHAT_PLAN_EVENT: &str = "chat-plan";
 
 /// Chat UI selection change, telling each chat surface to swap its root class.

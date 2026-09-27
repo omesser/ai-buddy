@@ -2311,7 +2311,7 @@ mod tests {
             FormRow::Checkbox { ref id, .. } if id == PROACTIVE_ID
         ));
         // Under the switch that turns proactive model calls on, because it is how
-        // often those wakes start out (#262).
+        // often those wakes start out.
         assert!(matches!(
             director.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_WAKE_SECS_ID

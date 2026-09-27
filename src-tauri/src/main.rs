@@ -2101,7 +2101,7 @@ struct ChatReply {
 /// What the Shell owes a Chat surface when a newer wake cancels the slot
 /// (ADR-0016). `None` unless a typed question was the turn on the wire:
 /// a poke or a proactive wake opened no question on this surface, so a
-/// notice there would answer nobody (#890).
+/// notice there would answer nobody.
 fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
     chat_turn.then(|| ChatReply {
         said: None,
@@ -4405,7 +4405,7 @@ mod tests {
     }
 
     /// The half a careless fix breaks. A poke or a proactive wake opened no
-    /// question on the Chat surface, so a notice there answers nobody (#890).
+    /// question on the Chat surface, so a notice there answers nobody.
     #[test]
     fn an_ambient_turn_superseded_by_another_wake_tells_chat_nothing() {
         assert!(cancelled_caret(false, &Happened::Proactive).is_none());
