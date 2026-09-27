@@ -856,7 +856,30 @@ pub(crate) fn run_frame_loop(
                     );
                     continue;
                 }
-                session_log::remember_you(&app, &live.id, &line.text, SystemTime::now());
+                let at = SystemTime::now();
+                session_log::remember_you(&app, &live.id, &line.text, at);
+                // The Chat surface draws a line it typed itself. A quick
+                // message is typed on the overlay, so an open window is told
+                // or the question only appears the next time Chat opens.
+                if line.echo {
+                    let at_ms = at
+                        .duration_since(UNIX_EPOCH)
+                        .map_or(0, |since| since.as_millis() as u64);
+                    let _ = app.emit_to(
+                        chat_label(&live.id),
+                        CHAT_EVENT,
+                        ChatReply {
+                            said: Some(line.text.clone()),
+                            busy: false,
+                            reacting_to: None,
+                            you: true,
+                            thought: false,
+                            at: Some(at_ms),
+                            error: None,
+                            superseded_by: None,
+                        },
+                    );
+                }
                 live.addressed = true;
                 live.happened = Happened::Chat(line.text);
             }
@@ -1353,6 +1376,10 @@ pub(crate) fn run_frame_loop(
                 // The verbs are this Instance's alone, decided above. Taken
                 // rather than cloned: the snapshot is reused across Instances,
                 // and a verb left behind would be replayed next tick.
+                // This Instance only. The snapshot is shared, and a
+                // neighbour's caret must not stop this one.
+                world.composing =
+                    platform::overlay_composing().as_deref() == Some(live.id.as_str());
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.proposal = proposal;
                 world.bubble_visible = live.speech.visible_at(std::time::Instant::now());

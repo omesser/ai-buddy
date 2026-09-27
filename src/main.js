@@ -8,7 +8,9 @@ import {
   wrapText,
   placeBubble,
 } from "./bubble.js";
+import { canAnswer } from "./chat-connect.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
+import { createQuickMessage, crossedDrag, placeQuickMessage } from "./quick-message.js";
 
 const stage = document.getElementById("stage");
 
@@ -179,6 +181,7 @@ function createView(id) {
     hideThinking: hide,
   });
 
+  attachQuickMessage(view, id);
   return view;
 }
 
@@ -203,6 +206,169 @@ function positionBubble(view, spriteRect, displayBounds) {
     : null;
 }
 
+function speechRect(view) {
+  if (!view.bubble.classList.contains("visible")) return null;
+  return {
+    x: parseFloat(view.bubble.style.left) || 0,
+    y: parseFloat(view.bubble.style.top) || 0,
+    width: view.bubble.offsetWidth,
+    height: view.bubble.offsetHeight,
+  };
+}
+
+function positionQuick(view, spriteRect) {
+  const size = { width: view.quick.offsetWidth, height: view.quick.offsetHeight };
+  const pos = placeQuickMessage(spriteRect, size, currentDisplayBounds(), speechRect(view));
+  view.quick.style.left = `${pos.x}px`;
+  view.quick.style.top = `${pos.y}px`;
+  view.quick.classList.toggle("inverted", pos.inverted);
+  view.quickHotspot =
+    clickableOffArt && size.width > 0 && size.height > 0
+      ? [Math.round(pos.x), Math.round(pos.y), size.width, size.height]
+      : null;
+}
+
+let reportedComposing = null;
+
+function reportComposing() {
+  let id = "";
+  for (const [viewId, view] of views) {
+    if (view.quickMachine.typing) {
+      id = viewId;
+      break;
+    }
+  }
+  if (id === reportedComposing) return;
+  reportedComposing = id;
+  window.__TAURI__.core.invoke("overlay_composing", { instance: id }).catch((err) => {
+    console.error("overlay_composing", err);
+  });
+}
+
+function syncQuick(view) {
+  const visible = view.quickMachine.visible;
+  view.quick.classList.toggle("visible", visible);
+  if (!visible && document.activeElement === view.quickField) {
+    view.quickField.blur();
+  }
+  if (view.quickField.value !== view.quickMachine.text) {
+    view.quickField.value = view.quickMachine.text;
+  }
+  const shown = view.quickField.value;
+  view.quickMirror.textContent = shown ? `${shown}\u200b` : "\u200b";
+  if (view.quickMachine.takeFocus()) view.quickField.focus();
+  reportComposing();
+  if (!visible || !view.latest) {
+    view.quickHotspot = null;
+    reportHotspots();
+    arm();
+    return;
+  }
+  positionQuick(view, {
+    x: Math.round(view.latest.x),
+    y: Math.round(view.latest.y),
+    width: view.latest.width,
+    height: view.latest.height,
+  });
+  reportHotspots();
+  arm();
+}
+
+// Click-through can drop the pointerleave. The next frame still knows the
+// cursor is gone, because :hover is clear once the window ignores it.
+// Runs before the pill is up too: a leave during the dwell cancels it.
+function notePointerLeft(view) {
+  if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
+  else view.quickMachine.leaveSprite();
+}
+
+function attachQuickMessage(view, id) {
+  const quick = document.createElement("div");
+  quick.className = "bubble quick-message";
+  quick.dataset.instance = id;
+
+  const row = document.createElement("div");
+  row.className = "quick-message-row";
+  const mirror = document.createElement("div");
+  mirror.className = "quick-message-mirror";
+  mirror.setAttribute("aria-hidden", "true");
+  const field = document.createElement("textarea");
+  field.className = "quick-message-field";
+  field.rows = 1;
+  // Same bound the Chat composer declares, which is CHAT_LIMIT.
+  field.maxLength = 16000;
+  field.placeholder = "talk to me";
+  field.autocomplete = "off";
+  field.setAttribute("aria-label", "Quick message");
+  const send = document.createElement("button");
+  send.type = "button";
+  send.className = "quick-message-send";
+  send.setAttribute("aria-label", "Send");
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 12 12");
+  icon.setAttribute("aria-hidden", "true");
+  const point = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  point.setAttribute("d", "M2.2 1.4 L10.2 6 L2.2 10.6 L2.2 7.1 L6.5 6 L2.2 4.9 Z");
+  point.setAttribute("fill", "#14171e");
+  icon.append(point);
+  send.append(icon);
+  row.append(mirror, field);
+  quick.append(row, send);
+  stage.append(quick);
+
+  view.quick = quick;
+  view.quickField = field;
+  view.quickMirror = mirror;
+
+  let machine;
+  machine = createQuickMessage({
+    schedule: (fn, ms) => window.setTimeout(fn, ms),
+    clear: (timer) => window.clearTimeout(timer),
+    onChange() {
+      syncQuick(view);
+    },
+    send(text) {
+      window.__TAURI__.core
+        .invoke("chat_opening", { instance: id })
+        .then((opening) => {
+          if (!canAnswer(opening)) {
+            machine.restore(text);
+            return;
+          }
+          return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
+        })
+        .catch((err) => {
+          machine.restore(text);
+          console.error("chat_send", err);
+        });
+    },
+  });
+  view.quickMachine = machine;
+  view.quickMirror.textContent = "\u200b";
+
+  view.sprite.addEventListener("pointerenter", () => machine.enterSprite());
+  view.sprite.addEventListener("pointerleave", () => machine.leaveSprite());
+  field.addEventListener("focus", () => machine.focus());
+  field.addEventListener("blur", () => machine.blur());
+  field.addEventListener("input", () => {
+    machine.setText(field.value);
+    syncQuick(view);
+  });
+  field.addEventListener("keydown", (event) => {
+    const handled = machine.keydown(event.key, {
+      shiftKey: event.shiftKey,
+      composing: event.isComposing,
+    });
+    if (!handled) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  send.addEventListener("click", (event) => {
+    event.stopPropagation();
+    machine.submit();
+  });
+}
+
 // Tell the Rust side where this overlay wants a click. Clicks pass through
 // wherever the art is not, and "Open chat" sits outside the art; only the
 // renderer knows where, because the bubble is sized by text measured here.
@@ -218,6 +384,7 @@ function reportHotspots() {
   const rects = [];
   for (const view of views.values()) {
     if (view.hotspot) rects.push(view.hotspot);
+    if (view.quickHotspot) rects.push(view.quickHotspot);
   }
   const serialized = JSON.stringify(rects);
   if (serialized === reportedHotspots) return;
@@ -227,17 +394,22 @@ function reportHotspots() {
   });
 }
 
-// An Instance that stopped arriving was dismissed. Its elements go with it, and
-// its bubble timers are cancelled first: a scheduled callback holding a removed
-// element would keep the view alive to no visible end.
+// An Instance that stopped arriving was dismissed. Its elements go with it.
+// Dispose while it is still mapped: the composing report scans views, so a
+// gone Instance must not leave its caret held.
 function removeView(id) {
   const view = views.get(id);
   if (!view) return;
   view.bubbles.hideAllNow();
+  view.quickMachine.dispose();
   view.sprite.remove();
   view.bubble.remove();
+  view.quick.remove();
   view.cueLayer.remove();
   views.delete(id);
+  // After the view is gone, so a scan cannot still name it. dispose already
+  // dropped the caret; this is the report that clears a stale id.
+  reportComposing();
 }
 
 function drawView(view, now) {
@@ -263,6 +435,7 @@ function drawView(view, now) {
     // A control nobody can see is not one to click, and a fading bubble is
     // still `.visible` — so this is cleared here as well as in `hide`.
     view.hotspot = null;
+    if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
       view.bubbles.hideAllNow();
     }
@@ -275,6 +448,14 @@ function drawView(view, now) {
         { x: spriteX, y: spriteY, width: latest.width, height: latest.height },
         currentDisplayBounds(),
       );
+    }
+    if (view.quickMachine.visible) {
+      positionQuick(view, {
+        x: spriteX,
+        y: spriteY,
+        width: latest.width,
+        height: latest.height,
+      });
     }
   }
 
@@ -380,6 +561,7 @@ async function start() {
         // `input::press_target` picks too. A bubble sits above its own sprite so
         // a line clamped onto the head near a display's top stays readable.
         view.bubble.style.zIndex = `${index * 2 + 1}`;
+        view.quick.style.zIndex = `${index * 2 + 2}`;
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
 
@@ -407,6 +589,7 @@ async function start() {
         // `latest` rather than `sprite` for the two answers that belong to the
         // desktop: whether the Character is on screen, and whether it may be heard.
         view.cues.event(view.latest);
+        notePointerLeft(view);
 
         if (needsFrame(view)) arm();
       });
@@ -462,7 +645,36 @@ async function start() {
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
+  // A press on the pet, measured from pointerdown. The composer never arms
+  // this: a drag in the field is a selection, and it must not grab the pet.
+  let petDrag = null;
   document.addEventListener("pointerdown", (event) => {
+    const composer = event.target.closest?.(".quick-message");
+    const sprite = event.target.closest?.(".sprite");
+    if (!composer && !sprite) {
+      for (const view of views.values()) view.quickMachine.outside();
+      petDrag = null;
+      return;
+    }
+    const where = composer ? "composer" : "character";
+    let reachPet = views.size === 0;
+    let owner = null;
+    for (const view of views.values()) {
+      const hit = (composer && view.quick === composer) || (sprite && view.sprite === sprite);
+      if (!hit) continue;
+      owner = view;
+      // A press on the composer must not capture the pointer or the pet gets the Poke.
+      view.quickMachine.press(where, () => {
+        reachPet = true;
+      });
+      break;
+    }
+    if (where === "character" && event.button === 0 && owner) {
+      petDrag = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    } else {
+      petDrag = null;
+    }
+    if (!reachPet) return;
     if (event.button === 0) {
       event.target.setPointerCapture?.(event.pointerId);
       reportPrimary(true);
@@ -470,11 +682,30 @@ async function start() {
       reportSecondary(true);
     }
   });
+  document.addEventListener("pointermove", (event) => {
+    if (!petDrag || event.pointerId !== petDrag.id) return;
+    if (!crossedDrag(event.clientX - petDrag.x, event.clientY - petDrag.y)) return;
+    petDrag = null;
+    for (const view of views.values()) view.quickMachine.drag();
+  });
+  document.addEventListener("dblclick", (event) => {
+    if (!event.target.closest?.(".sprite")) return;
+    // Summon opens Chat. The composer yields so the two are not up together.
+    for (const view of views.values()) view.quickMachine.summon();
+  });
+  window.addEventListener("blur", () => {
+    for (const view of views.values()) view.quickMachine.outside();
+  });
   document.addEventListener("pointerup", (event) => {
-    if (event.button === 0) reportPrimary(false);
-    else if (event.button === 2) reportSecondary(false);
+    if (event.button === 0) {
+      petDrag = null;
+      reportPrimary(false);
+    } else if (event.button === 2) {
+      reportSecondary(false);
+    }
   });
   document.addEventListener("pointercancel", () => {
+    petDrag = null;
     reportPrimary(false);
     reportSecondary(false);
   });

@@ -64,6 +64,21 @@ impl Witness {
 static OVERLAY_PRIMARY: Witness = Witness::new();
 static OVERLAY_SECONDARY: Witness = Witness::new();
 
+/// Which Instance is typing a quick message. A level, not a press edge:
+/// the hold lasts as long as the field has the caret.
+static OVERLAY_COMPOSING: Mutex<Option<String>> = Mutex::new(None);
+
+/// Empty is none. The overlay sends "" when the caret leaves.
+pub fn set_overlay_composing(instance: Option<String>) {
+    if let Ok(mut slot) = OVERLAY_COMPOSING.lock() {
+        *slot = instance.filter(|id| !id.is_empty());
+    }
+}
+
+pub fn overlay_composing() -> Option<String> {
+    OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
+}
+
 /// Which mouse buttons one tick found down. One type so X11 pays one
 /// XQueryPointer instead of two (#268), and so both consuming witness reads
 /// live in one place.
@@ -1088,6 +1103,14 @@ mod tests {
         set_overlay_primary(false);
         // The session poll may still be true if a real button is held during
         // the test; only the overlay half is under this test's control.
+    }
+
+    #[test]
+    fn composing_names_one_instance_until_the_caret_leaves() {
+        set_overlay_composing(Some("buddy-a".to_string()));
+        assert_eq!(overlay_composing().as_deref(), Some("buddy-a"));
+        set_overlay_composing(Some(String::new()));
+        assert_eq!(overlay_composing(), None);
     }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that

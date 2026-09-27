@@ -1370,6 +1370,13 @@ fn overlay_primary(down: bool) {
     platform::set_overlay_primary(down);
 }
 
+/// The overlay's quick message gained or lost the caret. Empty means none.
+/// Read each tick, so a dropped invoke cannot leave the pet stuck.
+#[tauri::command]
+fn overlay_composing(instance: String) {
+    platform::set_overlay_composing(Some(instance));
+}
+
 /// Same witness for the right button. Without it a right-click on the sprite
 /// is swallowed by the webview and the session poll never sees a Menu.
 #[tauri::command]
@@ -1974,6 +1981,7 @@ fn chat_prompt(
         .send(ChatMsg::Wrote(ChatLine {
             instance,
             text: prompt,
+            echo: false,
         }))
         .map_err(|_| "ai-buddy is not listening.".to_string())
 }
@@ -2145,6 +2153,8 @@ fn push_chat_openings(
 struct ChatLine {
     instance: InstanceId,
     text: String,
+    /// Typed on the overlay. The open Chat surface did not draw this row.
+    echo: bool,
 }
 
 /// What one Chat surface has to say to the frame loop.
@@ -2178,8 +2188,9 @@ struct ChatReply {
     /// (that sits under the user's turn). A label rather than a flag: a
     /// double-click is a prompt, the user just did not type.
     reacting_to: Option<String>,
-    /// A replayed line the user typed. The live send path draws that row in
-    /// the webview itself, so a true here on that path would duplicate it.
+    /// A replayed line the user typed, or a quick message typed on the overlay.
+    /// The Chat surface's own send draws its row itself, so a true here on
+    /// that path would duplicate it.
     #[serde(default)]
     you: bool,
     /// A replayed Thinking row, with the thought in `said` (ADR-0034). Live
@@ -2253,7 +2264,12 @@ struct ChatStatusPush<'a> {
 /// this is where webview text enters, and the session keeps the line, so
 /// cutting it later would still have paid for the whole paste.
 #[tauri::command]
-fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>) {
+fn chat_send(
+    instance: String,
+    text: String,
+    echo: Option<bool>,
+    chat: tauri::State<'_, ChatChannel>,
+) {
     let text: String = text
         .trim()
         .chars()
@@ -2262,7 +2278,11 @@ fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>
     if text.is_empty() {
         return;
     }
-    let _ = chat.0.send(ChatMsg::Said(ChatLine { instance, text }));
+    let _ = chat.0.send(ChatMsg::Said(ChatLine {
+        instance,
+        text,
+        echo: echo.unwrap_or(false),
+    }));
 }
 
 /// A Chat surface reporting that it is listening. Events only reach windows
@@ -3331,6 +3351,7 @@ fn main() {
             character,
             overlay_primary,
             overlay_secondary,
+            overlay_composing,
             overlay_hotspots,
             overlay_hit_tests_hotspots,
             overlay_open_chat,

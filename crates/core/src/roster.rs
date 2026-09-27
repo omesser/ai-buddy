@@ -435,6 +435,7 @@ mod tests {
             elapsed_ms: 16,
             proposal: None,
             poll_generation: 0,
+            composing: false,
             bubble_visible: false,
         }
     }
