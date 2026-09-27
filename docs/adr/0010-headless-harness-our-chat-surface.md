@@ -1,9 +1,9 @@
-# The Harness runs headless and ai-buddy draws the chat surface
+# The Harness runs headless and Fidget draws the chat surface
 
 **Status:** Superseded by [ADR-0018](./0018-headless-harness-our-chat-surface.md)
 
 The attached Harness is spawned as a subprocess in ACP mode, where it renders
-nothing. The chat surface #17 opens is ours: a Tauri webview window ai-buddy
+nothing. The chat surface #17 opens is ours: a Tauri webview window fidget
 builds. We never launch, embed, or wrap the Harness's own TUI, even though
 that UI already solves everything ours has to.
 
@@ -21,7 +21,7 @@ capability four of five Harnesses lack cannot be the shape of the feature.
 A log-style chat: the user's turns, the agent's text as it streams, tool calls
 as one-liners, and the forwarded `session/request_permission` prompt. Not a
 workbench. No diff view, file tree, plan panel, skill browser or settings pane
-— those are the Harness's own surfaces, and what ai-buddy needs to remember of
+— those are the Harness's own surfaces, and what fidget needs to remember of
 them belongs in the Action Log.
 
 One thing more: a status bar under the log, drawing what the Spatial Layer is
@@ -30,7 +30,7 @@ them, which way the sprite faces, what the last wake was told had happened, and
 how long until the next one. That is not the workbench this section refuses.
 What it refuses is the *Harness's* surfaces: a diff, a file tree, a plan, a
 skill browser are all drawn better by the TUI we chose not to embed, so
-rebuilding them here makes a worse copy of it. The bar draws state ai-buddy
+rebuilding them here makes a worse copy of it. The bar draws state fidget
 itself owns, which no Harness surface carries and which nothing else in the
 product shows.
 
@@ -54,7 +54,7 @@ question with a deadline that only this surface can answer, so an unsettled one
 is held and handed to the next surface that opens, and a request that reaches no
 surface the user can see opens one — unless Do Not Disturb is on, which the
 request yields to like everything else. None of that bends the rule below: what
-ai-buddy holds is the question, and the answer is still only ever a click.
+fidget holds is the question, and the answer is still only ever a click.
 
 It is a webview rather than a native window because Settings already priced
 the alternative: `platform/macos/settings_window.rs` and
@@ -73,7 +73,7 @@ project has no build step; one window does not justify a bundler and
 - **Embed a terminal and run the Harness TUI inside it.** `xterm.js` over
   `portable-pty` is a solved, cross-platform, few-hundred-line job, and it
   inherits permissions, cancellation, plans and diffs on all five Harnesses
-  instead of rebuilding them. Rejected on two counts. The buddy would have to
+  instead of rebuilding them. Rejected on two counts. The character would have to
   start a turn by typing into the PTY, which races with whatever the user is
   typing and yields no signal that the turn finished. And a black terminal of
     50|  file paths is a poor thing for a Windows-95 mascot to open when you
@@ -85,7 +85,7 @@ project has no build step; one window does not justify a bundler and
 - **Attach to a Harness the user is already running and prompt a child session
   under theirs.** opencode alone supports it. Its child sessions start with
   fresh context, so a child per message is ADR-0008's split brain with extra
-  steps; one long-lived child fixes that and still binds the buddy to whichever
+  steps; one long-lived child fixes that and still binds the character to whichever
     60|  repository the user happened to have open, and drops proactive wakes into the
   session list of their real work.
 - **A Rust-native chat window** in egui, iced or Slint. A third UI toolkit
@@ -96,7 +96,7 @@ project has no build step; one window does not justify a bundler and
 
 We own the permission prompt. Forwarding the Harness's own
 `session/request_permission` is not the second confirmation ADR-0003 refuses —
-    70|the rule is that ai-buddy never *answers* it, and never adds one of its own.
+    70|the rule is that fidget never *answers* it, and never adds one of its own.
 
 The `Completer` seam is filled by one ACP `session/prompt` per wake. Two
 dependencies would carry most of that: `acp-cli` is a Rust crate whose
@@ -106,15 +106,15 @@ JavaScript holding the session, streaming and permission state. Both are
 pre-1.0 and neither has an unambiguous canonical home. Reviewed in ADR-0017:
 neither was adopted.
 
-The Harness is spawned with its working directory at `~/.ai-buddy`, not the
-user's project, so nothing the buddy says is flavoured by a repository it was
+The Harness is spawned with its working directory at `~/.fidget`, not the
+user's project, so nothing the character says is flavoured by a repository it was
     80|never asked about.
 
-Attachment is opt-in, and settings says the price in words: ai-buddy spawns and
+Attachment is opt-in, and settings says the price in words: fidget spawns and
 holds a full agent process for as long as the app runs. Static weights and the
 HTTP Completer stay the path for everyone who declines.
 
-The spawned Harness authenticates itself, and ai-buddy holds no credential for
+The spawned Harness authenticates itself, and fidget holds no credential for
 it (#371). All five keep their credential in a home-relative file or the OS
 keychain and read it at process start, so a CLI the user has already logged in
 to hands its login to a subprocess we spawn as the same user. Anthropic permits
@@ -122,11 +122,11 @@ that shape by name and forbids the alternative: an end user may sign in to the
 unmodified Claude Code binary with their own subscription, and a third-party
 developer may not collect, store, or intermediate Claude.ai credentials.
 `SecretStore` also fits the Director key for a reason that does not carry over
-— ai-buddy *is* the HTTP client there, and with a Harness the Harness talks to
+— fidget *is* the HTTP client there, and with a Harness the Harness talks to
 the provider while we talk ACP over a pipe. A credential we store and never
 send buys nothing.
 
-So `director-api-key` stays the only account ai-buddy owns, and a pull request
+So `director-api-key` stays the only account fidget owns, and a pull request
 touching attachment may not:
 
 1. Prompt for a Harness password, token, or API key.
@@ -145,7 +145,7 @@ touching attachment may not:
 
 An ACP auth method of kind `agent` does not break rule 6. The Chat button sends
 its id to `authenticate`, the Harness runs its own browser or device flow, and
-no credential passes through ai-buddy (#1000). A `terminal` method stays a named
+no credential passes through fidget (#1000). A `terminal` method stays a named
 command.
 
 The Chat surface therefore distinguishes three states rather than two. Not

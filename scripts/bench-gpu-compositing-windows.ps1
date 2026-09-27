@@ -30,7 +30,7 @@ parse-log counts mask_rebuild lines in --log and divides by --seconds.
 aim-check prints the walking-over cursor target for --log. It does not move the cursor.
 GPU% is dwm.exe engtype_3D when that counter exists, else nvidia-smi for the whole adapter.
 Checkout and a debug build on DESKTOP-UQIE144 are authorized.
-idle, walking, chat, hidden, and matrix launch ai-buddy and move the cursor. Wait for an explicit green light before those scenarios.
+idle, walking, chat, hidden, and matrix launch fidget and move the cursor. Wait for an explicit green light before those scenarios.
 "@)
     exit 2
 }
@@ -97,7 +97,7 @@ elseif ($env:OS -eq "Windows_NT") {
     $script:IsWindowsOS = $true
 }
 
-$script:Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root "target\debug\ai-buddy.exe" }
+$script:Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $Root "target\debug\fidget.exe" }
 
 function Add-Reason([string]$tool, [string]$line) {
     $clean = ($line -replace "\s+", " ").Trim()
@@ -579,17 +579,17 @@ function Stop-Cover {
 
 function Assert-Binary {
     if (Test-Path $script:Bin) { return }
-    [Console]::Error.WriteLine("no $($script:Bin) - run: cargo build -p ai-buddy --bin ai-buddy")
+    [Console]::Error.WriteLine("no $($script:Bin) - run: cargo build -p fidget --bin fidget")
     exit 2
 }
 
 function Start-App([string]$log) {
     Assert-Binary
     $stdout = "$log.stdout"
-    if (-not $env:AI_BUDDY_INSTANCES) { $env:AI_BUDDY_INSTANCES = "BMO" }
-    if (-not $env:AI_BUDDY_CHARACTERS) { $env:AI_BUDDY_CHARACTERS = Join-Path (Get-Location) "characters" }
-    $env:AI_BUDDY_TRACE_MASK_REBUILD = "1"
-    $env:AI_BUDDY_TRACE_FRAMES = "1"
+    if (-not $env:FIDGET_INSTANCES) { $env:FIDGET_INSTANCES = "BMO" }
+    if (-not $env:FIDGET_CHARACTERS) { $env:FIDGET_CHARACTERS = Join-Path (Get-Location) "characters" }
+    $env:FIDGET_TRACE_MASK_REBUILD = "1"
+    $env:FIDGET_TRACE_FRAMES = "1"
     $script:AppProc = Start-Process -FilePath $script:Bin -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput $stdout -RedirectStandardError $log
 }
@@ -767,7 +767,7 @@ function Write-Env {
 function Run-Baseline {
     $log = Join-Path $script:Out "baseline.log"
     Set-Content -Path $log -Value "" -Encoding ascii
-    Sample-Row "baseline" $log $script:Seconds "no ai-buddy"
+    Sample-Row "baseline" $log $script:Seconds "no fidget"
 }
 
 function Run-Idle {
@@ -896,7 +896,7 @@ $form.StartPosition = "Manual"
 $form.Bounds = $bounds
 $form.TopMost = $true
 $form.ShowInTaskbar = $true
-$form.Text = "ai-buddy-bench-cover"
+$form.Text = "fidget-bench-cover"
 $form.BackColor = [System.Drawing.Color]::Black
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = __MS__
@@ -986,7 +986,7 @@ function Invoke-ParseLog {
 }
 
 if (-not $script:Out) {
-    $script:Out = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-buddy-gpu-bench-" + [guid]::NewGuid().ToString("n").Substring(0, 8))
+    $script:Out = Join-Path ([System.IO.Path]::GetTempPath()) ("fidget-gpu-bench-" + [guid]::NewGuid().ToString("n").Substring(0, 8))
 }
 New-Item -ItemType Directory -Force -Path $script:Out | Out-Null
 

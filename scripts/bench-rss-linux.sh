@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running ai-buddy, Linux only. WebKitGTK helpers,
+# Sample the resident set of a running fidget, Linux only. WebKitGTK helpers,
 # if any, are children of the main process, so the process tree at launch is
 # the app.
 # Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/ai-buddy, waits `settle` seconds, samples every
+#   Launches target/debug/fidget, waits `settle` seconds, samples every
 #   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
 #   and each process's peak RSS (VmHWM), then stops the app.
 #   Default is a brief smoke (settle ~3s, sample ~10s); --research soaks 300s + 300s.
-#   Environment reaches the app unchanged: AI_BUDDY_INSTANCES picks the roster,
-#   AI_BUDDY_CHARACTERS the packages. Set HOME to a scratch directory.
+#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
+#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
 
 # RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
 # Compare scenarios on VmHWM and read the RSS series for shape, and record the
@@ -21,7 +21,7 @@ settle=3
 seconds=10
 interval=2
 out=""
-bin="target/debug/ai-buddy"
+bin="target/debug/fidget"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,10 +35,10 @@ while [ $# -gt 0 ]; do
 done
 
 [ -x "$bin" ] || {
-  echo "no $bin — run: (cd src-tauri && cargo build --bin ai-buddy)" >&2
+  echo "no $bin — run: (cd src-tauri && cargo build --bin fidget)" >&2
   exit 2
 }
-out="${out:-$(mktemp -t ai-buddy-rss-XXXXXX).tsv}"
+out="${out:-$(mktemp -t fidget-rss-XXXXXX).tsv}"
 log="$out.app.log"
 
 "./$bin" > "$log" 2>&1 &

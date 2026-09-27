@@ -1,4 +1,4 @@
-# ai-buddy Branding Assets
+# Fidget Branding Assets
 
 Product logo and tray icon art package from Oded.
 

@@ -24,7 +24,7 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
-use ai_buddy_core::director::Reply;
+use fidget_core::director::Reply;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
@@ -46,7 +46,7 @@ const CLOSE_WAIT: Duration = Duration::from_secs(2);
 #[derive(Clone)]
 pub enum McpChoice {
     /// The loopback server the app serves, and the `Authorization` value that
-    /// reaches it. The only one whose tools reach the buddy on screen.
+    /// reaches it. The only one whose tools reach the character on screen.
     Http { url: String, authorization: String },
     /// A stdio shim the Harness spawns. It relays to the loopback server so
     /// the tools reach the same Instances.
@@ -436,7 +436,7 @@ enum Progress {
 /// without spawning a child.
 fn initialize_request() -> InitializeRequest {
     InitializeRequest::new(ProtocolVersion::V1)
-        .client_info(Implementation::new("ai-buddy", env!("CARGO_PKG_VERSION")))
+        .client_info(Implementation::new("fidget", env!("CARGO_PKG_VERSION")))
         .client_capabilities(
             ClientCapabilities::new().elicitation(
                 ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
@@ -700,7 +700,7 @@ fn run(
         let mut refused = None;
         let outcome = Client
             .builder()
-            .name("ai-buddy")
+            .name("fidget")
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
                     let _ = updates.send(Incoming::Update(notification.update));
@@ -966,12 +966,12 @@ async fn serve(
 fn mcp_server(choice: &McpChoice) -> McpServer {
     match choice {
         McpChoice::Http { url, authorization } => {
-            McpServer::Http(McpServerHttp::new("ai-buddy", url.clone()).headers(vec![
+            McpServer::Http(McpServerHttp::new("fidget", url.clone()).headers(vec![
                 HttpHeader::new("Authorization", authorization.clone()),
             ]))
         }
         McpChoice::Stdio(launch) => McpServer::Stdio(
-            McpServerStdio::new("ai-buddy", launch.path.clone())
+            McpServerStdio::new("fidget", launch.path.clone())
                 .args(launch.args.clone())
                 .env(
                     launch
@@ -1325,7 +1325,7 @@ fn note_update(
             size: usage.size,
         }),
         // Never into `said`. That is the Director's reply, whose first line
-        // has to parse as a Behavior name and whose rest the buddy says out
+        // has to parse as a Behavior name and whose rest the character says out
         // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
@@ -1529,7 +1529,7 @@ mod tests {
         });
         let wire = serde_json::to_value(&server).expect("serializes");
         assert_eq!(wire["type"], serde_json::json!("http"));
-        assert_eq!(wire["name"], serde_json::json!("ai-buddy"));
+        assert_eq!(wire["name"], serde_json::json!("fidget"));
         assert_eq!(wire["url"], serde_json::json!("http://127.0.0.1:51234/mcp"));
         assert_eq!(
             wire["headers"][0]["name"],
@@ -1547,23 +1547,23 @@ mod tests {
     #[test]
     fn a_stdio_choice_is_still_a_bare_command_and_carries_its_args() {
         let sidecar = mcp_server(&McpChoice::Stdio(McpLaunch {
-            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            path: PathBuf::from("/opt/fidget-mcp"),
             args: Vec::new(),
             env: Vec::new(),
         }));
         let wire = serde_json::to_value(&sidecar).expect("serializes");
-        assert_eq!(wire["command"], serde_json::json!("/opt/ai-buddy-mcp"));
-        assert_eq!(wire["name"], serde_json::json!("ai-buddy"));
+        assert_eq!(wire["command"], serde_json::json!("/opt/fidget-mcp"));
+        assert_eq!(wire["name"], serde_json::json!("fidget"));
         assert_eq!(wire["args"], serde_json::json!([]));
 
         // The app binary re-executed as its own server.
         let embedded = mcp_server(&McpChoice::Stdio(McpLaunch {
-            path: PathBuf::from("/opt/ai-buddy"),
+            path: PathBuf::from("/opt/fidget"),
             args: vec!["--mcp-stdio".to_string()],
             env: Vec::new(),
         }));
         let wire = serde_json::to_value(&embedded).expect("serializes");
-        assert_eq!(wire["command"], serde_json::json!("/opt/ai-buddy"));
+        assert_eq!(wire["command"], serde_json::json!("/opt/fidget"));
         assert_eq!(wire["args"], serde_json::json!(["--mcp-stdio"]));
     }
 
@@ -1572,28 +1572,25 @@ mod tests {
     #[test]
     fn a_stdio_choice_carries_the_endpoint_in_its_environment() {
         let server = mcp_server(&McpChoice::Stdio(McpLaunch {
-            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            path: PathBuf::from("/opt/fidget-mcp"),
             args: Vec::new(),
             env: vec![
                 (
-                    "AI_BUDDY_MCP_URL".to_string(),
+                    "FIDGET_MCP_URL".to_string(),
                     "http://127.0.0.1:51234/mcp".to_string(),
                 ),
-                ("AI_BUDDY_MCP_TOKEN".to_string(), "deadbeef".to_string()),
+                ("FIDGET_MCP_TOKEN".to_string(), "deadbeef".to_string()),
             ],
         }));
         let wire = serde_json::to_value(&server).expect("serializes");
-        assert_eq!(
-            wire["env"][0]["name"],
-            serde_json::json!("AI_BUDDY_MCP_URL")
-        );
+        assert_eq!(wire["env"][0]["name"], serde_json::json!("FIDGET_MCP_URL"));
         assert_eq!(
             wire["env"][0]["value"],
             serde_json::json!("http://127.0.0.1:51234/mcp")
         );
         assert_eq!(
             wire["env"][1]["name"],
-            serde_json::json!("AI_BUDDY_MCP_TOKEN")
+            serde_json::json!("FIDGET_MCP_TOKEN")
         );
         assert_eq!(wire["env"][1]["value"], serde_json::json!("deadbeef"));
         assert!(!wire["args"].to_string().contains("deadbeef"));
@@ -1611,11 +1608,11 @@ mod tests {
         // The Action Log takes this line too, and the stdio choice carries
         // a token of the same kind.
         let stdio = McpChoice::Stdio(McpLaunch {
-            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            path: PathBuf::from("/opt/fidget-mcp"),
             args: Vec::new(),
-            env: vec![("AI_BUDDY_MCP_TOKEN".to_string(), "secret".to_string())],
+            env: vec![("FIDGET_MCP_TOKEN".to_string(), "secret".to_string())],
         });
-        assert_eq!(stdio.label(), "/opt/ai-buddy-mcp");
+        assert_eq!(stdio.label(), "/opt/fidget-mcp");
     }
 
     /// A thought reaches the Shell and never the answer. `said` is the

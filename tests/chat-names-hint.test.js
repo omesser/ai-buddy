@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { createNamesNotice } from "../src/chat-names-hint.js";
 
 const BODY =
-  "The buddy knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.";
+  "The fidget knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.";
 
 test("due shows the body and both buttons", () => {
   const notice = createNamesNotice({ act: async () => "quiet" });

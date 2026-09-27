@@ -79,19 +79,19 @@ pub const CAPABILITIES: &[Capability] = &[
         id: CapabilityId::Accessibility,
         title: "Accessibility",
         buys: "Exact Dock geometry, so the sprite does not walk into the Dock.",
-        costs: "macOS Accessibility. The buddy reads the Dock's bounds; it does not control your computer.",
+        costs: "macOS Accessibility. The fidget reads the Dock's bounds; it does not control your computer.",
     },
     Capability {
         id: CapabilityId::WindowNames,
         title: "Window and application names",
         buys: "Window titles, and which application each window belongs to.",
-        costs: "macOS Screen Recording. The buddy reads the names of what is open; it does not capture the screen.",
+        costs: "macOS Screen Recording. The fidget reads the names of what is open; it does not capture the screen.",
     },
     Capability {
         id: CapabilityId::InputMonitoring,
         title: "Input Monitoring",
-        buys: "The buddy notices the mouse the moment it moves, instead of up to a second later while it sits idle.",
-        costs: "macOS Input Monitoring. The buddy listens for mouse movement and clicks — that a mouse moved, never what you type.",
+        buys: "The fidget notices the mouse the moment it moves, instead of up to a second later while it sits idle.",
+        costs: "macOS Input Monitoring. The fidget listens for mouse movement and clicks — that a mouse moved, never what you type.",
     },
 ];
 
@@ -101,13 +101,13 @@ pub const CAPABILITIES: &[Capability] = &[
         id: CapabilityId::Accessibility,
         title: "Accessibility",
         buys: "Exact taskbar geometry, so the sprite does not walk into the taskbar.",
-        costs: "Windows UI Automation. The buddy reads the taskbar's bounds; it does not control your computer.",
+        costs: "Windows UI Automation. The fidget reads the taskbar's bounds; it does not control your computer.",
     },
     Capability {
         id: CapabilityId::WindowNames,
         title: "Window and Application Names",
         buys: "Other applications' window titles, and which application each window belongs to.",
-        costs: "No system permission required. The buddy reads titles via GetWindowText and application names from the running process.",
+        costs: "No system permission required. The fidget reads titles via GetWindowText and application names from the running process.",
     },
 ];
 
@@ -139,7 +139,7 @@ static WANT_INPUT_MONITORING: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static GRANTED_WINDOW_NAMES: AtomicBool = AtomicBool::new(false);
 
-/// Whether the buddy should use this grant. The OS grant can remain after
+/// Whether the character should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
 #[cfg_attr(target_os = "linux", allow(dead_code))] // #886
 pub fn wanted(id: CapabilityId) -> bool {
@@ -250,9 +250,9 @@ mod windows {
 
     pub fn process_list_name() -> String {
         if packaged() {
-            return "ai-buddy".into();
+            return "Fidget".into();
         }
-        parent_chain_name().unwrap_or_else(|| "ai-buddy".into())
+        parent_chain_name().unwrap_or_else(|| "Fidget".into())
     }
 
     fn packaged() -> bool {
@@ -371,7 +371,7 @@ mod linux {
         let runtime = match tokio::runtime::Builder::new_current_thread().build() {
             Ok(r) => r,
             Err(why) => {
-                eprintln!("ai-buddy: portal screencast runtime failed: {why}");
+                eprintln!("fidget: portal screencast runtime failed: {why}");
                 return;
             }
         };
@@ -382,7 +382,7 @@ mod linux {
                     GRANTED_WINDOW_NAMES.store(true, Ordering::Relaxed);
                 }
                 Err(why) => {
-                    eprintln!("ai-buddy: portal screencast request failed: {why}");
+                    eprintln!("fidget: portal screencast request failed: {why}");
                 }
             }
         });
@@ -473,7 +473,7 @@ mod macos {
 
     pub fn tcc_list_name() -> String {
         if packaged() {
-            return localized_name(std::process::id() as i32).unwrap_or_else(|| "ai-buddy".into());
+            return localized_name(std::process::id() as i32).unwrap_or_else(|| "Fidget".into());
         }
         let self_pid = std::process::id() as i32;
         // Unsigned `cargo run` is often "responsible" for itself; TCC still
@@ -484,7 +484,7 @@ mod macos {
             .filter(|name| !name.contains("Helper"))
             .or_else(bundled_ancestor_name)
             .or_else(|| localized_name(self_pid))
-            .unwrap_or_else(|| "ai-buddy".into())
+            .unwrap_or_else(|| "Fidget".into())
     }
 
     fn packaged() -> bool {
@@ -629,14 +629,14 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
 
 /// The sentence settings prints so the user can find the row in System Settings.
 ///
-/// An unsigned `cargo run` is listed as whoever launched it, not "ai-buddy".
+/// An unsigned `cargo run` is listed as whoever launched it, not "fidget".
 #[cfg(target_os = "macos")]
 pub fn listed_under_hint(name: &str) -> String {
     format!("macOS lists this app as {name}, under Privacy & Security.")
 }
 
 /// The pane copy. The listed name is live: a `cargo run` from Cursor is
-/// Cursor, a packaged build is ai-buddy.
+/// Cursor, a packaged build is fidget.
 #[cfg(target_os = "macos")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
@@ -684,7 +684,7 @@ pub fn process_listed_as() -> String {
     }
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
-        "ai-buddy".into()
+        "Fidget".into()
     }
 }
 
@@ -832,7 +832,7 @@ mod tests {
                         "id": "WindowNames",
                         "title": "Window and application names",
                         "buys": "Window titles, and which application each window belongs to.",
-                        "costs": "macOS Screen Recording. The buddy reads the names of what is open; it does not capture the screen.",
+                        "costs": "macOS Screen Recording. The fidget reads the names of what is open; it does not capture the screen.",
                         "granted": false,
                     })
                 );
@@ -880,7 +880,7 @@ mod tests {
     }
 
     /// The checkbox is settings intent, not the OS grant. An OS grant the
-    /// user turned off here must show as off or they cannot stop the buddy
+    /// user turned off here must show as off or they cannot stop the character
     /// using it.
     #[test]
     fn rows_report_wanted_capabilities() {
@@ -950,7 +950,7 @@ mod tests {
         }
     }
 
-    /// A `cargo run` from Cursor is listed as Cursor, not ai-buddy. The
+    /// A `cargo run` from Cursor is listed as Cursor, not fidget. The
     /// hint has to carry that name or the Accessibility list is a guessing game.
     #[test]
     #[cfg(target_os = "macos")]
@@ -1198,7 +1198,7 @@ mod tests {
         assert!(!is_toolchain("powershell"));
         assert!(!is_toolchain("pwsh"));
         assert!(!is_toolchain("cmd"));
-        assert!(!is_toolchain("ai-buddy"));
+        assert!(!is_toolchain("Fidget"));
     }
 
     #[test]

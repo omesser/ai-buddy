@@ -8,7 +8,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{self, AtomEnum, Window};
 use x11rb::rust_connection::RustConnection;
 
-use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+use fidget_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 
 use crate::mcp_resources::WindowTitle;
 

@@ -5,15 +5,15 @@
 ## Context
 
 Harnesses stream their reasoning over ACP as `agent_thought_chunk`, and every
-TUI ai-buddy's users come from — Claude Code, Hermes, opencode — draws it while
-the agent works. ai-buddy dropped it on the floor: the wire's update match ended
+TUI fidget's users come from — Claude Code, Hermes, opencode — draws it while
+the agent works. fidget dropped it on the floor: the wire's update match ended
 in a catch-all and nothing downstream was ever offered a thought. No decision
 put it there. It was never wired (#483).
 
 Three places could hold one, and each is already spoken for.
 
 The reply the Director parses is a Behavior name and, optionally, a line to say
-out loud. A thought joining it is either spoken by the buddy or read as a
+out loud. A thought joining it is either spoken by the character or read as a
 Behavior name.
 
 The Chat log is four kinds of line and "not a workbench" (ADR-0018, and

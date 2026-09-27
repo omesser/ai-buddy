@@ -1,13 +1,13 @@
-# Sample the resident set of a running ai-buddy, Windows only. WebView2 is
+# Sample the resident set of a running fidget, Windows only. WebView2 is
 # Chromium, so it spawns GPU, Network and Renderer processes; every
 # msedgewebview2.exe that appears after launch is attributed to the app.
 # Usage: scripts\bench-rss-windows.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]
-#   Launches target\debug\ai-buddy.exe, waits Settle seconds, samples every
+#   Launches target\debug\fidget.exe, waits Settle seconds, samples every
 #   Interval for Seconds, writes one TSV row per sample, prints min/median/max
 #   and each process's peak working set, then stops the app.
 #   Default is a brief smoke (settle ~3s, sample ~10s); -Research soaks 300s + 300s.
-#   Environment reaches the app unchanged: AI_BUDDY_INSTANCES picks the roster,
-#   AI_BUDDY_CHARACTERS the packages. Set HOME to a scratch directory.
+#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
+#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
 
 # WorkingSet alone does not compare two runs on a busy machine; PeakWorkingSet
 # only ever rises. Compare scenarios on it and read the WorkingSet series for
@@ -30,9 +30,9 @@ if ($Research) {
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-$bin = "target\debug\ai-buddy.exe"
+$bin = "target\debug\fidget.exe"
 if (-not (Test-Path $bin)) {
-    Write-Error "no $bin - run: cd src-tauri; cargo build --bin ai-buddy"
+    Write-Error "no $bin - run: cd src-tauri; cargo build --bin fidget"
     exit 2
 }
 

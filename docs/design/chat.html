@@ -1,10 +1,10 @@
 <!doctype html>
 <!--
   The chat surface proposal for omesser/ai-buddy#17: the window a Summon opens,
-  drawn by ai-buddy rather than by the Harness (ADR-0010). Nothing here is
+  drawn by Fidget rather than by the Harness (ADR-0010). Nothing here is
   wired into the app. The page exists so the shape and the copy can be argued
   with before src/ grows a window, and so the one claim the issue tests — the
-  buddy is never blocked on a turn — can be watched rather than described.
+  character is never blocked on a turn — can be watched rather than described.
 
   Self-contained on purpose. BMO's idle, walk and talk frames are inlined so
   the page opens from a clone, a Pages deploy, or an attachment with no other
@@ -15,9 +15,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- A frozen proposal on a public site with no access control. Indexing it
-     would make a superseded design the canonical answer for "ai-buddy chat". -->
+     would make a superseded design the canonical answer for "Fidget chat". -->
 <meta name="robots" content="noindex">
-<title>Buddy Chat</title>
+<title>Fidget Chat</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
@@ -261,7 +261,7 @@
 <div class="page">
   <header>
     <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/17">#17</a> · 2026-09-04 · hand-written and frozen, not a description of shipped behavior</p>
-    <h1>Buddy Chat</h1>
+    <h1>Fidget Chat</h1>
     <p class="lede">The chat surface a Summon opens, for #17. The question it exists to
       answer: does a log-style chat this plain — the window <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
       allows and no more — carry a real Harness turn without becoming a workbench, and
@@ -270,7 +270,7 @@
   </header>
 
   <p class="note">The surface belongs to the Character Instance that was Summoned, and
-    ai-buddy draws it: the Harness runs headless in ACP mode and renders nothing. So the
+    Fidget draws it: the Harness runs headless in ACP mode and renders nothing. So the
     window carries four kinds of line and no fifth — the user's turns, the agent's text as
     it streams, tool calls as one-liners, and the forwarded
     <code>session/request_permission</code> prompt with the Harness's own choices.
@@ -281,7 +281,7 @@
   <p class="note"><b>Deliberately not drawn:</b> tool-call detail, diffs, file trees, plans,
     a skill browser, a settings pane. Those are the Harness's own surfaces, and reaching for
     one here is how this window turns into a second, worse copy of the TUI ADR-0010 refused
-    to embed. What ai-buddy has to remember of them belongs in the Action Log, not on this
+    to embed. What Fidget has to remember of them belongs in the Action Log, not on this
     scrollback — including what a sensing call returned, where the one-liner says only that
     it ran.</p>
 
@@ -318,21 +318,21 @@
 
   <p class="note">Both traces run at once on purpose. The left one is the Spatial Layer,
     which is model-free and never waits for anything; the right one is the Harness session.
-    Watch them during the slow turn: the buddy is playing Behaviors the whole way through,
+    Watch them during the slow turn: the character is playing Behaviors the whole way through,
     because nothing in the frame loop is allowed to block on a turn.</p>
 
   <h2>Sensing, and whose rules it runs under</h2>
   <p class="note">The slow turn reaches the desktop before it answers, because a chat
     message is the On-Demand tier's trigger: <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0005-sensing-posture.md">ADR-0005</a> defines that tier
     as a Capture in direct response to a Poke, a call, or a chat message, and this window is
-    where the message is typed. What it calls are the two sensing tools ai-buddy owns.
+    where the message is typed. What it calls are the two sensing tools Fidget owns.
     <code>describe_screen</code> and <code>list_windows</code> return window metadata rather
-    than pixels in v1, both pass ai-buddy's denylist so a password field or an excluded
+    than pixels in v1, both pass Fidget's denylist so a password field or an excluded
     application never enters a result, every Capture passes the Local Gate before it may
     reach the Director, and the capability behind them is consented once in settings rather
     than per capture.</p>
   <p class="note"><b>The Harness's own computer use is not that.</b> Claude Code performs it
-    natively, and <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0003-no-executor-harness-owns-desktop-control.md">ADR-0003</a> is why ai-buddy posts no input events at all:
+    natively, and <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0003-no-executor-harness-owns-desktop-control.md">ADR-0003</a> is why Fidget posts no input events at all:
     desktop control belongs to the Harness. Its screenshots and its clicks run under its own
     permissions and its own dialogs, through neither our denylist nor our Local Gate — we own
     consent for sensing only. Both kinds reach this log as the same shape of one-liner, which
@@ -358,7 +358,7 @@
       <div class="spec"><b>Seven seconds, streamed.</b> Two sensing one-liners, a
         permission prompt that waits for you, then the reply arrives a few characters at a
         time. The window says it is working; it does not spin.</div>
-      <div class="spec">Judges <b>the buddy keeps moving and reacting throughout a Harness
+      <div class="spec">Judges <b>the character keeps moving and reacting throughout a Harness
         turn</b> — the criterion the issue's manual test names, against a fake Harness with
         an artificially slow turn.</div>
     </div>
@@ -375,7 +375,7 @@
     <div class="srow">
       <div class="name">No Harness attached</div>
       <div class="spec"><b>Copy, not a failure.</b> What to attach, what attaching costs,
-        and what the buddy still does for anyone who declines. The composer is disabled
+        and what the character still does for anyone who declines. The composer is disabled
         rather than hidden, so the window reads as waiting instead of broken.</div>
       <div class="spec">Judges <b>with no Harness attached, the surface explains how to
         connect one</b>. Most people open this state first, so its copy is the part
@@ -398,7 +398,7 @@
       reactive Director turn is in flight and names Summon among them, and by ADR-0008 a
       chat turn is a reactive wake, so shipped behavior is to show one. The recommendation
       here is to suppress it anyway: the window already carries the in-flight state, and
-      seven seconds of dots above the head reads as a buddy that has stopped living. That
+      seven seconds of dots above the head reads as a character that has stopped living. That
       makes it a decision to overturn rather than a preference to nod at. The ellipsis
       stays for the wakes with no window open.</li>
     <li>The title bar names the Instance, not the Character: <b>bmo</b> large, <code>BMO</code>
@@ -415,7 +415,7 @@
 </div>
 
 <script>
-// ---- The Spatial Layer. Model-free, and the reason the buddy never freezes:
+// ---- The Spatial Layer. Model-free, and the reason the character never freezes:
 // this loop is driven by requestAnimationFrame and knows nothing about a turn.
 const ART = {
   idle: ["data:image/png;base64,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", "data:image/png;base64,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"],
@@ -647,13 +647,13 @@ async function slowTurn() {
 }
 
 // Drawn, never answered. The choices are the Harness's, and the reply goes
-// straight back to it — ADR-0003's rule is that ai-buddy adds no confirmation
+// straight back to it — ADR-0003's rule is that fidget adds no confirmation
 // of its own, not that it hides the Harness's.
 function permission() {
   const box = el("ask");
   box.append(el("head", "bmo asks to write to Memory"));
   const what = el("what");
-  what.textContent = "remember(\"Working setup\", \"Terminal on the left\") → ~/.ai-buddy/memory.md";
+  what.textContent = "remember(\"Working setup\", \"Terminal on the left\") → ~/.fidget/memory.md";
   box.append(what);
   const choices = el("choices");
   const opts = [
@@ -661,7 +661,7 @@ function permission() {
     ["Always allow remember", "allow_always", false],
     ["Reject", "reject_once", false],
   ];
-  box.append(choices, el("kind", "forwarded session/request_permission · ai-buddy draws this and never answers it"));
+  box.append(choices, el("kind", "forwarded session/request_permission · Fidget draws this and never answers it"));
   add(box);
   return new Promise(pick => {
     opts.forEach(([label, id, primary]) => {
@@ -726,9 +726,9 @@ function emptyState() {
   const box = el("empty");
   box.append(
     el("", "No Harness attached", "h3"),
-    el("", "ai-buddy ships no agent of its own. Point it at one you already have — Claude Code, opencode, Hermes, Pi — and the buddy answers here, out of the same session that proposes what BMO does on your desktop.", "p"),
-    el("", "<b>What it costs.</b> ai-buddy spawns and holds a full agent process for as long as the app runs, working in <code>~/.ai-buddy</code> rather than in your repositories. One process, one conversation — this window, the Speech and the Behaviors.", "p"),
-    el("", "<b>If you would rather not.</b> Static weights keep BMO moving with no model at all, and the HTTP Completer answers a wake over a chat-completions endpoint. Both stay supported: the buddy still walks, reacts and speaks. This window is the only part that waits for a Harness.", "p"),
+    el("", "Fidget ships no agent of its own. Point it at one you already have — Claude Code, opencode, Hermes, Pi — and the character answers here, out of the same session that proposes what BMO does on your desktop.", "p"),
+    el("", "<b>What it costs.</b> Fidget spawns and holds a full agent process for as long as the app runs, working in <code>~/.fidget</code> rather than in your repositories. One process, one conversation — this window, the Speech and the Behaviors.", "p"),
+    el("", "<b>If you would rather not.</b> Static weights keep BMO moving with no model at all, and the HTTP Completer answers a wake over a chat-completions endpoint. Both stay supported: the character still walks, reacts and speaks. This window is the only part that waits for a Harness.", "p"),
   );
   const attach = document.createElement("button");
   attach.type = "button";

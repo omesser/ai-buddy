@@ -7,7 +7,7 @@
 // paints unlike reply code.
 //   node scripts/chat-ask-order.mjs
 // Env:
-//   AI_BUDDY_CHROME  the headless Chromium binary (default: Playwright's shell)
+//   FIDGET_CHROME  the headless Chromium binary (default: Playwright's shell)
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const CHROME =
-  process.env.AI_BUDDY_CHROME ??
+  process.env.FIDGET_CHROME ??
   join(
     homedir(),
     "Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell",

@@ -1,6 +1,6 @@
 Scenario: large (Black Mage @3x scale)
 Character: Black Mage (source 37×33, rendered 111×99 @3x)
-Method: AI_BUDDY_INSTANCES='Black Mage' (scale=3);
+Method: FIDGET_INSTANCES='Black Mage' (scale=3);
         SetCursorPos follow TRACE_FRAMES sprite center
 Measure window: 12.09 seconds
 Tip SHA: a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1

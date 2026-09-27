@@ -7,13 +7,13 @@ operating systems.
 
 ## Summary of macOS findings
 
-A two-display, one-Instance buddy peaks at **583 MB** of physical footprint
+A two-display, one-Instance character peaks at **583 MB** of physical footprint
 across five processes, and read a median **259 MB** resident in a window with a
 third of the machine's memory free. Footprint scales with **pixels**, not with
 Instances: each display is one `WebContent` process, and the 3456×2234 panel's
 is 75–110 MB heavier than the 1920×1080 one in every run. Four Instances cost
 **+56 MB**, all of it inside the webviews — the Rust process's peak did not move
-at all. Character art is not what makes a buddy large: all eight installed
+at all. Character art is not what makes a character large: all eight installed
 packages are 4.5 MB of base64, and because the app loads every one of them at
 launch, switching Character cannot make RSS grow. What the sprite is doing does
 not move the number either: idle, walking, sitting and talking read within a few
@@ -30,8 +30,8 @@ MB of each other.
 | Machine | MacBook Pro `Mac15,7`, 36 GB, macOS 26.6.2 (25G83) |
 | Display 1 | DELL P2414H, 1920×1080 at 1×, main, overlay at (0,0) |
 | Display 2 | Built-in Liquid Retina XDR, 3456×2234 at 2× — 1728×1117 in points, overlay at (1920,0) |
-| Build | `target/debug/ai-buddy`, **debug**, ad-hoc signed at a worktree path |
-| Completer | none — `AI_BUDDY_DIRECTOR=0`, so `StaticDirector` picks every Behavior and no HTTP leaves the process |
+| Build | `target/debug/fidget`, **debug**, ad-hoc signed at a worktree path |
+| Completer | none — `FIDGET_DIRECTOR=0`, so `StaticDirector` picks every Behavior and no HTTP leaves the process |
 | Date | 2026-09-09 |
 
 The debug build is what #424 asked to run, and it is not what a user runs. Read
@@ -51,26 +51,26 @@ matrix with many scenarios. Not a research soak.
 for bathtub curve analysis and measurement studies.
 
 ```sh
-cd src-tauri && cargo build --bin ai-buddy && cd ..
+cd src-tauri && cargo build --bin fidget && cd ..
 
 HOME=/tmp/bench-home \
-AI_BUDDY_DIRECTOR=0 AI_BUDDY_DIRECTOR_API_KEY=x AI_BUDDY_CAPTURABLE=1 \
-AI_BUDDY_TRACE_ENGINE=1 AI_BUDDY_CHARACTERS="$PWD/characters" \
-AI_BUDDY_INSTANCES="bmo:One" \
+FIDGET_DIRECTOR=0 FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 \
+FIDGET_TRACE_ENGINE=1 FIDGET_CHARACTERS="$PWD/characters" \
+FIDGET_INSTANCES="bmo:One" \
 scripts/bench-rss-macos.sh --out /tmp/one-instance.tsv
 
 # Research mode (300s settle + 300s sample) for measurement studies:
 scripts/bench-rss-macos.sh --research --out /tmp/research-run.tsv
 ```
 
-Five variables carry the run. `AI_BUDDY_INSTANCES` is the roster,
-`AI_BUDDY_CHARACTERS` the set of installed packages, `AI_BUDDY_DIRECTOR=0` keeps
+Five variables carry the run. `FIDGET_INSTANCES` is the roster,
+`FIDGET_CHARACTERS` the set of installed packages, `FIDGET_DIRECTOR=0` keeps
 the network out of it, and `HOME` points at a scratch directory so nothing
-touches the real install's settings or Action Log. `AI_BUDDY_DIRECTOR_API_KEY`
+touches the real install's settings or Action Log. `FIDGET_DIRECTOR_API_KEY`
 is not a credential here: a worktree build is a new path to the Keychain, and
 without the variable the launch stops on a password dialog (#283, #290).
 
-`AI_BUDDY_TRACE_ENGINE=1` is what makes a run reportable rather than a number.
+`FIDGET_TRACE_ENGINE=1` is what makes a run reportable rather than a number.
 An RSS figure with no record of what the sprite was doing is not a measurement,
 and the trace is the only thing that says.
 
@@ -80,7 +80,7 @@ WKWebView runs its content out of process, and those processes are children of
 `launchd`, not of the app — no process-tree walk finds them.
 
 ```
-ai-buddy                       the Rust binary: Engine, frame loop, art, Tauri
+fidget                       the Rust binary: Engine, frame loop, art, Tauri
 com.apple.WebKit.WebContent    one per overlay, so one per display
 com.apple.WebKit.WebContent
 com.apple.WebKit.GPU           one, shared
@@ -123,7 +123,7 @@ worth running before anyone calls it a plateau. **Open question, not a finding.*
 ### What RSS on macOS does and does not mean
 
 RSS is what the kernel has let a process keep, not what it needs. A busy machine
-takes pages back from an idle buddy, and the same app then reads far lighter for
+takes pages back from an idle character, and the same app then reads far lighter for
 reasons that have nothing to do with the app. That is not a small effect here —
 it is larger than every difference #424 asks about:
 
@@ -147,7 +147,7 @@ on the footprint. The RSS series is kept for shape, not for ranking.
 
 Peak physical footprint per process, MB, over a 300 s settle plus 300 s sample:
 
-| Run | `ai-buddy` | GPU | Networking | 1920×1080 overlay | 3456×2234 overlay | **Total** |
+| Run | `fidget` | GPU | Networking | 1920×1080 overlay | 3456×2234 overlay | **Total** |
 |---|---|---|---|---|---|---|
 | A — 1 Instance, 8 Characters installed | 82.9 | 146.3 | 8.0 | 132.7 | 213.2 | **583** |
 | B — 4 Instances of one Character | 82.9 | 147.6 | 7.3 | 162.0 | 239.5 | **639** |
@@ -284,14 +284,14 @@ One successful unattended run on Grok Bot box after the stderr-file fix
 | Sample interval | 2s |
 | Samples | 15 |
 | **Total RSS** | **min 821 MB / median 823 MB / max 933 MB** |
-| Process count | 4 (ai-buddy + WebKitNetworkProcess + 2× WebKitWebProcess) |
+| Process count | 4 (fidget + WebKitNetworkProcess + 2× WebKitWebProcess) |
 | Exit code | 0 |
 
-Per-process medians and peak RSS (VmHWM): ai-buddy 237/250 MB,
+Per-process medians and peak RSS (VmHWM): fidget 237/250 MB,
 WebKitNetworkProcess 61/60.5 MB, WebKitWebProcess 238/238 MB,
 WebKitWebProcess 287/396 MB.
 
-Total RSS includes the main ai-buddy process plus all WebKitGTK helper processes.
+Total RSS includes the main fidget process plus all WebKitGTK helper processes.
 
 ### How to run (on a machine with a display)
 
@@ -305,12 +305,12 @@ matrix with many scenarios. Not a research soak.
 for bathtub curve analysis and measurement studies.
 
 ```sh
-cd src-tauri && cargo build --bin ai-buddy && cd ..
+cd src-tauri && cargo build --bin fidget && cd ..
 
 HOME=/tmp/bench-home \
-AI_BUDDY_DIRECTOR=0 AI_BUDDY_DIRECTOR_API_KEY=x AI_BUDDY_CAPTURABLE=1 \
-AI_BUDDY_TRACE_ENGINE=1 AI_BUDDY_CHARACTERS="$PWD/characters" \
-AI_BUDDY_INSTANCES="bmo:One" \
+FIDGET_DIRECTOR=0 FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 \
+FIDGET_TRACE_ENGINE=1 FIDGET_CHARACTERS="$PWD/characters" \
+FIDGET_INSTANCES="bmo:One" \
 scripts/bench-rss-linux.sh --out /tmp/one-instance.tsv
 
 # Research mode (300s settle + 300s sample) for measurement studies:
@@ -326,7 +326,7 @@ WebKitGTK's process model depends on version and build configuration:
 - **Older or sandboxing-disabled builds** may run everything in-process.
 
 The Linux script uses `pgrep -P <pid>` to find all child processes of the main
-ai-buddy process. WebKitGTK helpers on Linux are children of the main process
+fidget process. WebKitGTK helpers on Linux are children of the main process
 (unlike macOS where they are children of `launchd`), so the process tree walk
 discovers them automatically.
 
@@ -365,9 +365,9 @@ Based on the macOS findings (not yet validated at scale on Linux):
 If heap profiling is desired, use `heaptrack` on Linux:
 
 ```sh
-heaptrack target/debug/ai-buddy
+heaptrack target/debug/fidget
 # ... run the scenario ...
-heaptrack --analyze heaptrack.ai-buddy.*.gz
+heaptrack --analyze heaptrack.fidget.*.gz
 ```
 
 Look for top allocators and whether unused Character art (base64 strings) is
@@ -395,7 +395,7 @@ One successful unattended run on DESKTOP-UQIE144 after the stderr-file fix
 | **Total working set** | **min 607 MB / median 612 MB / max 620 MB** |
 | Exit code | 0 |
 
-Total working set includes ai-buddy.exe plus all msedgewebview2.exe helper
+Total working set includes fidget.exe plus all msedgewebview2.exe helper
 processes.
 
 ### How to run
@@ -411,16 +411,16 @@ bathtub curve analysis and measurement studies.
 
 ```powershell
 cd src-tauri
-cargo build --bin ai-buddy
+cargo build --bin fidget
 cd ..
 
 $env:HOME = "C:\Temp\bench-home"
-$env:AI_BUDDY_DIRECTOR = "0"
-$env:AI_BUDDY_DIRECTOR_API_KEY = "x"
-$env:AI_BUDDY_CAPTURABLE = "1"
-$env:AI_BUDDY_TRACE_ENGINE = "1"
-$env:AI_BUDDY_CHARACTERS = (Get-Location).Path + "\characters"
-$env:AI_BUDDY_INSTANCES = "bmo:One"
+$env:FIDGET_DIRECTOR = "0"
+$env:FIDGET_DIRECTOR_API_KEY = "x"
+$env:FIDGET_CAPTURABLE = "1"
+$env:FIDGET_TRACE_ENGINE = "1"
+$env:FIDGET_CHARACTERS = (Get-Location).Path + "\characters"
+$env:FIDGET_INSTANCES = "bmo:One"
 
 .\scripts\bench-rss-windows.ps1 -Out "C:\Temp\one-instance.tsv"
 
@@ -432,7 +432,7 @@ $env:AI_BUDDY_INSTANCES = "bmo:One"
 
 WebView2 on Windows uses the Chromium (Edge) multi-process architecture:
 
-- **Main process:** `ai-buddy.exe` (the Rust binary).
+- **Main process:** `fidget.exe` (the Rust binary).
 - **WebView2 helpers:** Multiple `msedgewebview2.exe` processes:
   - **Renderer:** One per webview (so one per display for the overlay).
   - **GPU process:** Shared.
@@ -441,7 +441,7 @@ WebView2 on Windows uses the Chromium (Edge) multi-process architecture:
 
 The Windows script uses `Get-Process -Name "msedgewebview2"` before and after
 launch to find all WebView2 helpers that appeared. These are not child processes
-of ai-buddy.exe (they are children of the Edge browser infrastructure), so the
+of fidget.exe (they are children of the Edge browser infrastructure), so the
 script uses a set-difference approach similar to the macOS WebKit helper
 discovery.
 
@@ -469,7 +469,7 @@ Based on the macOS findings (not yet validated at scale on Windows):
 - **Displays cost pixels, not count.** WebView2's Renderer process memory usage
   should scale with overlay resolution (backing store size).
 - **Instances cost webview, not engine.** Multiple Character Instances should
-  add cost to the Renderer processes, not the main ai-buddy.exe process.
+  add cost to the Renderer processes, not the main fidget.exe process.
 - **Character art is front-loaded.** All installed Characters are loaded at
   launch, so a Character switch cannot grow memory permanently.
 
@@ -486,7 +486,7 @@ or the Visual Studio profiler:
 ```powershell
 # Using Windows Performance Recorder (WPR)
 wpr -start GeneralProfile -filemode
-# ... run ai-buddy ...
+# ... run fidget ...
 wpr -stop profile.etl
 # Analyze with Windows Performance Analyzer (wpa.exe profile.etl)
 ```

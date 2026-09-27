@@ -12,13 +12,13 @@ function Fail($m) {
   exit 1
 }
 
-$Bin = $env:AI_BUDDY_VERIFY_BIN
+$Bin = $env:FIDGET_VERIFY_BIN
 if (-not $Bin) {
-  $debug = Join-Path $Root "target\debug\ai-buddy.exe"
-  $release = Join-Path $Root "target\release\ai-buddy.exe"
+  $debug = Join-Path $Root "target\debug\fidget.exe"
+  $release = Join-Path $Root "target\release\fidget.exe"
   if (Test-Path $debug) { $Bin = $debug }
   elseif (Test-Path $release) { $Bin = $release }
-  else { Fail "binary missing. cargo build -p ai-buddy, or set AI_BUDDY_VERIFY_BIN" }
+  else { Fail "binary missing. cargo build -p fidget, or set FIDGET_VERIFY_BIN" }
 }
 
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -62,7 +62,7 @@ public class AnchorVerify {
 }
 "@
 
-$env:AI_BUDDY_TRACE_FRAMES = "1"
+$env:FIDGET_TRACE_FRAMES = "1"
 $script:AppProc = Start-Process -FilePath $Bin -RedirectStandardError $Log -PassThru -WindowStyle Hidden
 Info "pid $($script:AppProc.Id) log $Log"
 

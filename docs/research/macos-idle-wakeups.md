@@ -10,7 +10,7 @@ fixed commits rather than against a moving branch.
 
 ## The numbers
 
-A buddy sitting perched, doing nothing, on an idle desktop:
+A character sitting perched, doing nothing, on an idle desktop:
 
 | | `main` | after #718 |
 |---|---|---|
@@ -105,7 +105,7 @@ an overlay's WKWebView content runs in XPC services of its own:
 
 | Process | CPU (ms/s) | Wakeups/sec |
 |---|---|---|
-| `ai-buddy` | 163.6 | 392.1 |
+| `fidget` | 163.6 | 392.1 |
 | `WebKit.WebContent` (both overlays) | 122.4 | 24.5 |
 | `WebKit.GPU` | 12.0 | 10.8 |
 | `WebKit.Networking` | 0.5 | 9.7 |
@@ -115,7 +115,7 @@ Medians of three interleaved 30-second captures on the `main` arm, launched
 the same way `scripts/bench-wakeups-macos.sh` launches one and sampled the
 same way, with the XPC services the app spawned recorded alongside its own
 pid. It says the thing this document had no way to see before: the 14.6% at
-the top counts one of four processes, and the buddy's real idle cost is
+the top counts one of four processes, and the character's real idle cost is
 nearly twice the host process alone.
 
 It also says where the rAF loop's own work lands, which is not in the wakeup
@@ -162,7 +162,7 @@ Together: **12.5% CPU and 405 wakeups/sec become 6.4% and 313.**
 The whole-family capture above, rerun across all three arms, agrees and reads
 tighter, because it samples every second rather than the idle-animation ones:
 
-| Arm | `ai-buddy` CPU (ms/s) | `ai-buddy` wakeups/sec | Family CPU (ms/s) |
+| Arm | `fidget` CPU (ms/s) | `fidget` wakeups/sec | Family CPU (ms/s) |
 |---|---|---|---|
 | `main` | 163.6 [163.6–169.2] | 392.1 [391.6–394.1] | 302.7 |
 | skip an unchanged emit | 124.7 [121.4–125.4] | 393.0 [392.4–393.0] | 221.5 |
@@ -200,13 +200,13 @@ the WebKit XPC services this launch spawned. Two 20-second windows:
 
 | Thread | Process | Wakeups/sec |
 |---|---|---|
-| `JavaScriptCore libpas scavenger` | `ai-buddy` (host) | 28.0, 26.1 |
-| frame loop (`run_frame_loop`) | `ai-buddy` (host) | 35.0, 35.1 |
+| `JavaScriptCore libpas scavenger` | `fidget` (host) | 28.0, 26.1 |
+| frame loop (`run_frame_loop`) | `fidget` (host) | 35.0, 35.1 |
 | WebContent main thread | `WebKit.WebContent` | 11.45, 13.45 |
 | `JavaScriptCore libpas scavenger` | `WebKit.GPU` | 4.65, 4.65 |
 | `JavaScriptCore libpas scavenger` | `WebKit.WebContent` | 4.0, 4.1 |
-| host `main` | `ai-buddy` | 0.45, 0.3 |
-| `CVDisplayLink` | `ai-buddy` (host) | 0, 0 |
+| host `main` | `fidget` | 0.45, 0.3 |
+| `CVDisplayLink` | `fidget` (host) | 0, 0 |
 | `JavaScriptCore libpas scavenger` | `WebKit.Networking` | 0, 0 |
 
 Named family total 85.5 and 87.7 interrupt wakeups/sec. The frame loop is
@@ -318,7 +318,7 @@ reduction**, in bold. That was arithmetic on a single observation per arm. It
 did not survive repetition and it is wrong.
 
 **Shared machine.** A dev laptop with other agents building and running their
-own work throughout every capture, including their own `ai-buddy` instances.
+own work throughout every capture, including their own `fidget` instances.
 That is the direct cause of the overlap above. Re-measuring chat-open fifteen
 minutes later moved it ~60% on both arms with no code change. Rerun on a quiet
 machine and expect different figures.
@@ -329,8 +329,8 @@ machine and expect different figures.
 |---|---|
 | Machine | MacBook Pro `Mac15,7`, Apple M3 Pro, 36 GB |
 | OS | macOS 26.6.2 (25G83) |
-| Build | `target/release/ai-buddy`, **release**, per branch, ad-hoc signed at its worktree path |
-| Director | `AI_BUDDY_DIRECTOR=0` — `StaticDirector`, offline, no HTTP leaves the process |
+| Build | `target/release/fidget`, **release**, per branch, ad-hoc signed at its worktree path |
+| Director | `FIDGET_DIRECTOR=0` — `StaticDirector`, offline, no HTTP leaves the process |
 | Character | BMO (the default when none is set) |
 | Date | 2026-09-15 |
 | Control arm, written `main` below | `7a58e02f` — this issue's base, **before** #718 |
@@ -344,13 +344,13 @@ state that no longer exists on the branch. The A/B below is unaffected: it compa
 fixed commits and both are still in history. What changed is which arm a future reader
 should treat as the baseline to beat. That is the `#718` column, not the `main` one.
 
-Both binaries were built with `cargo build -p ai-buddy --release` from a
+Both binaries were built with `cargo build -p fidget --release` from a
 dedicated worktree per branch (`.worktrees/431-macos-wakeups` and
 `.worktrees/718-idle-backoff`), never in the primary checkout.
 
 **This is a shared dev machine, not a clean-room rig.** Other agents were
 building and running their own work on it throughout this capture, including
-their own `ai-buddy` instances (a concurrent, unrelated `ai-buddy` process
+their own `fidget` instances (a concurrent, unrelated `fidget` process
 under a different PID showed up in a real capture during this task — the
 tooling below filters by exact PID for that reason, see Gotchas). Per-process
 wakeup counts are scoped by PID, which rules out double-counting a different
@@ -366,13 +366,13 @@ confound a second time, more directly.
 
 - `scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden [--duration SECS] [--out DIR]` —
   launches the release binary with the env a worktree build needs
-  (`AI_BUDDY_DIRECTOR_API_KEY` skips the Keychain prompt, #283), waits for the
+  (`FIDGET_DIRECTOR_API_KEY` skips the Keychain prompt, #283), waits for the
   overlay to report ready, optionally drives Summon (see below) or the
-  fullscreen hide (see "Baseline (no ai-buddy) and hidden, interleaved"), then runs
+  fullscreen hide (see "Baseline (no fidget) and hidden, interleaved"), then runs
   `sudo powermetrics -i 1000 -n DURATION --samplers tasks,cpu_power` for the
   window and writes `powermetrics.txt` + `app.log` + `meta.txt` to `--out`.
   `--scenario baseline` launches nothing and refuses to sample while any
-  `ai-buddy` process is alive, since another agent's build would otherwise
+  `fidget` process is alive, since another agent's build would otherwise
   become the baseline without anyone noticing. Every `meta.txt` records the
   load average and whether `cargo`/`rustc` were running at the end of the
   capture.
@@ -506,7 +506,7 @@ same effect the interleaved idle-perched runs were built to control for.
 Treat this table as two single samples, not as a measurement of #718's
 effect on chat-open.
 
-## Baseline (no ai-buddy) and hidden, interleaved
+## Baseline (no Fidget) and hidden, interleaved
 
 The two scenarios from #431's list that the sections above left out, captured
 2026-09-23 against `dac3c1ae` (`main` after #760 and #790, so the idle arm here
@@ -518,9 +518,9 @@ hidden, baseline, idle, hidden, ...** so a load drift lands on all three arms
 of the same round:
 
 - **baseline** — `scripts/bench-wakeups-macos.sh --scenario baseline`. No
-  ai-buddy process alive; the script refuses to sample if one is, and
-  `meta.txt` records the `pgrep -x ai-buddy` result before and after.
-- **idle** — the idle-perched scenario, rerun here so the buddy-vs-no-buddy
+  fidget process alive; the script refuses to sample if one is, and
+  `meta.txt` records the `pgrep -x fidget` result before and after.
+- **idle** — the idle-perched scenario, rerun here so the fidget-vs-no-fidget
   comparison #431's last acceptance box asks for is a same-round pair rather
   than a comparison against a capture from a week earlier.
 - **hidden** — `--scenario hidden`. The app launches, waits for a
@@ -558,7 +558,7 @@ end of its capture; the 1-minute load average is in the last column.
 
 Per-process columns are the exact PID the script launched. Cluster idle and
 package power are system-wide. Round 3's baseline arm (59.2% P-Cluster idle,
-2007 mW, with no ai-buddy alive) is the machine doing something else for
+2007 mW, with no fidget alive) is the machine doing something else for
 those 45 seconds, and it is kept: dropping the inconvenient no-app round
 would be the single-sample mistake this document already withdrew once.
 
@@ -582,12 +582,12 @@ magnitude. What stays while hidden is what #761 named: the host and WebKit
 processes keep their own cadence whether or not the sprite is drawn, and the
 hide rule does not reach it.
 
-**Does per-cluster idle residency drop with ai-buddy running? This data cannot
+**Does per-cluster idle residency drop with fidget running? This data cannot
 say.** Same-round differences, idle minus baseline: E-Cluster idle residency
 +2.0, +2.7, +10.3, −0.6 points; P-Cluster +26.9, −13.3, −1.5, −4.3 points;
 package power +582, −196, −1501, +71 mW. In three of four rounds the machine
-was *more* idle with the buddy perched than with nothing running, which is not
-a property of the buddy. The effect this box is looking for has a ceiling: a
+was *more* idle with the character perched than with nothing running, which is not
+a property of the character. The effect this box is looking for has a ceiling: a
 process at 7.9% of one core on a 12-core package (6 P + 6 E) can move a
 cluster's idle residency by under one percentage point, and the round-to-round
 swing of the no-app arm alone is 12 points on E and 33 on P. On this machine
@@ -608,14 +608,14 @@ arm's P-Cluster spread down from 33 points to 7.5, and the answer is still
 Inconclusive, now because the effect is under the instrument's floor rather than
 under the room's noise.
 
-## Does ai-buddy keep the machine awake? No
+## Does Fidget keep the machine awake? No
 
 This is the question "deep sleep prevention" is usually reaching for, and it is
 not the question idle residency answers. macOS decides system and display sleep
 from `IOPMAssertion`, not from C-states. A process keeps the machine awake only
 by taking an assertion out, so the check is one command and it is decisive.
 
-Measured 2026-09-24, release binary, overlay up, `AI_BUDDY_DIRECTOR=0`:
+Measured 2026-09-24, release binary, overlay up, `FIDGET_DIRECTOR=0`:
 
 ```
 $ pmset -g assertions            # before launch
@@ -624,19 +624,19 @@ $ pmset -g assertions            # before launch
    PreventUserIdleSystemSleep     1
    pid 80906(caffeinate) ...  pid 559(powerd) ...
 
-$ pmset -g assertions            # ai-buddy running
+$ pmset -g assertions            # fidget running
    PreventUserIdleDisplaySleep    0
    PreventSystemSleep             0
    PreventUserIdleSystemSleep     1
-   (no assertion names ai-buddy)
+   (no assertion names fidget)
 ```
 
-The count does not move and nothing names the buddy. The single assertion
+The count does not move and nothing names the character. The single assertion
 present belongs to `caffeinate` and `powerd` and predates the launch, so take
 the baseline in the same session rather than reading a lone count as ownership.
 
-So the display and the system sleep on their normal idle timers with ai-buddy
-running. What the buddy does cost is package idle, about 2.32 wakeups a second
+So the display and the system sleep on their normal idle timers with fidget
+running. What the character does cost is package idle, about 2.32 wakeups a second
 while perched, which is a different and much smaller claim. #741 owns reducing
 that.
 
@@ -662,25 +662,25 @@ residency in particular is essentially identical between branches. Read that
 as the same shared-machine confound as above, not as evidence #718 has no
 effect on idle residency: these are system-wide numbers, so anything else
 running on the machine during a given round shows up here as strongly as
-`ai-buddy` does, or more. The per-process wakeup counts are the more
+`fidget` does, or more. The per-process wakeup counts are the more
 trustworthy comparison in this document; these cluster-residency and
 package-power numbers are included for completeness and are not a second
 confirmation of anything.
 
-The comparison this section could not make when it was written, buddy against
-no buddy, is now in "Baseline (no ai-buddy) and hidden, interleaved" above,
+The comparison this section could not make when it was written, character against
+no character, is now in "Baseline (no fidget) and hidden, interleaved" above,
 and reaches the same verdict for the same reason: the no-app arm's residency
 moved by more between rounds than one process could move it at all.
 
-If what you want to know is whether the buddy stops the machine sleeping, this
-section is the wrong one. See "Does ai-buddy keep the machine awake?" above.
+If what you want to know is whether the character stops the machine sleeping, this
+section is the wrong one. See "Does fidget keep the machine awake?" above.
 
 ## Gotchas
 
 - **Filter by PID, never by process name alone.** `powermetrics` is
-  system-wide. During this task a second, unrelated `ai-buddy` process
+  system-wide. During this task a second, unrelated `fidget` process
   (another agent's own build) appeared in a real capture under a different
-  PID. `parse-powermetrics.py --process ai-buddy` without `--pid` will warn
+  PID. `parse-powermetrics.py --process fidget` without `--pid` will warn
   and silently pick whichever line comes first in that sample — always pass
   `--pid`, which `bench-wakeups-macos.sh` prints on every run.
 - **A single capture per branch is not a measurement, it is a sample.** The
@@ -714,8 +714,8 @@ section is the wrong one. See "Does ai-buddy keep the machine awake?" above.
 ## Completing the residency confirmation on a quiet machine
 
 The last acceptance criterion in #431 asks whether per-cluster idle residency
-drops with ai-buddy running, to confirm deep sleep prevention. The baseline and
-idle measurements exist (see "Baseline (no ai-buddy) and hidden, interleaved"
+drops with fidget running, to confirm deep sleep prevention. The baseline and
+idle measurements exist (see "Baseline (no fidget) and hidden, interleaved"
 above), but were taken on a shared development machine where background activity
 produces larger residency swings than one 7.9%-CPU process can cause.
 
@@ -736,7 +736,7 @@ to get.** The protocol ran on 2026-09-24 against `ecb92b8d`. The verdict is in
 
 **A quiet Apple Silicon Mac does not read near 100% idle on either cluster, and
 waiting for that is waiting forever.** The run below was as quiet as this
-machine gets (load 2.2–2.8, no `cargo`, no `rustc`, no other `ai-buddy`) and its
+machine gets (load 2.2–2.8, no `cargo`, no `rustc`, no other `fidget`) and its
 no-app arm still read 83.8% median on P-Cluster and 25.3% on E-Cluster. macOS
 parks its own background work on the E-cores, so E-Cluster idle residency is
 structurally low on a desktop that is merely unattended. Treat the baseline
@@ -747,21 +747,21 @@ attempt the measurement; #931 saw 33.
 ### Protocol
 
 Run four interleaved rounds of baseline and idle-perched, following the same
-A/B pattern used in "Baseline (no ai-buddy) and hidden, interleaved".
+A/B pattern used in "Baseline (no fidget) and hidden, interleaved".
 
 **Build in a separate step and wait for the load average to come back down.**
 The build is not part of the capture loop, and it is not enough to put it at the
 top of the same script. On the 2026-09-24 run the load average was 2.49 at the
 moment the loop was launched, the loop's own `cargo build` relinked the
-`ai-buddy` crate in 17 seconds, and round 1's baseline arm — the very next
+`fidget` crate in 17 seconds, and round 1's baseline arm — the very next
 command — recorded 4.02. That capture was discarded and the run restarted with
 the build outside the loop. A build during a capture is the confound that made
 #931 inconclusive, and a build immediately *before* one is the same confound.
 
 ```bash
 # Step 1, on its own. Build, then wait for the machine to come back down.
-cargo build -p ai-buddy --release
-BINARY="$PWD/target/release/ai-buddy"
+cargo build -p fidget --release
+BINARY="$PWD/target/release/fidget"
 until awk -v l="$(sysctl -n vm.loadavg | awk '{print $2}')" \
   'BEGIN{exit !(l < 2.6)}'; do sleep 15; done
 ```
@@ -779,7 +779,7 @@ for i in 1 2 3 4; do
   echo "=== Round $i === $(date) load=$(sysctl -n vm.loadavg)" \
     | tee -a "$OUT_BASE/summary.txt"
 
-  # Baseline: no ai-buddy running. The script refuses if one is.
+  # Baseline: no fidget running. The script refuses if one is.
   scripts/bench-wakeups-macos.sh --scenario baseline --duration 45 \
     --out "$OUT_BASE/round${i}-baseline"
 
@@ -819,7 +819,7 @@ your own.
 Run 2026-09-24 on the same `Mac15,7` as everything above, macOS 26.7 (25G229),
 release build of `ecb92b8d` from `.worktrees/bench-960`. Four rounds, baseline
 then idle, 45 seconds each, 10 seconds between arms. Every capture's `meta.txt`
-recorded `cargo_or_rustc_running: 0`, no `ai-buddy` alive before a baseline arm,
+recorded `cargo_or_rustc_running: 0`, no `fidget` alive before a baseline arm,
 and the load average below. Per-process columns are the exact PID the script
 launched; cluster residency and package power are system-wide, over the whole
 45-second capture rather than the idle-family bucket, so the two arms are
@@ -869,7 +869,7 @@ precondition this protocol was written to obtain was obtained.
 | 4 | +1.0 pts | −2.1 pts | −398 mW |
 
 **P-Cluster now resolves a direction, and it is the direction #431 predicted.**
-All four rounds read less P-Cluster idle residency with the buddy perched than
+All four rounds read less P-Cluster idle residency with the character perched than
 with nothing running. #931's four rounds split two up and two down on the same
 column, which is what "cannot say" looked like. That is the one thing a quiet
 machine bought. E-Cluster still swings both ways (−0.5, +0.7, −4.1, +1.0) and
@@ -951,7 +951,7 @@ quiet machine is not a repeat of the first.** It says the effect is below what
 system-wide cluster residency can resolve for a process this size, which is a
 result about the instrument rather than about the room.
 
-Either way the `pkg-idle` wakeup count (about 2/sec for ai-buddy) is the direct
+Either way the `pkg-idle` wakeup count (about 2/sec for fidget) is the direct
 per-process measurement that does resolve, and it does not answer the
 cluster-level residency question the acceptance box asks.
 
@@ -961,7 +961,7 @@ The claim that the harness needed no changes survived the run. Eight captures,
 eight clean exits, no edit to `scripts/bench-wakeups-macos.sh` or
 `scripts/parse-powermetrics.py`. It already:
 
-- Refuses to run a baseline while any `ai-buddy` process is alive
+- Refuses to run a baseline while any `fidget` process is alive
 - Records load average and `cargo`/`rustc` status in `meta.txt`
 - Filters `powermetrics` output by exact PID (not process name)
 - Proves the scenario via frame log (Summon for chat, `presence: hidden` for hidden)
@@ -971,7 +971,7 @@ that reading held up.
 
 What did not survive the run was the surrounding protocol, in two places, both
 fixed above. The build belongs outside the capture loop behind a load-average
-gate, because the loop's own `cargo build` relinked `ai-buddy` and put 4.02 on
+gate, because the loop's own `cargo build` relinked `fidget` and put 4.02 on
 the load average of the baseline capture that followed it. And the trailing
 cluster-residency loop is dead code that reads correctly by accident. Neither is
 a criticism of writing a protocol without a Mac to run it on; they are the two
@@ -982,8 +982,8 @@ things only a run could find.
 Scoped out per this task's instructions, not fabricated:
 
 - **Multi-monitor** — #424's scope, not this issue's.
-- **Baseline (no ai-buddy running)** and **hidden/fullscreen** — measured
-  since, see "Baseline (no ai-buddy) and hidden, interleaved" above, and
+- **Baseline (no fidget running)** and **hidden/fullscreen** — measured
+  since, see "Baseline (no fidget) and hidden, interleaved" above, and
   rerun on a quiet machine in "The quiet-machine result". A clean per-cluster
   idle-residency comparison is the one thing neither run produced, and the
   second run says why: the effect is below what a system-wide residency

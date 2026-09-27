@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::director::{Completer, Reply, Wake, WakeRequest};
+use fidget_core::director::{Completer, Reply, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -23,25 +23,25 @@ use crate::action_log;
 pub use crate::acp_wire::{ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep, SignIn};
 
 /// `pub(crate)` so the settings window can name the variable that owns a row.
-pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
+pub(crate) const VAR: &str = "FIDGET_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
-pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
+pub(crate) const MCP_BIN: &str = "FIDGET_MCP_BIN";
 /// Spawn `current_dir` and ACP session cwd. Empty is the data folder, not
 /// `$HOME`: bare home mixes app files with harness project configs (#782).
-pub(crate) const CWD: &str = "AI_BUDDY_HARNESS_CWD";
+pub(crate) const CWD: &str = "FIDGET_HARNESS_CWD";
 /// How long an unauthenticated Harness is left alone, in seconds. Named here
 /// so the Development row it owns can print it.
-pub(crate) const AUTH_RETRY_SECS: &str = "AI_BUDDY_HARNESS_AUTH_RETRY_SECS";
+pub(crate) const AUTH_RETRY_SECS: &str = "FIDGET_HARNESS_AUTH_RETRY_SECS";
 /// How long a Harness `session/prompt` may run, in seconds. Named here so
 /// the Development row it owns can print it.
-pub(crate) const TURN_TIMEOUT_SECS: &str = "AI_BUDDY_HARNESS_TURN_TIMEOUT";
+pub(crate) const TURN_TIMEOUT_SECS: &str = "FIDGET_HARNESS_TURN_TIMEOUT";
 
 /// The one file the session survives a restart in.
 const SESSION_FILE: &str = "harness-session.json";
 
 /// How long a not-yet-authenticated Harness is left alone before `session/new`
 /// is tried again. Long enough not to hammer it, short enough that a user who
-/// runs the login command sees the buddy pick it up without a restart.
+/// runs the login command sees the character pick it up without a restart.
 const AUTH_RETRY: Duration = Duration::from_secs(60);
 
 /// What an empty auth-retry field means, in seconds.
@@ -54,7 +54,7 @@ pub(crate) fn auth_retry_placeholder() -> String {
 /// Two minutes covers a lookup and still maps expiry to cancel.
 pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Settings / `AI_BUDDY_HARNESS_TURN_TIMEOUT` still wins when set.
+/// Settings / `FIDGET_HARNESS_TURN_TIMEOUT` still wins when set.
 pub(crate) fn turn_timeout() -> Duration {
     crate::dev_flags::harness_turn_timeout_secs().map_or(TURN_TIMEOUT, Duration::from_secs)
 }
@@ -150,7 +150,7 @@ fn takes_cursor_config(launch: &Launch) -> bool {
 }
 
 /// The exported variable, else the Completer source row Settings saved.
-/// Exported-and-empty is not unexported. `AI_BUDDY_HARNESS=` is the kill
+/// Exported-and-empty is not unexported. `FIDGET_HARNESS=` is the kill
 /// switch, and falling through would spawn the Harness the export cleared.
 pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
     match std::env::var(VAR) {
@@ -173,8 +173,8 @@ impl Launch {
         if self.name == "pi" {
             if let Some(endpoint) = crate::mcp_http::endpoint() {
                 let (url, token) = endpoint.registration();
-                command.env(ai_buddy_mcp_server::URL_VAR, url);
-                command.env(ai_buddy_mcp_server::TOKEN_VAR, token);
+                command.env(fidget_mcp_server::URL_VAR, url);
+                command.env(fidget_mcp_server::TOKEN_VAR, token);
             }
         }
         isolate_from_interrupt(&mut command);
@@ -225,7 +225,7 @@ fn attach_cwd_display(cwd: &Result<AttachCwd, CwdError>) -> String {
 /// Where the Harness runs when the Working directory row is blank, for that
 /// row's placeholder. Resolved rather than described, so the row shows the
 /// path instead of leaving the user to know it (#913). Reads
-/// `AI_BUDDY_HARNESS_CWD` first, because a row the environment owns runs
+/// `FIDGET_HARNESS_CWD` first, because a row the environment owns runs
 /// somewhere else again.
 pub(crate) fn attach_cwd_placeholder() -> String {
     project_dir_label("")
@@ -243,7 +243,7 @@ pub(crate) fn project_dir_label(raw: &str) -> String {
 pub(crate) fn attach_dir(raw: &str) -> Result<std::path::PathBuf, String> {
     let cwd = AttachCwd::resolve(&crate::model::env_or_file(CWD, raw))
         .map_err(|error| error.to_string())?;
-    if cwd.as_path() == ai_buddy_core::memory::data_dir() {
+    if cwd.as_path() == fidget_core::memory::data_dir() {
         std::fs::create_dir_all(cwd.as_path())
             .map_err(|error| format!("{}: {error}", cwd.as_path().display()))?;
     }
@@ -258,7 +258,7 @@ impl AttachCwd {
     fn resolve(raw: &str) -> Result<Self, CwdError> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
-            return Ok(Self(ai_buddy_core::memory::data_dir()));
+            return Ok(Self(fidget_core::memory::data_dir()));
         }
         let path = PathBuf::from(trimmed);
         if !path.is_absolute() {
@@ -283,11 +283,11 @@ impl AttachCwd {
 
 impl SessionDataDir {
     fn app() -> Self {
-        Self(ai_buddy_core::memory::data_dir())
+        Self(fidget_core::memory::data_dir())
     }
 
     fn probe() -> Self {
-        Self(ai_buddy_core::memory::data_dir().join("probe"))
+        Self(fidget_core::memory::data_dir().join("probe"))
     }
 
     #[cfg(test)]
@@ -501,7 +501,7 @@ pub struct Session {
     serving_reactive: AtomicBool,
     /// Instance whose wake holds `turn`. One child serves every Instance
     /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
-    /// name lands on whichever buddy is mid-reply.
+    /// name lands on whichever character is mid-reply.
     serving_instance: Mutex<Option<String>>,
     /// Questions the Harness has put to the user that nothing has settled.
     /// Raised and lowered by the wire's own events, which `end_turn` balances
@@ -856,7 +856,7 @@ impl Session {
             }
             Err(TurnError::Stopped(reason)) => {
                 // One child serves every Instance (ADR-0008), so a cancel for
-                // another buddy's wake reaches this turn without superseding
+                // another character's wake reaches this turn without superseding
                 // this Instance's slot. The log line must say it was given up.
                 let withdrawn_for = self.claim_withdrawn_turn(&request.instance, &reason);
                 withdrawn = withdrawn_for.is_some();
@@ -901,7 +901,7 @@ impl Session {
             .attach(Some(&SessionKey::from_request(request)))
             .map_err(|why| self.refused(request, &why))?;
         // The Instance and the wake kind come through the seam rather than
-        // from anything here. One child serves every buddy, so the process is
+        // from anything here. One child serves every character, so the process is
         // not whose wake this is.
         action_log::append(
             self.data.as_path(),
@@ -1014,7 +1014,7 @@ impl Session {
         crate::acp_wire::sign_in_button(state.login.is_some(), &state.handshake.auth_methods)
     }
 
-    /// An answer is the proof the login happened, in a terminal ai-buddy never
+    /// An answer is the proof the login happened, in a terminal fidget never
     /// sees. The composer it disabled comes back the same way it went.
     fn signed_in(&self, state: &mut State) {
         if state.login.take().is_none() {
@@ -1581,7 +1581,7 @@ impl Completer for Session {
 
     /// One child serves every Instance (ADR-0008) and one turn holds the wire
     /// at a time, so an outstanding ask belongs to whichever Instance that
-    /// turn is for. Another buddy's wake is not held by this one's question.
+    /// turn is for. Another character's wake is not held by this one's question.
     fn awaiting_user(&self, instance: &str) -> bool {
         self.asked.load(Ordering::SeqCst) > 0
             && self
@@ -1736,7 +1736,7 @@ fn probe(session: &Session) -> i32 {
     let code = match session.turn(&WakeRequest {
         prompt: PROBE_PROMPT.to_string(),
         // Reactive, because a probe is someone asking on purpose. Named for
-        // the probe so the Action Log line cannot be read as a buddy's own wake.
+        // the probe so the Action Log line cannot be read as a character's own wake.
         instance: "probe".to_string(),
         character: "probe".to_string(),
         reactive: true,
@@ -1758,7 +1758,7 @@ fn probe(session: &Session) -> i32 {
             // Reported, not part of the verdict. Whether a model obeys a
             // one-line format is the Director's problem. `end_turn` proved
             // the wire either way.
-            match ai_buddy_core::director::parse_proposal(&text) {
+            match fidget_core::director::parse_proposal(&text) {
                 Ok(proposal) => println!(
                     "  proposal     {} | {}",
                     proposal.behavior,
@@ -1786,12 +1786,12 @@ fn probe(session: &Session) -> i32 {
 /// against an empty desktop and no Instances. `speak` reports that it
 /// reached nobody rather than a success nothing shows (ADR-0026).
 fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
-    use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext};
-    let memory_path = ai_buddy_core::memory::shared_path();
+    use fidget_core::dispatch::{dispatch, DenyList, DispatchContext};
+    let memory_path = fidget_core::memory::shared_path();
     while let Ok(call) = calls.recv() {
         println!("  mcp call     {}", call.tool);
         let mut context = DispatchContext {
-            window_source: &ai_buddy_core::window_source::StubWindowSource,
+            window_source: &fidget_core::window_source::StubWindowSource,
             memory_path: memory_path.clone(),
             denylist: DenyList {
                 excluded_applications: Vec::new(),
@@ -1890,7 +1890,7 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
     let dir = session
         .as_ref()
         .map(|session| session.data.as_path().to_path_buf())
-        .unwrap_or_else(ai_buddy_core::memory::data_dir);
+        .unwrap_or_else(fidget_core::memory::data_dir);
     // Asked here rather than carried through `crates/core`. The caller has the
     // wake and not the words, and this already holds the session that knows
     // whose wake took it.
@@ -1996,7 +1996,7 @@ fn not_installed(command: &str) -> String {
         "opencode" => " Install OpenCode from https://opencode.ai/.",
         _ => "",
     };
-    format!("`{command}` is not installed; ai-buddy does not bundle a Harness.{install_hint}")
+    format!("`{command}` is not installed; Fidget does not bundle a Harness.{install_hint}")
 }
 
 /// The command that logs the user in. The table outranks the handshake,
@@ -2019,7 +2019,7 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 
 /// The documented sign-in line for a named Harness, before any handshake.
 /// Chat's Connect reads it at the pick, Settings after `-32000` (ADR-0022).
-/// ai-buddy never runs it (ADR-0018).
+/// fidget never runs it (ADR-0018).
 pub(crate) fn login_hint(name: &str) -> String {
     named_login(name)
         .map(str::to_string)
@@ -2054,7 +2054,7 @@ fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
 }
 
 /// The choice itself, with both candidates handed in. A test binary is not
-/// named `ai-buddy` and has no sidecar beside it, so `mcp_stdio` finds nothing
+/// named `fidget` and has no sidecar beside it, so `mcp_stdio` finds nothing
 /// there and the stdio branch would never be exercised.
 fn choose_mcp(
     handshake: &Handshake,
@@ -2078,7 +2078,7 @@ fn choose_mcp(
 
 /// The stdio MCP server to hand the session, when one can be launched.
 /// Read here rather than at construction, so a path typed in the window is
-/// the one the next attach hands over. `AI_BUDDY_MCP_BIN` still outranks the file.
+/// the one the next attach hands over. `FIDGET_MCP_BIN` still outranks the file.
 fn mcp_stdio() -> Option<McpLaunch> {
     let configured = crate::dev_flags::mcp_bin();
     mcp_launch(
@@ -2095,7 +2095,7 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
             env: Vec::new(),
         });
     }
-    let beside = current_exe.parent()?.join("ai-buddy-mcp");
+    let beside = current_exe.parent()?.join("fidget-mcp");
     let sibling = if cfg!(windows) {
         beside.with_extension("exe")
     } else {
@@ -2111,7 +2111,7 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
     // Sibling / configured path still win; this is how `cargo run` and a bundle
     // with no sidecar still hand the Harness a server. The loopback server
     // above is what a Harness that can take it gets instead.
-    (current_exe.file_stem()? == "ai-buddy").then(|| McpLaunch {
+    (current_exe.file_stem()? == "fidget").then(|| McpLaunch {
         path: current_exe.to_path_buf(),
         args: vec!["--mcp-stdio".into()],
         env: Vec::new(),
@@ -2312,7 +2312,7 @@ pub(crate) fn with_sign_in_gate(
     methods: Vec<agent_client_protocol::schema::v1::AuthMethod>,
     body: impl FnOnce(),
 ) {
-    let dir = std::env::temp_dir().join(format!("ai-buddy-sign-in-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("fidget-sign-in-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let session = Arc::new(Session::new(
         Launch {
@@ -2406,8 +2406,8 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_buddy_core::director::{Context, Happened};
-    use ai_buddy_core::engine::BehaviorProposal;
+    use fidget_core::director::{Context, Happened};
+    use fidget_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
 
@@ -2437,7 +2437,7 @@ mod tests {
         });
     }
 
-    /// The Development field and `AI_BUDDY_HARNESS_TURN_TIMEOUT` still win.
+    /// The Development field and `FIDGET_HARNESS_TURN_TIMEOUT` still win.
     #[test]
     fn a_set_timeout_is_the_harness_turn_budget() {
         crate::model::tests::with_env(None, None, None, || {
@@ -2826,12 +2826,11 @@ mod tests {
         }
 
         fn build(script: &str, split: bool) -> (Self, Session) {
-            let dir =
-                std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+            let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&dir).unwrap();
             let cwd = if split {
                 let cwd = std::env::temp_dir()
-                    .join(format!("ai-buddy-harness-cwd-{}", uuid::Uuid::new_v4()));
+                    .join(format!("fidget-harness-cwd-{}", uuid::Uuid::new_v4()));
                 std::fs::create_dir_all(&cwd).unwrap();
                 cwd
             } else {
@@ -3055,7 +3054,7 @@ mod tests {
     /// it either (ADR-0034).
     #[test]
     fn a_thought_reaches_its_instances_surface_and_not_the_action_log() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-thought-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-thought-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, forwarded) = mpsc::channel();
         let forward = Box::new(move |what| {
@@ -3092,7 +3091,7 @@ mod tests {
     /// rather than copying it (CONTEXT.md). The step text is that copy.
     #[test]
     fn a_plan_reaches_the_surface_and_the_action_log_keeps_the_count() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-plan-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-plan-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, forwarded) = mpsc::channel();
         let forward = Box::new(move |what| {
@@ -3126,7 +3125,7 @@ mod tests {
     /// noise about a turn that never planned.
     #[test]
     fn an_empty_plan_clears_the_surface_and_writes_no_log_line() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-plan-end-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-plan-end-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, forwarded) = mpsc::channel();
         let forward = Box::new(move |what| {
@@ -3184,7 +3183,7 @@ mod tests {
     fn reattach_stands_on_the_same_resolved_cwd_and_opens_on_a_different_one() {
         crate::model::tests::with_env(None, None, None, || {
             let hermes = launched("hermes");
-            let data = ai_buddy_core::memory::data_dir();
+            let data = fidget_core::memory::data_dir();
             let data_row = data.to_string_lossy().into_owned();
             let same_data = Target::from_settings(Some("hermes"), &data_row).unwrap();
             assert_eq!(
@@ -3193,7 +3192,7 @@ mod tests {
                 "empty and an explicit data_dir resolve equal"
             );
 
-            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            let home = fidget_core::memory::home_dir().expect("the test user has a home");
             let home_row = home.to_string_lossy().into_owned();
             let named_home = Target::from_settings(Some("hermes"), &home_row).unwrap();
             assert!(
@@ -3220,7 +3219,7 @@ mod tests {
     #[test]
     fn attach_cwd_resolve_empty_is_data_dir_absolute_kept_relative_refused() {
         crate::model::tests::with_env(None, None, None, || {
-            let data = ai_buddy_core::memory::data_dir();
+            let data = fidget_core::memory::data_dir();
             assert_eq!(AttachCwd::resolve("").unwrap().as_path(), data.as_path());
             assert_eq!(AttachCwd::resolve("   ").unwrap().as_path(), data.as_path());
             // `/tmp/...` is relative on Windows (`Path::is_absolute` wants a drive).
@@ -3258,7 +3257,7 @@ mod tests {
         crate::model::tests::with_env(None, None, None, || {
             assert_eq!(
                 attach_cwd_placeholder(),
-                ai_buddy_core::memory::data_dir().display().to_string()
+                fidget_core::memory::data_dir().display().to_string()
             );
 
             let from_env = std::env::temp_dir().join("from-env");
@@ -3293,7 +3292,7 @@ mod tests {
         assert!(!fx.cwd.join(action_log::FILE).exists());
         assert!(
             std::fs::read_dir(&fx.cwd).unwrap().next().is_none(),
-            "ai-buddy writes nothing into the user's directory"
+            "Fidget writes nothing into the user's directory"
         );
         session.shutdown();
     }
@@ -3323,12 +3322,12 @@ mod tests {
 
     #[test]
     fn a_relative_cwd_fails_spawn_and_does_not_create_the_path() {
-        let relative = PathBuf::from(format!("ai-buddy-rel-cwd-{}", uuid::Uuid::new_v4()));
-        let data = std::env::temp_dir().join(format!("ai-buddy-rel-data-{}", uuid::Uuid::new_v4()));
+        let relative = PathBuf::from(format!("fidget-rel-cwd-{}", uuid::Uuid::new_v4()));
+        let data = std::env::temp_dir().join(format!("fidget-rel-data-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&data).unwrap();
         let launch = Launch {
             name: "nope".into(),
-            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+            argv: vec!["/nonexistent/fidget-no-such-harness".into()],
         };
         let session = Session::new(
             launch,
@@ -3348,14 +3347,14 @@ mod tests {
     #[test]
     fn a_missing_cwd_fails_spawn_and_does_not_create_the_path() {
         let missing =
-            std::env::temp_dir().join(format!("ai-buddy-missing-cwd-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("fidget-missing-cwd-{}", uuid::Uuid::new_v4()));
         assert!(!missing.exists());
         let data =
-            std::env::temp_dir().join(format!("ai-buddy-missing-data-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("fidget-missing-data-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&data).unwrap();
         let launch = Launch {
             name: "nope".into(),
-            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+            argv: vec!["/nonexistent/fidget-no-such-harness".into()],
         };
         let session = Session::new(
             launch,
@@ -3374,12 +3373,11 @@ mod tests {
 
     #[test]
     fn spawn_creates_the_data_dir_we_own_before_checking_cwd() {
-        let dir =
-            std::env::temp_dir().join(format!("ai-buddy-default-cwd-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-default-cwd-{}", uuid::Uuid::new_v4()));
         assert!(!dir.exists());
         let launch = Launch {
             name: "nope".into(),
-            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+            argv: vec!["/nonexistent/fidget-no-such-harness".into()],
         };
         let session = Session::new(
             launch,
@@ -3406,7 +3404,7 @@ mod tests {
                 "got {}",
                 session.data.as_path().display()
             );
-            let data = ai_buddy_core::memory::data_dir();
+            let data = fidget_core::memory::data_dir();
             assert_eq!(
                 session.cwd.as_ref().unwrap().as_path(),
                 data.as_path(),
@@ -3652,7 +3650,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// The file is a map of remembered ids, not one pointer the next buddy
+    /// The file is a map of remembered ids, not one pointer the next character
     /// would inherit. Instance and Character together, because a retarget
     /// keeps the Instance and changes the Character Prompt.
     #[test]
@@ -3703,7 +3701,7 @@ mod tests {
     /// One child serves every Instance (ADR-0008), so the wire alone does not
     /// say whose turn a thought is. Production change that would fail this: a
     /// thought forwarded without the Instance whose session thought it, which
-    /// draws one buddy's thinking in another buddy's Chat window.
+    /// draws one character's thinking in another character's Chat window.
     #[test]
     fn each_thought_names_the_instance_whose_session_thought_it() {
         let (fx, session) = Fixture::new("thinking");
@@ -4008,7 +4006,7 @@ mod tests {
     }
 
     /// The old single pointer cannot be attributed, so it is not applied
-    /// to every buddy.
+    /// to every character.
     #[test]
     fn an_unattributed_legacy_id_is_not_applied_to_an_instance() {
         let (fx, session) = Fixture::new("load");
@@ -4359,15 +4357,15 @@ mod tests {
         session.shutdown();
     }
 
-    /// The Instance every slot test wakes. One buddy is enough: the rule
+    /// The Instance every slot test wakes. One character is enough: the rule
     /// under test is per-Instance.
     const WOKEN: &str = "buddy-1";
 
     /// A session Director over this Harness, as the frame loop builds one.
     fn harness_director(
         session: &Arc<Session>,
-    ) -> Arc<ai_buddy_core::director::ModelDirector<crate::completer::AnyCompleter>> {
-        Arc::new(ai_buddy_core::director::ModelDirector::new(
+    ) -> Arc<fidget_core::director::ModelDirector<crate::completer::AnyCompleter>> {
+        Arc::new(fidget_core::director::ModelDirector::new(
             crate::completer::AnyCompleter::Harness(Arc::clone(session)),
             ["stroll", "nap"],
             WOKEN,
@@ -4433,7 +4431,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// #1038. The buddy has a question out to the user and the user touches
+    /// #1038. The character has a question out to the user and the user touches
     /// the sprite. Newest-wins is about the world moving past a moment; the
     /// user mid-answer is not that, so the Poke is dropped instead.
     #[test]
@@ -4900,8 +4898,8 @@ mod tests {
     /// `backoff` reads below still hold.
     #[test]
     fn a_missing_binary_says_so_instead_of_backing_off() {
-        const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
-        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        const NOPE: &str = "/nonexistent/fidget-no-such-harness";
+        let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
         let launch = Launch {
             name: "nope".into(),
             argv: vec![NOPE.into()],
@@ -4937,8 +4935,8 @@ mod tests {
     /// a missing launcher reaches an already-open surface (#726).
     #[test]
     fn spawn_preflight_forwards_when_the_launcher_is_missing() {
-        const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
-        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        const NOPE: &str = "/nonexistent/fidget-no-such-harness";
+        let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
         let (tx, rx) = mpsc::channel();
         let launch = Launch {
             name: "nope".into(),
@@ -5018,11 +5016,11 @@ mod tests {
     }
 
     fn surface_tick(session: &Arc<Session>) -> (Duration, Vec<SignIn>) {
-        use ai_buddy_core::character::{
+        use fidget_core::character::{
             Character, CursorReaction, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
         };
-        use ai_buddy_core::engine::{Point, WorldSnapshot};
-        use ai_buddy_core::roster::Roster;
+        use fidget_core::engine::{Point, WorldSnapshot};
+        use fidget_core::roster::Roster;
 
         struct Clear;
         impl Drop for Clear {
@@ -5230,8 +5228,8 @@ mod tests {
     /// false on success or failure.
     #[test]
     fn initializing_gates_chat_until_spawn_completes() {
-        const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
-        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        const NOPE: &str = "/nonexistent/fidget-no-such-harness";
+        let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
         let (tx, rx) = mpsc::channel();
         let launch = Launch {
             name: "nope".into(),
@@ -5276,7 +5274,7 @@ mod tests {
 
     #[test]
     fn initializing_clears_on_spawn_failed_not_just_missing() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
         let (tx, rx) = mpsc::channel();
         let launch = Launch {
             name: "fails".into(),
@@ -5334,7 +5332,7 @@ mod tests {
     fn a_missing_launcher_is_not_a_missing_vendor_cli() {
         let launch = launch(Some("codex")).unwrap();
         assert_eq!(launch.argv[0], "npx", "the codex preset stopped using npx");
-        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
         let session = isolated_session(launch, dir, silent());
         assert_eq!(session.note_missing(), not_installed("npx"));
         assert_eq!(session.inspect().missing.as_deref(), Some("npx"));
@@ -5593,8 +5591,8 @@ mod tests {
         session.shutdown();
     }
 
-    /// One child serves every Instance (ADR-0008), so buddy B's wake takes
-    /// buddy A's turn without A's own slot ever having been superseded.
+    /// One child serves every Instance (ADR-0008), so character B's wake takes
+    /// character A's turn without A's own slot ever having been superseded.
     /// Nothing raised A's abandon flag, so A took a wake that read as broken.
     #[test]
     fn a_turn_taken_for_another_instance_is_recorded_as_withdrawn() {
@@ -5671,7 +5669,7 @@ mod tests {
     }
 
     /// One child serves every Instance (ADR-0008), so a save that cancelled
-    /// whatever held the turn would stop buddy B mid-reply because buddy A
+    /// whatever held the turn would stop character B mid-reply because character A
     /// edited a prompt B has nothing to do with.
     #[test]
     fn saving_one_instances_prompt_leaves_another_instances_turn_alone() {
@@ -5712,10 +5710,10 @@ mod tests {
     /// wake may already have taken the session from a fourth.
     #[test]
     fn a_later_supersede_does_not_erase_an_unclaimed_withdrawal() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
         let launch = Launch {
             name: "nope".into(),
-            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+            argv: vec!["/nonexistent/fidget-no-such-harness".into()],
         };
         std::fs::create_dir_all(&dir).unwrap();
         let session = isolated_session(launch, dir.clone(), silent());
@@ -5804,11 +5802,11 @@ mod tests {
         assert_eq!(probe(&session), 2);
         session.shutdown();
 
-        let dir = std::env::temp_dir().join(format!("ai-buddy-probe-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let launch = Launch {
             name: "nope".into(),
-            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+            argv: vec!["/nonexistent/fidget-no-such-harness".into()],
         };
         assert_eq!(probe(&isolated_session(launch, dir.clone(), silent())), 2);
         let _ = std::fs::remove_dir_all(dir);
@@ -5993,7 +5991,7 @@ mod tests {
 
     fn mcp_tmp(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "ai-buddy-mcp-launch-{label}-{}",
+            "fidget-mcp-launch-{label}-{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -6006,9 +6004,9 @@ mod tests {
 
     fn sidecar(dir: &Path) -> PathBuf {
         dir.join(if cfg!(windows) {
-            "ai-buddy-mcp.exe"
+            "fidget-mcp.exe"
         } else {
-            "ai-buddy-mcp"
+            "fidget-mcp"
         })
     }
 
@@ -6016,7 +6014,7 @@ mod tests {
     fn mcp_launch_prefers_an_env_file_over_a_sibling() {
         let dir = mcp_tmp("env-wins");
         let env_bin = dir.join("from-env");
-        let current_exe = dir.join("ai-buddy");
+        let current_exe = dir.join("fidget");
         touch(&env_bin);
         touch(&sidecar(&dir));
         touch(&current_exe);
@@ -6031,7 +6029,7 @@ mod tests {
     #[test]
     fn mcp_launch_falls_through_to_a_sibling_when_env_is_missing() {
         let dir = mcp_tmp("sibling");
-        let current_exe = dir.join("ai-buddy");
+        let current_exe = dir.join("fidget");
         let sibling = sidecar(&dir);
         touch(&sibling);
         touch(&current_exe);
@@ -6046,7 +6044,7 @@ mod tests {
     #[test]
     fn mcp_launch_runs_the_app_binary_as_stdio_when_nothing_is_beside_it() {
         let dir = mcp_tmp("stdio");
-        let current_exe = dir.join("ai-buddy");
+        let current_exe = dir.join("fidget");
         touch(&current_exe);
 
         let launch = mcp_launch(None, &current_exe).expect("app binary");
@@ -6106,7 +6104,7 @@ mod tests {
         let endpoint = crate::mcp_http::serve(calls).expect("loopback binds");
 
         let sidecar = McpLaunch {
-            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            path: PathBuf::from("/opt/fidget-mcp"),
             args: Vec::new(),
             env: Vec::new(),
         };
@@ -6125,15 +6123,13 @@ mod tests {
                 .map(|(_, value)| value.clone())
                 .unwrap_or_else(|| panic!("{name} is not in the environment"))
         };
-        assert_eq!(value(ai_buddy_mcp_server::URL_VAR), endpoint.url);
+        assert_eq!(value(fidget_mcp_server::URL_VAR), endpoint.url);
         assert_eq!(
-            format!("Bearer {}", value(ai_buddy_mcp_server::TOKEN_VAR)),
+            format!("Bearer {}", value(fidget_mcp_server::TOKEN_VAR)),
             endpoint.authorization()
         );
         assert!(
-            !launch
-                .line()
-                .contains(&value(ai_buddy_mcp_server::TOKEN_VAR)),
+            !launch.line().contains(&value(fidget_mcp_server::TOKEN_VAR)),
             "the token reached the line the Action Log takes"
         );
 

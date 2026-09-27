@@ -20,7 +20,7 @@ updates:
       # CI does compile it. The matrix builds the whole workspace on Linux
       # (#23), which is what catches the non-macOS build regressions a
       # macOS-only pipeline cannot see, so this is not a crate we merely
-      # resolve. What we do not do is ship it: ai-buddy ships macOS only, and
+      # resolve. What we do not do is ship it: fidget ships macOS only, and
       # we call no glib API — VariantStrIter is not something the shell touches.
       #
       # This block stops Dependabot from opening PRs for glib, and that is all

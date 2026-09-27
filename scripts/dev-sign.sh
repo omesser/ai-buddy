@@ -6,10 +6,10 @@
 # nothing else; Gatekeeper does not accept it. Imported with `-A`, so any local
 # process can sign as it, which is why this script is for development alone.
 # Usage: scripts/dev-sign.sh [path]
-#   Signs target/debug/ai-buddy unless given another binary or .app bundle.
+#   Signs target/debug/fidget unless given another binary or .app bundle.
 #   Cargo replaces the signature on every build, so this runs after each one:
 #
-#     cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
+#     cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
 #
 # A key saved before the first signed run keeps its old ACL. Clear it in
 # Settings and save it once more from a signed build to stop the prompts.
@@ -22,9 +22,9 @@ if [[ "$(uname -s)" != Darwin ]]; then
   exit 0
 fi
 
-IDENTITY="ai-buddy dev signing"
+IDENTITY="fidget dev signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
-TARGET="${1:-target/debug/ai-buddy}"
+TARGET="${1:-target/debug/fidget}"
 
 if [[ ! -e $TARGET ]]; then
   echo "dev-sign: no $TARGET — build it first" >&2
@@ -40,7 +40,7 @@ if ! security find-identity "$KEYCHAIN" | grep -q "\"$IDENTITY\""; then
   trap 'rm -rf "$tmp"' EXIT
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
     -keyout "$tmp/key.pem" -out "$tmp/cert.pem" \
-    -subj "/CN=$IDENTITY/O=ai-buddy" \
+    -subj "/CN=$IDENTITY/O=fidget" \
     -addext "basicConstraints=critical,CA:false" \
     -addext "keyUsage=critical,digitalSignature" \
     -addext "extendedKeyUsage=critical,codeSigning" 2> /dev/null
@@ -48,9 +48,9 @@ if ! security find-identity "$KEYCHAIN" | grep -q "\"$IDENTITY\""; then
   # PKCS#12 encrypted with AES.
   openssl pkcs12 -export -name "$IDENTITY" \
     -inkey "$tmp/key.pem" -in "$tmp/cert.pem" -out "$tmp/id.p12" \
-    -passout pass:ai-buddy \
+    -passout pass:fidget \
     -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
-  security import "$tmp/id.p12" -k "$KEYCHAIN" -P ai-buddy -T /usr/bin/codesign -A
+  security import "$tmp/id.p12" -k "$KEYCHAIN" -P fidget -T /usr/bin/codesign -A
 fi
 
 # A bundle carries the frameworks Tauri links; the raw binary carries nothing.

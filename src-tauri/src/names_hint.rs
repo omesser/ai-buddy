@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use ai_buddy_core::window_source::{Capabilities, WindowSource, WorldGeometry};
+use fidget_core::window_source::{Capabilities, WindowSource, WorldGeometry};
 
 use crate::settings::Settings;
 
@@ -149,7 +149,7 @@ impl Notice {
         }
     }
 
-    /// `ai-buddy://windows` was read. The resource path sees no desktop, so
+    /// `fidget://windows` was read. The resource path sees no desktop, so
     /// this arms on consent alone.
     pub fn titles_were_read(&self) {
         if !self.names.usable() {
@@ -261,7 +261,7 @@ impl WindowSource for Watching<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_buddy_core::window_source::{Rect, WindowRect};
+    use fidget_core::window_source::{Rect, WindowRect};
 
     struct FixedConsent(bool);
 
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn a_dismissal_is_what_the_next_notice_reads() {
         let path = std::env::temp_dir().join(format!(
-            "ai-buddy-names-hint-{}-dismiss.json",
+            "fidget-names-hint-{}-dismiss.json",
             std::process::id()
         ));
         let _ = std::fs::remove_file(&path);
@@ -407,10 +407,8 @@ mod tests {
 
     #[test]
     fn acting_on_the_notice_grants_nothing() {
-        let path = std::env::temp_dir().join(format!(
-            "ai-buddy-names-hint-{}-act.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("fidget-names-hint-{}-act.json", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let settings = Mutex::new(Settings::default());
         let notice = Notice::new(&NAMES_OFF);

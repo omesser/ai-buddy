@@ -277,7 +277,7 @@ mod tests {
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let unique = NEXT.fetch_add(1, Ordering::Relaxed);
             let dir = std::env::temp_dir().join(format!(
-                "ai-buddy-dispatch-{label}-{}-{unique}",
+                "fidget-dispatch-{label}-{}-{unique}",
                 std::process::id()
             ));
             fs::create_dir_all(&dir).expect("temp dir is creatable");

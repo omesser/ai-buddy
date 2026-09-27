@@ -25,7 +25,7 @@ static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
 /// Read and reset mask rebuild metrics. Returns (count, total_ns).
 ///
 /// Reserved counters; measurement is via TRACE log
-/// (`AI_BUDDY_TRACE_MASK_REBUILD`). The bench script parses that log and
+/// (`FIDGET_TRACE_MASK_REBUILD`). The bench script parses that log and
 /// does not call this.
 #[allow(dead_code)]
 pub fn read_mask_rebuild_stats() -> (u64, u64) {
@@ -35,7 +35,7 @@ pub fn read_mask_rebuild_stats() -> (u64, u64) {
 }
 
 /// Float above other windows, non-activating. Capturable unless Presence or
-/// `AI_BUDDY_CAPTURABLE=0` excludes it from shares.
+/// `FIDGET_CAPTURABLE=0` excludes it from shares.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let raw_window_handle = match window.window_handle() {
@@ -64,7 +64,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// plus hotspots, with WS_EX_TRANSPARENT removed so clicks hit that region.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    mask_data: Option<&fidget_core::overlay::AlphaMask>,
     sprite_x: i32,
     sprite_y: i32,
     sprite_facing: i32,
@@ -181,7 +181,7 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
 #[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,
-    mask: &ai_buddy_core::overlay::AlphaMask,
+    mask: &fidget_core::overlay::AlphaMask,
     sprite_x: i32,
     sprite_y: i32,
     sprite_facing: i32,
@@ -308,7 +308,7 @@ fn apply_input_mask(
     MASK_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
     MASK_REBUILD_TOTAL_NS.fetch_add(rebuild_ns, Ordering::Relaxed);
 
-    if std::env::var("AI_BUDDY_TRACE_MASK_REBUILD").is_ok() {
+    if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
         let rebuild_ms = rebuild_ns as f64 / 1_000_000.0;
         eprintln!(
             "mask_rebuild: {}x{} @{}x scale, {} opaque pixels, {:.2} ms",

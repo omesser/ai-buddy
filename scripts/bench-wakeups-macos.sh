@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Baseline: wakeups/sec, package idle residency, and CPU time for a release
-# ai-buddy binary, per scenario. A reviewer reruns this directly rather than
+# fidget binary, per scenario. A reviewer reruns this directly rather than
 # trusting a number in a doc.
 
 # Needs: sudo (powermetrics), swift (the chat and hidden props), and the env
-# below: AI_BUDDY_TRACE_FRAMES so the log proves what the sprite was doing,
-# AI_BUDDY_DIRECTOR_API_KEY so a worktree build skips the Keychain prompt.
+# below: FIDGET_TRACE_FRAMES so the log proves what the sprite was doing,
+# FIDGET_DIRECTOR_API_KEY so a worktree build skips the Keychain prompt.
 # Usage:
 #   scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden \
 #     [--duration SECS] [--out DIR]
@@ -15,7 +15,7 @@
 #   with crates/verify; do not fork it), confirm Summon, sample with chat open.
 # hidden: launch, cover the main display with scripts/fullscreen-window.swift
 #   so the fullscreen-frontmost rule fires, confirm `presence: hidden`, sample.
-# baseline: launch nothing; refuses to sample while any ai-buddy is running.
+# baseline: launch nothing; refuses to sample while any fidget is running.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -69,20 +69,20 @@ APP_PID=""
 PROP_PID=""
 trap 'kill "$APP_PID" "$PROP_PID" 2> /dev/null; wait "$APP_PID" "$PROP_PID" 2> /dev/null' EXIT INT TERM
 
-# Other agents build and run ai-buddy on this machine. A baseline with one of
+# Other agents build and run fidget on this machine. A baseline with one of
 # theirs alive is not a baseline, and powermetrics cannot tell whose it is.
-STRAY_BEFORE=$(pgrep -x ai-buddy | tr '\n' ' ')
+STRAY_BEFORE=$(pgrep -x fidget | tr '\n' ' ')
 if [ "$SCENARIO" = "baseline" ] && [ -n "$STRAY_BEFORE" ]; then
-  echo "bench-wakeups-macos: baseline refused, ai-buddy already running: pid(s) $STRAY_BEFORE" >&2
+  echo "bench-wakeups-macos: baseline refused, fidget already running: pid(s) $STRAY_BEFORE" >&2
   exit 1
 fi
 
 if [ "$SCENARIO" != "baseline" ]; then
-  AI_BUDDY_DIRECTOR_API_KEY=bench-placeholder \
-    AI_BUDDY_DIRECTOR=0 \
-    AI_BUDDY_TRACE_FRAMES=1 \
-    AI_BUDDY_TRACE_ENGINE=1 \
-    AI_BUDDY_CAPTURABLE=1 \
+  FIDGET_DIRECTOR_API_KEY=bench-placeholder \
+    FIDGET_DIRECTOR=0 \
+    FIDGET_TRACE_FRAMES=1 \
+    FIDGET_TRACE_ENGINE=1 \
+    FIDGET_CAPTURABLE=1 \
     "$BINARY" > "$LOG" 2>&1 &
   APP_PID=$!
   echo "launched pid=$APP_PID binary=$BINARY log=$LOG" >&2
@@ -192,11 +192,11 @@ fi
   echo "start: $START_ISO"
   echo "end: $END_ISO"
   echo "pid: ${APP_PID:-none}"
-  echo "note: powermetrics is system-wide - another agent's ai-buddy build"
+  echo "note: powermetrics is system-wide - another agent's fidget build"
   echo "  can be running at the same time. Always parse with --pid ${APP_PID:-none},"
   echo "  never bare --process name matching."
-  echo "ai_buddy_pids_before: ${STRAY_BEFORE:-none}"
-  echo "ai_buddy_pids_after: $(pgrep -x ai-buddy | tr '\n' ' ')"
+  echo "fidget_pids_before: ${STRAY_BEFORE:-none}"
+  echo "fidget_pids_after: $(pgrep -x fidget | tr '\n' ' ')"
   echo "load_average: $(sysctl -n vm.loadavg)"
   echo "cargo_or_rustc_running: $(pgrep -x 'cargo|rustc' | wc -l | tr -d ' ')"
   echo "summon: $SUMMON_STATUS"

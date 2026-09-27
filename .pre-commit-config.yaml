@@ -19,7 +19,7 @@ repos:
     # permanently out of step with `cursor/plugins`.
     #
     # `.agents/skills/` mixes vendored skills with ours, so the exclude cannot
-    # name the directory: `verify-ai-buddy` is this repository's and stays
+    # name the directory: `verify-fidget` is this repository's and stays
     # linted, which is what the lookahead protects. `.agents/pstack/` holds
     # generated or upstream files except `UPSTREAM.json`, which is ours to read
     # and benefits from `check-json`.
@@ -32,7 +32,7 @@ repos:
     # `.png`, `.b64`, `branding/_b64/parts/` — so one value serves all six
     # sites that skip this set. None of them holds anything worth linting.
       - id: end-of-file-fixer
-        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
+        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-fidget/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored
@@ -193,7 +193,7 @@ repos:
       # member (core / mcp-server / verify / shell) and a docs-only SKIP list.
       #
       # Still ungated for the shell on purpose (#321): workspace clippy must
-      # link `ai-buddy` on this machine so `platform/x11` / linux arms get
+      # link `fidget` on this machine so `platform/x11` / linux arms get
       # `-D warnings`. A missing window-layer library fails here instead of a
       # skip claiming the crate was checked.
       - id: cargo-clippy

@@ -6,20 +6,20 @@ This document covers toolchains, verification, trace variables, Character Packag
 
 ```sh
 # Clone and run
-git clone https://github.com/omesser/ai-buddy.git
-cd ai-buddy
-cargo run -p ai-buddy
+git clone https://github.com/omesser/ai-buddy.git fidget
+cd fidget
+cargo run -p fidget
 ```
 
 ## Local Data Management
 
-ai-buddy writes two files to the data directory:
-- macOS: `~/Library/Application Support/ai-buddy`
-- Linux: `~/.local/share/ai-buddy`
-- Windows: `%APPDATA%\ai-buddy` (e.g. `C:\Users\<user>\AppData\Roaming\ai-buddy`)
+fidget writes two files to the data directory:
+- macOS: `~/Library/Application Support/fidget`
+- Linux: `~/.local/share/fidget`
+- Windows: `%APPDATA%\fidget` (e.g. `C:\Users\<user>\AppData\Roaming\fidget`)
 
 Files:
-- **`memory.md`**: Everything the buddies know about you, shared across all Character Instances. Human-editable Markdown with no automatic size limit.
+- **`memory.md`**: Everything the fidgets know about you, shared across all Character Instances. Human-editable Markdown with no automatic size limit.
 - **`action-log.jsonl`**: One JSON line per Harness action (prompts, tool calls, usage). Append-only, automatically rotated.
 
 ### Action Log Growth Policy
@@ -35,16 +35,16 @@ The Action Log uses the [`file-rotate`](https://crates.io/crates/file-rotate) cr
 
 **Single-writer assumption:** file-rotate and this module assume no other process writes to these log files. Concurrent writes from multiple processes are not supported.
 
-**Drop-on-error contract:** Rotation and write failures are dropped silently (rate-limited to stderr max once per 60s). The log explains the buddy after the fact and must never block a Director turn.
+**Drop-on-error contract:** Rotation and write failures are dropped silently (rate-limited to stderr max once per 60s). The log explains the fidget after the fact and must never block a Director turn.
 
 **Why BytesSurpassed:** `ContentLimit::Bytes(n)` can split a single write mid-string, breaking JSONL. `BytesSurpassed(n)` rotates *after* a write that pushes past the limit, keeping lines whole. JSON is pre-formatted with `serde_json::to_string` before writing to avoid buffering issues with serde_json's Display impl.
 
 **K=10 rationale:** Light retention (weeks of regular use, days of heavy use) without micro-hygiene that drops recent history too quickly. ~10k typical events per file at 2 MB means months of context before the oldest file is dropped.
 
 **To inspect the log:**
-- macOS/Linux: `tail -f ~/Library/Application\ Support/ai-buddy/action-log.jsonl` (macOS) or `tail -f ~/.local/share/ai-buddy/action-log.jsonl` (Linux)
-- Windows (PowerShell): `Get-Content -Wait -Tail 50 $env:APPDATA\ai-buddy\action-log.jsonl`
-- From the buddy: the **Action Log…** row in the tray and sprite menus opens the current file in the system editor
+- macOS/Linux: `tail -f ~/Library/Application\ Support/fidget/action-log.jsonl` (macOS) or `tail -f ~/.local/share/fidget/action-log.jsonl` (Linux)
+- Windows (PowerShell): `Get-Content -Wait -Tail 50 $env:APPDATA\fidget\action-log.jsonl`
+- From the fidget: the **Action Log…** row in the tray and sprite menus opens the current file in the system editor
 
 ### Memory Growth Policy
 
@@ -79,15 +79,15 @@ Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo 
 
 | Variable | Effect |
 |---|---|
-| `AI_BUDDY_TRACE_FRAMES=1` | Log every frame state to stderr: `Grounded pos(x,y)`, `Dragged`, `Perched`, etc. |
-| `AI_BUDDY_TRACE_WINDOWS=1` | Log window count and first 3 window bounds on first read (Windows only). |
+| `FIDGET_TRACE_FRAMES=1` | Log every frame state to stderr: `Grounded pos(x,y)`, `Dragged`, `Perched`, etc. |
+| `FIDGET_TRACE_WINDOWS=1` | Log window count and first 3 window bounds on first read (Windows only). |
 
 ## Verifying the Overlay
 
 ### Unit Tests
 
 ```sh
-cargo test -p ai-buddy-core     # Pure core, builds anywhere
+cargo test -p fidget-core     # Pure core, builds anywhere
 cargo test                      # Everything including platform shell  
 node --test tests/*.test.js     # Renderer interpolation
 ```
@@ -101,7 +101,7 @@ scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual displ
 node scripts/chat-ask-order.mjs # Chat surface in headless Chromium: a typed turn, an ask, the answer under it
 ```
 
-`chat-ask-order.mjs` loads the real `src/chat.html` with `window.__TAURI__` stubbed, so it runs with no app and activates no window. It needs a headless Chromium; `AI_BUDDY_CHROME` names one other than Playwright's shell.
+`chat-ask-order.mjs` loads the real `src/chat.html` with `window.__TAURI__` stubbed, so it runs with no app and activates no window. It needs a headless Chromium; `FIDGET_CHROME` names one other than Playwright's shell.
 
 ```sh
 scripts/verify-settings-webview-select-macos.sh  # macOS: <select> above overlay (#849)
@@ -122,12 +122,12 @@ Settings is the webview (`src/settings.html`). CI does not run the live sittings
 Build the debug binary, then run from the repo root:
 
 ```sh
-cargo build -p ai-buddy
+cargo build -p fidget
 ./scripts/verify-settings-keyboard-webview.sh
 .\scripts\verify-settings-webview-phase2-win.ps1
 ```
 
-The scripts look for `target/debug/ai-buddy`. Set `AI_BUDDY_VERIFY_BIN` to use another binary.
+The scripts look for `target/debug/fidget`. Set `FIDGET_VERIFY_BIN` to use another binary.
 
 Grant Accessibility to the terminal or IDE that runs a macOS sitting (System Settings > Privacy & Security > Accessibility). Without that grant the helper exits before it dumps the window. On Windows, UI Automation is built-in.
 
@@ -149,7 +149,7 @@ A human is still needed for the last step, because only the window server can an
 5. **Motion is continuous, not stepped.** Watch it fall. It slides down the screen rather than jumping between positions, and it does not judder when it crosses a window's edge.
 6. **The art is crisp.** On a Retina display the pixels are hard squares with no blur or soft edges, and every pixel of the sprite is the same size as every other. A blurred sprite means the integer scale or the nearest-neighbour filtering was lost.
 7. **It rests on the Dock, not behind it.** Let the sprite settle at the bottom of the screen. Its feet stand on the Dock's top edge and the whole sprite is visible. Then turn on Dock auto-hiding in System Settings: within a poll the sprite falls the rest of the way to the bottom of the screen, because the Dock gave the space back. Turn it off and the sprite is lifted again.
-8. **Declared cadence is honoured.** Point ai-buddy at a copy of Black Mage whose idle declares a faster `fps`, and the idle is visibly faster than it was at the declared 1.
+8. **Declared cadence is honoured.** Point fidget at a copy of Black Mage whose idle declares a faster `fps`, and the idle is visibly faster than it was at the declared 1.
 9. **A click makes it react.** Click the sprite once without moving the mouse. It plays its `react` animation for about half a second, then goes back to what it was doing.
 10. **Press and drag picks it up.** Press on the sprite and move. It follows the cursor. Release over a window and it lands on that window's top edge.
 11. **A flick throws it.** Drag and release while still moving and it leaves your hand on an arc. Hold still for a moment before releasing and it drops straight down instead.
@@ -157,7 +157,7 @@ A human is still needed for the last step, because only the window server can an
 13. **A window you drag slowly carries it.** Let the sprite settle on a window's top edge, then drag that window slowly. The sprite rides the edge and keeps its place along it.
 14. **A window you fling leaves it behind.** With the sprite perched, throw the same window: grab the title bar and move fast. The sprite stays where it stood, in the air, and falls.
 15. **The two shipped Characters are two companions.** Run each in turn and watch it idle. BMO hums to itself through a four-frame singing loop; Nim eases through six, blinks, and carries a translucent shadow.
-16. **A fullscreen application takes the screen and the Character leaves it.** Put any application into fullscreen. Within about a tenth of a second the sprite fades out. Leave fullscreen and it fades back in.
+16. **A fullscreen application takes the screen and the fidget leaves it.** Put any application into fullscreen. Within about a tenth of a second the sprite fades out. Leave fullscreen and it fades back in.
 17. **Ordinary window switching changes nothing.** Command-Tab between applications, open and close windows, drag them around, switch Spaces. The sprite never blinks.
 18. **The hotkey puts it away and brings it back at once.** Press Control-Option-Command-B. The sprite is gone on the keystroke, with no fade. Press it again and it is back, instantly.
 19. **The hotkey outranks the rules.** Press the hotkey to put the sprite away, then enter a fullscreen application and leave it again. The sprite stays away.
@@ -165,11 +165,11 @@ A human is still needed for the last step, because only the window server can an
 
 The last three need a second display:
 
-21. **A Character on a seam is whole.** Drag the sprite slowly across the boundary between two displays and hold it there, half on each. Both halves are drawn, and they meet.
+21. **A fidget on a seam is whole.** Drag the sprite slowly across the boundary between two displays and hold it there, half on each. Both halves are drawn, and they meet.
 22. **Either half can be clicked.** With the sprite straddling, click the half on each display in turn. Both pick it up.
 23. **A display can come and go.** With the app running, unplug a display. The sprite carries on. Plug it back in: the sprite can be dragged onto it again within a second or so.
 
-For multiple instances (24–27), start with `AI_BUDDY_INSTANCES="bmo:One,bmo:Two,nim:Nim"` and confirm each buddy acts independently.
+For multiple instances (24–27), start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` and confirm each fidget acts independently.
 
 ## Trace Variables
 
@@ -177,16 +177,16 @@ Set environment variables for live debugging (all off by default):
 
 | Variable | Traces |
 |---|---|
-| `AI_BUDDY_TRACE_HITTEST` | Click-through decisions |
-| `AI_BUDDY_TRACE_FRAMES` | Engine frames (state, position, animation) per tick |
-| `AI_BUDDY_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played, Behavior refused |
-| `AI_BUDDY_TRACE_ENGINE` | Behavior/Primitive/Animation/State changes |
-| `AI_BUDDY_CAPTURABLE` | Force capturable (`1`) or hidden (`0`); overrides setting — for verify scripts/CI |
+| `FIDGET_TRACE_HITTEST` | Click-through decisions |
+| `FIDGET_TRACE_FRAMES` | Engine frames (state, position, animation) per tick |
+| `FIDGET_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played, Behavior refused |
+| `FIDGET_TRACE_ENGINE` | Behavior/Primitive/Animation/State changes |
+| `FIDGET_CAPTURABLE` | Force capturable (`1`) or hidden (`0`); overrides setting — for verify scripts/CI |
 
 Values: `1`/`on`/`true`/`yes` for on, `0`/`off`/`false`/`no` for off (case-insensitive).
 
-By default, the overlay appears in screen captures (capturable). Set `AI_BUDDY_CAPTURABLE=1`
-to force it visible (for verify scripts that screenshot the buddy), or `=0` to force
+By default, the overlay appears in screen captures (capturable). Set `FIDGET_CAPTURABLE=1`
+to force it visible (for verify scripts that screenshot the fidget), or `=0` to force
 exclusion (testing the hide path). Most users control this via Settings → Presence →
 "Appear in screenshots and screen shares" checkbox. The env var is for CI/testing when
 sprite's appearance.
@@ -197,34 +197,34 @@ With no Director key, Static weights pick idle Behaviors from the Character's ma
 
 ### Quick Start
 
-OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`; `AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai` selects that path. An explicit full URL (ending in `/chat/completions` or `/responses`) is used as-is.
+OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`; `FIDGET_DIRECTOR_BASE_URL=https://api.x.ai` selects that path. An explicit full URL (ending in `/chat/completions` or `/responses`) is used as-is.
 
 ```sh
 # OpenAI
 cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.openai.com \
-AI_BUDDY_DIRECTOR_MODEL=gpt-4o-mini \
+FIDGET_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.openai.com \
+FIDGET_DIRECTOR_MODEL=gpt-4o-mini \
 cargo run
 
 # Anthropic (OpenAI-compatible /v1/chat/completions)
 cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.anthropic.com \
-AI_BUDDY_DIRECTOR_MODEL=claude-haiku-4-5 \
+FIDGET_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.anthropic.com \
+FIDGET_DIRECTOR_MODEL=claude-haiku-4-5 \
 cargo run
 
 # xAI — get a key at https://console.x.ai
 cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
-AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+FIDGET_DIRECTOR_API_KEY="$XAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.x.ai \
+FIDGET_DIRECTOR_MODEL=grok-4.6 \
 cargo run
 
 # Ollama (local, no key)
 cd src-tauri
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
 cargo run
 ```
 
@@ -234,27 +234,27 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 
 | Variable | What it does |
 |---|---|
-| `AI_BUDDY_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a local server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
-| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
-| `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
-| `AI_BUDDY_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
-| `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Model API hop: an HTTP Completer request, then Static. Default 30 seconds, remote or local. A cold local server that needs longer sets this. A Harness turn is `AI_BUDDY_HARNESS_TURN_TIMEOUT`. |
-| `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Ceiling on one HTTP Completer turn. A safeguard against a model that will not stop, not a reply-length budget, so it does not vary by what woke the buddy or by where the server runs. Default 1024, or 8192 once the endpoint has been seen to mark its thinking (#606). A number set here outranks both. A Harness decides its own reply length. |
-| `AI_BUDDY_DIRECTOR_BLANK` | Blank-AI mode: empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract) and still sends an Instance Prompt. Off unless set, and Settings → Development's "Blank AI" says the same thing. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the reply is prose and the buddy speaks it without acting, unless the Instance Prompt asks otherwise. The Harness lane keeps a session of its own for the mode, so no session mixes the two prompts. #657, #680. |
-| `AI_BUDDY_DIRECTOR_REASONING_EFFORT` | How hard the HTTP Completer asks the model to think, sent verbatim: `reasoning_effort` on chat-completions, `reasoning.effort` on the Responses path. Overrides Settings → Development's "Reasoning effort", and `low` stands when neither says anything — not "send nothing", which costs lost wakes on a local reasoning model at the turn ceiling. The picker offers `low`, `medium` and `high` because those are the three every documented host takes; anything else (`max`, `xhigh`, or whatever a llama.cpp or oMLX chat template invents) can be typed and is not validated. A host that refuses the field drops it for the rest of the session, and `AI_BUDDY_TRACE_DIRECTOR` names the value that cost it. |
-| `AI_BUDDY_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `codex`, `copilot`, `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the AI tab's AI source row saved. Unset falls through to that row, which offers the same choices (Off, the presets, and Custom). ADR-0017, #436. |
-| `AI_BUDDY_HARNESS_CWD` | Directory the Harness treats as the project: spawn `current_dir` and ACP `session/new` / `session/load` cwd. Empty is the data folder (`~/.local/share/ai-buddy` on Linux, `~/Library/Application Support/ai-buddy` on macOS, `%APPDATA%\ai-buddy` on Windows), not `$HOME`. Overrides Settings → Development's "Working directory". Session file and Action Log stay in the data folder. #782. |
-| `AI_BUDDY_MCP_URL`, `AI_BUDDY_MCP_TOKEN` | Where the running app serves MCP on loopback, and the per-run bearer token that reaches it. The app sets both on the stdio MCP server entry it hands the Harness, and the shim relays there; with neither set it answers every call with a failure. Set them by hand to point the shim at an app you are already running. Never written to a file or a log. ADR-0026. |
-| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Overrides Settings → Development's "MCP server binary", and is read at attach, so a change lands on the next one. First of three stdio routes: this, else an `ai-buddy-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three relay to the running app over loopback once the app hands them the two variables above (#501). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server directly (ADR-0023), and so is `cursor-agent`, through its own config file (#1020). |
-| `AI_BUDDY_HARNESS_TURN_TIMEOUT` | How long a Harness `session/prompt` may run before `session/cancel`, not counting the time it waits on you to answer an ask, and started over once you answer (#1001). Overrides Settings → Development's "Turn timeout, in seconds", and 120 stands when neither says anything. Not `AI_BUDDY_DIRECTOR_TIMEOUT_SECS`. Read when the Session is built, so a change lands on the next attach. #690. |
-| `AI_BUDDY_HARNESS_AUTH_RETRY_SECS` | How long a Harness that has not signed in is left alone before `session/new` is tried again. Overrides Settings → Development's "Auth retry, in seconds", and 60 stands when neither says anything. Read when the Session is built, so a change lands on the next attach. |
-| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → AI's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+| `FIDGET_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a local server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
+| `FIDGET_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
+| `FIDGET_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
+| `FIDGET_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
+| `FIDGET_DIRECTOR_TIMEOUT_SECS` | Model API hop: an HTTP Completer request, then Static. Default 30 seconds, remote or local. A cold local server that needs longer sets this. A Harness turn is `FIDGET_HARNESS_TURN_TIMEOUT`. |
+| `FIDGET_DIRECTOR_MAX_TOKENS` | Ceiling on one HTTP Completer turn. A safeguard against a model that will not stop, not a reply-length budget, so it does not vary by what woke the fidget or by where the server runs. Default 1024, or 8192 once the endpoint has been seen to mark its thinking (#606). A number set here outranks both. A Harness decides its own reply length. |
+| `FIDGET_DIRECTOR_BLANK` | Blank-AI mode: empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract) and still sends an Instance Prompt. Off unless set, and Settings → Development's "Blank AI" says the same thing. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the reply is prose and the fidget speaks it without acting, unless the Instance Prompt asks otherwise. The Harness lane keeps a session of its own for the mode, so no session mixes the two prompts. #657, #680. |
+| `FIDGET_DIRECTOR_REASONING_EFFORT` | How hard the HTTP Completer asks the model to think, sent verbatim: `reasoning_effort` on chat-completions, `reasoning.effort` on the Responses path. Overrides Settings → Development's "Reasoning effort", and `low` stands when neither says anything — not "send nothing", which costs lost wakes on a local reasoning model at the turn ceiling. The picker offers `low`, `medium` and `high` because those are the three every documented host takes; anything else (`max`, `xhigh`, or whatever a llama.cpp or oMLX chat template invents) can be typed and is not validated. A host that refuses the field drops it for the rest of the session, and `FIDGET_TRACE_DIRECTOR` names the value that cost it. |
+| `FIDGET_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `codex`, `copilot`, `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the AI tab's AI source row saved. Unset falls through to that row, which offers the same choices (Off, the presets, and Custom). ADR-0017, #436. |
+| `FIDGET_HARNESS_CWD` | Directory the Harness treats as the project: spawn `current_dir` and ACP `session/new` / `session/load` cwd. Empty is the data folder (`~/.local/share/fidget` on Linux, `~/Library/Application Support/fidget` on macOS, `%APPDATA%\fidget` on Windows), not `$HOME`. Overrides Settings → Development's "Working directory". Session file and Action Log stay in the data folder. #782. |
+| `FIDGET_MCP_URL`, `FIDGET_MCP_TOKEN` | Where the running app serves MCP on loopback, and the per-run bearer token that reaches it. The app sets both on the stdio MCP server entry it hands the Harness, and the shim relays there; with neither set it answers every call with a failure. Set them by hand to point the shim at an app you are already running. Never written to a file or a log. ADR-0026. |
+| `FIDGET_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Overrides Settings → Development's "MCP server binary", and is read at attach, so a change lands on the next one. First of three stdio routes: this, else an `fidget-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three relay to the running app over loopback once the app hands them the two variables above (#501). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server directly (ADR-0023), and so is `cursor-agent`, through its own config file (#1020). |
+| `FIDGET_HARNESS_TURN_TIMEOUT` | How long a Harness `session/prompt` may run before `session/cancel`, not counting the time it waits on you to answer an ask, and started over once you answer (#1001). Overrides Settings → Development's "Turn timeout, in seconds", and 120 stands when neither says anything. Not `FIDGET_DIRECTOR_TIMEOUT_SECS`. Read when the Session is built, so a change lands on the next attach. #690. |
+| `FIDGET_HARNESS_AUTH_RETRY_SECS` | How long a Harness that has not signed in is left alone before `session/new` is tried again. Overrides Settings → Development's "Auth retry, in seconds", and 60 stands when neither says anything. Read when the Session is built, so a change lands on the next attach. |
+| `FIDGET_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → AI's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 ### Settings and Keyring
 
 Settings → AI persists base URL, model, and the first wake interval, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, and — under Harness attachment — the turn timeout, the auth-retry interval, the MCP server binary, and the working directory. A working-directory edit respawns the Harness so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach. Editing the Completer source or HTTP endpoint retargets the running Director: the next wake reaches the new host on the new interval, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
 
-`cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
+`cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `FIDGET_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
 
 **Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.
 
@@ -263,16 +263,16 @@ The title-bar grip is small, so the window also moves with a modifier-drag on it
 **macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. From the repository root:
 
 ```sh
-cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
+cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
 ```
 
 A key saved before the first signed run keeps the old list — clear it in Settings and save it once more. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those again, once. Released builds are ad-hoc signed too, so an update prompts the same way until there is a Developer ID to sign with (#283).
 
-**Accessibility, Screen Recording, and Input Monitoring:** Settings → What the buddy can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn that named app on in Privacy & Security. Input Monitoring is the one that changes what the frame loop does: granted, an idle sprite is woken by the mouse rather than by its own timer, so a poke lands at once instead of up to a second later; ungranted, the loop keeps the back-off #718 shipped (#721). The tap starts within about a second of the grant landing — no relaunch — and the loop stops using it the moment you uncheck the box.
+**Accessibility, Screen Recording, and Input Monitoring:** Settings → What the fidget can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as fidget. Check the box, then turn that named app on in Privacy & Security. Input Monitoring is the one that changes what the frame loop does: granted, an idle sprite is woken by the mouse rather than by its own timer, so a poke lands at once instead of up to a second later; ungranted, the loop keeps the back-off #718 shipped (#721). The tap starts within about a second of the grant landing — no relaunch — and the loop stops using it the moment you uncheck the box.
 
 ### Local Model Servers
 
-The buddy wakes on a pace all day and every Poke is a wake on top of that, so a hosted API puts a meter on idling — and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the metering, and a server on loopback also keeps that context on this machine; a box across the LAN still receives it. "Local" here means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name — the LAN counts. A local base URL makes `AI_BUDDY_DIRECTOR_API_KEY` optional: leave it unset when the server has no auth, set it when the server requires one.
+The fidget wakes on a pace all day and every Poke is a wake on top of that, so a hosted API puts a meter on idling — and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the metering, and a server on loopback also keeps that context on this machine; a box across the LAN still receives it. "Local" here means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name — the LAN counts. A local base URL makes `FIDGET_DIRECTOR_API_KEY` optional: leave it unset when the server has no auth, set it when the server requires one.
 
 These servers speak `/v1/chat/completions`:
 
@@ -291,8 +291,8 @@ These servers speak `/v1/chat/completions`:
 ollama pull gemma4
 ollama serve
 
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
 cargo run
 ```
 
@@ -301,10 +301,10 @@ cargo run
 ```sh
 omlx serve --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --api-key your-key-here
 
-AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
-AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
-cargo run --bin ai-buddy
+FIDGET_DIRECTOR_API_KEY="$OMLX_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:8000 \
+FIDGET_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+cargo run --bin fidget
 ```
 
 ### Testing Connectivity
@@ -312,9 +312,9 @@ cargo run --bin ai-buddy
 `scripts/probe-model.sh` hits the same Completer without starting the overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST paths. Same env as `cargo run`. It prints status and body, never the key. Later this is also how to check a Harness is reachable.
 
 ```sh
-AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
-AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+FIDGET_DIRECTOR_API_KEY="$XAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.x.ai \
+FIDGET_DIRECTOR_MODEL=grok-4.6 \
 scripts/probe-model.sh
 ```
 
@@ -322,14 +322,14 @@ scripts/probe-model.sh
 
 ```sh
 # Ollama (no key)
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
 scripts/probe-model.sh
 
 # oMLX (with key)
-AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
-AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+FIDGET_DIRECTOR_API_KEY="$OMLX_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:8000 \
+FIDGET_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
 scripts/probe-model.sh
 ```
 
@@ -340,26 +340,26 @@ director: http://localhost:11439 unreachable: Connection refused; staying on Sta
 director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:latest
 ```
 
-Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a buddy that went quiet is not a mystery.
+Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a fidget that went quiet is not a mystery.
 
-`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it serves ai-buddy's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, says whether the reply parsed as a Behavior proposal, and says whether the Harness fetched the tool list. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
+`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it serves fidget's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, says whether the reply parsed as a Behavior proposal, and says whether the Harness fetched the tool list. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
 
 ```sh
-AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
+FIDGET_HARNESS=hermes scripts/probe-harness.sh
 ```
 
 ```
 probe-harness
   harness      hermes
   command      hermes acp
-  dir          /Users/you/Library/Application Support/ai-buddy/probe
+  dir          /Users/you/Library/Application Support/fidget/probe
   timeout      turn 20s, attach 20s
 
 attach
   agent        hermes-agent
   loadSession  true
   mcp http     false
-  mcp          /path/ai-buddy --mcp-stdio
+  mcp          /path/fidget --mcp-stdio
   authMethods  custom runtime credentials, Configure Hermes provider
   session      33f5d650-5476-40c6-876b-cb04f14bfc27
 
@@ -396,7 +396,7 @@ The `probe` folder keeps the session file and the Action Log out of a real insta
 
 **xAI keys:** A 403 from xAI is the server refusing the key, not a bad JSON body (that is a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai); `/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries chat-completions if Responses returns 403 or 404.
 
-**Streaming:** The stand-in asks for `stream: true`. A reply's first line is the Behavior name and runs one to three tokens, so almost the whole wait is a dialogue line the buddy does not need before it starts moving. Streaming is also the only shape a dropped call can be *stopped* in: closing a streaming connection ends the generation, where a whole-reply request runs to completion on the server whatever the client does. A server that rejects the field — or accepts it and sends whole-reply JSON anyway — stays one the buddy can run against, because the parser handles both.
+**Streaming:** The stand-in asks for `stream: true`. A reply's first line is the Behavior name and runs one to three tokens, so almost the whole wait is a dialogue line the fidget does not need before it starts moving. Streaming is also the only shape a dropped call can be *stopped* in: closing a streaming connection ends the generation, where a whole-reply request runs to completion on the server whatever the client does. A server that rejects the field — or accepts it and sends whole-reply JSON anyway — stays one the fidget can run against, because the parser handles both.
 
 ### Proactive model calls
 
@@ -410,7 +410,7 @@ model_base = 3
 model_power = 1
 ```
 
-Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect on the next frame, no restart. Do Not Disturb also silences the buddy while it is on, and leaves the visual cues (#277). A machine that cannot start an audio context does the same: one warning in the webview console, then silence, with the visual still playing (#292).
+Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect on the next frame, no restart. Do Not Disturb also silences the fidget while it is on, and leaves the visual cues (#277). A machine that cannot start an audio context does the same: one warning in the webview console, then silence, with the visual still playing (#292).
 
 ### Reply Contract Measurements
 
@@ -419,10 +419,10 @@ Settings → Do Not Disturb → Sound is the mute. On by default; off takes effe
 ## Character Packages
 
 Search paths (in order):
-1. `~/Library/Application Support/ai-buddy/characters/`
+1. `~/Library/Application Support/fidget/characters/`
 2. Shipped characters (copied from `characters/` at build time)
 
-Override with `AI_BUDDY_CHARACTERS=/path/to/chars` (colon-separated).
+Override with `FIDGET_CHARACTERS=/path/to/chars` (colon-separated).
 
 Eight characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Timber Wolf, Trump.
 
@@ -467,7 +467,7 @@ The rest of the package format — manifest structure, animation declarations, B
 ### Running Multiple Instances
 
 ```sh
-cd src-tauri && AI_BUDDY_INSTANCES="buddy-bot:One,buddy-bot:Two,nim:Nim" cargo run
+cd src-tauri && FIDGET_INSTANCES="buddy-bot:One,buddy-bot:Two,nim:Nim" cargo run
 ```
 
 ## Importing Pets
@@ -478,7 +478,7 @@ Translate petscodex or Shimeji-ee packs to Character Packages:
 uv venv && uv pip install pillow
 npx petscodex install labubu
 .venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
-cargo run -p ai-buddy-core --example validate -- characters/labubu
+cargo run -p fidget-core --example validate -- characters/labubu
 ```
 
 Supported: [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), [Shimeji Shop](https://shimejishop.com/).
@@ -488,10 +488,10 @@ Supported: [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), 
 Stable signature for Keychain access:
 
 ```sh
-cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
+cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
 ```
 
-Grant permissions: Settings → What the buddy can see.
+Grant permissions: Settings → What the fidget can see.
 
 ## Linux Dependencies
 
@@ -531,8 +531,8 @@ On Windows, the ACP Harness child and its descendants (e.g. `npx` spawning Node)
 
 Two transport axes (do not conflate):
 
-1. **ACP** (ai-buddy ↔ Harness): always stdio. ai-buddy spawns the Harness and prompts it over newline-delimited JSON-RPC on stdio.
-2. **MCP** (Harness → ai-buddy tools): The Harness calls back so `speak`, sensing, and Memory tools reach the buddy.
+1. **ACP** (fidget ↔ Harness): always stdio. fidget spawns the Harness and prompts it over newline-delimited JSON-RPC on stdio.
+2. **MCP** (Harness → fidget tools): The Harness calls back so `speak`, sensing, and Memory tools reach the fidget.
 
 ### How it works
 
@@ -540,8 +540,8 @@ Two transport axes (do not conflate):
 
 **The gate is one ACP handshake bit:** `agentCapabilities.mcpCapabilities.http` on `initialize`.
 
-- **Advertises it (true)** → the Harness gets the loopback URL + bearer token directly (ADR-0023). Tool calls hit the app's endpoint; `speak` reaches the buddy.
-- **Omits it (false or absent)** → the Harness gets a stdio MCP server entry: a binary path it spawns as a child of its own (ADR-0026, #501). That binary is a relay shim with no state; it posts every JSON-RPC message to the app's loopback endpoint and passes the app's answer back untouched. The environment carries `AI_BUDDY_MCP_URL` and `AI_BUDDY_MCP_TOKEN` from the app to the shim. Three stdio routes: `AI_BUDDY_MCP_BIN`, an `ai-buddy-mcp` sidecar, or `ai-buddy --mcp-stdio`; all three relay.
+- **Advertises it (true)** → the Harness gets the loopback URL + bearer token directly (ADR-0023). Tool calls hit the app's endpoint; `speak` reaches the fidget.
+- **Omits it (false or absent)** → the Harness gets a stdio MCP server entry: a binary path it spawns as a child of its own (ADR-0026, #501). That binary is a relay shim with no state; it posts every JSON-RPC message to the app's loopback endpoint and passes the app's answer back untouched. The environment carries `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from the app to the shim. Three stdio routes: `FIDGET_MCP_BIN`, an `fidget-mcp` sidecar, or `fidget --mcp-stdio`; all three relay.
 - **Ignores `mcpServers` altogether** → `cursor-agent` reads the field from neither `session/new` nor its environment; it loads servers only from an approved `.cursor/mcp.json` (#1020). It is handed the same loopback URL and bearer token as an HTTP-capable Harness, written into that file instead of over the wire.
 
 **How `cursor-agent` is reached** (`src-tauri/src/cursor_mcp.rs`):
@@ -550,15 +550,15 @@ Two mechanisms, because Cursor splits the job in two and neither half does the o
 
 In order, before `cursor-agent acp` is spawned, because approvals are read once per `cursor-agent` process and afterwards is too late:
 
-1. Merge `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."ai-buddy"` in `<cwd>/.cursor/mcp.json`, beside whatever servers the file already holds. A file that does not parse is left alone and the attach goes on without tools.
+1. Merge `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside whatever servers the file already holds. A file that does not parse is left alone and the attach goes on without tools.
 2. `chmod 600` the file. It holds a live credential. Windows has no mode bits to set here, so the file keeps the project directory's ACL.
-3. `cursor-agent mcp enable ai-buddy` in the same directory, ~380ms measured.
+3. `cursor-agent mcp enable fidget` in the same directory, ~380ms measured.
 
 The URL and the token are both new every app run, so this is a rewrite and a re-approval on each attach, not a one-time setup. That is the price of `cursor-agent` using the same transport as everything else. Within one app run the entry does not change, `enable` adds no second approval, and a re-attach costs only the spawn.
 
 Cursor records approvals as a hash of the directory and the entry, appended to `~/.cursor/projects/<slug>/mcp-approvals.json`. A new app run means a new id, and nothing prunes the old ones: measured, four runs left four ids, about 31 bytes each. `cursor-agent mcp disable` does **not** prune them — it marks the server never to load again, which would break the next attach, so detach does not call it.
 
-Detach removes our entry, and the file and directory when attach created them. While a session is attached the token is on disk in the Working directory's `.cursor/mcp.json`. It is owner-only, it dies with the app run, and ai-buddy does nothing about the user's VCS — what the project does with an untracked `.cursor/` is the project's business.
+Detach removes our entry, and the file and directory when attach created them. While a session is attached the token is on disk in the Working directory's `.cursor/mcp.json`. It is owner-only, it dies with the app run, and fidget does nothing about the user's VCS — what the project does with an untracked `.cursor/` is the project's business.
 
 **Seven tools** (`crates/core/src/dispatch.rs`):
 
@@ -572,12 +572,12 @@ Detach removes our entry, and the file and directory when attach created them. W
 
 All requests are synchronous; no streaming, no push. The loopback server (`mcp_http.rs`) is thread-per-request with no async runtime.
 
-### Pointing a Harness you run yourself at ai-buddy
+### Pointing a Harness you run yourself at Fidget
 
 The attached case above needs no setup: the app hands its Harness the endpoint on `session/new`. A Harness you launch yourself in a terminal gets nothing forwarded, so you register the endpoint with it by hand — once per app launch.
 
-1. Start ai-buddy and open Settings.
-2. Under **Point a Harness you run yourself at ai-buddy**, pick the Harness.
+1. Start fidget and open Settings.
+2. Under **Point a Harness you run yourself at fidget**, pick the Harness.
 3. Copy the generated command (or JSON fragment, for the Harnesses with no `mcp add`) and run it, or paste it where the instructions beside it say. Hermes prompts for the token interactively, so its row carries a separate Copy for the token.
 4. Reload or restart the Harness session as the instructions say. Claude Code and OpenCode read MCP config at session start only.
 
@@ -589,15 +589,15 @@ That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP
 
 **Standing, per Harness the generator knows.** Three states, and no row is implied to work beyond the one it holds:
 
-- **verified by hand** — someone copied the generated registration into a real Harness session and recorded that Harness's `speak` drawn in the buddy's bubble.
+- **verified by hand** — someone copied the generated registration into a real Harness session and recorded that Harness's `speak` drawn in the fidget's bubble.
 - **config generated, unverified** — the generator emits a shape that was checked against the installed CLI or its documentation, but no on-screen `speak` through that registration has been recorded.
 - **not supported** — the Harness has no way to load an HTTP MCP server with an `Authorization` header, so nothing the generator could emit would work.
 
 | Harness | What the generator emits | Where the entry lands | Standing |
 |---|---|---|---|
 | `claude` | `claude mcp remove` then `claude mcp add --transport http …` | `~/.claude.json`, keyed by working directory (local scope) | **verified by hand** |
-| `codex` | `export AI_BUDDY_MCP_TOKEN=…` then `codex mcp add --url … --bearer-token-env-var` | `~/.codex/config.toml`, token stays in the environment | **verified by hand** |
-| `cursor-agent` | `mcpServers` JSON fragment, then `cursor-agent mcp enable ai-buddy` | `.cursor/mcp.json` in the project | **verified by hand** |
+| `codex` | `export FIDGET_MCP_TOKEN=…` then `codex mcp add --url … --bearer-token-env-var` | `~/.codex/config.toml`, token stays in the environment | **verified by hand** |
+| `cursor-agent` | `mcpServers` JSON fragment, then `cursor-agent mcp enable fidget` | `.cursor/mcp.json` in the project | **verified by hand** |
 | `grok` | `grok mcp add … --transport http` with a header | `~/.grok/config.toml`, token in the file | **verified by hand** |
 | `hermes` | `hermes mcp add --url … --auth header`, token pasted at its prompt | `~/.hermes/config.yaml`, token in `~/.hermes/.env` | **verified by hand** |
 | `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"` | `~/.config/opencode/opencode.json`, token in the file | **verified by hand** |
@@ -606,7 +606,7 @@ That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP
 
 All seven were read out of the Settings box by accessibility dump and run as the box gave them, and all seven drew their own line in the bubble on a real Mac, each naming itself, checked by OCR across consecutive frames against a control frame taken before the turn. `claude` was verified on 2026-09-21 and the rest on 2026-09-22. The `copilot` row was checked against `copilot mcp add`, `get` and `remove` on 1.0.88, which is why the remove comes first: a second `add` of a name it holds fails rather than overwriting. No `speak` through that registration has been recorded (#1016).
 
-‡ `pi` ships no MCP client of its own. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. With that plugin present the box's fragment works unchanged, verified on pi 0.85.1 with pi-mcp-adapter 2.36.0. Two things differ from every other row. The adapter connects lazily, so a headless `pi -p` run has to call `mcp({"connect": "ai-buddy"})` before the tool exists at all, and an interactive session wants `/mcp connect` or `/mcp reconnect ai-buddy`. And the tool is reached through Pi's `mcp` proxy under its prefixed name, `ai-buddy_speak`, not as `speak`. The README's Pi tools row is about the attached path. `pi-acp` advertises no HTTP MCP on `initialize`, and whether that session lists ai-buddy's tools is unmeasured (#984).
+‡ `pi` ships no MCP client of its own. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. With that plugin present the box's fragment works unchanged, verified on pi 0.85.1 with pi-mcp-adapter 2.36.0. Two things differ from every other row. The adapter connects lazily, so a headless `pi -p` run has to call `mcp({"connect": "fidget"})` before the tool exists at all, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. And the tool is reached through Pi's `mcp` proxy under its prefixed name, `fidget_speak`, not as `speak`. The README's Pi tools row is about the attached path. `pi-acp` advertises no HTTP MCP on `initialize`, and whether that session lists fidget's tools is unmeasured (#984).
 
 A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself.
 
@@ -614,7 +614,7 @@ A Harness the popup does not list (a hand-edited command, `custom`) gets the bar
 
 - Every registration dies with the app. The port and token change on each launch, so a stale entry is a dead entry. Under `opencode` that is worse than useless: an entry pointing at a dead instance silently hangs `opencode run` at startup for minutes with no error, and removing the entry or passing `--pure` is what unsticks it.
 - `opencode` has no `mcp remove`. Its `mcp` subcommand offers add, list, auth, logout and debug only, so removing the entry means editing `~/.config/opencode/opencode.json` by hand.
-- `hermes mcp remove` drops the YAML block but leaves `MCP_AI_BUDDY_API_KEY` behind in `~/.hermes/.env`. A later `hermes mcp add` sees it as already configured, skips the token prompt, reuses the dead token and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml` wholesale, stripping inline comments and re-indenting lists.
+- `hermes mcp remove` drops the YAML block but leaves `MCP_FIDGET_API_KEY` behind in `~/.hermes/.env`. A later `hermes mcp add` sees it as already configured, skips the token prompt, reuses the dead token and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml` wholesale, stripping inline comments and re-indenting lists.
 - `codex` needs the `export` to run in the same shell that launches `codex`, exactly as the box's steps say. Sourcing it through a pipe leaves the tool unregistered, and Codex then reports that the tool does not exist.
 - `pi` needs its adapter told to connect before the tool exists. The fragment the box emits carries no `"lifecycle": "eager"`, so the server sits configured and disconnected until something asks for it.
 
@@ -624,21 +624,21 @@ A Harness the popup does not list (a hand-edited command, `custom`) gets the bar
 - Bearer auth on every request (`Authorization: Bearer <token>`)
 - Loopback-only binding; remote connections refused by design (ADR-0010)
 - Request/response; no notifications from server to client
-- DenyList applied to `list_windows`, `describe_screen`, and the `ai-buddy://windows` resource (filters password managers, redacts password fields)
-- Three readonly MCP resources: `ai-buddy://windows`, `ai-buddy://memory`, `ai-buddy://action-log`
+- DenyList applied to `list_windows`, `describe_screen`, and the `fidget://windows` resource (filters password managers, redacts password fields)
+- Three readonly MCP resources: `fidget://windows`, `fidget://memory`, `fidget://action-log`
 
 ### What it can but doesn't
 
-- **Richer sensing (Capture)** — *dropped* ([ADR-0031](./adr/0031-drop-capture-tiers.md)). `describe_screen` is window metadata only; ai-buddy never takes screenshots, never analyzes pixels, and never embeds OCR/vision. Agents needing pixel access use harness-native computer use or attach an MCP server like cua-driver.
-- **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; ai-buddy ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
+- **Richer sensing (Capture)** — *dropped* ([ADR-0031](./adr/0031-drop-capture-tiers.md)). `describe_screen` is window metadata only; fidget never takes screenshots, never analyzes pixels, and never embeds OCR/vision. Agents needing pixel access use harness-native computer use or attach an MCP server like cua-driver.
+- **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; fidget ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
 - **MCP sampling, progress, SSE push** — *out of scope today*. The server is sync request/response; no `notifications/progress`, no server-initiated push. Sampling requires long-lived connections the current thread-per-request model doesn't hold.
 - **Prompts** — *not served*. MCP prompt templates are not exposed. Resources are: Memory, the Action Log, and window titles.
-- **Non-loopback MCP** — *by design no* (ADR-0010). The bearer token authorizes moving the buddy; an off-host endpoint would post it there. The bind is `127.0.0.1` only; LAN/WAN addresses are refused.
-- **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; ai-buddy branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit ai-buddy gates on. A future Hermes setting the bit would take the loopback path with no change here.
+- **Non-loopback MCP** — *by design no* (ADR-0010). The bearer token authorizes moving the fidget; an off-host endpoint would post it there. The bind is `127.0.0.1` only; LAN/WAN addresses are refused.
+- **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; fidget branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit fidget gates on. A future Hermes setting the bit would take the loopback path with no change here.
 
 ### Related decisions
 
-- ADR-0003 — no Executor tools (mouse/keyboard events) in ai-buddy
+- ADR-0003 — no Executor tools (mouse/keyboard events) in fidget
 - ADR-0010 — credential rules, loopback-only MCP, token stays out of logs
 - ADR-0023 — dispatch inside the running app, loopback HTTP MCP
 - ADR-0026 — stdio MCP binary is a relay shim

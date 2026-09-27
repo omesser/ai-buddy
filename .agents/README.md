@@ -12,7 +12,7 @@ reads `skills/` directly. Only the slash commands are lost.
 
 ## `skills/`
 
-One flat directory, three owners. `verify-ai-buddy/` is this repository's own,
+One flat directory, three owners. `verify-fidget/` is this repository's own,
 hand-written; ADR-0027 covers it. The rest are vendored from
 [pstack](https://github.com/cursor/plugins/tree/main/pstack) by Lauren Tan and
 from [mattpocock/skills](https://github.com/mattpocock/skills)

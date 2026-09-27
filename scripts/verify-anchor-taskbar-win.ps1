@@ -6,7 +6,7 @@
 #
 # Usage:
 #   .\scripts\verify-anchor-taskbar-win.ps1
-#   $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\verify-anchor-taskbar-win.ps1
+#   $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\verify-anchor-taskbar-win.ps1
 #
 # Expects a built debug binary (does not cargo build). Logs under .verify/anchor-taskbar-win-<stamp>/.
 
@@ -65,17 +65,17 @@ public class AnchorVerify {
 }
 "@
 
-$Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root "target\debug\ai-buddy.exe" }
-if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with cargo first, or set AI_BUDDY_VERIFY_BIN" }
+$Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $Root "target\debug\fidget.exe" }
+if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with cargo first, or set FIDGET_VERIFY_BIN" }
 Pass "Binary ready: $Bin"
 
-# Kill any existing ai-buddy processes
-Get-Process -Name "ai-buddy" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# Kill any existing fidget processes
+Get-Process -Name "fidget" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-# Launch ai-buddy without AI_BUDDY_OPEN_SETTINGS (should not auto-open Settings)
-$env:AI_BUDDY_CHARACTER = "buddy-bot"
-Remove-Item Env:AI_BUDDY_OPEN_SETTINGS -ErrorAction SilentlyContinue
+# Launch fidget without FIDGET_OPEN_SETTINGS (should not auto-open Settings)
+$env:FIDGET_CHARACTER = "buddy-bot"
+Remove-Item Env:FIDGET_OPEN_SETTINGS -ErrorAction SilentlyContinue
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Bin
@@ -86,7 +86,7 @@ $script:AppProc = New-Object System.Diagnostics.Process
 $script:AppProc.StartInfo = $psi
 $null = $script:AppProc.Start()
 $appPid = [uint32]$script:AppProc.Id
-Info "Launched ai-buddy (PID=$appPid)"
+Info "Launched fidget (PID=$appPid)"
 
 # Wait ~8s for startup to settle
 Start-Sleep -Milliseconds 8000

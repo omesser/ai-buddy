@@ -136,7 +136,7 @@ export function landingCopy(opening) {
     const installHint = installUrl ? ` Install from ${installUrl}.` : "";
     return {
       title: `${name} needs \`${missing}\``,
-      lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
+      lede: `\`${missing}\` is not installed. Fidget does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
       command: null,
       signInLabel: null,
       hint: null,

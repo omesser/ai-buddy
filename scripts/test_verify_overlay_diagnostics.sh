@@ -40,8 +40,8 @@ EOF
     return 1
   fi
 
-  if ! echo "$output" | grep -q "AI_BUDDY_DIRECTOR_API_KEY"; then
-    echo "  FAIL: Expected AI_BUDDY_DIRECTOR_API_KEY mention in diagnostic output"
+  if ! echo "$output" | grep -q "FIDGET_DIRECTOR_API_KEY"; then
+    echo "  FAIL: Expected FIDGET_DIRECTOR_API_KEY mention in diagnostic output"
     echo "  Got: $output"
     return 1
   fi

@@ -53,7 +53,7 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     }
 
     /// Read at the ride cadence for as long as the sprite is holding on.
-    /// Idle is the default so a sleeping buddy does not enumerate the
+    /// Idle is the default so a sleeping character does not enumerate the
     /// desktop sixty times a second.
     pub fn poll_fast(&mut self, ride: bool) {
         if ride && !self.fast {
@@ -492,7 +492,7 @@ mod tests {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
-                windows: vec![window(7, "ai-buddy", rect(700.0, 400.0, 420.0, 560.0))],
+                windows: vec![window(7, "fidget", rect(700.0, 400.0, 420.0, 560.0))],
                 dock: None,
             },
         });
@@ -509,8 +509,8 @@ mod tests {
         );
         assert_eq!(
             assembler.standing_on(Point { x: 900.0, y: 400.0 }),
-            "a ai-buddy window",
-            "and somewhere the Director is told the buddy is standing"
+            "a fidget window",
+            "and somewhere the Director is told the character is standing"
         );
     }
 
@@ -523,7 +523,7 @@ mod tests {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
-                windows: vec![elevated(1, "ai-buddy", rect(0.0, 0.0, 1920.0, 1080.0), 3)],
+                windows: vec![elevated(1, "fidget", rect(0.0, 0.0, 1920.0, 1080.0), 3)],
                 dock: None,
             },
         });

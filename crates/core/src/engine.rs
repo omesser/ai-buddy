@@ -194,7 +194,7 @@ pub struct Frame {
     /// horizontal travel turns it, so a stop keeps the last heading and the
     /// renderer can mirror the art by it without flicker at rest.
     pub facing: f64,
-    /// Whether the user addressed the buddy this tick: a Poke, a Summon, a
+    /// Whether the user addressed the character this tick: a Poke, a Summon, a
     /// Menu or a Dwell. The Shell wakes the session Director from this bit.
     pub addressed: bool,
     /// The cue this interaction earned, if one landed. A one-tick pulse like
@@ -252,7 +252,7 @@ const GRAVITY: f64 = 3600.0;
 const JUMP_SPEED: f64 = 900.0;
 
 /// How much of the art must stay below the usable top for the feet to be put down there.
-/// Half: a buddy clipped at the crown still reads as itself, while a whole sprite's height refuses every window near the top of a display, a dead zone sized for the tallest Character and charged to all of them.
+/// Half: a character clipped at the crown still reads as itself, while a whole sprite's height refuses every window near the top of a display, a dead zone sized for the tallest Character and charged to all of them.
 const CEILING_VISIBLE_SHARE: f64 = 0.5;
 
 /// The clearance an Engine built without an art height uses: 32px at 4×.
@@ -275,7 +275,7 @@ const YANK_WINDOW_S: f64 = 0.1;
 
 /// Cursor proximity radius in points.
 ///
-/// Close enough to react before the hand is on top of the sprite, far enough that the buddy does not jump at every scroll or window move.
+/// Close enough to react before the hand is on top of the sprite, far enough that the character does not jump at every scroll or window move.
 const NEAR_RADIUS: f64 = 150.0;
 
 /// How long the cursor must rest on the sprite to count as Dwell, in milliseconds.
@@ -482,7 +482,7 @@ impl Engine {
             })
     }
 
-    /// The seed this Instance's variant draws come from, so two buddies of one Character do not idle in lockstep.
+    /// The seed this Instance's variant draws come from, so two characters of one Character do not idle in lockstep.
     ///
     /// Passed in rather than read: the Engine has no clock, and a draw no test could reproduce would be worse than no draw at all. The first is taken here, because the Animation a sprite spawns in is one the seed should reach as well.
     pub fn with_variant_seed(mut self, seed: u64) -> Self {
@@ -3253,7 +3253,7 @@ mod tests {
     }
 
     /// The dead zone is the Character's own height, not the tallest one
-    /// anybody ships. A 64-point buddy needs 32 above its feet, so a title bar
+    /// anybody ships. A 64-point character needs 32 above its feet, so a title bar
     /// at y=80 holds it; the fixed 128 refused every window in the top 128 points.
     #[test]
     fn a_short_character_perches_where_a_tall_one_may_not() {
@@ -3534,7 +3534,7 @@ mod tests {
 
     /// The hold is a pause the Director cannot walk through: a proposal that
     /// moves the sprite is refused until it is over, while one that only
-    /// speaks is not — the buddy was just addressed, and answering is fine.
+    /// speaks is not — the character was just addressed, and answering is fine.
     #[test]
     fn a_walk_proposed_mid_cooldown_waits_and_one_after_it_does_not() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });

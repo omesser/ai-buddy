@@ -2,7 +2,7 @@
 
 ## Context
 
-Agent Client Protocol (ACP) is how ai-buddy talks to external agent harnesses.
+Agent Client Protocol (ACP) is how fidget talks to external agent harnesses.
 We need to choose an ACP client implementation and decide which harnesses to
 support by name versus requiring users to configure command lines themselves.
 
@@ -18,7 +18,7 @@ tools, or maintain a focused list of verified harnesses with an escape hatch.
 
 ## Decision
 
-ai-buddy is an ACP client built on `agent-client-protocol` 2.x, the SDK Zed
+fidget is an ACP client built on `agent-client-protocol` 2.x, the SDK Zed
 ships and the protocol's own repository maintains.
 
 The product layer owns the policy around the wire: launch table, spawn/respawn

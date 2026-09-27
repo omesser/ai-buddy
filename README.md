@@ -1,6 +1,6 @@
 <div align="center">
 
-# ai-buddy
+# Fidget
 
 <!-- Shields split on a single hyphen, so cursor-agent is cursor--agent in the URL. Each color is that harness's own hue, darkened until the white shield text stays readable. -->
 
@@ -33,23 +33,23 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 
 ## See It
 
-Try [Buddy Cues](https://omesser.github.io/ai-buddy/cues.html) — gestures and physics on a draggable sprite in the browser.
+Try [Fidget Cues](https://omesser.github.io/ai-buddy/cues.html) — gestures and physics on a draggable sprite in the browser.
 
 ## Interact
 
 ![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
 
 - **Poke** — click once for a react, then it resumes.
-- **Summon** — double-click to open a chat window for that buddy.
+- **Summon** — double-click to open a chat window for that fidget.
 - **Pick up** — click and drag; it follows the cursor.
 - **Throw** — release while moving; it flies on an arc and lands.
 - **Perch** — let it settle on a window's top edge; drag slowly to ride, fling to drop.
-- **Hide** — Control-Option-Command-B toggles the buddy instantly.
+- **Hide** — Control-Option-Command-B toggles the fidget instantly.
 - **Fullscreen** — fades out for fullscreen apps, fades back when you exit.
 
 ### Talk to it
 
-Summon opens a chat window belonging to that buddy. What you type is another
+Summon opens a chat window belonging to that fidget. What you type is another
 turn in the same conversation that decides what it does on your desktop, so an
 answer arrives as speech in the bubble and as a Behavior it plays, not only as
 text. Lines it says when nobody asked appear here too, labelled with what it was
@@ -57,7 +57,7 @@ reacting to.
 
 <img src="./docs/readme/chat-surface.png" width="420" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" />
 
-The bar along the bottom names what the buddy is doing right now — the Behavior,
+The bar along the bottom names what the fidget is doing right now — the Behavior,
 the Primitive under it, the Animation playing, its State, and how long until it
 next thinks. It needs a Director; see [Running it](#running-it).
 
@@ -85,18 +85,18 @@ Download a build from [GitHub Releases](https://github.com/omesser/ai-buddy/rele
 Or clone and run from the repo root (macOS, Linux, Windows):
 
 ```sh
-git clone https://github.com/omesser/ai-buddy.git
-cd ai-buddy
-cargo run -p ai-buddy
+git clone https://github.com/omesser/ai-buddy.git fidget
+cd fidget
+cargo run -p fidget
 ```
 
 ### macOS
 
-Apple Silicon. The Release ships a `.dmg`. Open it and copy `ai-buddy` to Applications.
+Apple Silicon. The Release ships a `.dmg`. Open it and copy `fidget` to Applications.
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
 
-The same missing signature costs two Keychain dialogs at launch — "ai-buddy wants to use your confidential information stored in ai-buddy" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `AI_BUDDY_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/ai-buddy/issues/283)).
+The same missing signature costs two Keychain dialogs at launch — "Fidget wants to use your confidential information stored in Fidget" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/ai-buddy/issues/283)).
 
 ### Linux
 
@@ -106,10 +106,10 @@ Under Wayland the sprite keeps to screen edges and loses window Perches — a su
 
 ```sh
 # Debian/Ubuntu .deb
-sudo apt install ./ai-buddy_*.deb
+sudo apt install ./fidget_*.deb
 # or: AppImage (needs libfuse2 on Ubuntu 22.04, libfuse2t64 on 24.04+)
 # sudo apt install libfuse2    # or libfuse2t64
-# chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
+# chmod +x fidget_*.AppImage && ./fidget_*.AppImage
 ```
 
 Tray hosts, cue audio (GStreamer), and AppImage fuse notes: [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
@@ -128,35 +128,35 @@ SmartScreen may warn on the first open because the build is not Authenticode sig
 
 ```sh
 # OpenAI (or export env vars to persist)
-AI_BUDDY_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.openai.com \
-AI_BUDDY_DIRECTOR_MODEL=gpt-4o-mini \
-cargo run -p ai-buddy
+FIDGET_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.openai.com \
+FIDGET_DIRECTOR_MODEL=gpt-4o-mini \
+cargo run -p fidget
 
 # Ollama (local, no key)
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 \
-cargo run -p ai-buddy
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
+cargo run -p fidget
 ```
 
 **Optional Harness.** An agent you already run answers instead, over ACP, and signs in on its own:
 
 ```sh
-AI_BUDDY_HARNESS=claude cargo run -p ai-buddy   # names and standing below
+FIDGET_HARNESS=claude cargo run -p fidget   # names and standing below
 ```
 
 **Switch characters** (env or Settings):
 
 ```sh
 # Any of: buddy-bot (default), black-mage, bmo, cat, jotaro-kujo, nim, timber-wolf, trump
-AI_BUDDY_CHARACTER=nim cargo run -p ai-buddy
+FIDGET_CHARACTER=nim cargo run -p fidget
 ```
 
 See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env vars, local model servers, keyring/secret store, and `probe-model.sh`.
 
 ## Harness Support
 
-Which Harness you attach changes what ai-buddy can do with it.
+Which Harness you attach changes what Fidget can do with it.
 Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./docs/DEVELOPMENT.md)); the run itself lives on the issue that did it.
 
 | Harness | Command | Standing |
@@ -178,23 +178,23 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 |---|---|
 | `claude` | Keeps shell, web search and fetch, filesystem, and user-scope MCP plus claude.ai connectors, loads local and project MCP only when `cwd` matches, and does not list `AskUserQuestion`. |
 | `codex` | Keeps shell, web search and fetch, filesystem, the user's own MCP servers, and `request_user_input`. |
-| `copilot` | Keeps shell (`bash`, with `read_bash`, `stop_bash` and `list_bash`), filesystem (`view`, `create`, `edit`, `grep`, `glob`), `web_fetch` and no web-search tool, its subagent set (`task`, `parallel`, `search_code_subagent`, `read_agent`, `list_agents`, `write_agent`), `skill`, `sql` and `session_store_sql`, and five tools from its bundled `github-mcp-server`, and lists no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy-` prefix. |
+| `copilot` | Keeps shell (`bash`, with `read_bash`, `stop_bash` and `list_bash`), filesystem (`view`, `create`, `edit`, `grep`, `glob`), `web_fetch` and no web-search tool, its subagent set (`task`, `parallel`, `search_code_subagent`, `read_agent`, `list_agents`, `write_agent`), `skill`, `sql` and `session_store_sql`, and five tools from its bundled `github-mcp-server`, and lists no ask-user tool. It takes Fidget's own MCP over HTTP, and lists Fidget's seven tools alongside its own, under an `fidget-` prefix. |
 | `cursor-agent` | Keeps shell, web search and fetch, filesystem, and the user's own MCP servers, and lists no ask-user tool. |
 | `grok` | Keeps shell, web search and fetch, filesystem, and `ask_user_question`, and the user's own MCP servers were empty on a machine with none configured, and project scope keys off `cwd` per vendor docs. |
-| `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. It takes ai-buddy's own MCP over HTTP, and lists ai-buddy's seven tools alongside its own, under an `ai-buddy__` prefix. |
+| `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. It takes Fidget's own MCP over HTTP, and lists Fidget's seven tools alongside its own, under an `fidget__` prefix. |
 | `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
 | `hermes` | Keeps shell, web search and extract, filesystem, and the user's own MCP servers via the vendor mcp subcommand that the probe did not exercise, lists no ask-user tool, and lists browser tools that the start-up CDP check marks unavailable. |
-| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Handed ai-buddy's stdio server on `session/new`, it never asked for the tool list: `pi-acp` stores those servers and does not pass them to `pi` (#1019), which reads the project `.mcp.json` the app writes on Apply and the probe does not. |
+| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Handed Fidget's stdio server on `session/new`, it never asked for the tool list: `pi-acp` stores those servers and does not pass them to `pi` (#1019), which reads the project `.mcp.json` the app writes on Apply and the probe does not. |
 
-No Harness brings desktop control to an ACP session ai-buddy opens.
+No Harness brings desktop control to an ACP session Fidget opens.
 
-`scripts/probe-harness.sh` serves ai-buddy's MCP endpoint and reports under
+`scripts/probe-harness.sh` serves Fidget's MCP endpoint and reports under
 `mcp listed` whether the Harness fetched the tool list (#984). Goose, Copilot
 and Codex fetched it on a stock run; Pi did not. That is delivery of the list,
 not a call into it, and the prefix a Harness shows its model came from the
 tool-class probe's own client.
 
-How they handle session differs, and changes what ai-buddy can do with them:
+How they handle session differs, and changes what Fidget can do with them:
 
 | Harness | Fresh session | Resumed session | `loadSession` | MCP transport † | Auth methods ‡ |
 |---|---|---|---|---|---|
@@ -209,15 +209,15 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it too and ignores the `mcpServers` it is handed altogether, so ai-buddy writes the same loopback URL and bearer token into `<cwd>/.cursor/mcp.json` at mode 0600 and runs `cursor-agent mcp enable ai-buddy` before each attach, removing the entry on detach (#1020). `pi` advertises no HTTP MCP. `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it too and ignores the `mcpServers` it is handed altogether, so Fidget writes the same loopback URL and bearer token into `<cwd>/.cursor/mcp.json` at mode 0600 and runs `cursor-agent mcp enable fidget` before each attach, removing the entry on detach (#1020). `pi` advertises no HTTP MCP. `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
 
 Two transports, two distinct axes:
 
-1. **ACP** (ai-buddy ↔ Harness): always stdio. How ai-buddy attaches to the Harness and prompts it.
-2. **MCP** (Harness → ai-buddy tools): How the Harness calls back so `speak` and sensing reach the buddy.
+1. **ACP** (Fidget ↔ Harness): always stdio. How Fidget attaches to the Harness and prompts it.
+2. **MCP** (Harness → Fidget tools): How the Harness calls back so `speak` and sensing reach the fidget.
 
 **MCP transport** is gated by what the Harness advertises in ACP `initialize` → `agentCapabilities.mcpCapabilities.http`:
 - **true** → loopback HTTP URL + bearer token (ADR-0023, #491)
@@ -239,17 +239,17 @@ Two transports, two distinct axes:
 
 | URI | What it is |
 |---|---|
-| `ai-buddy://windows` | Visible windows, frontmost first, with the owning application and the title. Empty without the window-names consent, which covers both (ADR-0032). Same excluded applications as `list_windows`. |
-| `ai-buddy://memory` | The Memory Manifest file every Character Instance shares. |
-| `ai-buddy://action-log` | The current Action Log file only. Rotated siblings are not this resource. A large current file is tailed to complete JSONL lines. |
+| `fidget://windows` | Visible windows, frontmost first, with the owning application and the title. Empty without the window-names consent, which covers both (ADR-0032). Same excluded applications as `list_windows`. |
+| `fidget://memory` | The Memory Manifest file every Character Instance shares. |
+| `fidget://action-log` | The current Action Log file only. Rotated siblings are not this resource. A large current file is tailed to complete JSONL lines. |
 
 **Explicitly not served:** mouse/keyboard/Executor tools (ADR-0003). No click, no type, no input events by design.
 
 ### Computer use
 
-ai-buddy never reads screen pixels. Sensing is OS window metadata — bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)) — so `describe_screen` describes the window layout, not what is on screen. Decline it and the buddy still knows where the windows are, and not what they are. The buddy takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
+Fidget never reads screen pixels. Sensing is OS window metadata — bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)) — so `describe_screen` describes the window layout, not what is on screen. Decline it and the fidget still knows where the windows are, and not what they are. The fidget takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
 
-That bounds ai-buddy's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through ai-buddy, whose MCP serves no input events.
+That bounds Fidget's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through Fidget, whose MCP serves no input events.
 
 The portable option across the Harnesses above is [cua-driver](https://github.com/trycua/cua) (MIT; macOS, Windows, Linux), attached over stdio MCP. [Connect your agent to Cua Driver](https://cua.ai/docs/how-to-guides/driver/connect-your-agent) carries the per-client registration, and [MCP tools](https://cua.ai/docs/reference/cua-driver/mcp-tools) lists what it exposes. Attach it deliberately — it drives the real desktop with your signed-in sessions, and its permission mode is chosen by the process that owns the driver runtime, not by the agent asking. Some Harnesses bring computer use of their own instead; the [Capture decision note](./docs/research/capture-drop-and-harness-cu-path.md) has the per-Harness table and the other drivers surveyed.
 
@@ -275,7 +275,7 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 ## Developing
 
-**Want to help?** [Open issues](https://github.com/omesser/ai-buddy/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how ai-buddy compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
+**Want to help?** [Open issues](https://github.com/omesser/ai-buddy/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how Fidget compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
 
 **Design and decisions:**
 - [CONTEXT.md](./CONTEXT.md) — vocabulary
@@ -292,7 +292,7 @@ The Nous Research mark (`docs/readme/nous.svg`) identifies the Hermes Harness.
 Every other mark is served from [Simple Icons](https://simpleicons.org) (CC0,
 with each brand's trademark reserved to its owner).
 
-[WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. ai-buddy is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
+[WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. Fidget is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
 The Chat window's mind mark — the small brain beside what answers — is the
 `brain` glyph from [Font Awesome Free](https://fontawesome.com/) 6.x, used

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive a real CGDisplayReconfiguration against a running ai-buddy and prove the
+# Drive a real CGDisplayReconfiguration against a running fidget and prove the
 # overlay that loses its display does not take the process down with it (#868).
 #
 # Mirroring collapses two logical displays into one, so `available_monitors()`
@@ -12,7 +12,7 @@
 # The screens flicker for the duration; the layout is restored on every exit
 # path, including a failure or an interrupt.
 #
-# Usage: scripts/verify-display-loss-macos.sh [path/to/ai-buddy]
+# Usage: scripts/verify-display-loss-macos.sh [path/to/fidget]
 
 set -euo pipefail
 
@@ -20,8 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$WORKSPACE_ROOT"
 
-BINARY="${1:-target/debug/ai-buddy}"
-SETTLE="${AI_BUDDY_DISPLAY_SETTLE:-6}"
+BINARY="${1:-target/debug/fidget}"
+SETTLE="${FIDGET_DISPLAY_SETTLE:-6}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,7 +39,7 @@ fail() {
 command -v displayplacer > /dev/null || fail "displayplacer not installed"
 [ -x "$BINARY" ] || fail "no binary at $BINARY"
 
-LOG="$(mktemp -t ai-buddy-display-loss)"
+LOG="$(mktemp -t fidget-display-loss)"
 RESTORE="$(displayplacer list | tail -1)"
 case "$RESTORE" in
   displayplacer\ *) ;;
@@ -70,7 +70,7 @@ trap restore EXIT INT TERM
 
 log_info "layout on exit: $RESTORE"
 log_info "launching $BINARY, log at $LOG"
-AI_BUDDY_DIRECTOR_API_KEY="${AI_BUDDY_DIRECTOR_API_KEY:-verify-display-loss}" \
+FIDGET_DIRECTOR_API_KEY="${FIDGET_DIRECTOR_API_KEY:-verify-display-loss}" \
   "$BINARY" > "$LOG" 2>&1 &
 APP_PID=$!
 
@@ -81,7 +81,7 @@ for _ in $(seq 40); do
   sleep 0.5
 done
 COVERED="$(sed -n 's/^overlay: \([0-9]*\) display(s).*/\1/p' "$LOG" | head -1)"
-[ -n "$COVERED" ] || fail "the app traced no overlay line; is AI_BUDDY_DIRECTOR_API_KEY set?"
+[ -n "$COVERED" ] || fail "the app traced no overlay line; is FIDGET_DIRECTOR_API_KEY set?"
 [ "$COVERED" -ge 2 ] || fail "the app covered $COVERED display(s); this needs 2"
 log_info "covering $COVERED displays"
 

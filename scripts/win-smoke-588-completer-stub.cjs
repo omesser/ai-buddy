@@ -7,21 +7,21 @@
 // true`, whole chat-completions JSON otherwise, so the first wake costs no
 // wasted round trip.
 // Env:
-//   AI_BUDDY_SMOKE_PORT      port to listen on (default 18765)
-//   AI_BUDDY_SMOKE_BEHAVIOR  Behavior name on line one (default "stroll")
-//   AI_BUDDY_SMOKE_LINE      the long spoken line (default below)
+//   FIDGET_SMOKE_PORT      port to listen on (default 18765)
+//   FIDGET_SMOKE_BEHAVIOR  Behavior name on line one (default "stroll")
+//   FIDGET_SMOKE_LINE      the long spoken line (default below)
 
 const http = require("node:http");
 
-const PORT = Number(process.env.AI_BUDDY_SMOKE_PORT || 18765);
+const PORT = Number(process.env.FIDGET_SMOKE_PORT || 18765);
 const HOST = "127.0.0.1";
-const BEHAVIOR = process.env.AI_BUDDY_SMOKE_BEHAVIOR || "stroll";
+const BEHAVIOR = process.env.FIDGET_SMOKE_BEHAVIOR || "stroll";
 
 // One paragraph, no newlines: a single long run is the plainest thing that
 // outruns six wrapped lines at the bubble's 260px cap. Kept well past that so
 // a different font or DPI on the watch machine still truncates.
 const LINE =
-  process.env.AI_BUDDY_SMOKE_LINE ||
+  process.env.FIDGET_SMOKE_LINE ||
   "Right, let me talk you through the whole plan because there is quite a lot " +
     "to get through here and I do not want to leave anything out along the way: " +
     "first I will stroll across the desk to stretch my legs, then I will check " +

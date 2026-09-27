@@ -1,13 +1,13 @@
-# ai-buddy verification map
+# Fidget verification map
 
-This directory is the maintained source for verifying user-facing behavior of the ai-buddy desktop mascot. Read the index before driving the app, then use the matching feature file as the recipe.
+This directory is the maintained source for verifying user-facing behavior of the fidget desktop mascot. Read the index before driving the app, then use the matching feature file as the recipe.
 
 ## Baseline preconditions
 
 - Work from the repository root (`Cargo.toml` workspace with `src-tauri/`).
-- Set `RUN_ID` and evidence paths as in the skill (`/tmp/ai-buddy-verify-$RUN_ID/evidence`).
-- Prefer a binary this run built: `target/release/ai-buddy` or `target/debug/ai-buddy`.
-- Run `.agents/skills/verify-ai-buddy/helpers/doctor.sh` and require exit `0` before Drive.
+- Set `RUN_ID` and evidence paths as in the skill (`/tmp/fidget-verify-$RUN_ID/evidence`).
+- Prefer a binary this run built: `target/release/fidget` or `target/debug/fidget`.
+- Run `.agents/skills/verify-fidget/helpers/doctor.sh` and require exit `0` before Drive.
 - Never drive an instance that was not started by this verification run (or by the platform verify script it wraps).
 - **One agent per display.** Two overlapping drives share Perches and hit-test state; refuse double-drive.
 
@@ -18,7 +18,7 @@ This directory is the maintained source for verifying user-facing behavior of th
 - Treat every command as literal. Keep quoted names and flags unchanged.
 - Overlay proofs go through the `drive-overlay-*` helpers (wrappers around `scripts/verify-overlay*`).
 - Unit proofs go through `prove-units.sh` / `doctor.sh --units`.
-- Restore nothing that would delete `$AI_BUDDY_VERIFY_EVIDENCE`.
+- Restore nothing that would delete `$FIDGET_VERIFY_EVIDENCE`.
 
 ## Proof and skip reporting
 
@@ -44,5 +44,5 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 - [Overlay presence](./overlay-presence.md) — display-sized overlay, EWMH / floating level, frame loop start.
 - [Poke](./poke.md) — single click on the sprite body yields a react / Poke verb.
-- [Summon / chat](./summon-chat.md) — double-click opens Chat for that buddy.
+- [Summon / chat](./summon-chat.md) — double-click opens Chat for that fidget.
 - [Capturable / hide from captures](./capturable.md) — appear-in-screenshots override via env and Settings.

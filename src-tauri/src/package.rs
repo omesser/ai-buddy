@@ -3,7 +3,7 @@
 //! `character::load` is a pure function from bytes to either a validated
 //! Character or a list of an author's mistakes. Something has to open a
 //! directory or an archive and hand it those bytes, and that something performs
-//! I/O, so it belongs in the Shell rather than in `ai-buddy-core` — the same
+//! I/O, so it belongs in the Shell rather than in `fidget-core` — the same
 //! split as `WindowSource`.
 //!
 //! The two ways a location can fail to yield bytes are kept apart, because
@@ -18,7 +18,7 @@
 //! its rejections are the author's list of things to fix.
 //!
 //! A Character Package is untrusted input, so the reader is bounded before it
-//! is convenient: a package cannot make ai-buddy read an unbounded number of
+//! is convenient: a package cannot make fidget read an unbounded number of
 //! files, allocate an unbounded number of bytes, or walk an unbounded depth.
 
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE};
+use fidget_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE};
 
 /// The file extension of a packaged Character. Zip because it is what a person
 /// gets from Finder's "Compress", not because the format needs a container.
@@ -50,17 +50,17 @@ const MAX_PACKAGE_DEPTH: usize = 8;
 /// The environment variable that overrides where packages are looked for, as a
 /// `:`-separated list of directories. Present for development and for the
 /// verification script; a user never needs it.
-pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
+pub const SEARCH_PATH_VAR: &str = "FIDGET_CHARACTERS";
 
 /// The Character a new user meets, when nothing has chosen another.
 ///
-/// Name order is not a decision: without this, adding a package that sorts earlier would silently replace the buddy everybody sees.
+/// Name order is not a decision: without this, adding a package that sorts earlier would silently replace the fidget everybody sees.
 pub const DEFAULT_CHARACTER: &str = "bmo";
 
 /// The environment variable that starts one named Character rather than the first one found.
 ///
 /// The search takes the first package that loads, so without this name order alone decides which Character a developer sees.
-pub const CHARACTER_VAR: &str = "AI_BUDDY_CHARACTER";
+pub const CHARACTER_VAR: &str = "FIDGET_CHARACTER";
 
 /// Why a location did not yield a package's bytes.
 #[derive(Debug)]
@@ -113,7 +113,7 @@ pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
     Ok(files)
 }
 
-/// Where ai-buddy looks for Character Packages, in the order it looks.
+/// Where fidget looks for Character Packages, in the order it looks.
 ///
 /// A package the user added wins over a shipped one of the same name, because the user's copy is the one they can edit.
 pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
@@ -125,7 +125,7 @@ pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
         paths.push(
             PathBuf::from(home)
-                .join("Library/Application Support/ai-buddy")
+                .join("Library/Application Support/fidget")
                 .join("characters"),
         );
     }
@@ -381,11 +381,11 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{Duration, UNIX_EPOCH};
 
-    use ai_buddy_core::character::{self, Character};
-    use ai_buddy_core::director::{Context, StaticDirector};
-    use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
-    use ai_buddy_core::overlay::{AlphaMask, SpriteRect};
-    use ai_buddy_core::sensing::Activity;
+    use fidget_core::character::{self, Character};
+    use fidget_core::director::{Context, StaticDirector};
+    use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
+    use fidget_core::overlay::{AlphaMask, SpriteRect};
+    use fidget_core::sensing::Activity;
 
     /// A 2x2 RGBA PNG, which is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
@@ -399,7 +399,7 @@ mod tests {
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let unique = NEXT.fetch_add(1, Ordering::Relaxed);
             let dir = std::env::temp_dir()
-                .join(format!("ai-buddy-{label}-{}-{unique}", std::process::id()));
+                .join(format!("fidget-{label}-{}-{unique}", std::process::id()));
             fs::create_dir_all(&dir).expect("temp dir is creatable");
             Self(dir)
         }
@@ -505,8 +505,8 @@ mod tests {
             recent: Vec::new(),
             personality: character.personality.clone(),
             instance_prompt: String::new(),
-            state: ai_buddy_core::engine::State::Grounded,
-            happened: ai_buddy_core::director::Happened::Proactive,
+            state: fidget_core::engine::State::Grounded,
+            happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
         };
 
@@ -799,7 +799,7 @@ mod tests {
 
     /// Name order is not a decision. Without a default the Character a new user
     /// meets is whichever package sorts first, so adding one could silently
-    /// replace the buddy everybody sees.
+    /// replace the fidget everybody sees.
     #[test]
     fn the_default_character_is_met_first_and_is_not_the_only_one() {
         let candidates = vec![

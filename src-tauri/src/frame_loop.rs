@@ -4,18 +4,18 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy_core::director::{self, Context, Happened, Wake};
-use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
-use ai_buddy_core::engine::{BehaviorProposal, State, Verb};
-use ai_buddy_core::input::press_target;
-use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
-use ai_buddy_core::roster::{InstanceId, Roster};
-use ai_buddy_core::scheduler;
-use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
-use ai_buddy_core::snapshot::SnapshotAssembler;
-use ai_buddy_core::speech;
-use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
-use ai_buddy_core::window_source::{Rect, WindowSource};
+use fidget_core::director::{self, Context, Happened, Wake};
+use fidget_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
+use fidget_core::engine::{BehaviorProposal, State, Verb};
+use fidget_core::input::press_target;
+use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
+use fidget_core::roster::{InstanceId, Roster};
+use fidget_core::scheduler;
+use fidget_core::sensing::{Activity, FreeTier, SystemClock};
+use fidget_core::snapshot::SnapshotAssembler;
+use fidget_core::speech;
+use fidget_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
+use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
 use super::chat_surface::{CHAT_APPEARANCE_EVENT, CHAT_EVENT, CHAT_STATUS_EVENT, CHAT_UI_EVENT};
@@ -105,7 +105,7 @@ pub(crate) fn run_frame_loop(
         };
 
         // Read once for every Instance: there is one desktop and one user, and
-        // asking AppKit how long they have been idle once per buddy would be
+        // asking AppKit how long they have been idle once per character would be
         // the same answer bought several times.
         let mut free_tier = FreeTier::default();
         let activity_source = platform::activity_source();
@@ -378,7 +378,7 @@ pub(crate) fn run_frame_loop(
             last_tick = Instant::now();
 
             // The Engine works in points; undoing the cursor's scale puts it in that space.
-            let cursor_points = ai_buddy_core::engine::Point {
+            let cursor_points = fidget_core::engine::Point {
                 x: cursor.x / cursor_scale,
                 y: cursor.y / cursor_scale,
             };
@@ -393,7 +393,7 @@ pub(crate) fn run_frame_loop(
 
             // Drop a dismissed Instance before hit-testing: a pointer left
             // behind still counts as a gesture, and a mid-drag dismiss would
-            // hold every other buddy's presses for as long as the button stayed down.
+            // hold every other character's presses for as long as the button stayed down.
             lives.retain(|live| roster.get(&live.id).is_some());
 
             // Last tick's art is the one being hit-tested. A Character nobody
@@ -652,7 +652,7 @@ pub(crate) fn run_frame_loop(
                         let interval_moved = config.ambient_first != was_first;
                         for live in &mut lives {
                             // `Pace` took the interval at spawn. Back to
-                            // `first` with a rebuilt config: the buddy on a
+                            // `first` with a rebuilt config: the character on a
                             // two-hour wait is the one whose owner asked for shorter.
                             if interval_moved {
                                 live.pace = paced(&config, &live.character);
@@ -762,7 +762,7 @@ pub(crate) fn run_frame_loop(
                         // to find later. `chars` rather than the body, as the
                         // `prompt` event already does (#435).
                         crate::action_log::append(
-                            &ai_buddy_core::memory::data_dir(),
+                            &fidget_core::memory::data_dir(),
                             "instance-prompt",
                             serde_json::json!({
                                 "instance": written.instance,
@@ -1034,7 +1034,7 @@ pub(crate) fn run_frame_loop(
                     let installed: Vec<String> = characters.keys().cloned().collect();
 
                     // The Engine's own answer rather than a copy of it, so the
-                    // checkbox cannot disagree with what the buddy is doing.
+                    // checkbox cannot disagree with what the character is doing.
                     let settings_now = settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
                     let rules_now = rules.lock().ok();
                     let description = describe_menu(
@@ -1174,7 +1174,7 @@ pub(crate) fn run_frame_loop(
 
             // One reading of the user for every Instance, taken before any of
             // them is ticked so they all wake against the same desktop. A read
-            // per buddy would be the same two AppKit calls bought N times.
+            // per character would be the same two AppKit calls bought N times.
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let mut activity = free_tier.read(&activity_source, &SystemClock);
@@ -1234,7 +1234,7 @@ pub(crate) fn run_frame_loop(
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
 
             // The window list is re-read at the frame rate while any Instance is
-            // riding a moving window. One riding buddy is reason enough: the
+            // riding a moving window. One riding character is reason enough: the
             // others cost nothing extra, the read being shared.
             let mut riding = false;
 
@@ -1537,7 +1537,7 @@ pub(crate) fn run_frame_loop(
                                 // (ADR-0033). This wake is dropped, not queued:
                                 // the bookkeeping above has already spent it.
                                 completer::Woke::Dropped => false,
-                                // A touch the buddy cannot answer yet points at
+                                // A touch the character cannot answer yet points at
                                 // the question. A Summon already opens Chat, a
                                 // typed line is already in it, and a tick is nobody's.
                                 completer::Woke::AwaitingUser => {
@@ -1731,7 +1731,7 @@ pub(crate) fn run_frame_loop(
                         .map_or(0, |since| since.as_millis());
 
                     // Instance last so everything before it stands where it
-                    // did when one buddy was all there was.
+                    // did when one character was all there was.
                     // scripts/verify-overlay.sh matches this prefix.
                     eprintln!(
                         "frame: {} {:?} pos({:.0},{:.0}) sprite({},{}) {}#{} {}",
@@ -2208,7 +2208,7 @@ fn answer_tool_call(
         .collect();
     let mut context = DispatchContext {
         window_source: &watched,
-        memory_path: ai_buddy_core::memory::shared_path(),
+        memory_path: fidget_core::memory::shared_path(),
         denylist: DenyList {
             excluded_applications,
             filter_password_fields: true,
@@ -2224,7 +2224,7 @@ fn answer_tool_call(
 /// Drop the frontmost application's name when the user has not asked for it.
 ///
 /// Two reasons, and both end the same way. One consent covers every name the
-/// buddy reports (ADR-0032), and this name comes from a different call than
+/// character reports (ADR-0032), and this name comes from a different call than
 /// the window walk, so the gate is repeated here. An excluded application is
 /// the other reason, and it can only be matched while the name is still there.
 fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denylist: &DenyList) {
@@ -2240,12 +2240,12 @@ fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denyli
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_buddy_core::character::{
+    use fidget_core::character::{
         Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
         DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
     };
-    use ai_buddy_core::engine::Point;
-    use ai_buddy_core::window_source::{Capabilities, WorldGeometry};
+    use fidget_core::engine::Point;
+    use fidget_core::window_source::{Capabilities, WorldGeometry};
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -2351,7 +2351,7 @@ mod tests {
     /// Harness ends up on the Frame the bubble draws.
     #[test]
     fn a_tool_call_speaks_through_the_live_roster_onto_the_next_frame() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-mcp-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fidget-mcp-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("a temp dir");
         let mut roster = Roster::new();
         let id = roster.spawn(&character(), "Pip".to_string(), Point { x: 0.0, y: 0.0 });

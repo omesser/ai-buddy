@@ -110,15 +110,15 @@ done
 log_info "Perch window ID: $TEST_WINDOW_ID"
 xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
 
-log_info "Building ai-buddy..."
+log_info "Building fidget..."
 cargo build --release
 
-log_info "Starting ai-buddy with frame tracing..."
-export AI_BUDDY_TRACE_FRAMES=1
-export AI_BUDDY_TRACE_HITTEST=1
+log_info "Starting fidget with frame tracing..."
+export FIDGET_TRACE_FRAMES=1
+export FIDGET_TRACE_HITTEST=1
 export RUST_LOG=debug
 export LIBGL_ALWAYS_SOFTWARE=1
-target/release/ai-buddy > "$TRACE_LOG" 2>&1 &
+target/release/fidget > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
 
 await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
@@ -128,7 +128,7 @@ kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 # display-sized one. xdotool search order is creation order, so head -1 is the dummy.
 find_overlay_window() {
   local id w h
-  for id in $(xdotool search --class 'Ai-buddy' 2> /dev/null || true); do
+  for id in $(xdotool search --class 'Fidget' 2> /dev/null || true); do
     w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
     h=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Height:/ {print $2; exit}')
     if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge 200 ] && [ "$h" -ge 200 ]; then
@@ -146,7 +146,7 @@ for _ in $(seq 1 60); do
   [ -n "$WINDOW_ID" ] && break
   sleep 0.25
 done
-[ -n "$WINDOW_ID" ] || fail "Could not find ai-buddy overlay window"
+[ -n "$WINDOW_ID" ] || fail "Could not find fidget overlay window"
 log_info "Found overlay window ID: $WINDOW_ID"
 
 log_info "Waiting for EWMH window states..."

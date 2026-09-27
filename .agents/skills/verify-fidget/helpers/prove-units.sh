@@ -8,13 +8,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/common.sh"
 
 cd "$REPO_ROOT"
-DEST="$AI_BUDDY_VERIFY_EVIDENCE/units"
+DEST="$FIDGET_VERIFY_EVIDENCE/units"
 mkdir -p "$DEST"
 
 STATUS=0
 
-echo "prove-units: cargo test -p ai-buddy-core"
-if cargo test -p ai-buddy-core 2>&1 | tee "$DEST/cargo-core.txt"; then
+echo "prove-units: cargo test -p fidget-core"
+if cargo test -p fidget-core 2>&1 | tee "$DEST/cargo-core.txt"; then
   echo "PASS cargo-core" | tee -a "$DEST/summary.txt"
 else
   echo "FAIL cargo-core" | tee -a "$DEST/summary.txt"

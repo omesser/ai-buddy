@@ -46,7 +46,7 @@ use objc2_app_kit::NSWorkspace;
 use objc2_core_foundation::{CFString, CGPoint, CGSize};
 use objc2_foundation::ns_string;
 
-use ai_buddy_core::window_source::Rect;
+use fidget_core::window_source::Rect;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {

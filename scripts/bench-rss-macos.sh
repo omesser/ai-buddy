@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running ai-buddy, macOS only. RSS lives in more
+# Sample the resident set of a running fidget, macOS only. RSS lives in more
 # than one process: WKWebView's XPC helpers are children of launchd, not of the
 # app, so this diffs the set of WebKit helpers before and after launch.
 # Usage: scripts/bench-rss-macos.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/ai-buddy, waits `settle` seconds, samples every
+#   Launches target/debug/fidget, waits `settle` seconds, samples every
 #   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
 #   and each process's peak physical footprint, then stops the app.
 #   Default is a brief smoke (settle ~3s, sample ~10s). --research soaks for
 #   300s + 300s: a launch peaks near twice its steady state and takes about
 #   five minutes to come down.
-#   Environment reaches the app unchanged: AI_BUDDY_INSTANCES picks the roster,
-#   AI_BUDDY_CHARACTERS the packages. Set HOME to a scratch directory.
+#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
+#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
 
 # RSS alone does not compare two runs: a busy machine reclaims pages from an
-# idle buddy. Peak physical footprint only ever rises, so compare scenarios on
+# idle character. Peak physical footprint only ever rises, so compare scenarios on
 # it and read the RSS series for shape. Record roster, display count and what
 # the sprite was doing beside the number (docs/research/memory-rss-and-multi-monitor.md).
 
@@ -24,7 +24,7 @@ settle=3
 seconds=10
 interval=2
 out=""
-bin="target/debug/ai-buddy"
+bin="target/debug/fidget"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -38,10 +38,10 @@ while [ $# -gt 0 ]; do
 done
 
 [ -x "$bin" ] || {
-  echo "no $bin — run: (cd src-tauri && cargo build --bin ai-buddy)" >&2
+  echo "no $bin — run: (cd src-tauri && cargo build --bin fidget)" >&2
   exit 2
 }
-out="${out:-$(mktemp -t ai-buddy-rss).tsv}"
+out="${out:-$(mktemp -t fidget-rss).tsv}"
 log="$out.app.log"
 
 # Everything WebKit is already running belongs to some other application.

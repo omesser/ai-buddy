@@ -18,21 +18,21 @@ fail() {
 }
 
 echo "doctor: repo=$REPO_ROOT RUN_ID=$RUN_ID"
-echo "doctor: evidence=$AI_BUDDY_VERIFY_EVIDENCE"
+echo "doctor: evidence=$FIDGET_VERIFY_EVIDENCE"
 
 if [ -f Cargo.toml ] && [ -d src-tauri ]; then
   pass "workspace layout (Cargo.toml + src-tauri)"
 else
-  fail "not an ai-buddy checkout"
+  fail "not a fidget checkout"
 fi
 
-if BIN=$(ai_buddy_bin); then
+if BIN=$(fidget_bin); then
   pass "binary present: $BIN"
 else
   if command -v cargo > /dev/null; then
     pass "no binary yet; cargo is available to build"
   else
-    fail "no ai-buddy binary and no cargo"
+    fail "no fidget binary and no cargo"
   fi
 fi
 
@@ -96,10 +96,10 @@ fi
 
 if [ "$UNITS" = "1" ]; then
   echo "doctor: running unit suites…"
-  if cargo test -p ai-buddy-core -q; then
-    pass "cargo test -p ai-buddy-core"
+  if cargo test -p fidget-core -q; then
+    pass "cargo test -p fidget-core"
   else
-    fail "cargo test -p ai-buddy-core"
+    fail "cargo test -p fidget-core"
   fi
   if node --test tests/*.test.js > /dev/null; then
     pass "node --test tests/*.test.js"
@@ -125,7 +125,7 @@ fi
 
 if [ "$fails" -eq 0 ]; then
   echo "doctor: OK"
-  append_proof "doctor OK (units=$UNITS) evidence=$AI_BUDDY_VERIFY_EVIDENCE"
+  append_proof "doctor OK (units=$UNITS) evidence=$FIDGET_VERIFY_EVIDENCE"
   exit 0
 fi
 echo "doctor: $fails failure(s)"

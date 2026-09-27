@@ -109,8 +109,8 @@ mod tests {
     use super::*;
     use objc2_app_kit::NSEvent;
 
-    use ai_buddy_core::engine::{Point, Verb};
-    use ai_buddy_core::input::Pointer;
+    use fidget_core::engine::{Point, Verb};
+    use fidget_core::input::Pointer;
 
     /// Runs ticks of `(primary, secondary, control)` through the fold and the
     /// gesture classifier over the sprite, moving 50 points a tick so a

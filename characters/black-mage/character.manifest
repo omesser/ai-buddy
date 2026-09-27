@@ -14,7 +14,7 @@ MIT for the package — prose, manifest, and the frames as arranged here. The \
 art they adapt is not: a custom sprite sheet by GigaGuy on The Spriters \
 Resource, which declares no license. The Black Mage is Square Enix IP."""
 
-# Proactive model calls: after each one with no one addressing the buddy,
+# Proactive model calls: after each one with no one addressing the character,
 # the wait becomes wait * model_base ^ model_power. Two and one doubles.
 
 [director]

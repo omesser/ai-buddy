@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./scripts/verify-settings-zorder-x11.sh
-#   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-zorder-x11.sh
+#   FIDGET_VERIFY_BIN=path/to/fidget ./scripts/verify-settings-zorder-x11.sh
 
 set -euo pipefail
 
@@ -97,34 +97,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
-BIN="${AI_BUDDY_VERIFY_BIN:-}"
+BIN="${FIDGET_VERIFY_BIN:-}"
 if [ -z "$BIN" ]; then
-  if [ -x "$WORKSPACE_ROOT/target/release/ai-buddy" ]; then
-    BIN="$WORKSPACE_ROOT/target/release/ai-buddy"
-  elif [ -x "$WORKSPACE_ROOT/target/debug/ai-buddy" ]; then
-    BIN="$WORKSPACE_ROOT/target/debug/ai-buddy"
+  if [ -x "$WORKSPACE_ROOT/target/release/fidget" ]; then
+    BIN="$WORKSPACE_ROOT/target/release/fidget"
+  elif [ -x "$WORKSPACE_ROOT/target/debug/fidget" ]; then
+    BIN="$WORKSPACE_ROOT/target/debug/fidget"
   else
-    log_info "Building ai-buddy (release)..."
-    cargo build -p ai-buddy --release
-    BIN="$WORKSPACE_ROOT/target/release/ai-buddy"
+    log_info "Building fidget (release)..."
+    cargo build -p fidget --release
+    BIN="$WORKSPACE_ROOT/target/release/fidget"
   fi
 fi
 [ -x "$BIN" ] || fail "no binary at $BIN"
 
-log_info "Starting ai-buddy with Settings webview..."
+log_info "Starting fidget with Settings webview..."
 HOME_DIR="$OUT/home"
 mkdir -p "$HOME_DIR"
 export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
 # This script asserts X11 EWMH stacking. Prefer the X11 GDK backend even when
 # WAYLAND_DISPLAY is set, so tao's handle is an X window.
 export GDK_BACKEND="${GDK_BACKEND:-x11}"
-env -u AI_BUDDY_DIRECTOR_API_KEY \
+env -u FIDGET_DIRECTOR_API_KEY \
   HOME="$HOME_DIR" \
-  AI_BUDDY_OPEN_SETTINGS=1 \
-  AI_BUDDY_TRACE_FRAMES=1 \
-  AI_BUDDY_CAPTURABLE=1 \
-  AI_BUDDY_CHARACTER=timber-wolf \
-  AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$WORKSPACE_ROOT/characters}" \
+  FIDGET_OPEN_SETTINGS=1 \
+  FIDGET_TRACE_FRAMES=1 \
+  FIDGET_CAPTURABLE=1 \
+  FIDGET_CHARACTER=timber-wolf \
+  FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$WORKSPACE_ROOT/characters}" \
   GDK_BACKEND="$GDK_BACKEND" \
   LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE" \
   "$BIN" > "$TRACE_LOG" 2>&1 &
@@ -142,7 +142,7 @@ MIN_OVERLAY_H=$((ROOT_H / 2))
 
 find_overlay_window() {
   local id w h name
-  for id in $(xdotool search --class 'Ai-buddy' 2> /dev/null || true); do
+  for id in $(xdotool search --class 'Fidget' 2> /dev/null || true); do
     name=$(xprop -id "$id" WM_NAME 2> /dev/null || true)
     echo "$name" | grep -q 'Settings' && continue
     w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
@@ -171,7 +171,7 @@ for _ in $(seq 1 60); do
   [ -n "$OVERLAY_ID" ] && break
   sleep 0.25
 done
-[ -n "$OVERLAY_ID" ] || fail "Could not find ai-buddy overlay window"
+[ -n "$OVERLAY_ID" ] || fail "Could not find fidget overlay window"
 log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for overlay EWMH ABOVE..."

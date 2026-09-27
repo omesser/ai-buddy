@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-overlay.sh must never signal a process by the "target/debug/ai-buddy"
+# verify-overlay.sh must never signal a process by the "target/debug/fidget"
 # path suffix every worktree's binary shares. It scopes to this checkout's exact
 # absolute binary path, the shape crates/verify/src/gesture.rs uses.
 
@@ -34,9 +34,9 @@ TEMP_DIR=$(mktemp -d)
 trap cleanup EXIT
 
 echo "Test: no bare path-suffix pkill left in the script"
-BARE=$(grep -c 'pkill -f .*target/debug/ai-buddy' scripts/verify-overlay.sh)
+BARE=$(grep -c 'pkill -f .*target/debug/fidget' scripts/verify-overlay.sh)
 if [ "$BARE" = "0" ]; then
-  echo "  PASS  no 'pkill -f .../target/debug/ai-buddy' left (it would match every worktree)"
+  echo "  PASS  no 'pkill -f .../target/debug/fidget' left (it would match every worktree)"
 else
   echo "  FAIL  $BARE such line(s) still present"
   FAILED=1
@@ -66,22 +66,22 @@ if ! type stray_pid > /dev/null 2>&1; then
 else
   FOREIGN_DIR="$TEMP_DIR/other-worktree/target/debug"
   mkdir -p "$FOREIGN_DIR"
-  cat > "$FOREIGN_DIR/ai-buddy" << 'EOF'
+  cat > "$FOREIGN_DIR/fidget" << 'EOF'
 #!/bin/sh
 # Stay alive with this script path still in argv until stdin closes.
 read -r _ || true
 EOF
-  chmod +x "$FOREIGN_DIR/ai-buddy"
+  chmod +x "$FOREIGN_DIR/fidget"
 
   FOREIGN_FIFO="$TEMP_DIR/foreign.fifo"
   mkfifo "$FOREIGN_FIFO"
-  "$FOREIGN_DIR/ai-buddy" < "$FOREIGN_FIFO" &
+  "$FOREIGN_DIR/fidget" < "$FOREIGN_FIFO" &
   FOREIGN_PID=$!
   exec {FOREIGN_HOLD}> "$FOREIGN_FIFO"
   sleep 0.2
 
   # shellcheck disable=SC2034  # read by the sourced stray_pid()
-  BIN_PATH="$(pwd)/target/debug/ai-buddy"
+  BIN_PATH="$(pwd)/target/debug/fidget"
   FOUND=$(stray_pid)
   if [ "$FOUND" = "$FOREIGN_PID" ]; then
     echo "  FAIL  stray_pid() matched a foreign worktree's process ($FOREIGN_PID) by path suffix"
@@ -97,19 +97,19 @@ EOF
 
   # The negative above passes even if stray_pid() can never match anything.
   # This is the half that fails when the script launches the app by a relative
-  # ./target/debug/ai-buddy: argv then holds no absolute path for pgrep to see.
+  # ./target/debug/fidget: argv then holds no absolute path for pgrep to see.
   OWN_DIR="$TEMP_DIR/this-checkout/target/debug"
   mkdir -p "$OWN_DIR"
-  cat > "$OWN_DIR/ai-buddy" << 'EOF'
+  cat > "$OWN_DIR/fidget" << 'EOF'
 #!/bin/sh
 # Stay alive with this script path still in argv until stdin closes.
 read -r _ || true
 EOF
-  chmod +x "$OWN_DIR/ai-buddy"
+  chmod +x "$OWN_DIR/fidget"
 
   OWN_FIFO="$TEMP_DIR/own.fifo"
   mkfifo "$OWN_FIFO"
-  BIN_PATH="$OWN_DIR/ai-buddy"
+  BIN_PATH="$OWN_DIR/fidget"
   "$BIN_PATH" < "$OWN_FIFO" &
   OWN_PID=$!
   exec {OWN_HOLD}> "$OWN_FIFO"
@@ -131,8 +131,8 @@ fi
 
 echo
 echo "Test: the app is launched through \$BIN_PATH, so argv carries the absolute path"
-if grep -qE '^\s*(AI_BUDDY_[A-Z_]+=1 )*\./target/debug/ai-buddy' scripts/verify-overlay.sh; then
-  echo "  FAIL  a launch still uses ./target/debug/ai-buddy; stray_pid() cannot see a relative argv"
+if grep -qE '^\s*(FIDGET_[A-Z_]+=1 )*\./target/debug/fidget' scripts/verify-overlay.sh; then
+  echo "  FAIL  a launch still uses ./target/debug/fidget; stray_pid() cannot see a relative argv"
   FAILED=1
 else
   echo "  PASS  no relative launch left"

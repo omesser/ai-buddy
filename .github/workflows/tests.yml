@@ -254,7 +254,7 @@ jobs:
         # host-only tree, which is exactly how it would come back.
         if: steps.changes.outputs.code == 'true'
         run: |
-          tree=$(cargo tree -p ai-buddy-core --target all)
+          tree=$(cargo tree -p fidget-core --target all)
           if echo "$tree" | grep -qE '\b(tauri|objc2)'; then
             echo "core reaches a platform binding:"; echo "$tree"; exit 1
           fi

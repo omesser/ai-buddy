@@ -1,7 +1,7 @@
 {
   "proactive": true,
   "byo_harness": "claude",
-  "byo_snippet": "claude mcp add ai-buddy -- /Applications/ai-buddy.app/Contents/MacOS/ai-buddy --mcp",
+  "byo_snippet": "claude mcp add fidget -- /Applications/fidget.app/Contents/MacOS/fidget --mcp",
   "byo_steps": "Run the line above in a terminal, then start claude.",
   "byo_token": "",
   "capturable": true,
@@ -48,7 +48,7 @@
   ],
   "launch": false,
   "mcp_bin": "",
-  "memory_path": "/Users/fixture/Library/Application Support/ai-buddy/memory",
+  "memory_path": "/Users/fixture/Library/Application Support/fidget/memory",
   "new_character": "bmo",
   "new_name": "",
   "payload": "Ambient wake for bmo, 3 behaviors, 412 tokens.",

@@ -22,10 +22,10 @@ pub fn run(repo_root: &Path, report: &mut RunReport) {
     let summary = dest.join("summary.txt");
     let _ = fs::remove_file(&summary);
 
-    report.say("prove-units: cargo test -p ai-buddy-core");
+    report.say("prove-units: cargo test -p fidget-core");
     let mut cargo = Command::new("cargo");
     cargo
-        .args(["test", "-p", "ai-buddy-core"])
+        .args(["test", "-p", "fidget-core"])
         .current_dir(repo_root);
     suite(report, "cargo-core", &mut cargo, &dest, &summary);
 
@@ -136,7 +136,7 @@ fn write_gui_gap(dest: &Path) {
             "\n`scripts/verify-overlay-x11.sh` was not runnable here without \
              `DISPLAY` + `xterm` + supporting WM/`openbox`.\n\
              Overlay presence and Poke remain covered by that script on a proper \
-             X11 desktop; `ai-buddy-verify poke`/`summon` prove both gestures \
+             X11 desktop; `fidget-verify poke`/`summon` prove both gestures \
              directly on macOS.\n\
              this evidence pack proves the unit + diagnostic subset only.\n",
         );

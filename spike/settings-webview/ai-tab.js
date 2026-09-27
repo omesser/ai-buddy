@@ -34,9 +34,9 @@ function aiTab({ driving }) {
       {
         heading: "AI",
         comment:
-          "Control whether the buddy improvises, and how often it starts a conversation on its own.",
+          "Control whether the fidget improvises, and how often it starts a conversation on its own.",
         disclosure:
-          "The buddy can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".",
+          "The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".",
         status: null,
         rows: [
           {
@@ -46,7 +46,7 @@ function aiTab({ driving }) {
             frozen: false,
             help: "Lets the model pick what happens next.",
             disclosure:
-              "With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.",
+              "With this off, the fidget runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.",
             status: null,
           },
           {
@@ -56,7 +56,7 @@ function aiTab({ driving }) {
             frozen: false,
             help: "Acts on its own, not only when asked.",
             disclosure:
-              "Ambient wakes are proactive model calls: the buddy addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.",
+              "Ambient wakes are proactive model calls: the fidget addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.",
             status: null,
           },
           {
@@ -83,7 +83,7 @@ function aiTab({ driving }) {
             type: "Popup",
             id: "harness",
             label: "AI source",
-            help: "Which \"AI brain\" answers for the buddy.",
+            help: "Which \"AI brain\" answers for the fidget.",
             options: HARNESSES,
             frozen: false,
             disclosure:
@@ -99,16 +99,16 @@ function aiTab({ driving }) {
             batched: false,
             help: null,
             disclosure:
-              "The command ai-buddy runs when Custom is picked above. Blur commits it and re-opens the attachment.",
+              "The command Fidget runs when Custom is picked above. Blur commits it and re-opens the attachment.",
             status: null,
           },
           {
             type: "InspectBlock",
             id: "harness_state",
             label: null,
-            help: "Harness signs itself in - ai-buddy never asks for credentials.",
+            help: "Harness signs itself in - Fidget never asks for credentials.",
             disclosure:
-              "ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).",
+              "Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).",
             status: null,
           },
         ],

@@ -85,7 +85,7 @@ pub fn parse_specs(raw: &str) -> Result<Vec<InstanceSpec>, String> {
         .collect()
 }
 
-/// One spawned buddy: a Character plus a user-given name and a stable id.
+/// One spawned character: a Character plus a user-given name and a stable id.
 pub struct Instance {
     pub id: InstanceId,
     pub name: String,
@@ -123,7 +123,7 @@ impl Instance {
     }
 
     /// Whether this Instance is in Do Not Disturb.
-    /// Per Instance, not per app: silencing every buddy because one was told
+    /// Per Instance, not per app: silencing every character because one was told
     /// to sit quietly would make the setting mean something else.
     pub fn do_not_disturb(&self) -> bool {
         self.engine.do_not_disturb()
@@ -212,7 +212,7 @@ impl Roster {
 
     /// Spawn a Character Instance with the given name at the given position.
     /// Borrowed, not owned: the art is unused here, and taking by value would
-    /// copy every frame per buddy.
+    /// copy every frame per character.
     pub fn spawn(&mut self, character: &Character, name: String, position: Point) -> InstanceId {
         self.restore(character, name, position, None, String::new())
     }
@@ -236,7 +236,7 @@ impl Roster {
             // tallest one anybody ships. #395.
             .with_sprite_height(character.sprite_height())
             .with_cursor_reactions(character.near_reaction, character.rush_reaction)
-            // The id is this Instance's one random number, so two buddies of
+            // The id is this Instance's one random number, so two characters of
             // one Character do not draw the same idle variants at the same moments.
             .with_variant_seed(variant_seed(&id));
         let name = if self.instances.is_empty() {
@@ -287,7 +287,7 @@ impl Roster {
 
     /// Switch one Instance's Character. False when the id is unknown.
     /// A lone unnamed Instance takes the new Character's name. A leftover
-    /// default does too. A typed name, or any name with several buddies up, stays.
+    /// default does too. A typed name, or any name with several characters up, stays.
     pub fn retarget(&mut self, id: &str, character: &Character) -> bool {
         let alone = self.instances.len() == 1;
         match self.instances.get_mut(id) {
@@ -687,7 +687,7 @@ mod tests {
     }
 
     /// Switching Character is a new set of Behaviors, not a new body. The id
-    /// and the name stay, or settings would lose the buddy it just renamed.
+    /// and the name stay, or settings would lose the character it just renamed.
     #[test]
     fn retargeting_keeps_the_instance_and_changes_the_character() {
         let mut roster = Roster::new();
@@ -749,7 +749,7 @@ mod tests {
         assert_eq!(roster.list(), vec![(id, "Pip".to_string())]);
     }
 
-    /// With several buddies up, names are what tell them apart, and renaming
+    /// With several characters up, names are what tell them apart, and renaming
     /// one on a switch could hand it a name another already answers to.
     #[test]
     fn switching_renames_nothing_when_more_than_one_instance_runs() {

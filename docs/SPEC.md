@@ -1,4 +1,4 @@
-# ai-buddy v1 — specification
+# Fidget v1 — specification
 
 Vocabulary is defined in [CONTEXT.md](../CONTEXT.md) and used precisely throughout.
 Decisions and their rejected alternatives are recorded in [DESIGN.md](../DESIGN.md)
@@ -28,28 +28,28 @@ absent.
 
 ## Solution
 
-ai-buddy is a desktop companion with two separable layers.
+Fidget is a desktop companion with two separable layers.
 
 The **Spatial Layer** is always on, entirely local, and contains no model. A sprite lives
 on your screen, obeys gravity, can be grabbed and thrown, and treats the top edge of
 every visible window as a **Perch** it can land on and walk along. It needs no
 permissions, no API key, no network, and no Harness. With nothing configured at all,
-ai-buddy is still a complete product.
+Fidget is still a complete product.
 
 The **Director** gives the character a life. It observes low-cost context — the
 frontmost application's name, how long you have been idle, the time of day, what
-the buddy has done recently — and proposes a **Behavior** for the local engine to
+the character has done recently — and proposes a **Behavior** for the local engine to
 play. It never runs in the frame loop and never drives animation directly, so the
 character stays visibly alive while anything else is slow or unavailable. Static
 weights fill the role when no Harness is attached. An attached Harness fills it
 from the same conversation as chat. See [ADR-0008](./adr/0008-one-harness-session.md).
 
-The **Functional Layer** is invoked deliberately. ai-buddy exposes an MCP server of
-buddy-side tools and attaches a **Harness** the user supplies. The Harness reasons and
-acts; ai-buddy never posts synthetic mouse or keyboard events itself. Summoning the buddy
+The **Functional Layer** is invoked deliberately. Fidget exposes an MCP server of
+fidget-side tools and attaches a **Harness** the user supplies. The Harness reasons and
+acts; Fidget never posts synthetic mouse or keyboard events itself. Summoning the character
 opens a chat surface that reaches the attached Harness.
 
-**Memory** is one shared Markdown file recording what the buddies know about the user.
+**Memory** is one shared Markdown file recording what the characters know about the user.
 Every **Character Instance** reads the same file. The user can open it in any text editor,
 edit it, and wipe it.
 
@@ -60,68 +60,68 @@ that adding a character is drawing, not programming.
 
 ### Presence and first run
 
-1. As a new user, I want ai-buddy to work immediately after install with no account, no
+1. As a new user, I want Fidget to work immediately after install with no account, no
    API key, and no permission prompts, so that I can see whether I like it before
    committing anything.
-2. As a new user, I want the buddy to appear on screen as soon as the app launches, so
+2. As a new user, I want the character to appear on screen as soon as the app launches, so
    that I know it is running.
-3. As a user, I want the buddy to stay visible above my other windows, so that it remains
+3. As a user, I want the character to stay visible above my other windows, so that it remains
    a companion rather than something I have to go looking for.
-4. As a user, I want the buddy to follow me between desktops and Spaces, so that it does
+4. As a user, I want the character to follow me between desktops and Spaces, so that it does
    not vanish when I switch context.
-5. As a user, I want the buddy never to steal keyboard focus, so that it cannot interrupt
+5. As a user, I want the character never to steal keyboard focus, so that it cannot interrupt
    what I am typing.
-6. As a user, I want ai-buddy not to appear in my application switcher, so that it does
+6. As a user, I want Fidget not to appear in my application switcher, so that it does
    not clutter the list of things I am actually working in.
-7. As a user, I want ai-buddy to launch at login if I choose, so that the buddy is simply
+7. As a user, I want Fidget to launch at login if I choose, so that the character is simply
    always there.
 8. As a user, I want a tray or menu bar icon, so that I can reach settings and quit
    without finding the sprite.
 
 ### Physics and spatial life
 
-9. As a user, I want the buddy to obey gravity and fall to the bottom of the screen, so
+9. As a user, I want the character to obey gravity and fall to the bottom of the screen, so
    that it feels like a physical thing rather than a floating decal.
-10. As a user, I want to grab the buddy with my mouse and drag it anywhere, so that I can
+10. As a user, I want to grab the character with my mouse and drag it anywhere, so that I can
     put it where I want it.
-11. As a user, I want to throw the buddy by releasing a drag while moving, so that it
+11. As a user, I want to throw the character by releasing a drag while moving, so that it
     arcs across the screen and lands, because that is the part that is fun.
-12. As a user, I want the buddy to land on the top edge of my windows and sit there, so
+12. As a user, I want the character to land on the top edge of my windows and sit there, so
     that it appears to inhabit my desktop rather than float over it.
-13. As a user, I want the buddy to walk along a window's top edge and fall off the end,
+13. As a user, I want the character to walk along a window's top edge and fall off the end,
     so that its movement has consequences.
-14. As a user, I want the buddy to ride a window I drag slowly and fall when I yank
+14. As a user, I want the character to ride a window I drag slowly and fall when I yank
     it or close it, so that a Perch that is still underfoot stays underfoot.
-15. As a user, I want the buddy to pass upward through a window edge rather than being
+15. As a user, I want the character to pass upward through a window edge rather than being
     blocked from below, so that it never gets stuck under something.
-16. As a user, I want the buddy never to become trapped inside or behind a window, so
+16. As a user, I want the character never to become trapped inside or behind a window, so
     that I do not have to hunt for it.
-17. As a user, I want the buddy to move smoothly rather than jumping between positions,
+17. As a user, I want the character to move smoothly rather than jumping between positions,
     so that it looks animated rather than teleporting.
-18. As a user with several displays, I want the buddy to walk between them, so that it
+18. As a user with several displays, I want the character to walk between them, so that it
     can reach whichever screen I am working on.
-19. As a user with displays of different resolutions, I want the buddy to stay the right
+19. As a user with displays of different resolutions, I want the character to stay the right
     apparent size on each, so that it does not become tiny or enormous when it crosses.
-20. As a user with displays that are not aligned, I want the buddy never to walk into the
+20. As a user with displays that are not aligned, I want the character never to walk into the
     empty space between them, so that it does not disappear.
 
 ### Interaction
 
-21. As a user, I want to click the buddy and get a reaction, so that it acknowledges me.
+21. As a user, I want to click the character and get a reaction, so that it acknowledges me.
 22. As a user, I want clicks that land on the transparent area around the sprite to reach
-    the window underneath, so that the buddy never blocks my work.
-23. As a user, I want right-clicking the buddy to open a menu, so that I can switch
+    the window underneath, so that the character never blocks my work.
+23. As a user, I want right-clicking the character to open a menu, so that I can switch
     characters, reach settings, or quit from where I am looking.
-24. As a user, I want a deliberate way to summon the buddy into a conversation, so that
+24. As a user, I want a deliberate way to summon the character into a conversation, so that
     chatting is something I choose rather than something that happens by accident.
-25. As a user, I want the buddy to get out of the way when I go fullscreen, so that it
+25. As a user, I want the character to get out of the way when I go fullscreen, so that it
     does not appear in my video or my presentation.
-26. As a user, I want the buddy to hide during screen sharing, so that I do not have to
+26. As a user, I want the character to hide during screen sharing, so that I do not have to
     explain it in a meeting.
-27. As a user, I want the buddy to respect Do Not Disturb (#84), so that it stays visible
+27. As a user, I want the character to respect Do Not Disturb (#84), so that it stays visible
     but quiet — proposals are refused and unprompted dialogue is not spoken — while Poke,
     Grab, and Throw still work.
-28. As a user, I want a hotkey that hides and shows the buddy instantly, so that I can
+28. As a user, I want a hotkey that hides and shows the character instantly, so that I can
     banish it without opening settings.
 
 ### Character and life
@@ -130,26 +130,26 @@ that adding a character is drawing, not programming.
     can pick one I like looking at.
 30. As a user, I want each character to move and react differently, so that switching
     feels like a different companion rather than a reskin.
-31. As a user, I want the buddy to do things on its own while I work, so that it feels
+31. As a user, I want the character to do things on its own while I work, so that it feels
     alive rather than parked.
 32. As a user, I want its idle behavior to reflect its personality, so that a lazy
     character and an energetic one are visibly different.
-33. As a user, I want the buddy to react to me opening a different application, so that it
+33. As a user, I want the character to react to me opening a different application, so that it
     seems aware of what I am doing.
-34. As a user, I want the buddy to settle down or sleep when I have been idle a long time,
+34. As a user, I want the character to settle down or sleep when I have been idle a long time,
     so that it is not distracting when I am away.
 35. As a user, I want its behavior to shift with the time of day, so that late-night use
     feels different from the morning.
-36. As a user, I want the buddy not to repeat the same behavior over and over, so that it
+36. As a user, I want the character not to repeat the same behavior over and over, so that it
     does not become obviously mechanical.
-37. As a user with no Harness attached, I want the buddy to still have idle life, so that
+37. As a user with no Harness attached, I want the character to still have idle life, so that
     the app is worth running offline or without an agent.
-38. As a user, I want the buddy to keep moving and reacting while the model is thinking,
+38. As a user, I want the character to keep moving and reacting while the model is thinking,
     so that latency never makes it look frozen or broken.
-39. As a user, I want to spawn more than one buddy, so that I can have several on screen.
-40. As a user, I want to give each buddy a name when I spawn it, so that I can tell them
+39. As a user, I want to spawn more than one character, so that I can have several on screen.
+40. As a user, I want to give each character a name when I spawn it, so that I can tell them
     apart and address them.
-41. As a user, I want to dismiss a buddy I no longer want, so that I can prune them.
+41. As a user, I want to dismiss a character I no longer want, so that I can prune them.
 
 ### Character packages
 
@@ -166,61 +166,61 @@ that adding a character is drawing, not programming.
 47. As a character author, I want clear validation errors when my package is wrong, so
     that I can fix it without reading source.
 48. As a user, I want a broken or malicious character package to be rejected rather than
-    crashing or hanging ai-buddy, so that installing one is safe.
+    crashing or hanging Fidget, so that installing one is safe.
 49. As a user, I want a character's personality to be unable to grant it new abilities, so
     that no character can talk its way into doing more than the others.
 
 ### Memory
 
-50. As a user, I want the buddy to remember things about me between restarts, so that I do
+50. As a user, I want the character to remember things about me between restarts, so that I do
     not re-explain myself daily.
-51. As a user, I want a second buddy to already know my name, so that spawning one does
+51. As a user, I want a second character to already know my name, so that spawning one does
     not feel like starting over.
 52. As a user, I want to open the memory in a normal text editor and read exactly what it
     knows, so that nothing about me is hidden in an opaque store.
-53. As a user, I want to edit the memory by hand and have ai-buddy pick up my changes, so
-    that I can correct or remove something without asking the buddy nicely.
+53. As a user, I want to edit the memory by hand and have Fidget pick up my changes, so
+    that I can correct or remove something without asking the character nicely.
 54. As a user, I want a malformed hand-edit to degrade rather than break the app, so that
-    a typo does not cost me the buddy.
+    a typo does not cost me the character.
 55. As a user, I want to wipe the memory completely in one action, so that I can start
     clean.
 56. As a user, I want a backup kept before a wipe, so that an accidental wipe is
     recoverable.
-57. As a user, I want to see when the buddy writes something to memory, so that I am not
+57. As a user, I want to see when the character writes something to memory, so that I am not
     surprised by what accumulates.
 
 ### Functional Layer
 
 58. As a user, I want to attach an agent Harness I already have, so that I am not forced
-    onto a provider ai-buddy chose.
+    onto a provider Fidget chose.
 59. As a user with no Harness attached, I want everything else to keep working with a
     clear prompt to connect one, so that the app is never inert.
-60. As a user, I want to chat with the buddy in a window that belongs to the character, so
-    that the conversation feels like it is with the buddy rather than with a text box.
-61. As a user, I want the buddy to visibly react while the Harness works, so that I can
+60. As a user, I want to chat with the character in a window that belongs to the character, so
+    that the conversation feels like it is with the character rather than with a text box.
+61. As a user, I want the character to visibly react while the Harness works, so that I can
     tell something is happening.
-62. As a user, I want the Harness to be able to read what the buddy can see, so that I can
+62. As a user, I want the Harness to be able to read what the fidget can see, so that I can
     ask about what is on my screen.
-63. As a user, I want the Harness to be able to make the buddy speak and act, so that
+63. As a user, I want the Harness to be able to make the character speak and act, so that
     answers arrive through the character.
-64. As a user, I want ai-buddy not to add a second confirmation on top of the Harness's
+64. As a user, I want Fidget not to add a second confirmation on top of the Harness's
     own, so that approving an action takes one decision, not two.
 65. As a user, I want a visible log of what the Harness did, so that I can review actions
     after the fact.
-66. As a power user, I want to point any MCP-capable harness at ai-buddy directly, so that
+66. As a power user, I want to point any MCP-capable harness at Fidget directly, so that
     I can wire it into my existing setup.
 67. As a user, I want password fields and applications I exclude never to be readable by
-    the buddy, so that there are places it categorically cannot look.
+    the character, so that there are places it categorically cannot look.
 
 ### Settings and control
 
 68. As a user, I want to see exactly what context the Director sends, so that I can judge
     for myself what leaves my machine.
 69. As a user, I want to turn the Director off entirely and keep the static-weights
-    fallback, so that I can run the buddy with no model calls at all.
+    fallback, so that I can run the character with no model calls at all.
 70. As a user, I want ambient Director wakes to stay cheap — backoff, and none while
     the display is asleep — so that liveliness does not mean a heartbeat bill.
-71. As a user, I want ai-buddy to update itself, so that I do not have to track releases.
+71. As a user, I want Fidget to update itself, so that I do not have to track releases.
 
 ## Implementation Decisions
 
@@ -403,7 +403,7 @@ Two implementations ship:
   Harness exists, an HTTP Completer stands in behind the same trait
   ([ADR-0008](./adr/0008-one-harness-session.md)).
 
-A session wake is reactive (the user addressed the buddy: Poke, Throw, Grab
+A session wake is reactive (the user addressed the character: Poke, Throw, Grab
 start, landing on a Perch, Summon, a chat turn) or proactive (exponential
 backoff whose `model_base` and `model_power` the Character Manifest names).
 It does not run on a fixed interval, and it does not run while the display
@@ -423,35 +423,35 @@ never parsed for correctness. Malformed content is still valid Markdown, so a ba
 hand-edit degrades rather than breaks.
 
 Shared by every Character Instance. Every recall reads the file, so an edit made outside
-ai-buddy is visible to the next recall without a watcher or a reload path. A single
+Fidget is visible to the next recall without a watcher or a reload path. A single
 timestamped backup is written before a wipe.
 
 Memory is treated as untrusted input. It reaches Harness prompts, and the user can type
 anything into it.
 
-Memory reaches the Harness as MCP tools rather than injected prompt text, so ai-buddy owns
+Memory reaches the Harness as MCP tools rather than injected prompt text, so Fidget owns
 no relevance ranking and every read and write appears in the tool log.
 
 ### MCP server and Harness
 
-ai-buddy exposes an MCP server. Tool surface, by responsibility:
+Fidget exposes an MCP server. Tool surface, by responsibility:
 
-- **Expression** — make the buddy speak; play a named Behavior.
+- **Expression** — make the character speak; play a named Behavior.
 - **Sensing** — list visible windows with bounds and owning application; describe what is
   on screen (window metadata only; Capture is dropped per
   [ADR-0031](./adr/0031-drop-capture-tiers.md)).
 - **Memory** — recall; remember.
 - **Identity** — list Character Instances and their names.
 
-There is no tool that posts mouse or keyboard events. ai-buddy ships no Executor. See
+There is no tool that posts mouse or keyboard events. Fidget ships no Executor. See
 [ADR-0003](./adr/0003-no-executor-harness-owns-desktop-control.md).
 
 A Harness is attached by user configuration. One first-party adapter ships so that the
 out-of-box path is not "install a harness first." Any MCP-capable harness can attach
 directly. No provider abstraction layer is built; MCP is that layer.
 
-Actions taken by the Harness are surfaced in the Action Log. ai-buddy adds no confirmation
-of its own for acting, and owns consent only for sensing. A denylist is ai-buddy's
+Actions taken by the Harness are surfaced in the Action Log. Fidget adds no confirmation
+of its own for acting, and owns consent only for sensing. A denylist is Fidget's
 regardless of Harness permissions: password fields and user-excluded applications never
 enter any sensing tool result.
 
@@ -461,7 +461,7 @@ A webview window owned by the Character Instance that was Summoned. Messages rou
 attached Harness. With no Harness attached, the surface explains how to connect one rather
 than failing.
 
-While a Harness turn is in flight, the Spatial Layer continues to run normally. The buddy's
+While a Harness turn is in flight, the Spatial Layer continues to run normally. The character's
 visible reaction comes from Behaviors the Harness plays through the expression tools and
 from the Engine's own idle life, never from blocking on the turn.
 
@@ -540,9 +540,9 @@ success; a notification is answered with nothing.
 ### Memory
 
 Tested as a store against a temporary file. Coverage: round-trip of a remembered fact; an
-edit made outside ai-buddy is visible to the next recall; malformed content still reads
+edit made outside Fidget is visible to the next recall; malformed content still reads
 back and preserves what it can; wipe writes a backup first; a hand-written file that has
-never been touched by ai-buddy reads back correctly.
+never been touched by Fidget reads back correctly.
 
 ### Fakes, not mocks
 
@@ -594,12 +594,12 @@ Deferred to a later version, decided but not built:
 
 Decided against, not merely deferred:
 
-- An ai-buddy Executor. Desktop control belongs to the Harness.
+- A Fidget Executor. Desktop control belongs to the Harness.
 - A second confirmation layer over the Harness's own action prompts.
 - An undo system for desktop actions.
 - A provider abstraction layer over harnesses.
 - Per-Instance memory. May become configurable later; not built now.
-- Ambient Capture, On-Demand Capture, and the Local Gate. ai-buddy never takes screenshots,
+- Ambient Capture, On-Demand Capture, and the Local Gate. Fidget never takes screenshots,
   never analyzes screen pixels, and never embeds OCR or vision models. Agents that need
   pixel access or desktop control use harness-native computer use or attach an MCP server
   like cua-driver. [ADR-0031](./adr/0031-drop-capture-tiers.md) supersedes

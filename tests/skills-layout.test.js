@@ -28,7 +28,7 @@ const SKILL_LINKS = LINKS.filter(([, target]) => target === `../${REAL}`);
 // A skill this repository owns rather than vendors. It proves the directory is
 // shared, so a sync that blew it away would fail here rather than in six
 // months when someone next runs the verifier.
-const OURS = "verify-ai-buddy";
+const OURS = "verify-fidget";
 
 const skillsIn = (dir) =>
   readdirSync(path(dir), { withFileTypes: true })

@@ -23,7 +23,7 @@ set -e
 
 AFTER="$(find .verify -maxdepth 1 -type d -regex '\.verify/[0-9].*' 2> /dev/null | sort || true)"
 NEW="$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") || true)"
-DEST="$AI_BUDDY_VERIFY_EVIDENCE/overlay-presence"
+DEST="$FIDGET_VERIFY_EVIDENCE/overlay-presence"
 mkdir -p "$DEST"
 if [ -n "$NEW" ]; then
   while IFS= read -r dir; do

@@ -1,6 +1,6 @@
 [package]
-name = "ai-buddy-mcp-server"
-description = "Stdio MCP shim forwarding to the running ai-buddy app"
+name = "fidget-mcp-server"
+description = "Stdio MCP shim forwarding to the running fidget app"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ license.workspace = true
 path = "src/lib.rs"
 
 [[bin]]
-name = "ai-buddy-mcp"
+name = "fidget-mcp"
 path = "src/main.rs"
 
 [dependencies]

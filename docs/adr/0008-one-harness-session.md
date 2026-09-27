@@ -23,7 +23,7 @@ chatty. A session wake spends tokens, so it is not a heartbeat.
 
 ## Wake policy
 
-A session wake is either **reactive** — the user addressed the buddy (Poke,
+A session wake is either **reactive** — the user addressed the character (Poke,
 Throw, picking it up, placing it on a Perch, Summon, a chat turn) — or
 **proactive**, on an exponential backoff the Character Manifest names
 (`model_base` and `model_power` under `[director]`), paused

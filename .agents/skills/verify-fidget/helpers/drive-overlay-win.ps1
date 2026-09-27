@@ -6,9 +6,9 @@ $RepoRoot = (Resolve-Path (Join-Path $SkillRoot "..\..\..")).Path
 Set-Location $RepoRoot
 
 if (-not $env:RUN_ID) { $env:RUN_ID = (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + $PID }
-if (-not $env:AI_BUDDY_VERIFY_ROOT) { $env:AI_BUDDY_VERIFY_ROOT = Join-Path $env:TEMP "ai-buddy-verify-$($env:RUN_ID)" }
-if (-not $env:AI_BUDDY_VERIFY_EVIDENCE) { $env:AI_BUDDY_VERIFY_EVIDENCE = Join-Path $env:AI_BUDDY_VERIFY_ROOT "evidence" }
-New-Item -ItemType Directory -Force -Path $env:AI_BUDDY_VERIFY_EVIDENCE | Out-Null
+if (-not $env:FIDGET_VERIFY_ROOT) { $env:FIDGET_VERIFY_ROOT = Join-Path $env:TEMP "fidget-verify-$($env:RUN_ID)" }
+if (-not $env:FIDGET_VERIFY_EVIDENCE) { $env:FIDGET_VERIFY_EVIDENCE = Join-Path $env:FIDGET_VERIFY_ROOT "evidence" }
+New-Item -ItemType Directory -Force -Path $env:FIDGET_VERIFY_EVIDENCE | Out-Null
 
 $Before = @()
 if (Test-Path ".verify") {
@@ -18,7 +18,7 @@ if (Test-Path ".verify") {
 & "$RepoRoot\scripts\verify-overlay-win.ps1"
 $Status = $LASTEXITCODE
 
-$Dest = Join-Path $env:AI_BUDDY_VERIFY_EVIDENCE "overlay-presence"
+$Dest = Join-Path $env:FIDGET_VERIFY_EVIDENCE "overlay-presence"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 $After = @()
 if (Test-Path ".verify") {
@@ -30,7 +30,7 @@ foreach ($d in $After) {
   }
 }
 
-$Proof = Join-Path $env:AI_BUDDY_VERIFY_EVIDENCE "PROOF.md"
+$Proof = Join-Path $env:FIDGET_VERIFY_EVIDENCE "PROOF.md"
 $Line = if ($Status -eq 0) { "drive-overlay-win PASS - evidence under $Dest" } else { "drive-overlay-win FAIL exit=$Status - see $Dest" }
 Add-Content -Path $Proof -Value ("## " + (Get-Date).ToUniversalTime().ToString("o") + " UTC`n$Line`n")
 exit $Status

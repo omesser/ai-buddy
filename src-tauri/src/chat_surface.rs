@@ -23,7 +23,7 @@ pub(crate) const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// Forwarded `session/request_permission` to every open Chat surface. The
 /// session is shared and the Shell does not know which window the user is
-/// looking at. The first answer wins. ai-buddy never answers it.
+/// looking at. The first answer wins. fidget never answers it.
 pub(crate) const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
 /// A forwarded `elicitation/create` form. Same fan-out as a permission ask:

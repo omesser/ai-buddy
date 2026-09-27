@@ -357,7 +357,7 @@ mod tests {
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let unique = NEXT.fetch_add(1, Ordering::Relaxed);
             let dir = std::env::temp_dir().join(format!(
-                "ai-buddy-tools-{label}-{}-{unique}",
+                "fidget-tools-{label}-{}-{unique}",
                 std::process::id()
             ));
             fs::create_dir_all(&dir).expect("temp dir is creatable");
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn no_tool_posts_mouse_or_keyboard_events() {
-        // ADR-0003: ai-buddy ships no Executor. The assertion is structural: this
+        // ADR-0003: fidget ships no Executor. The assertion is structural: this
         // module depends on nothing that could post events, and every tool returns
         // a value rather than mutating the desktop.
     }

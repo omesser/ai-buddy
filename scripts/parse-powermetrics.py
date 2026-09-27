@@ -27,8 +27,8 @@ def parse_samples(text, process, pid=None):
     """One dict per '*** Sampled system activity' block.
 
     Matching by process name alone is unsafe: other agents on this machine
-    run their own ai-buddy builds concurrently (observed directly - a second,
-    unrelated `ai-buddy` PID showed up in a real capture during this task).
+    run their own fidget builds concurrently (observed directly - a second,
+    unrelated `fidget` PID showed up in a real capture during this task).
     Pass --pid for the exact process this script launched; name matching is
     a fallback for ad-hoc use only and prints a warning if more than one PID
     answers to it in any sample.
@@ -177,7 +177,7 @@ def main():
     ap.add_argument("powermetrics_txt")
     ap.add_argument(
         "--process",
-        default="ai-buddy",
+        default="fidget",
         help="process name to reduce; pass '' for a baseline capture with no process of interest",
     )
     ap.add_argument("--pid", type=int, default=None, help="exact PID to match (recommended)")
@@ -197,7 +197,7 @@ def main():
         if not timeline:
             print(
                 f"\n(frame log {args.frame_log} had no matching 'frame:' lines - "
-                "was AI_BUDDY_TRACE_FRAMES=1 set?)",
+                "was FIDGET_TRACE_FRAMES=1 set?)",
                 file=sys.stderr,
             )
             return

@@ -47,12 +47,12 @@ def find_settings_window():
         desktop = pyatspi.Registry.getDesktop(0)
         for app_idx in range(desktop.childCount):
             app = desktop.getChildAtIndex(app_idx)
-            if "ai-buddy" not in (app.name or "").lower():
+            if "fidget" not in (app.name or "").lower():
                 continue
             for win_idx in range(app.childCount):
                 win = app.getChildAtIndex(win_idx)
                 # Prefer the Settings notebook over overlay frames that share
-                # the same window title 'ai-buddy'.
+                # the same window title 'fidget'.
                 if has_ai_tab(win):
                     return win
         return None

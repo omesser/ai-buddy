@@ -7,13 +7,13 @@ other than running a local model?
 
 **Answer.** Single-in-flight is a convention, not a structure: one
 `pending.ready()` term in a five-term condition at one call site, and the
-invariant is per-Instance, so N buddies make N concurrent calls. Cancellation
+invariant is per-Instance, so N characters make N concurrent calls. Cancellation
 does not exist and cannot, because the call is a blocking non-streaming POST
 on a thread nobody holds a handle to — and because vendors only honour an
 abort on a streaming connection. A new event is coalesced into a latch and
 deferred until the old reply lands, so a Poke can wait out a 20-second (hosted)
 or 2-minute (local) timeout before its prompt is sent. A reply is then applied
-with no staleness check, which is why the buddy can say "put me down" from the
+with no staleness check, which is why the character can say "put me down" from the
 floor it was already thrown onto. The cheapest fix is unrelated to all of it:
 `Endpoint` built a use-once `ureq::Agent` per request and so paid a fresh
 TCP and TLS handshake every wake. Streaming is the one change that buys
@@ -52,7 +52,7 @@ pub struct InFlight {
 
 The Completer is `model::Endpoint`, a **blocking** OpenAI-compatible HTTP client built on `ureq` 3.4 (the comment on the `ureq` dependency in `src-tauri/Cargo.toml` — *"Sync HTTP for the model Director. A worker thread posts; the frame loop does not wait. ureq instead of reqwest: no tokio."*). It carries the conversation itself in `session: Mutex<Vec<Message>>`, which is what makes ADR-0008's "one session" real and, as §1.1 shows, is also what makes a second concurrent call actively dangerous.
 
-Per-Instance state lives in `main::InstanceState` (`src-tauri/src/main.rs`), one per buddy, each with its own `model` field, its own `pending: model::InFlight`, and its own `in_flight: Option<Context>`.
+Per-Instance state lives in `main::InstanceState` (`src-tauri/src/main.rs`), one per character, each with its own `model` field, its own `pending: model::InFlight`, and its own `in_flight: Option<Context>`.
 
 ### 1.1 Is single-in-flight actually guaranteed?
 
@@ -87,10 +87,10 @@ Worse, both threads would be inside `Endpoint::post` on the same `Endpoint`, mut
 
 So the current code is correct, and it is correct by inspection of one call site rather than by construction. It is a `pending.ready()` check that a future caller could forget or bypass. The one mitigating fact is that today there is exactly one caller and it is 40 lines long; the risk is entirely about #16 (Harness) and #17 (chat) adding a second and third path to the same session.
 
-**Per-Instance, and yes, N buddies means N concurrent requests.** Each `InstanceState` has its own `InFlight` and its own `Endpoint`, constructed independently in `spawn_instances` (and again on spawn in `spawn_live`). Nothing is shared. This is intentional and documented — the comment sitting right above it says so, and flags the gap:
+**Per-Instance, and yes, N characters means N concurrent requests.** Each `InstanceState` has its own `InFlight` and its own `Endpoint`, constructed independently in `spawn_instances` (and again on spawn in `spawn_live`). Nothing is shared. This is intentional and documented — the comment sitting right above it says so, and flags the gap:
 
 ```1164:1171:src-tauri/src/main.rs
-            // One per Instance, because each buddy wakes on its own clock and
+            // One per Instance, because each character wakes on its own clock and
             // carries its own conversation.
             //
             // ponytail: N Instances with a key make N times the model calls, on
@@ -100,9 +100,9 @@ So the current code is correct, and it is correct by inspection of one call site
             // #18's panel.
 ```
 
-The per-Instance conversation is required by ADR-0008 (one session per buddy, so two buddies are two minds, not one). The per-Instance *concurrency* is not required by anything — it is a side effect of the session being per-Instance. Those two can be separated, and §1.4 argues they should be.
+The per-Instance conversation is required by ADR-0008 (one session per character, so two characters are two minds, not one). The per-Instance *concurrency* is not required by anything — it is a side effect of the session being per-Instance. Those two can be separated, and §1.4 argues they should be.
 
-One real consequence today: a Poke on buddy A and a Poke on buddy B in the same tick fire two simultaneous POSTs to the same endpoint. Both are reactive, both reset their `Pace`, and neither knows the other exists. With three or four buddies on a slow endpoint that is three or four concurrent slots of somebody's rate limit spent on a cartoon deciding to scratch itself.
+One real consequence today: a Poke on character A and a Poke on character B in the same tick fire two simultaneous POSTs to the same endpoint. Both are reactive, both reset their `Pace`, and neither knows the other exists. With three or four characters on a slow endpoint that is three or four concurrent slots of somebody's rate limit spent on a cartoon deciding to scratch itself.
 
 ### 1.2 What happens today when a new event arrives mid-flight?
 
@@ -120,7 +120,7 @@ One real consequence today: a Poke on buddy A and a Poke on buddy B in the same 
 The Engine absorbs part of the damage but not all of it:
 
 - **Motion is protected.** A proposal is advisory (`WorldSnapshot::proposal`, `crates/core/src/engine.rs`), and `permitted` requires `on_feet` — `Grounded` or `Perched` — for anything that moves. A reply computed for "picked up" that lands while the sprite is `Falling` has its Behavior refused, and the refusal interrupts nothing (the proposal arm of `Engine::tick`). `director::remember` is then fed only `frame.behavior` — what actually *played* — so the Static Director's suppression list stays honest.
-- **Dialogue is not protected.** The frame's `dialogue` is read straight off `snapshot.proposal` with no reference to whether the Behavior played (`Frame::dialogue`, built in `Engine::tick`); only Do Not Disturb suppresses it. So this is live today: Grab → ambient/reactive wake sends `what just happened: picked up` → user throws the sprite, it flies, lands, settles → 15 seconds later the reply arrives and the buddy says *"hey, put me down!"* from the floor. The Behavior is refused; the line is spoken.
+- **Dialogue is not protected.** The frame's `dialogue` is read straight off `snapshot.proposal` with no reference to whether the Behavior played (`Frame::dialogue`, built in `Engine::tick`); only Do Not Disturb suppresses it. So this is live today: Grab → ambient/reactive wake sends `what just happened: picked up` → user throws the sprite, it flies, lands, settles → 15 seconds later the reply arrives and the character says *"hey, put me down!"* from the floor. The Behavior is refused; the line is spoken.
 
 There is one adjacent place that already reasons about staleness correctly, and it is worth naming as prior art: `SettingsOp::Retarget` calls `model::retarget_model`, whose comment is *"Completer target changed, not Character. A Wake still on the wire would propose against the old host and session; drop it and open a new turn."* So the repo already has the concept "a reply from before an event is invalid" — it is just applied to settings changes and not to world events.
 
@@ -141,7 +141,7 @@ Dropping anything on the shell side cannot reach that thread. `std::thread` has 
 **What cancellation would actually require.** Two options, and the cheaper one is unusually cheap:
 
 1. **Close the socket from the worker itself, between reads.** This needs the request to be *streaming* so there is more than one read to be between. `ureq` already supports this with no new dependency: `Body::into_reader()` returns a blocking `Read` (`ureq-3.4.0`, `src/body/mod.rs`). The worker reads SSE lines, checks a shared "is my epoch still current" atomic between lines, and on a stale epoch drops the reader — which closes the connection, which is exactly the documented way to stop a synchronous generation (§2.2). Latency to actually free the slot is one SSE chunk, tens of milliseconds.
-2. **Move to an async client with an abort handle.** `reqwest` 0.13.4 and `tokio` 1.53.1 are *already in `Cargo.lock`* — `tokio` via `tauri` itself plus the `ai-buddy-mcp-server` crate, `reqwest` via `tauri-plugin-updater` (`cargo tree -i`). So this is not "adding tokio where there is none" in the dependency-graph sense. It is still much the bigger ask: it means a second runtime concern in a shell whose whole model.rs preamble is *"ureq instead of reqwest: no tokio"*, and it buys nothing that option 1 does not, because dropping a `reqwest` future also just closes the connection.
+2. **Move to an async client with an abort handle.** `reqwest` 0.13.4 and `tokio` 1.53.1 are *already in `Cargo.lock`* — `tokio` via `tauri` itself plus the `fidget-mcp-server` crate, `reqwest` via `tauri-plugin-updater` (`cargo tree -i`). So this is not "adding tokio where there is none" in the dependency-graph sense. It is still much the bigger ask: it means a second runtime concern in a shell whose whole model.rs preamble is *"ureq instead of reqwest: no tokio"*, and it buys nothing that option 1 does not, because dropping a `reqwest` future also just closes the connection.
 
 Option 1 is the one to reach for. It costs no dependency and it makes cancellation and streaming (§2.1) the same change.
 
@@ -206,9 +206,9 @@ Four things this makes **impossible**, each of which is possible today:
 - **Applying a reply against a moved-on world.** `take` returns the `Wake` *with* the `Context` it was computed for, so the caller cannot get one without the other. The `.expect("a started call still has its context")` — a real panic path if a second `start` ever slips in — stops existing, because the context is carried by the epoch rather than by a parallel `Option` field the caller must keep in step. That removes `InstanceState::in_flight` entirely.
 - **A stale reply arriving at all.** A reply whose epoch has been superseded is dropped inside `take`, not by the caller remembering to compare.
 
-**Should it be shared across Instances rather than per-Instance? Yes — one `Slots`, not N `InFlight`.** Sharing the *owner* is orthogonal to sharing the *session*: each Instance keeps its own `Endpoint` and its own conversation (ADR-0008 intact), while the thing that decides how many requests may be on the wire at once sees all of them. That is what makes a global cap expressible at all, and it is the natural home for the budget the `ponytail:` comment above the `InstanceState` literal says is the upgrade and for #18's spend panel. A per-Instance `Slots` cannot ever express "at most two buddies talking at once" without a second, outer mechanism.
+**Should it be shared across Instances rather than per-Instance? Yes — one `Slots`, not N `InFlight`.** Sharing the *owner* is orthogonal to sharing the *session*: each Instance keeps its own `Endpoint` and its own conversation (ADR-0008 intact), while the thing that decides how many requests may be on the wire at once sees all of them. That is what makes a global cap expressible at all, and it is the natural home for the budget the `ponytail:` comment above the `InstanceState` literal says is the upgrade and for #18's spend panel. A per-Instance `Slots` cannot ever express "at most two characters talking at once" without a second, outer mechanism.
 
-Note the deliberate asymmetry in the sketch: **per-Instance newest-wins, global concurrency cap.** They are different questions. "Should this buddy's old poke be abandoned for its new throw?" is always yes. "Should buddy B wait because buddy A is mid-call?" is a policy dial, and starting it at "no cap, N buddies, N calls" preserves today's behaviour exactly while giving the cap somewhere to live.
+Note the deliberate asymmetry in the sketch: **per-Instance newest-wins, global concurrency cap.** They are different questions. "Should this character's old poke be abandoned for its new throw?" is always yes. "Should character B wait because character A is mid-call?" is a policy dial, and starting it at "no cap, N characters, N calls" preserves today's behaviour exactly while giving the cap somewhere to live.
 
 ### 1.5 Recommendation
 
@@ -220,17 +220,17 @@ Note the deliberate asymmetry in the sketch: **per-Instance newest-wins, global 
 
 **(c) Only then consider a global concurrency cap.** With (a) in place this is a constant in one file. Leave it at "no cap" until #18 has a panel to show the spend on, exactly as that `ponytail:` comment argues.
 
-**What to leave alone.** Do not add a staleness *check* at the apply site — the epoch in (a) makes the class of bug unreachable, and a comparison the caller performs is the defensive shape this codebase avoids. Do not queue events; the one-slot latch at `frame_loop.rs:654-679` is right, and a queue would let the buddy work through a backlog of pokes the user has forgotten making. Do not reach for `tokio`/`reqwest`; they are in the lock file but the whole point of the `ureq` comment in `src-tauri/Cargo.toml` is that this path stays synchronous, and (b) needs neither.
+**What to leave alone.** Do not add a staleness *check* at the apply site — the epoch in (a) makes the class of bug unreachable, and a comparison the caller performs is the defensive shape this codebase avoids. Do not queue events; the one-slot latch at `frame_loop.rs:654-679` is right, and a queue would let the character work through a backlog of pokes the user has forgotten making. Do not reach for `tokio`/`reqwest`; they are in the lock file but the whole point of the `ureq` comment in `src-tauri/Cargo.toml` is that this path stays synchronous, and (b) needs neither.
 
 **ADR impact.**
 
 - **ADR-0004** (Director outside the frame loop) is *reinforced*, not violated. `Slots` keeps every blocking call on a worker thread and the frame loop still only polls. Streaming does not put the model in the frame loop either: the worker accumulates and the loop still takes a finished `Wake` on a later tick. If (b) were ever extended to "apply the first line the instant it arrives, mid-generation", that would still be one `take` on one tick — a proposal delivered sooner, not a model consulted per frame. Worth a sentence in the ADR if it ships, not a reversal.
 - **ADR-0008** (one Harness session) is *unaffected*. Sessions stay per-Instance inside each `Endpoint`; only the in-flight *slot* is centralised.
-- **A new ADR is warranted for (a)+(b)**, because "the Shell owns one cancellable slot per Instance, and a superseded reply is never applied" is the kind of structural commitment the existing ADRs record, and because it fixes a user-visible behaviour (the buddy answering a question the world has moved past). The decision has not been taken, so no ADR is filed and no number is claimed here. Draft decision paragraph, for whoever takes it:
+- **A new ADR is warranted for (a)+(b)**, because "the Shell owns one cancellable slot per Instance, and a superseded reply is never applied" is the kind of structural commitment the existing ADRs record, and because it fixes a user-visible behaviour (the character answering a question the world has moved past). The decision has not been taken, so no ADR is filed and no number is claimed here. Draft decision paragraph, for whoever takes it:
 
 > ### Proposed: one cancellable slot per Instance, newest wins
 >
-> The Shell owns a single `Slots` registry holding at most one in-flight session call per Character Instance, and starting a call *is* the cancellation of that Instance's previous one. A reply is tagged with the epoch and the `Context` it was computed for and handed to the frame loop as one value, so a reply from a superseded moment cannot be applied — which is what stops a buddy saying "put me down" from the floor it was thrown onto. Requests stream, and abandoning one drops the response reader, closing the connection; vendors document that as the way to stop a synchronous generation, so cancellation frees the endpoint's capacity rather than merely discarding an answer. `Completer` stays synchronous and `crates/core` stays free of I/O: admission control and cancellation are properties of the socket, which only the Shell holds. Sessions remain per-Instance per ADR-0008; only the slot registry is shared, so that a global budget has somewhere to live once #18 has a panel to show it on. ADR-0004 still holds — the frame loop polls and never waits.
+> The Shell owns a single `Slots` registry holding at most one in-flight session call per Character Instance, and starting a call *is* the cancellation of that Instance's previous one. A reply is tagged with the epoch and the `Context` it was computed for and handed to the frame loop as one value, so a reply from a superseded moment cannot be applied — which is what stops a character saying "put me down" from the floor it was thrown onto. Requests stream, and abandoning one drops the response reader, closing the connection; vendors document that as the way to stop a synchronous generation, so cancellation frees the endpoint's capacity rather than merely discarding an answer. `Completer` stays synchronous and `crates/core` stays free of I/O: admission control and cancellation are properties of the socket, which only the Shell holds. Sessions remain per-Instance per ADR-0008; only the slot registry is shared, so that a global budget has somewhere to live once #18 has a panel to show it on. ADR-0004 still holds — the frame loop polls and never waits.
 
 ---
 
@@ -278,7 +278,7 @@ This is the load question, and the answer is **yes for streaming, no for non-str
 2. **`Pace` outruns every TTL.** `Pace::FIRST` is 2 minutes and each proactive wake multiplies the wait up to a 2-hour cap (`director::Pace`). Anthropic's default cache dies after 5 minutes of inactivity; OpenAI's after 30. **[inference]** So by the third or fourth proactive wake the cache is guaranteed cold, and on Anthropic you would be paying the 1.25× write surcharge on nearly every call for a read that never comes.
 3. **The one thing that *does* grow is the session.** `Endpoint` accumulates every user and assistant turn and re-sends the whole snapshot each call (`Endpoint::session`, pushed to and cloned at the top of `Endpoint::post`). **[inference]** After enough turns that history crosses 1,024 tokens and becomes a genuinely stable, genuinely cacheable prefix — the accidental beneficiary. This also means the *input* cost per wake grows without bound over a long session, which is a separate concern worth its own issue: nothing trims the conversation.
 
-**[inference] Verdict.** Caching is a poor first move here. If it is pursued, the honest framing is "spend tokens to save latency": pad the opening turn past the floor with something genuinely useful (the full Behavior roster with descriptions, richer personality, memory excerpts), put an explicit breakpoint at its end, and accept that on Anthropic you need ≥1 read within 5 minutes per write to break even. Given `Pace`, that arithmetic only works for reactive bursts — a user poking a buddy repeatedly — not for ambient life.
+**[inference] Verdict.** Caching is a poor first move here. If it is pursued, the honest framing is "spend tokens to save latency": pad the opening turn past the floor with something genuinely useful (the full Behavior roster with descriptions, richer personality, memory excerpts), put an explicit breakpoint at its end, and accept that on Anthropic you need ≥1 read within 5 minutes per write to break even. Given `Pace`, that arithmetic only works for reactive bursts — a user poking a character repeatedly — not for ambient life.
 
 **[vendor] One caching trick that *is* cheap and fits.** Anthropic documents **cache pre-warming** with `max_tokens: 0`: the API reads the prompt, writes the cache at each `cache_control` breakpoint, and returns immediately with empty `content` and `stop_reason: "max_tokens"` — explicitly "for latency-sensitive applications" to remove the first-call cache-miss penalty (https://platform.claude.com/docs/en/build-with-claude/prompt-caching). The documented gotchas: put the breakpoint on the last block **shared with the follow-up** (not on the placeholder user message), and match the thinking/effort config, or the warm entry is keyed to something real traffic never hits. **[inference]** For this repo the natural moment is app launch or Character switch — `spawn_instances` and the `model::retarget_model` path are both places where a new `Endpoint` is created and the first real wake is minutes away. But this only pays if the opening prefix is over the floor, i.e. only together with the padding decision above.
 
@@ -346,7 +346,7 @@ The connection pool lives on the `Agent` (`ureq` exposes `max_idle_connections`,
 
 ### 2.7 De-duplicating across Instances, and latency budgets
 
-**[inference] Batching across Instances is the wrong shape for this repo.** Each buddy has its own conversation by ADR-0008 and its own personality, so their prompts differ in the very first token — nothing to share. What *is* available is de-duplication of *timing*: `Slots` from §1.4 could stagger simultaneous wakes so two buddies do not contend for the same endpoint. That is load smoothing, not latency reduction, and it makes one buddy slower to make the other faster. Not worth doing for latency; worth having the seam for, once #18 shows spend.
+**[inference] Batching across Instances is the wrong shape for this repo.** Each character has its own conversation by ADR-0008 and its own personality, so their prompts differ in the very first token — nothing to share. What *is* available is de-duplication of *timing*: `Slots` from §1.4 could stagger simultaneous wakes so two characters do not contend for the same endpoint. That is load smoothing, not latency reduction, and it makes one character slower to make the other faster. Not worth doing for latency; worth having the seam for, once #18 shows spend.
 
 **[vendor] The interactive budget.** Nielsen's three thresholds are unchanged since 1993 and explicitly restated as current: **0.1 s** feels instantaneous and needs no feedback, **1 s** keeps the user's flow of thought, **10 s** is the limit of held attention, after which "users will want to perform other tasks while waiting" and will need to reorient on return (https://www.nngroup.com/articles/response-times-3-important-limits/, https://www.nngroup.com/articles/website-response-times/). **[community]** A practitioner target of TTFT < 500 ms at p95 for interactive LLM products, and the advice to watch p95/p99 rather than the mean, comes from a third-party analysis rather than a vendor (https://tianpan.co/blog/2026/03/10/llm-latency-decomposition-ttft-vs-throughput).
 
@@ -383,7 +383,7 @@ Highest value per unit of cost first.
 
 4. **Send a `stop` sequence (`["\n\n"]`) and extend the low-reasoning-effort lever beyond the xAI branch.** Caps the tail on a reply that only ever needs two lines. The reasoning-effort case is already argued in the repo's own comment in the Responses arm of `request_body`; it is simply not applied on its chat-completions arm. Handful of lines, but per-endpoint compatibility testing is the real cost, since a strict server rejects an unknown field outright — a hazard the repo has already been bitten by (the `LOCAL_MAX_TOKENS` doc comment).
 
-5. **Re-key the Thinking ellipsis off "no first line yet" once streaming lands.** Turns the existing 250 ms-grace / 600 ms-hold flag from "the model is busy" into "the buddy has not decided yet", so the sprite's own Animation takes over the instant it starts moving. Small, and it is the part the user actually perceives. Do it with (3), not before.
+5. **Re-key the Thinking ellipsis off "no first line yet" once streaming lands.** Turns the existing 250 ms-grace / 600 ms-hold flag from "the model is busy" into "the character has not decided yet", so the sprite's own Animation takes over the instant it starts moving. Small, and it is the part the user actually perceives. Do it with (3), not before.
 
 6. **Guard the growing session.** `Endpoint::session` accumulates every turn and re-sends the lot, cloned at the top of `Endpoint::post`, with nothing trimming it. Input cost and prefill time per wake grow without bound over a long run. Not strictly a latency *fix* — it is a latency *regression* that gets worse the longer the app is open. Deserves its own issue; the fix (a turn cap, mirroring `director::REMEMBERED`) is small, but "which turns are safe to drop" is a Director-behaviour question, not a plumbing one.
 

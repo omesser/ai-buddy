@@ -1,22 +1,22 @@
-//! CLI entry for `ai-buddy-verify`.
+//! CLI entry for `fidget-verify`.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use ai_buddy_verify::cleanup;
-use ai_buddy_verify::contract::{Outcome, RunReport};
-use ai_buddy_verify::doctor;
-use ai_buddy_verify::overlay;
-use ai_buddy_verify::paths::{self, RunPaths};
-use ai_buddy_verify::poke;
-use ai_buddy_verify::proof;
-use ai_buddy_verify::summon;
-use ai_buddy_verify::units;
+use fidget_verify::cleanup;
+use fidget_verify::contract::{Outcome, RunReport};
+use fidget_verify::doctor;
+use fidget_verify::overlay;
+use fidget_verify::paths::{self, RunPaths};
+use fidget_verify::poke;
+use fidget_verify::proof;
+use fidget_verify::summon;
+use fidget_verify::units;
 
 #[derive(Debug, Parser)]
-#[command(name = "ai-buddy-verify")]
+#[command(name = "fidget-verify")]
 #[command(about = "Agent/CI verify entry (doctor / units / overlay / poke / summon / cleanup)")]
 #[command(version)]
 struct Cli {
@@ -25,7 +25,7 @@ struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     evidence_dir: Option<PathBuf>,
 
-    /// Run id used in the default root `$TMPDIR/ai-buddy-verify-$RUN_ID`.
+    /// Run id used in the default root `$TMPDIR/fidget-verify-$RUN_ID`.
     /// Default: UTC timestamp + process id.
     #[arg(long, global = true, value_name = "ID")]
     run_id: Option<String>,

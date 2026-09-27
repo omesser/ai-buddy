@@ -10,7 +10,7 @@ Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-
 - **OS**: Microsoft Windows 11 Pro for Workstations version 10.0.26200 (Build 26200)
 - **Display**: Primary 3440×1440 at (0,0) work area height 1392; Secondary 1200×1920 at (-1200,-209)
 - **Character**: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame); Black Mage (37×33 source @3x scale, ~570–630 opaque)
-- **Binary**: Debug `ai-buddy.exe` at tip `a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1` (PR #981 TRACE instrumentation)
+- **Binary**: Debug `fidget.exe` at tip `a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1` (PR #981 TRACE instrumentation)
 - **Evidence**: `docs/research/mask-rebuild-baseline-windows/` (slim pack: environment, summaries, sample lines)
 
 This is Oded's development workstation with a real Windows GUI. Cursor automation used `SetCursorPos` to sprite center derived from `TRACE_FRAMES` instrumentation (not human cursor movement).
@@ -23,7 +23,7 @@ Timing in Windows click-through mask rebuild path (PR #981 tip `a38ba3b` — ins
 
 - Atomic counters for rebuild count and total nanoseconds
 - Per-rebuild timing from start to DWM region update completion
-- Logging of sprite dimensions, scale, opaque pixel count, and rebuild time when `AI_BUDDY_TRACE_MASK_REBUILD=1`
+- Logging of sprite dimensions, scale, opaque pixel count, and rebuild time when `FIDGET_TRACE_MASK_REBUILD=1`
 
 The Windows DWM rebuild iterates the source mask and constructs a region from opaque cells. Scale multiplies rectangle size, not the opaque source count.
 
@@ -38,7 +38,7 @@ The overlay only updates the input region while the cursor is over the sprite (o
   - **walk**: StaticDirector spontaneous walk (MCP `play_behavior` not used — Settings Bearer token not obtained)
   - **fast**: Rush `SetCursorPos` onto sprite (rush_reaction=react) + `mouse_event` LBUTTON poke
   - **large**: Cursor follow only
-- **Environment variable**: `AI_BUDDY_TRACE_MASK_REBUILD=1` (plus `TRACE_FRAMES` for correlation)
+- **Environment variable**: `FIDGET_TRACE_MASK_REBUILD=1` (plus `TRACE_FRAMES` for correlation)
 
 **Method gaps documented honestly:**
 
@@ -91,7 +91,7 @@ A supplemental sample from the walk session (40 rebuilds when rush onto walking 
 
 ### Large Sprite (Black Mage, scale=3)
 
-**Method:** `AI_BUDDY_INSTANCES='Black Mage'` (scale=3 in manifest); `SetCursorPos` follow sprite center.
+**Method:** `FIDGET_INSTANCES='Black Mage'` (scale=3 in manifest); `SetCursorPos` follow sprite center.
 
 **Measurements over 12.1 seconds:**
 
@@ -197,4 +197,4 @@ mask_rebuild: 111x99 @3x scale, 579 opaque pixels, 2.64 ms
 1. **`perf` or Windows Performance Analyzer flamegraph** for rebuild hotspots — not yet collected for Windows.
 2. **Sustained fast animation samples** — Current react measurements are from poke interactions (loop=once). Extended cursor-over with a hypothetical looping 10 fps animation would clarify sustained rate vs per-rebuild cost.
 3. **Isolate DWM region update cost vs iteration cost** — Instrument the region construction separately from the DWM API call to understand the cost breakdown.
-4. **Compare debug vs release builds** — Current Windows measurements used debug `ai-buddy.exe`; release build may show different timings.
+4. **Compare debug vs release builds** — Current Windows measurements used debug `fidget.exe`; release build may show different timings.

@@ -348,7 +348,7 @@ body {
   --cue-ink: #24262c;
 }
 
-/* One layer per Instance, so a dismissed buddy takes its cues with it and the
+/* One layer per Instance, so a dismissed character takes its cues with it and the
    z-index written every tick stacks them with its sprite. Zero-sized at the
    origin: its children carry overlay coordinates, the bubble's space. */
 .cue-layer {

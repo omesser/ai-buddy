@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build if needed and start a traced ai-buddy owned by this RUN_ID.
+# Build if needed and start a traced fidget owned by this RUN_ID.
 # Prefer drive-overlay-* when proving overlay features — those scripts own lifecycle.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,14 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$REPO_ROOT"
 
-if ! ai_buddy_bin > /dev/null; then
+if ! fidget_bin > /dev/null; then
   echo "launch: building release…"
-  cargo build -p ai-buddy --release
+  cargo build -p fidget --release
 fi
-BIN="$(ai_buddy_bin)"
+BIN="$(fidget_bin)"
 
-LOG="$AI_BUDDY_VERIFY_SCRATCH/app.log"
-PIDFILE="$AI_BUDDY_VERIFY_SCRATCH/pids/app.pid"
+LOG="$FIDGET_VERIFY_SCRATCH/app.log"
+PIDFILE="$FIDGET_VERIFY_SCRATCH/pids/app.pid"
 
 if [ -f "$PIDFILE" ]; then
   old="$(cat "$PIDFILE")"
@@ -27,9 +27,9 @@ if [ -f "$PIDFILE" ]; then
   fi
 fi
 
-export AI_BUDDY_TRACE_FRAMES="${AI_BUDDY_TRACE_FRAMES:-1}"
-export AI_BUDDY_TRACE_HITTEST="${AI_BUDDY_TRACE_HITTEST:-1}"
-export AI_BUDDY_CAPTURABLE="${AI_BUDDY_CAPTURABLE:-1}"
+export FIDGET_TRACE_FRAMES="${FIDGET_TRACE_FRAMES:-1}"
+export FIDGET_TRACE_HITTEST="${FIDGET_TRACE_HITTEST:-1}"
+export FIDGET_CAPTURABLE="${FIDGET_CAPTURABLE:-1}"
 
 echo "launch: $BIN → $LOG"
 "$BIN" > "$LOG" 2>&1 &

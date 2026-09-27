@@ -238,7 +238,7 @@ and ADR-0002 keeps the Manifest declaring Behaviors. Per-Instance is the
 tempting one now that #338 has made per-Instance state live, and it is still
 wrong: an Instance's identity is its Character's art, already per-Instance and
 already the thing the user looks at. Per-Instance chrome would make one product
-look like two on one screen to distinguish buddies that are already distinct.
+look like two on one screen to distinguish characters that are already distinct.
 
 ## Considered Options
 

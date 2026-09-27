@@ -50,7 +50,7 @@ Verified against the tree, not the issue's summary of it.
   `reasoning_effort` is "not a field every one of these servers accepts, and a
   strict one rejects the whole request over it" (`model.rs:73-78`).
 - `max_tokens_for` (`model.rs:504`) returns the user's
-  `AI_BUDDY_DIRECTOR_MAX_TOKENS` when it parses to a non-zero number, else the
+  `FIDGET_DIRECTOR_MAX_TOKENS` when it parses to a non-zero number, else the
   constant for local or hosted. The Settings row's placeholder is built at
   `model.rs:531`. A knob exists; nothing tells the user when to turn it.
 - `request_body` (`model.rs:1203`) sends `max_tokens` on chat-completions and
@@ -77,7 +77,7 @@ Verified against the tree, not the issue's summary of it.
 - A non-empty reply goes to `parse_proposal` (`crates/core/src/director.rs:468`).
   A first line that is not a single identifier is a `ParseError`, and a
   `ParseError` becomes `spoken_or_failed` (`director.rs:281`, `:310`): the
-  Engine plays `talk` and the buddy says the text. Anything a model puts in
+  Engine plays `talk` and the character says the text. Anything a model puts in
   `content` that is not a Behavior name is spoken aloud.
 
 **[inference]** So the lane has one behaviour for reasoning, which is to
@@ -294,7 +294,7 @@ learn what the first `response.incomplete` event already said.
 arrives as sixteen `reasoning_content` deltas and one `content` delta. The
 same tokens are reasoning on one wire shape and answer on the other, from
 one server. Fed to `parse_proposal`, `"Thinking Process:"` fails the
-identifier test and the buddy speaks the model's chain of thought from a
+identifier test and the character speaks the model's chain of thought from a
 Speech bubble. A thought whose first word happens to be a single token
 (`Okay`, `Hmm`) parses as a Behavior name instead, and the Engine rejects it
 as undeclared. Neither outcome is recoverable after the fact: once thinking
@@ -371,7 +371,7 @@ roster and one sentence of instruction; "real prompt" is the cat package's
 |---|---|
 | chat-completions, stream, `max_tokens: 48` | 12 frames: 8 `reasoning_content` deltas, 1 `content` delta (`"\n"`), `finish_reason: "length"`, `[DONE]`. |
 | chat-completions, whole, `max_tokens: 48` | `message: {role, reasoning_content}`; **no `content` key**; `finish_reason: "length"`; `completion_tokens: 48`. |
-| chat-completions, whole, unknown field `ai_buddy_bogus_field: 1` | HTTP 200. oMLX ignores unknown fields. |
+| chat-completions, whole, unknown field `fidget_bogus_field: 1` | HTTP 200. oMLX ignores unknown fields. |
 | chat-completions, stream, `max_tokens: 512`, `reasoning_effort: "low"` | `finish_reason: "stop"`, 103 chars of reasoning, answer `prowl` plus a line. |
 | chat-completions, stream, `max_tokens: 512`, `thinking_budget: 64` | `finish_reason: "stop"`, reasoning cut at 260 chars, answer `prowl` plus a line. |
 | `/v1/messages`, `max_tokens: 48` | `content: [{type: "thinking"}]` only, `stop_reason: "max_tokens"`. |
@@ -442,7 +442,7 @@ What it is, concretely, on the Completer lane:
    event. A `length` or `max_output_tokens` end with no text is a new
    `Unsent` variant, say `Truncated`, that names the cap in force. It is
    never a reply, never Speech, and it is logged with the cap and the model
-   so the Action Log answers "why did the buddy go quiet" with "512 tokens
+   so the Action Log answers "why did the character go quiet" with "512 tokens
    was not enough for gpt-oss-20b at its default effort". `retry_settles`
    returns `None` for it: the same question at the same cap gets the same
    nothing, as the test at `model.rs:2229` already argues for the empty case.
@@ -464,7 +464,7 @@ What it is, concretely, on the Completer lane:
   because no chat-completions contract bounds thinking apart from the
   answer (§2.6). The maintainer ruled tuning out, and the contracts agree
   with him: a cap is the wrong knob for this failure. The knob the user
-  already has (`AI_BUDDY_DIRECTOR_MAX_TOKENS`) stays, and the new `Truncated`
+  already has (`FIDGET_DIRECTOR_MAX_TOKENS`) stays, and the new `Truncated`
   line tells them when to turn it.
 - *Separate budgets for thinking and answer.* Not portable. `thinking_budget`
   is oMLX's field, `thinking_token_budget` is vLLM's, llama.cpp takes it as
@@ -523,7 +523,7 @@ spike's to decide, and the recommendation above stands without it.
   are said. We are the ones who cut the model off, so what it managed to write
   is not thrown away. The reply is written down as `[response truncated]`
   under the words, in the session the next turn is built from and in the Chat
-  history, so a reader and the model both see where it stopped; what the buddy
+  history, so a reader and the model both see where it stopped; what the character
   speaks stays the model's own words. The empty case is unchanged, and is
   silence.
 - Any server that marks a completed reply with a `finish_reason` other than

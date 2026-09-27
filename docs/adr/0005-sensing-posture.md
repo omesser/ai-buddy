@@ -32,7 +32,7 @@ the user thinks they gave. #250.
 **The ask is a Character act, not a system dialog.** Wanting to look is a
 Behavior the Character plays: it asks, in the chat surface when one is open
 (#17) and in a small request window when none is, and it waits. Only after the
-user says yes does ai-buddy ask the attached Harness for the screenshot, and
+user says yes does fidget ask the attached Harness for the screenshot, and
 only then can the Character react to what is on screen. A refusal is an answer;
 the Character takes it and carries on.
 
@@ -43,7 +43,7 @@ for the Capture it asks for: "what is on my screen?" does not need a second
 prompt, and the answer says a Capture was taken.
 
 This is not the second confirmation ADR-0003 refuses. That rule is about
-*acting*, and it forbids ai-buddy stacking a dialog on top of the Harness's own.
+*acting*, and it forbids fidget stacking a dialog on top of the Harness's own.
 Consent for sensing is ours alone, there is exactly one prompt, and the Harness
 is not asked to capture anything until the prompt is answered.
 
@@ -70,11 +70,11 @@ is not asked to capture anything until the prompt is answered.
 
 The Ambient cadence knob changes meaning. It bounds how often the Character may
 *ask*, never how often it captures, and asking too often is its own failure — a
-buddy that interrupts to request a screenshot is worse than one that never looks.
+character that interrupts to request a screenshot is worse than one that never looks.
 
 Content awareness gets rarer and costlier in attention than a sampling design
 would give. That is the price of the rule, and it is paid deliberately: the
-buddy reacts to screen detail it was allowed to see, and to nothing else.
+character reacts to screen detail it was allowed to see, and to nothing else.
 
 The Local Gate stays mandatory, and it no longer carries the argument it was
 introduced with. It exists to keep an already-consented Capture from reaching
@@ -99,5 +99,5 @@ future capture path that cannot be expressed as a visible Character state is
 thereby out of bounds.
 
 Reversing this means a Capture the user did not authorise, whether by a standing
-grant or a cadence they set once, and giving up the claim that the buddy only
+grant or a cadence they set once, and giving up the claim that the character only
 ever sees what it was allowed to see.

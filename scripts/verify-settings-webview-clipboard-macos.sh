@@ -2,18 +2,18 @@
 # Click Copy on the Settings webview BYO row and read the pasteboard (#855).
 # Usage:
 #   ./scripts/verify-settings-webview-clipboard-macos.sh
-#   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-webview-clipboard-macos.sh
+#   FIDGET_VERIFY_BIN=path/to/fidget ./scripts/verify-settings-webview-clipboard-macos.sh
 #
 # Settings webview is the default. Needs Accessibility (scripts/ax-settings.swift).
 # Stills land under .verify/; downscale before attaching. Do not commit PNGs.
-# Shares /tmp/ai-buddy-settings-overlay.lock with the other Settings sittings.
+# Shares /tmp/fidget-settings-overlay.lock with the other Settings sittings.
 
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root" || exit 1
 
-bin="${AI_BUDDY_VERIFY_BIN:-$root/target/debug/ai-buddy}"
+bin="${FIDGET_VERIFY_BIN:-$root/target/debug/fidget}"
 out="$root/.verify/settings-webview-clipboard-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out"
 
@@ -29,17 +29,17 @@ fail() {
   failures=$((failures + 1))
 }
 
-trap '[ -n "$app_pid" ] && kill "$app_pid" 2> /dev/null; [ "${lock_held:-0}" -eq 1 ] && rmdir /tmp/ai-buddy-settings-overlay.lock 2> /dev/null' EXIT
+trap '[ -n "$app_pid" ] && kill "$app_pid" 2> /dev/null; [ "${lock_held:-0}" -eq 1 ] && rmdir /tmp/fidget-settings-overlay.lock 2> /dev/null' EXIT
 
 [ -x "$bin" ] || {
-  fail "no binary at $bin - cargo build -p ai-buddy first, or set AI_BUDDY_VERIFY_BIN"
+  fail "no binary at $bin - cargo build -p fidget first, or set FIDGET_VERIFY_BIN"
   exit 1
 }
 
-if [ "${AI_BUDDY_OVERLAY_LOCK:-1}" = 1 ]; then
+if [ "${FIDGET_OVERLAY_LOCK:-1}" = 1 ]; then
   deadline=$((SECONDS + 1200))
-  while ! mkdir /tmp/ai-buddy-settings-overlay.lock 2> /dev/null; do
-    info "waiting for /tmp/ai-buddy-settings-overlay.lock"
+  while ! mkdir /tmp/fidget-settings-overlay.lock 2> /dev/null; do
+    info "waiting for /tmp/fidget-settings-overlay.lock"
     if [ "$SECONDS" -ge "$deadline" ]; then
       fail "overlay lock not free after 20 minutes"
       exit 1
@@ -64,11 +64,11 @@ for link in .claude .claude.json .codex .config; do
 done
 
 log="$out/app.log"
-env -u AI_BUDDY_DIRECTOR_API_KEY \
+env -u FIDGET_DIRECTOR_API_KEY \
   HOME="$home" \
-  AI_BUDDY_CAPTURABLE=1 \
-  AI_BUDDY_CHARACTER=timber-wolf \
-  AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
+  FIDGET_CAPTURABLE=1 \
+  FIDGET_CHARACTER=timber-wolf \
+  FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$root/characters}" \
   "$bin" > "$log" 2>&1 &
 app_pid=$!
 
@@ -80,7 +80,7 @@ while [ "$waited" -lt 40 ]; do
     break
   fi
   if ! kill -0 "$app_pid" 2> /dev/null; then
-    fail "ai-buddy exited before overlay:"
+    fail "fidget exited before overlay:"
     tail -40 "$log" || true
     exit 1
   fi

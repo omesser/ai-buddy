@@ -1,4 +1,4 @@
-# Buddy Bot - An original desktop AI mascot bot for ai-buddy.
+# Buddy Bot - An original desktop AI mascot bot for Fidget.
 
 name = "Buddy Bot"
 render_mode = "smooth"
@@ -6,7 +6,7 @@ scale = 1
 
 [source]
 art = """
-Buddy Bot, a desktop AI mascot drawn from ai-buddy's own logo and generated \
+Buddy Bot, a desktop AI mascot drawn from Fidget's own logo and generated \
 as a character pack."""
 license = """
 MIT for the whole package — prose, manifest and art are all this project's \

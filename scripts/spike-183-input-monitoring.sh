@@ -8,7 +8,7 @@
 #
 # Usage: scripts/spike-183-input-monitoring.sh <bundle id> [out dir]
 #   The bundle id must contain "tccspike". A bare `tccutil reset ListenEvent`
-#   wipes every app's grant, and dev.omesser.ai-buddy is the shipped app, so
+#   wipes every app's grant, and dev.omesser.fidget is the shipped app, so
 #   anything else is refused.
 #
 # Needs: swiftc, passwordless sudo for `log stream` (tccd's lines are private
@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 BUNDLE="${1:-}"
 # Not under /tmp: LaunchServices will not register a bundle there, and
 # tccutil resolves the id through LaunchServices (-10814 otherwise).
-OUT="${2:-$HOME/Library/Caches/ai-buddy-spike-183}"
+OUT="${2:-$HOME/Library/Caches/fidget-spike-183}"
 APP="$OUT/Spike183.app"
 
 case "$BUNDLE" in

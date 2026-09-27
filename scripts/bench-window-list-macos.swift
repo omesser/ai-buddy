@@ -1,11 +1,11 @@
-// What one window-list poll costs, measured outside ai-buddy against whatever
+// What one window-list poll costs, measured outside fidget against whatever
 // is on the desktop right now. Opens nothing and moves nothing, so it needs no
 // green light. Each row times CGWindowListCopyWindowInfo plus the per-entry
 // decode src-tauri/src/platform/macos/window_source.rs does (bounds, number,
 // layer, and the owner name once Screen Recording consent is usable).
 //
-// Rows: `app-call` is the bare call with ai-buddy's options (OnScreenOnly |
-// ExcludeDesktopElements), `app` adds the decode ai-buddy does without names,
+// Rows: `app-call` is the bare call with fidget's options (OnScreenOnly |
+// ExcludeDesktopElements), `app` adds the decode fidget does without names,
 // `app-names` is that call on the consent-on path, `all` swaps in the
 // every-window option, which lists every Space and is the one free way to get
 // a second window count out of the same desktop.

@@ -1,4 +1,4 @@
-# ai-buddy — design
+# Fidget — design
 
 A desktop companion in the spirit of Windows 95-era desktop mascots, with a
 model behind it. An animated sprite lives on your screen, obeys physics, perches
@@ -28,8 +28,8 @@ offline, with no permissions granted, no API key, and no Harness attached. This
 is the layer that has to be worth having on screen when everything else is off.
 
 The **Functional Layer** is invoked, asynchronous, and does the real work. It is
-reached by Summoning the buddy. It performs actions through an external Harness
-the user attaches. ai-buddy never bundles one.
+reached by Summoning the character. It performs actions through an external Harness
+the user attaches. Fidget never bundles one.
 
 The **Director** sits between them. It proposes a Behavior. Static weights
 fill that role when nothing is attached. An attached Harness fills it from
@@ -39,7 +39,7 @@ runs in the frame loop and never drives animation directly. See
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ai-buddy (Tauri)                                           │
+│  fidget (Tauri)                                           │
 │                                                             │
 │  ┌───────────────────────┐   ┌───────────────────────────┐  │
 │  │ Spatial Layer (Rust)  │   │ Webview (sprite render)   │  │
@@ -127,7 +127,7 @@ XWayland leaves one hole — it does not list native Wayland clients, so Perches
 on those stay impossible.
 
 The spatial layer is therefore an *optional capability the platform declares*,
-not an assumption, and where the protocol withholds it the buddy degrades rather
+not an assumption, and where the protocol withholds it the character degrades rather
 than fails.
 
 ### 4. Tauri, greenfield
@@ -284,7 +284,7 @@ the arithmetic promises.
 
 ### 7. Physics, Perches, and five verbs
 
-The buddy obeys gravity. Grab it, fling it, it arcs and lands. This is the
+The character obeys gravity. Grab it, fling it, it arcs and lands. This is the
 novelty, and it is roughly an integrator plus collision against a rect list that
 is already being polled.
 
@@ -369,14 +369,14 @@ so there is nothing to fade.
 `CGWindowListCopyWindowInfo` polling at ~10Hz, which returns window bounds,
 owner app, and layer with no permission prompt. Smoothness comes from
 interpolating in the render layer, not from event fidelity. Sitting on a window's
-edge needs geometry and nothing else. Naming what the buddy sits on is a different
+edge needs geometry and nothing else. Naming what the character sits on is a different
 question: window *titles* and *application names* both sit behind one consent,
 which on macOS 10.15+ is Screen Recording
 ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)).
 
 Accessibility becomes a deliberate upgrade tied to the Functional Layer, where
 the user understands the trade. The upgrade path is settings: a **What the
-buddy can see** pane names each grant, what it buys, and what it costs, and
+fidget can see** pane names each grant, what it buys, and what it costs, and
 the system prompt fires only when the user flips one on.
 
 Both of those grants are macOS TCC rows, and Linux has no equivalent: X11
@@ -396,7 +396,7 @@ six mouse types and no key event: a listen-only tap can neither modify nor
 divert what it hears, and nothing it hears is the keyboard. X11 needs no row
 for this; XI2 raw events are prompt-free (#562).
 
-**Capture tiers (Ambient, On-Demand, Local Gate) are dropped.** ai-buddy never takes
+**Capture tiers (Ambient, On-Demand, Local Gate) are dropped.** Fidget never takes
 screenshots, never analyzes screen pixels, and never embeds OCR or vision models for
 desktop content awareness. Free sensing — OS metadata without permissions — is the only
 sensing tier shipped. Agents that need pixel access or desktop control use harness-native
@@ -407,10 +407,10 @@ or attach an MCP server like cua-driver.
 
 ### 10. No Executor
 
-ai-buddy does not post synthetic mouse or keyboard events. It ships an **MCP
-server** exposing buddy-side tools — speak, play a Behavior, list windows,
+Fidget does not post synthetic mouse or keyboard events. It ships an **MCP
+server** exposing fidget-side tools — speak, play a Behavior, list windows,
 describe the screen, read and write Memory — and attaches a user-configured
-Harness. Clicking is the Harness's job. The character is ai-buddy's.
+Harness. Clicking is the Harness's job. The character is Fidget's.
 
 The verification behind this:
 
@@ -439,7 +439,7 @@ proves fatal. It is not built on spec.
 Rejected:
 
 - **Spawn Claude Code as a subprocess** — fastest demo, wrong foundation. It is
-  a coding agent in a costume, and ai-buddy would learn what happened by parsing
+  a coding agent in a costume, and Fidget would learn what happened by parsing
   stream output.
 - **Provider abstraction layer** — MCP already is that layer.
 
@@ -448,13 +448,13 @@ harness first."
 
 ### 11. Permission surface: as small as possible
 
-ai-buddy owns consent for **sensing only** — Screen Recording, microphone,
+Fidget owns consent for **sensing only** — Screen Recording, microphone,
 capture cadence. It owns **no** consent for acting, and does not duplicate the
 Harness's confirmation prompts. Two dialogs for one click teaches users to click
 through both.
 
 Harness activity is surfaced in a visible Action Log. One denylist stays
-ai-buddy's regardless of what the Harness permits: password fields and
+Fidget's regardless of what the Harness permits: password fields and
 explicitly excluded applications never enter a Capture.
 
 No undo system. A real undo journal for arbitrary desktop actions is a research
@@ -462,9 +462,9 @@ project, and a fake one is worse than none.
 
 ### 12. Memory is one shared file the user owns
 
-A single record of what the buddies know about the user, shared by every
+A single record of what the characters know about the user, shared by every
 Character Instance. Instances differ in personality and behavior, never in
-knowledge. A second buddy knows your name on day one.
+knowledge. A second character knows your name on day one.
 
 **One Markdown file**, append-structured under stable headings. Malformed
 content is still valid Markdown, so a bad hand-edit degrades rather than breaks.
@@ -477,7 +477,7 @@ content rather than crashing, and treats the file as untrusted input — the use
 can type anything into it and it reaches Harness prompts.
 
 Memory reaches the Harness as **MCP tools** (`recall`, `remember`), not as
-injected prompt text. Tools mean ai-buddy does not own relevance ranking, and
+injected prompt text. Tools mean Fidget does not own relevance ranking, and
 every read and write appears in a log the user can inspect.
 
 Splitting per-Instance memory back out stays possible later. It is not built now.
@@ -540,15 +540,15 @@ space.
 
 **Dropped (not deferred):**
 
-- Ambient Capture, On-Demand Capture, and Local Gate. ai-buddy never takes screenshots,
+- Ambient Capture, On-Demand Capture, and Local Gate. Fidget never takes screenshots,
   never analyzes screen pixels, and never embeds OCR or vision models.
   [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes
   [ADR-0005](./docs/adr/0005-sensing-posture.md).
 
-**Explicitly not planned:** an ai-buddy Executor, an undo system, a provider abstraction
+**Explicitly not planned:** a Fidget Executor, an undo system, a provider abstraction
 layer, per-Instance memory.
 
-With nothing configured, ai-buddy is a complete product: spatial layer, physics,
+With nothing configured, Fidget is a complete product: spatial layer, physics,
 Static Director, ambient reactions, and a nudge to connect a Harness. No API
 key, no subscription, no permission prompts. That state is the default demo.
 
@@ -631,7 +631,7 @@ records it.
 | 15 | Voice | Hotkey PTT + click-to-chat; wake word opt-in, on-device detection only |
 | 15b | Transcription | Trait: Apple `SpeechAnalyzer` on macOS 26+, `whisper.cpp` elsewhere |
 | 17 / 22 | Computer use | MCP server + MCP host; no first-party Executor — [ADR-0003](./docs/adr/0003-no-executor-harness-owns-desktop-control.md) |
-| 18 | Capture processing | Dropped; ai-buddy never takes screenshots — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) |
+| 18 | Capture processing | Dropped; Fidget never takes screenshots — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) |
 | 19 | Permissions we own | Sensing only. Never duplicate the Harness's action prompts |
 | 20 | Memory | One shared plaintext Markdown file the user owns; chat history session-scoped |
 | 21 | No Harness attached | Fully charming — full Spatial Layer, chat shows a connect nudge |

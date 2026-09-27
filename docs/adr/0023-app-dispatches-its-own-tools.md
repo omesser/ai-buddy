@@ -2,7 +2,7 @@
 
 ## Context
 
-A Harness reaches ai-buddy's tools over MCP. Making one speak or play a
+A Harness reaches fidget's tools over MCP. Making one speak or play a
 Behavior means resolving a target against the live Instances and enqueueing a
 proposal on the layer that owns them. That layer is owned by the frame loop and
 has no representation outside the process.
@@ -40,7 +40,7 @@ second process can only ask.
 The endpoint is reachable only from this machine, authorised per run, and
 refused to anything that presents a browser origin or a method other than the
 one it answers. A token that could be read from a log or a file would hand a
-local process the ability to move the buddy, so it is held in memory and passed
+local process the ability to move the character, so it is held in memory and passed
 in a header.
 
 Two Harnesses now behave differently through no fault of the user: one reaches

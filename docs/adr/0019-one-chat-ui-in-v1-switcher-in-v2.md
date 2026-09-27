@@ -22,7 +22,7 @@ would break the seam.
 
 The switcher is an application setting (one chat UI for the whole app), not
 per-Character or per-Instance. Per-Instance chrome would make one product look
-like two on one screen to distinguish buddies that are already visually
+like two on one screen to distinguish characters that are already visually
 distinct.
 
 ## Consequences

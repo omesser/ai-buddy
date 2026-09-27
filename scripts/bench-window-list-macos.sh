@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# What ai-buddy's window-list poll costs on macOS (#427): how often the frame
+# What fidget's window-list poll costs on macOS (#427): how often the frame
 # loop calls CGWindowListCopyWindowInfo idle (10 Hz) and riding (60 Hz), what
 # each call takes, and how that grows with the window count. One TSV row per
 # scenario, the same shape as bench-gpu-compositing-macos.sh.
 #
 # micro times the call from its own process against whatever is on the desktop
 # (scripts/bench-window-list-macos.swift) and needs no green light. idle and
-# riding launch ai-buddy on the live desktop and flood it with windows, so they
-# refuse to run unless AI_BUDDY_BENCH_GREEN_LIGHT=1 says the operator agreed.
+# riding launch fidget on the live desktop and flood it with windows, so they
+# refuse to run unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed.
 # The flood comes from scripts/window-flood-macos.swift (PR #1043); without
 # that file the added-window rows skip and say so.
 #
-# The per-call numbers for a running ai-buddy come from dtrace on SkyLight's
+# The per-call numbers for a running fidget come from dtrace on SkyLight's
 # SLWindowListCopyWindowInfo: on macOS 26 CoreGraphics forwards to it and the
 # pid provider has no CGWindowListCopyWindowInfo probe to offer. That needs
 # sudo; run `sudo -v` first for an unattended run.
@@ -22,15 +22,15 @@ cd "$(dirname "$0")/.."
 seconds=15
 windows=100
 out=""
-bin="${AI_BUDDY_VERIFY_BIN:-target/debug/ai-buddy}"
+bin="${FIDGET_VERIFY_BIN:-target/debug/fidget}"
 scenario=""
 
 usage() {
   cat >&2 << EOF
 Usage: $0 <env|micro|idle|riding|matrix> [--seconds N] [--windows N] [--bin PATH] [--out DIR]
 
-env and micro touch nothing on screen. idle and riding launch ai-buddy and open
-windows, and need AI_BUDDY_BENCH_GREEN_LIGHT=1. matrix runs idle and riding
+env and micro touch nothing on screen. idle and riding launch fidget and open
+windows, and need FIDGET_BENCH_GREEN_LIGHT=1. matrix runs idle and riding
 twice each: on the desktop as found, and with --windows flood windows added by
 scripts/window-flood-macos.swift, skipped when that file is absent. Per-call
 timing of the running app needs sudo for dtrace.
@@ -73,15 +73,15 @@ done
 case "$scenario" in
   env | micro) ;;
   *)
-    if [ "${AI_BUDDY_BENCH_GREEN_LIGHT:-}" != 1 ]; then
-      echo "$scenario takes over the desktop (launches ai-buddy, opens windows)." >&2
-      echo "Set AI_BUDDY_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
+    if [ "${FIDGET_BENCH_GREEN_LIGHT:-}" != 1 ]; then
+      echo "$scenario takes over the desktop (launches fidget, opens windows)." >&2
+      echo "Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
       exit 2
     fi
     ;;
 esac
 
-out="${out:-$(mktemp -d /tmp/ai-buddy-window-list-bench-XXXXXX)}"
+out="${out:-$(mktemp -d /tmp/fidget-window-list-bench-XXXXXX)}"
 mkdir -p "$out"
 
 APP_PID=""
@@ -118,7 +118,7 @@ stop_props() {
 
 need_bin() {
   [ -x "$bin" ] || {
-    echo "no $bin — run: (cd src-tauri && cargo build --bin ai-buddy)" >&2
+    echo "no $bin — run: (cd src-tauri && cargo build --bin fidget)" >&2
     exit 2
   }
 }
@@ -143,7 +143,7 @@ bin=$bin
 seconds=$seconds
 windows=$windows
 probe=pid\$target:SkyLight:SLWindowListCopyWindowInfo (CGWindowListCopyWindowInfo has no pid probe here)
-green_light=${AI_BUDDY_BENCH_GREEN_LIGHT:-unset}
+green_light=${FIDGET_BENCH_GREEN_LIGHT:-unset}
 EOF
 }
 
@@ -207,11 +207,11 @@ launch_app() {
   # Scratch HOME so the bench does not write the user's settings. The API key
   # skips the Keychain read a worktree build would otherwise block on.
   SCRATCH_HOME=$(mktemp -d)
-  AI_BUDDY_DIRECTOR_API_KEY=bench-placeholder \
-    AI_BUDDY_DIRECTOR=0 \
-    AI_BUDDY_TRACE_FRAMES=1 \
-    AI_BUDDY_INSTANCES="${AI_BUDDY_INSTANCES:-BMO}" \
-    AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$PWD/characters}" \
+  FIDGET_DIRECTOR_API_KEY=bench-placeholder \
+    FIDGET_DIRECTOR=0 \
+    FIDGET_TRACE_FRAMES=1 \
+    FIDGET_INSTANCES="${FIDGET_INSTANCES:-BMO}" \
+    FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$PWD/characters}" \
     HOME="$SCRATCH_HOME" \
     "$bin" > "$log" 2>&1 &
   APP_PID=$!

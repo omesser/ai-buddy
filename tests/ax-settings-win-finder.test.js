@@ -78,7 +78,7 @@ function matches(el, conds) {
 }
 
 const finder = extractFunction(axSrc, "Find-SettingsWindow");
-assert.doesNotMatch(finder, /AiBuddySettings/);
+assert.doesNotMatch(finder, /FidgetSettings/);
 
 const webviewConds = parsePropertyConditions(finder);
 const webviewByVar = new Map(webviewConds.map((c) => [c.var, c]));
@@ -109,7 +109,7 @@ const tauriSettings = {
 };
 const otherTauri = {
   className: "Tauri Window",
-  name: "AI Buddy",
+  name: "Fidget",
   controlType: "Window",
 };
 
@@ -161,9 +161,9 @@ test("FromHandle helper is the multi-monitor UIA entry, not RootElement", () => 
 });
 
 test("phase2 relies on the webview default", () => {
-  assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_WEBVIEW/);
-  assert.doesNotMatch(phase2Src, /AI_BUDDY_SETTINGS_NATIVE/);
-  assert.doesNotMatch(phase2Src, /AiBuddySettings/);
+  assert.doesNotMatch(phase2Src, /FIDGET_SETTINGS_WEBVIEW/);
+  assert.doesNotMatch(phase2Src, /FIDGET_SETTINGS_NATIVE/);
+  assert.doesNotMatch(phase2Src, /FidgetSettings/);
 });
 
 test("phase2 smoke never assigns $PID and uses ProcessId names", () => {
@@ -232,7 +232,7 @@ test("phase2 reports the four #715 checks and crops evidence to HWND", () => {
   assert.match(phase2Src, /2_all_tabs/);
   assert.match(phase2Src, /3_roundtrip/);
   assert.match(phase2Src, /4_zorder/);
-  assert.match(phase2Src, /ai-buddy\\settings\.json/);
+  assert.match(phase2Src, /fidget\\settings\.json/);
   const capture = extractFunction(phase2Src, "Capture");
   assert.match(capture, /GetWindowRect/);
   assert.match(capture, /CopyFromScreen/);
@@ -253,7 +253,7 @@ function settingsAboveOverlays(settings, overlays, stack) {
 function isOverlay(el, settingsHwnd, minW, minH) {
   if (el.hwnd === settingsHwnd) return false;
   if (el.title === "Settings") return false;
-  if (el.title !== "ai-buddy") return false;
+  if (el.title !== "Fidget") return false;
   if (el.processId !== el.boundProcessId) return false;
   return el.width >= minW && el.height >= minH;
 }
@@ -269,7 +269,7 @@ test("phase2 check 4 is PASS/FAIL from GetWindow stacking, not REVIEW", () => {
   assert.match(above, /-lt/);
 
   const find = extractFunction(phase2Src, "Find-OverlayHwnds");
-  assert.match(find, /ai-buddy/);
+  assert.match(find, /\$t -ne 'Fidget'/);
   assert.match(find, /GetWindowRect/);
   assert.match(find, /\$t -eq 'Settings'/);
 
@@ -302,7 +302,7 @@ test("stacking fixtures: Settings before overlay is above; missing HWND is not",
   assert.match(all, /Count -eq 0/);
 });
 
-test("overlay finder fixtures: large ai-buddy matches; Settings, 1x1 anchor, and Chat do not", () => {
+test("overlay finder fixtures: large Fidget matches; Settings, 1x1 anchor, and Chat do not", () => {
   const minW = 400;
   const minH = 400;
   const settingsHwnd = 1;
@@ -316,7 +316,7 @@ test("overlay finder fixtures: large ai-buddy matches; Settings, 1x1 anchor, and
   };
   const overlay = {
     hwnd: 2,
-    title: "ai-buddy",
+    title: "Fidget",
     width: 1920,
     height: 1080,
     processId: 4242,
@@ -324,7 +324,7 @@ test("overlay finder fixtures: large ai-buddy matches; Settings, 1x1 anchor, and
   };
   const anchor = {
     hwnd: 3,
-    title: "ai-buddy",
+    title: "Fidget",
     width: 1,
     height: 1,
     processId: 4242,
@@ -346,7 +346,7 @@ test("overlay finder fixtures: large ai-buddy matches; Settings, 1x1 anchor, and
   assert.equal(isOverlay(otherPid, settingsHwnd, minW, minH), false);
 
   const find = extractFunction(phase2Src, "Find-OverlayHwnds");
-  assert.match(find, /\$t -ne 'ai-buddy'/);
+  assert.match(find, /\$t -ne 'Fidget'/);
   assert.match(find, /\$w -ge \$script:overlayMinW/);
   assert.match(find, /\$hgt -ge \$script:overlayMinH/);
   assert.match(find, /\$processId -ne \$script:overlayPid/);

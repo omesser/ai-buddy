@@ -21,8 +21,8 @@ command -v xdotool > /dev/null || fail "xdotool not found"
 command -v xwininfo > /dev/null || fail "xwininfo not found"
 command -v xprop > /dev/null || fail "xprop not found"
 
-BIN="${AI_BUDDY_VERIFY_BIN:-$ROOT/target/debug/ai-buddy}"
-[ -x "$BIN" ] || fail "binary missing: $BIN (cargo build -p ai-buddy)"
+BIN="${FIDGET_VERIFY_BIN:-$ROOT/target/debug/fidget}"
+[ -x "$BIN" ] || fail "binary missing: $BIN (cargo build -p fidget)"
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT="$ROOT/.verify/anchor-$STAMP"
@@ -44,7 +44,7 @@ ROOT_W=$(xwininfo -root | awk '/^  Width:/ {print $2}')
 ROOT_H=$(xwininfo -root | awk '/^  Height:/ {print $2}')
 info "Display ${ROOT_W}x${ROOT_H}"
 
-AI_BUDDY_TRACE_FRAMES=1 LIBGL_ALWAYS_SOFTWARE=1 "$BIN" > "$LOG" 2>&1 &
+FIDGET_TRACE_FRAMES=1 LIBGL_ALWAYS_SOFTWARE=1 "$BIN" > "$LOG" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 80); do
@@ -62,7 +62,7 @@ on_desktop() {
 }
 
 fails=0
-for id in $(xdotool search --class 'Ai-buddy' 2> /dev/null || true); do
+for id in $(xdotool search --class 'Fidget' 2> /dev/null || true); do
   info_txt=$(xwininfo -id "$id" 2> /dev/null || true)
   map=$(printf '%s\n' "$info_txt" | awk '/Map State:/ {print $3}')
   [ "$map" = "IsViewable" ] || continue

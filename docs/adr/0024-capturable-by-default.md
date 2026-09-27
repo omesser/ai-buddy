@@ -3,20 +3,20 @@
 ## Context
 
 The overlay originally excluded itself from screenshots and screen shares by default
-(AppKit `NSWindowSharingNone`, Win32 `WDA_EXCLUDEFROMCAPTURE`). `AI_BUDDY_CAPTURABLE=1`
+(AppKit `NSWindowSharingNone`, Win32 `WDA_EXCLUDEFROMCAPTURE`). `FIDGET_CAPTURABLE=1`
 and a Development-tab macOS-only row were the only escapes, aimed at demo/CI captures.
 
 That default was honest about meetings but dishonest about the screen: the user sees
-the buddy, grabs or shares, and gets a different picture. Once the companion is useful
+the character, grabs or shares, and gets a different picture. Once the companion is useful
 AI people are proud of, "sneak out of the capture" feels like a footgun and a lie
 about WYSIWYG. Appearing in captures should be the default; opting out of capture
 (hide from shares) belongs in Presence as a first-class choice.
 
 ## Decision
 
-1. **Default = capturable.** Fresh install or empty settings: the buddy appears in a
+1. **Default = capturable.** Fresh install or empty settings: the character appears in a
    screenshot/share without setting an env var. `Settings::capturable` defaults to `true`.
-2. **Field semantics.** `capturable: true` means the buddy is visible in captures;
+2. **Field semantics.** `capturable: true` means the character is visible in captures;
    `false` means excluded. The field name matches its meaning (not inverted).
 3. **Presence checkbox.** "Appear in screenshots and screen shares" on the Presence tab
    (all platforms that implement exclusion: macOS and Windows). Checked = visible (default);
@@ -24,17 +24,17 @@ about WYSIWYG. Appearing in captures should be the default; opting out of captur
 4. **Platform support.** macOS (`NSWindowSharingType::ReadOnly` for visible, `::None` for
    excluded) and Windows (`WDA_NONE` for visible, `WDA_EXCLUDEFROMCAPTURE` for excluded)
    both read the setting; Linux/Wayland degrades gracefully (no capture exclusion API).
-5. **Env override kept.** `AI_BUDDY_CAPTURABLE=1` forces visible (for verify scripts that
-   screenshot the buddy); `=0` forces hidden (testing the exclusion path). Overrides file
+5. **Env override kept.** `FIDGET_CAPTURABLE=1` forces visible (for verify scripts that
+   screenshot the character); `=0` forces hidden (testing the exclusion path). Overrides file
    setting, preserving historical meaning (`=1` = capturable).
 
 ## Consequences
 
-- **WYSIWYG honesty.** Seeing the buddy then grabbing a different picture no longer
+- **WYSIWYG honesty.** Seeing the character then grabbing a different picture no longer
   happens by default.
 - **Pride/usefulness.** Users who want their AI companion visible in demos/shares get
   that without dev flags.
-- **Meeting privacy still available.** Users who need the buddy hidden during screen
+- **Meeting privacy still available.** Users who need the character hidden during screen
   shares uncheck the Presence box — one setting, clearly labelled, not buried in
   Development.
 - **Platform table updated.** README, DESIGN.md, and DEVELOPMENT.md now say
@@ -42,10 +42,10 @@ about WYSIWYG. Appearing in captures should be the default; opting out of captur
 - **Tests updated.** Default changed from `capturable: false` to `true`; form checkbox
   moved from Development to Presence with label matching field semantics.
 - **Field migration.** Old files with `capturable: false` (excluded) keep that meaning;
-  old files with `capturable: true` (the `AI_BUDDY_CAPTURABLE=1` override) keep that
+  old files with `capturable: true` (the `FIDGET_CAPTURABLE=1` override) keep that
   meaning (visible). New installs with no key get default `true` (visible). Semantics
   unchanged from v0; only the default flipped.
-- **Env var preserved.** `AI_BUDDY_CAPTURABLE=1` keeps historical meaning (force visible
+- **Env var preserved.** `FIDGET_CAPTURABLE=1` keeps historical meaning (force visible
   for verify scripts); `=0` forces hidden. CI/verify scripts unchanged.
 
 ## Alternatives Considered

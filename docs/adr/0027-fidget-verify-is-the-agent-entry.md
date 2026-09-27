@@ -1,10 +1,10 @@
-# `ai-buddy-verify` is the agent and CI entry for verification
+# `fidget-verify` is the agent and CI entry for verification
 
 ## Context
 
 Verification today is a sprawl of platform scripts (`scripts/verify-overlay.sh`,
 `verify-overlay-x11.sh`, `verify-overlay-win.ps1`, settings/harness probes, …)
-plus a project-local `verify-ai-buddy` skill that wraps them in bash helpers.
+plus a project-local `verify-fidget` skill that wraps them in bash helpers.
 Agents and humans must know which dialect and which path to run; Summon and a
 single cross-platform command line are still holes. Language
 unification of the *leaves* (Swift / `xdotool` / Win32) is not the job — those
@@ -19,17 +19,17 @@ where the runner can support overlay. A minimal umbrella that only wraps
 
 ## Decision
 
-1. **Workspace binary crate `ai-buddy-verify`.** Invoked as
-   `cargo run -p ai-buddy-verify -- <subcommand>`. Not an `ai-buddy verify …`
+1. **Workspace binary crate `fidget-verify`.** Invoked as
+   `cargo run -p fidget-verify -- <subcommand>`. Not an `fidget verify …`
    app subcommand (Release stays free of harness weight) and not a second
    toolchain (no Python verify CLI).
 2. **Orchestration first.** The CLI owns evidence roots, doctor, units,
    platform dispatch, exit contract, and (over time) gesture subcommands. OS
    probes may remain platform scripts until a leaf is wrong enough to rewrite.
-3. **Evidence.** Default under `$TMPDIR/ai-buddy-verify-$RUN_ID/evidence`
+3. **Evidence.** Default under `$TMPDIR/fidget-verify-$RUN_ID/evidence`
    (survives cleanup); `--evidence-dir` overrides. Cleanup never deletes
    evidence.
-4. **Skill cutover.** After the crate exists, the `verify-ai-buddy` skill
+4. **Skill cutover.** After the crate exists, the `verify-fidget` skill
    calls only this CLI; duplicate bash helpers go away. Feature map stays.
 5. **V1 definition of done (not stone 0).** Agents need not call
    `scripts/verify-*` for CLI-owned paths; `poke` and `summon` are first-class

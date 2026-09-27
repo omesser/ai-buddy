@@ -115,7 +115,7 @@ pub(crate) const DEFAULT_WEIGHT: u32 = 10;
 /// Four is what the shipped pixel-art Characters have always been drawn at.
 pub(crate) const DEFAULT_SCALE: u32 = 4;
 
-/// How proactive model-call waits grow when no one addresses the buddy.
+/// How proactive model-call waits grow when no one addresses the character.
 /// `wait * model_base.pow(model_power)` after each proactive model call.
 /// Two and one is the doubling Pace already had.
 pub const DEFAULT_MODEL_BASE: u32 = 2;
@@ -168,7 +168,7 @@ pub enum Primitive {
     /// also compose it.
     Hold,
     /// Steer walk velocity toward the cursor's x along the ground. The cursor
-    /// is up on the screen; the buddy chases its shadow on the floor.
+    /// is up on the screen; the character chases its shadow on the floor.
     Chase,
     /// Leave the ground under the sprite's own power. The launch is an upward
     /// velocity and nothing more. `Falling` carries the arc and the existing

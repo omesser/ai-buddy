@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ai-buddy",
+  "productName": "Fidget",
   "version": "0.1.0",
-  "identifier": "dev.omesser.ai-buddy",
+  "identifier": "dev.omesser.fidget",
   "build": {
     "frontendDist": "../src"
   },

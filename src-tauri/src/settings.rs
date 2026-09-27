@@ -22,9 +22,9 @@ use std::thread;
 #[cfg(test)]
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::memory::MemoryManifest;
-use ai_buddy_core::roster::InstanceSpec;
-use ai_buddy_core::visibility::HideRules;
+use fidget_core::memory::MemoryManifest;
+use fidget_core::roster::InstanceSpec;
+use fidget_core::visibility::HideRules;
 use serde::de::{self, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -34,7 +34,7 @@ use crate::dev_flags;
 use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
-/// One running buddy, as settings lists it.
+/// One running character, as settings lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct InstanceRow {
     pub id: String,
@@ -326,7 +326,7 @@ where
 /// The Completer source rows as the window must draw them: the popup title in
 /// force and the command line beside it.
 ///
-/// `AI_BUDDY_HARNESS` outranks the file for the reason it outranks the
+/// `FIDGET_HARNESS` outranks the file for the reason it outranks the
 /// endpoint rows — `harness::from_settings` gives it the last word, and a
 /// window that printed the file's value would name a Harness the app never
 /// spawns (#272). Its grammar carries a custom command line in the value
@@ -345,14 +345,14 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 ///
 /// Not attached, attached but not signed in, or attached and answering.
 /// Not signed in names the login command for the user's own terminal.
-/// ai-buddy holds no credential (ADR-0018), asks for none, and runs no login.
+/// fidget holds no credential (ADR-0018), asks for none, and runs no login.
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
         None => "Not attached. The HTTP endpoint below is the AI brain.".to_string(),
         Some(attached) => match &attached.login {
             Some(login) => format!(
                 "{} attached but not authenticated. Run `{login}` in a terminal - \
-                 ai-buddy never asks for it.",
+                 Fidget never asks for it.",
                 attached.name
             ),
             // Configured and not answering is its own state, and the one that
@@ -374,7 +374,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             None if !attached.alive => match &attached.missing {
                 Some(command) => format!(
                     "`{command}` is not installed, so {} is not running and the AI runs on \
-                     static weights. ai-buddy does not bundle `{command}` - install it, or Model \
+                     static weights. Fidget does not bundle `{command}` - install it, or Model \
                      API above hands the HTTP endpoint back.",
                     attached.name
                 ),
@@ -436,8 +436,8 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         // checked-in `.mcp.json`, which would commit the token.
         "claude" => (
             format!(
-                "claude mcp remove ai-buddy 2>/dev/null\n\
-                 claude mcp add --transport http ai-buddy \"{url}\" \
+                "claude mcp remove fidget 2>/dev/null\n\
+                 claude mcp add --transport http fidget \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run both lines in a terminal, then exit your Claude session and start a \
@@ -450,13 +450,13 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         ),
         "codex" => (
             format!(
-                "export AI_BUDDY_MCP_TOKEN='{token}'\n\
-                 codex mcp add ai-buddy --url '{url}' --bearer-token-env-var AI_BUDDY_MCP_TOKEN"
+                "export FIDGET_MCP_TOKEN='{token}'\n\
+                 codex mcp add fidget --url '{url}' --bearer-token-env-var FIDGET_MCP_TOKEN"
             ),
             "Run both lines in a terminal where Codex will inherit the environment, then \
              run `mcpServer/refresh` from your Codex session to pick up the change. If \
              `mcpServer/refresh` is unavailable, exit your Codex session and open a new \
-             one. Alternatively, add or update `[mcp_servers.ai-buddy]` in \
+             one. Alternatively, add or update `[mcp_servers.fidget]` in \
              `~/.codex/config.toml` with `url = \"{url}\"` and `http_headers = {{ \
              \"Authorization\" = \"Bearer {token}\" }}`."
                 .to_string(),
@@ -469,8 +469,8 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         // the steps ask for a new one.
         "copilot" => (
             format!(
-                "copilot mcp remove ai-buddy 2>/dev/null\n\
-                 copilot mcp add --transport http ai-buddy \"{url}\" \
+                "copilot mcp remove fidget 2>/dev/null\n\
+                 copilot mcp add --transport http fidget \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run both lines in a terminal, then start a new `copilot` session. The \
@@ -484,7 +484,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
             format!(
                 "{{\n\
                  \x20 \"mcpServers\": {{\n\
-                 \x20   \"ai-buddy\": {{\n\
+                 \x20   \"fidget\": {{\n\
                  \x20     \"url\": \"{url}\",\n\
                  \x20     \"headers\": {{\n\
                  \x20       \"Authorization\": \"Bearer {token}\"\n\
@@ -494,8 +494,8 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
                  }}"
             ),
             "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
-             not a command. Add or update the `ai-buddy` entry under `mcpServers`, \
-             then run `cursor-agent mcp enable ai-buddy` in a terminal and start a \
+             not a command. Add or update the `fidget` entry under `mcpServers`, \
+             then run `cursor-agent mcp enable fidget` in a terminal and start a \
              new session. `cursor-agent mcp list` reports."
                 .to_string(),
             String::new(),
@@ -504,7 +504,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
             format!(
                 "{{\n\
                  \x20 \"mcpServers\": {{\n\
-                 \x20   \"ai-buddy\": {{\n\
+                 \x20   \"fidget\": {{\n\
                  \x20     \"url\": \"{url}\",\n\
                  \x20     \"lifecycle\": \"eager\",\n\
                  \x20     \"headers\": {{\n\
@@ -515,34 +515,34 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
                  }}"
             ),
             "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
-             command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
-             `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
+             command. Add or update the `fidget` entry under `mcpServers`. Then run \
+             `/reload` followed by `/mcp reconnect fidget` in your Pi session."
                 .to_string(),
             String::new(),
         ),
         "grok" => (
             format!(
-                "grok mcp add ai-buddy \"{url}\" --transport http \
+                "grok mcp add fidget \"{url}\" --transport http \
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
              after a relaunch is enough. It defaults to user scope (`~/.grok/config.toml`). \
              Add `--scope project` only if you want project-local config (careful: shareable \
              config should not commit the token). Then in your live Grok session, run `/mcps` \
-             and press `r` to reload. `grok mcp doctor ai-buddy` reports."
+             and press `r` to reload. `grok mcp doctor fidget` reports."
                 .to_string(),
             String::new(), // Token already in snippet
         ),
         "hermes" => (
-            format!("hermes mcp add ai-buddy --url '{url}' --auth header"),
+            format!("hermes mcp add fidget --url '{url}' --auth header"),
             format!(
                 "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the \
-                 interactive prompt. This stores `MCP_AI_BUDDY_API_KEY` in `~/.hermes/.env` \
-                 and adds the header `Bearer ${{MCP_AI_BUDDY_API_KEY}}`. Then run `/reload-mcp` \
-                 in your Hermes session. Alternatively, add or update `ai-buddy:` under \
+                 interactive prompt. This stores `MCP_FIDGET_API_KEY` in `~/.hermes/.env` \
+                 and adds the header `Bearer ${{MCP_FIDGET_API_KEY}}`. Then run `/reload-mcp` \
+                 in your Hermes session. Alternatively, add or update `fidget:` under \
                  `mcp_servers:` in `~/.hermes/config.yaml` with `url: \"{url}\"` and `headers:` \
                  → `Authorization: \"Bearer <token>\"`; keep the indentation exactly. \
-                 `hermes mcp test ai-buddy` reports."
+                 `hermes mcp test fidget` reports."
             ),
             token.to_string(), // Show token separately for interactive paste
         ),
@@ -556,12 +556,12 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         // nothing to show that anything failed.
         "opencode" => (
             format!(
-                "opencode mcp add ai-buddy --url '{url}' --header \"Authorization=Bearer {token}\""
+                "opencode mcp add fidget --url '{url}' --header \"Authorization=Bearer {token}\""
             ),
             "Run it in a terminal, then restart your OpenCode session. OpenCode does not \
              re-read MCP mid-session. If OpenCode tries OAuth, set `\"oauth\": false` in \
-             the config. Alternatively, merge this flat `mcp.ai-buddy` content into \
-             `opencode.jsonc` (not nested `mcp.servers`): `{{ \"mcp\": {{ \"ai-buddy\": \
+             the config. Alternatively, merge this flat `mcp.fidget` content into \
+             `opencode.jsonc` (not nested `mcp.servers`): `{{ \"mcp\": {{ \"fidget\": \
              {{ \"type\": \"remote\", \"url\": \"{url}\", \"oauth\": false, \"headers\": \
              {{ \"Authorization\": \"Bearer {token}\" }} }} }} }}`. `opencode mcp list` \
              reports."
@@ -604,7 +604,7 @@ pub fn byo_rows(harness: &str) -> (String, String, String) {
         None => (
             String::new(),
             "The loopback MCP server did not start this run, so there is nothing to \
-             register. Restarting ai-buddy is the fix; stderr says why it failed."
+             register. Restarting Fidget is the fix; stderr says why it failed."
                 .to_string(),
             String::new(),
         ),
@@ -820,7 +820,7 @@ impl SettingsView {
     /// The Instance a Dismiss press names.
     ///
     /// `None` for an id the roster no longer carries: the page draws from a
-    /// snapshot, and a buddy can go while that list is on screen. #875.
+    /// snapshot, and a fidget can go while that list is on screen. #875.
     pub fn instance(&self, id: &str) -> Option<&InstanceRow> {
         self.instances.iter().find(|row| row.id == id)
     }
@@ -1107,7 +1107,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 /// Whether the Harness this process would spawn is not the one it has. #500.
 ///
 /// Identity is `Target` (Launch plus resolved cwd), not Launch alone (#782).
-/// The saved row alone cannot answer it: `AI_BUDDY_HARNESS` owns the row, so
+/// The saved row alone cannot answer it: `FIDGET_HARNESS` owns the row, so
 /// clearing the file under an export changes the setting and nothing else. And
 /// two rows can name one Harness — the `hermes` preset and a custom
 /// `hermes acp` join to the same `Launch` — which is a pick that must not kill
@@ -1706,7 +1706,7 @@ pub enum TextField {
     DirectorWakeSecs,
     DirectorApiKey,
     /// The Completer source popup. Written as a title and stored as the value
-    /// `AI_BUDDY_HARNESS` would take; `form::harness_choice` is the one place
+    /// `FIDGET_HARNESS` would take; `form::harness_choice` is the one place
     /// that translates.
     Harness,
     HarnessCommand,
@@ -1993,7 +1993,7 @@ impl Settings {
     /// command line under `custom`, the preset name otherwise, and `None` for
     /// Off.
     ///
-    /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both.
+    /// One grammar with `FIDGET_HARNESS`, so `harness::launch` parses both.
     /// A blank command line under `custom` is Off rather than a spawn of nothing.
     pub fn harness_source(&self) -> Option<String> {
         match self.harness.trim() {
@@ -2077,7 +2077,7 @@ pub struct Settings {
     pub excluded_applications: Vec<String>,
     /// Last chosen Character Package. Empty means the loader's default.
     pub character: String,
-    /// Instances to spawn on launch. Empty means the one buddy first-run runs.
+    /// Instances to spawn on launch. Empty means the one character first-run runs.
     pub instances: Vec<InstanceSpec>,
     /// Empty means unset — Completer resolution falls through to env then defaults.
     pub director_base_url: String,
@@ -2096,7 +2096,7 @@ pub struct Settings {
     /// `Pace::FIRST`. The Character's `model_base` and `model_power` grow the
     /// wait from here; this is only where it starts (#262).
     pub director_wake_secs: String,
-    /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
+    /// Which Harness is the Completer, in the values `FIDGET_HARNESS` takes:
     /// empty for none, a preset name (`claude`, `codex`, `copilot`,
     /// `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`), or
     /// `custom`, which defers to `harness_command`. The variable outranks it,
@@ -2140,7 +2140,7 @@ pub struct Settings {
     /// Blank-AI mode: built-in prompt layers emptied, Instance Prompt kept
     /// (#657, #680).
     pub director_blank: bool,
-    /// Appear in screenshots and screen shares. True (default) means the buddy
+    /// Appear in screenshots and screen shares. True (default) means the fidget
     /// is capturable; false excludes it. macOS and Windows read it; the field
     /// is unconditional so the document round-trips on every platform.
     pub capturable: bool,
@@ -2165,7 +2165,7 @@ pub struct Settings {
     #[serde(default)]
     pub use_input_monitoring: bool,
     /// Whether the first-run gesture tour has been shown. Once only, persisted
-    /// per-app rather than per-Instance: a second buddy spawned later sees
+    /// per-app rather than per-Instance: a second fidget spawned later sees
     /// this flag set.
     pub first_run_tour_shown: bool,
     /// The user dismissed the window-names notice. One dismissal is for good.
@@ -2228,7 +2228,7 @@ impl Settings {
     /// Read the document at `path`. A missing file is first-run defaults.
     ///
     /// A file that cannot be parsed is also defaults rather than a refused
-    /// launch: a typo in a hand-edit must not cost the buddy, the same
+    /// launch: a typo in a hand-edit must not cost the fidget, the same
     /// degradation Memory already chose.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
@@ -2419,7 +2419,7 @@ mod tests {
     fn temp_path() -> PathBuf {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "ai-buddy-settings-{n}-{:?}.json",
+            "fidget-settings-{n}-{:?}.json",
             std::thread::current().id()
         ))
     }
@@ -2427,7 +2427,7 @@ mod tests {
     /// A missing file is first-run, not an error: that is how every new user starts.
     #[test]
     fn a_missing_file_is_first_run_defaults() {
-        let path = std::env::temp_dir().join("ai-buddy-settings-does-not-exist.json");
+        let path = std::env::temp_dir().join("fidget-settings-does-not-exist.json");
         let _ = fs::remove_file(&path);
 
         assert_eq!(Settings::load(&path), Settings::default());
@@ -2470,7 +2470,7 @@ mod tests {
             harness_auth_retry_secs: "5".into(),
             harness_turn_timeout_secs: "90".into(),
             byo_harness: "hermes".into(),
-            mcp_bin: "/opt/ai-buddy-mcp".into(),
+            mcp_bin: "/opt/fidget-mcp".into(),
             harness_cwd: String::new(),
             pi_project_mcp: true,
             trace_frames: true,
@@ -2659,7 +2659,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = SettingsView::from_parts(
                 &settings,
-                Path::new("/tmp/ai-buddy/memory.md"),
+                Path::new("/tmp/fidget/memory.md"),
                 Some("You are Nim.".to_string()),
                 vec!["nim".to_string()],
                 Vec::new(),
@@ -2681,7 +2681,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = SettingsView::from_parts(
                 &Settings::default(),
-                Path::new("/tmp/ai-buddy/memory.md"),
+                Path::new("/tmp/fidget/memory.md"),
                 None,
                 Vec::new(),
                 Vec::new(),
@@ -2698,7 +2698,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = SettingsView::from_parts(
                 &Settings::default(),
-                Path::new("/tmp/ai-buddy/memory.md"),
+                Path::new("/tmp/fidget/memory.md"),
                 None,
                 Vec::new(),
                 Vec::new(),
@@ -2795,7 +2795,7 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// Garbage is first-run rather than a crash. The buddy staying up is the
+    /// Garbage is first-run rather than a crash. The character staying up is the
     /// product; the file can be rewritten the next time something is toggled.
     #[test]
     fn a_corrupt_document_degrades_to_defaults() {
@@ -2823,8 +2823,8 @@ mod tests {
     #[test]
     fn settings_sit_beside_memory_in_the_data_dir() {
         assert_eq!(
-            settings_path(Path::new("/tmp/ai-buddy")),
-            PathBuf::from("/tmp/ai-buddy/settings.json")
+            settings_path(Path::new("/tmp/fidget")),
+            PathBuf::from("/tmp/fidget/settings.json")
         );
     }
 
@@ -2921,7 +2921,7 @@ mod tests {
         };
         let view = SettingsView::from_parts(
             &settings,
-            Path::new("/tmp/ai-buddy/memory.md"),
+            Path::new("/tmp/fidget/memory.md"),
             Some("You are Nim.".to_string()),
             vec!["bmo".to_string(), "nim".to_string()],
             vec![InstanceRow {
@@ -2942,7 +2942,7 @@ mod tests {
         assert_eq!(view.hide_hotkey, display_hotkey("Control-Shift-H"));
         assert_eq!(view.excluded_text(), "1Password\nKeychain Access");
         assert_eq!(view.character, "nim");
-        assert_eq!(view.memory_path, "/tmp/ai-buddy/memory.md");
+        assert_eq!(view.memory_path, "/tmp/fidget/memory.md");
         assert_eq!(view.last_payload.as_deref(), Some("You are Nim."));
         assert_eq!(view.installed, ["bmo", "nim"]);
         assert_eq!(view.instances[0].name, "Nim");
@@ -3328,7 +3328,7 @@ mod tests {
 
             // What the frame loop does to put a Completer in front of a wake,
             // and what the wake itself sends.
-            let id = "buddy".to_string();
+            let id = "fidget".to_string();
             let mut slots = completer::tests::slots_awaiting_a_wake(&id);
             let mut completer = None;
             completer::retarget_model(
@@ -3392,7 +3392,7 @@ mod tests {
         assert!(fingerprint.is_empty());
         let view = SettingsView::from_parts(
             &Settings::default(),
-            Path::new("/tmp/ai-buddy/memory.md"),
+            Path::new("/tmp/fidget/memory.md"),
             None,
             Vec::new(),
             Vec::new(),
@@ -3549,7 +3549,7 @@ mod tests {
         };
         SettingsView::from_parts(
             &endpoint_settings(),
-            Path::new("/tmp/ai-buddy/memory.md"),
+            Path::new("/tmp/fidget/memory.md"),
             None,
             Vec::new(),
             Vec::new(),
@@ -4052,7 +4052,7 @@ mod tests {
                     ..
                 } => {
                     assert!(configured, "the stored key still configures it");
-                    assert!(!enabled, "AI_BUDDY_DIRECTOR=off outranks the file");
+                    assert!(!enabled, "FIDGET_DIRECTOR=off outranks the file");
                 }
                 other => panic!("expected Retarget, got {other:?}"),
             }
@@ -4071,7 +4071,7 @@ mod tests {
                 };
                 let view = SettingsView::from_parts(
                     &settings,
-                    Path::new("/tmp/ai-buddy/memory.md"),
+                    Path::new("/tmp/fidget/memory.md"),
                     None,
                     Vec::new(),
                     Vec::new(),
@@ -4091,7 +4091,7 @@ mod tests {
     fn endpoint_view(settings: &Settings) -> SettingsView {
         SettingsView::from_parts(
             settings,
-            Path::new("/tmp/ai-buddy/memory.md"),
+            Path::new("/tmp/fidget/memory.md"),
             None,
             Vec::new(),
             Vec::new(),
@@ -4295,7 +4295,7 @@ mod tests {
                 };
 
                 // What frame_loop.rs does with the payload.
-                let id = "buddy".to_string();
+                let id = "fidget".to_string();
                 let mut slots = completer::tests::slots_awaiting_a_wake(&id);
                 let mut completer = None;
                 completer::retarget_model(
@@ -4418,14 +4418,14 @@ mod tests {
         let mut patch = SettingsPatch::default();
         assert!(patch.set_text(TextField::HarnessTurnTimeoutSecs, "90"));
         assert!(patch.set_text(TextField::HarnessAuthRetrySecs, "5"));
-        assert!(patch.set_text(TextField::McpBin, "  /tmp/ai-buddy-mcp  "));
+        assert!(patch.set_text(TextField::McpBin, "  /tmp/fidget-mcp  "));
         assert!(patch.set_text(TextField::HarnessCwd, "  /tmp/project  "));
 
         let mut settings = Settings::default();
         settings.apply(patch);
         assert_eq!(settings.harness_turn_timeout_secs, "90");
         assert_eq!(settings.harness_auth_retry_secs, "5");
-        assert_eq!(settings.mcp_bin, "/tmp/ai-buddy-mcp");
+        assert_eq!(settings.mcp_bin, "/tmp/fidget-mcp");
         assert_eq!(settings.harness_cwd, "/tmp/project");
     }
 
@@ -4692,7 +4692,7 @@ mod tests {
     }
 
     /// The row is a picker over one string, and the string is the grammar
-    /// `AI_BUDDY_HARNESS` already takes — so a hand-edit of the file and an
+    /// `FIDGET_HARNESS` already takes — so a hand-edit of the file and an
     /// export mean the same thing.
     #[test]
     fn the_completer_source_maps_a_title_to_what_launch_reads() {
@@ -4734,7 +4734,7 @@ mod tests {
     }
 
     /// What the user picked is what the app spawns — the whole of the row, and
-    /// the half `AI_BUDDY_HARNESS` alone could not survive (#436).
+    /// the half `FIDGET_HARNESS` alone could not survive (#436).
     #[test]
     fn the_completer_source_round_trips_through_the_file() {
         crate::model::tests::with_harness(None, || {
@@ -4902,7 +4902,7 @@ mod tests {
                 "the raw row did not move"
             );
 
-            let data = ai_buddy_core::memory::data_dir();
+            let data = fidget_core::memory::data_dir();
             let mut data_patch = SettingsPatch::default();
             data_patch.set_text(TextField::HarnessCwd, &data.to_string_lossy());
             assert!(
@@ -4910,7 +4910,7 @@ mod tests {
                 "empty and an explicit data_dir resolve equal"
             );
 
-            let home = ai_buddy_core::memory::home_dir().expect("the test user has a home");
+            let home = fidget_core::memory::home_dir().expect("the test user has a home");
             let mut home_patch = SettingsPatch::default();
             home_patch.set_text(TextField::HarnessCwd, &home.to_string_lossy());
             assert!(
@@ -4941,7 +4941,7 @@ mod tests {
         });
     }
 
-    /// `AI_BUDDY_HARNESS` owns the row. Clearing the file cannot drop a
+    /// `FIDGET_HARNESS` owns the row. Clearing the file cannot drop a
     /// Harness the export is still spawning.
     #[test]
     fn an_exported_harness_does_not_retarget_when_the_row_says_off() {
@@ -5165,7 +5165,7 @@ mod tests {
     /// #659: the machine has not got the CLI, which is not the same state as a
     /// child that stopped answering. The line has to say so in words a user can
     /// act on - an errno is not one of them - and name the binary that was
-    /// looked for, since ai-buddy bundles no Harness (ADR-0018).
+    /// looked for, since fidget bundles no Harness (ADR-0018).
     #[test]
     fn a_harness_this_machine_has_not_got_names_the_command_not_an_errno() {
         let missing = crate::harness::HarnessInspect {
@@ -5263,7 +5263,7 @@ mod tests {
         );
     }
 
-    /// `AI_BUDDY_HARNESS=` has been the kill switch since #433. Going through
+    /// `FIDGET_HARNESS=` has been the kill switch since #433. Going through
     /// `env_override` dropped it, and the saved row spawned instead (#452).
     #[test]
     fn an_exported_empty_harness_is_off_whatever_the_row_saved() {
@@ -5388,8 +5388,8 @@ mod tests {
                 "codex" => {
                     // Codex: raw token in export, no Bearer in snippet
                     assert!(
-                        snippet.contains("AI_BUDDY_MCP_TOKEN='beef'"),
-                        "codex must export raw token in AI_BUDDY_MCP_TOKEN, got {snippet:?}"
+                        snippet.contains("FIDGET_MCP_TOKEN='beef'"),
+                        "codex must export raw token in FIDGET_MCP_TOKEN, got {snippet:?}"
                     );
                     assert!(
                         !snippet.contains("Bearer beef"),
@@ -5498,7 +5498,7 @@ mod tests {
     fn codex_snippet_is_cli_with_export_and_bearer_token_env_var() {
         let (snippet, _, _) = byo_registration("codex", "http://127.0.0.1:5051/mcp", "beef");
         assert!(
-            snippet.contains("export AI_BUDDY_MCP_TOKEN="),
+            snippet.contains("export FIDGET_MCP_TOKEN="),
             "codex must export the token env var, got {snippet:?}"
         );
         assert!(
@@ -5510,7 +5510,7 @@ mod tests {
             "codex must use --url flag, got {snippet:?}"
         );
         assert!(
-            snippet.contains("--bearer-token-env-var AI_BUDDY_MCP_TOKEN"),
+            snippet.contains("--bearer-token-env-var FIDGET_MCP_TOKEN"),
             "codex must use --bearer-token-env-var, got {snippet:?}"
         );
         assert!(
@@ -5519,7 +5519,7 @@ mod tests {
         );
     }
 
-    /// OpenCode uses flat mcp.ai-buddy with type: remote and oauth: false,
+    /// OpenCode uses flat mcp.fidget with type: remote and oauth: false,
     /// not nested mcp.servers.<name> with type: http (#599).
     #[test]
     fn opencode_snippet_is_cli_with_url_and_header() {

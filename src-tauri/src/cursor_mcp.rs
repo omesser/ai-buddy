@@ -1,4 +1,4 @@
-//! The one `ai-buddy` server in `<cwd>/.cursor/mcp.json`, and the approval
+//! The one `fidget` server in `<cwd>/.cursor/mcp.json`, and the approval
 //! that makes `cursor-agent` load it.
 //!
 //! `cursor-agent acp` ignores the `mcpServers` handed over on `session/new`
@@ -17,7 +17,7 @@
 //! not ours.
 //!
 //! The entry is the same loopback URL and bearer token every other Harness
-//! gets (ADR-0023), which is what keeps this working on every platform ai-buddy
+//! gets (ADR-0023), which is what keeps this working on every platform fidget
 //! ships. Both are new every app run, so the entry is rewritten and re-approved
 //! on each attach rather than set up once. Rewriting is skipped when the entry
 //! is already what we would write, but `enable` runs every attach regardless,
@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-const SERVER: &str = "ai-buddy";
+const SERVER: &str = "fidget";
 const FILE: &str = "mcp.json";
 const DIR: &str = ".cursor";
 
@@ -54,7 +54,7 @@ pub struct Installed {
     created_file: bool,
 }
 
-/// Merge the `ai-buddy` server into `<cwd>/.cursor/mcp.json` beside whatever
+/// Merge the `fidget` server into `<cwd>/.cursor/mcp.json` beside whatever
 /// the user already has there. A file that does not parse is an error and is
 /// not written over.
 pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, String> {
@@ -125,7 +125,7 @@ fn restrict(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// `<cli> mcp enable ai-buddy` in `cwd`. Approvals are read once per
+/// `<cli> mcp enable fidget` in `cwd`. Approvals are read once per
 /// `cursor-agent` process, so this runs before the `acp` spawn, every time.
 pub fn enable(cli: &Path, cwd: &Path) -> Result<(), String> {
     let line = format!("`{} mcp enable {SERVER}`", cli.display());
@@ -211,7 +211,7 @@ mod tests {
 
     fn dir(name: &str) -> PathBuf {
         let path =
-            std::env::temp_dir().join(format!("ai-buddy-cursor-mcp-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("fidget-cursor-mcp-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("temp dir");
         path
@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(root["keep"], json!(1));
         assert_eq!(root["mcpServers"]["other"], other);
         assert_eq!(
-            root["mcpServers"]["ai-buddy"],
+            root["mcpServers"]["fidget"],
             json!({"url": URL, "headers": {"Authorization": AUTH}})
         );
     }
@@ -262,11 +262,11 @@ mod tests {
         install(&cwd, "http://127.0.0.1:9999/mcp", "Bearer next-run").expect("a later run");
         let root = read(&file);
         assert_eq!(
-            root["mcpServers"]["ai-buddy"]["url"],
+            root["mcpServers"]["fidget"]["url"],
             "http://127.0.0.1:9999/mcp"
         );
         assert_eq!(
-            root["mcpServers"]["ai-buddy"]["headers"]["Authorization"],
+            root["mcpServers"]["fidget"]["headers"]["Authorization"],
             "Bearer next-run"
         );
     }
@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(
             seen,
             format!(
-                "{}|mcp enable ai-buddy\n",
+                "{}|mcp enable fidget\n",
                 cwd.canonicalize().unwrap().display()
             )
         );

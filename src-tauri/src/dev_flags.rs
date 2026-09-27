@@ -54,14 +54,14 @@ impl Flag {
     }
 }
 
-pub static TRACE_FRAMES: Flag = Flag::new("AI_BUDDY_TRACE_FRAMES");
-pub static TRACE_HITTEST: Flag = Flag::new("AI_BUDDY_TRACE_HITTEST");
-pub static TRACE_DIRECTOR: Flag = Flag::new("AI_BUDDY_TRACE_DIRECTOR");
-pub static TRACE_ENGINE: Flag = Flag::new("AI_BUDDY_TRACE_ENGINE");
+pub static TRACE_FRAMES: Flag = Flag::new("FIDGET_TRACE_FRAMES");
+pub static TRACE_HITTEST: Flag = Flag::new("FIDGET_TRACE_HITTEST");
+pub static TRACE_DIRECTOR: Flag = Flag::new("FIDGET_TRACE_DIRECTOR");
+pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
 /// Capture exclusion setting. macOS and Windows both support it; Linux degrades
 /// gracefully (no exclusion API).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
+pub static CAPTURABLE: Flag = Flag::new("FIDGET_CAPTURABLE");
 /// Blank-AI mode. Named from `model` rather than spelled again here:
 /// it is a Director variable, and the row that freezes on it names the same
 /// string the Director's other knobs do.

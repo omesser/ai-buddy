@@ -23,7 +23,7 @@ use std::collections::HashMap;
 pub enum MenuAction {
     /// Character ▸ <name>. Switch to the named Character Package.
     SwitchCharacter(String),
-    /// Spawn another buddy of the current Character.
+    /// Spawn another fidget of the current Character.
     SpawnInstance,
     /// Session Director on/off. Off leaves Static weights running the life.
     ToggleDirector,
@@ -55,7 +55,7 @@ pub struct MenuSnapshot<'a> {
     pub instances: &'a [(String, String)],
     /// The value in force, the file's or the variable's.
     pub director_enabled: bool,
-    /// `AI_BUDDY_DIRECTOR` decided the line above. Passed in rather than read
+    /// `FIDGET_DIRECTOR` decided the line above. Passed in rather than read
     /// in `describe`, which stays a pure function of this snapshot so it can
     /// cross to the main thread and be compared against the last one.
     pub director_env_owned: bool,
@@ -181,7 +181,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
 
     // Instances ▸ — who is on screen, and New… to spawn another. Always
     // present: an empty list still has New…, which is how a dismissed last
-    // buddy comes back without hunting settings.
+    // character comes back without hunting settings.
     {
         let mut items: Vec<MenuEntry> = snapshot
             .instances
@@ -278,7 +278,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(SETTINGS_ID.to_string(), MenuAction::OpenSettings);
 
-    // What the buddy can see lives in Settings, not the menu. A row here
+    // What the character can see lives in Settings, not the menu. A row here
     // would look like a prompt on right-click, which decision 9 refuses.
 
     entries.push(MenuEntry::Item {
@@ -609,7 +609,7 @@ mod tests {
 
         assert!(
             !mentions_seeing,
-            "nothing claims to show what the buddy can see"
+            "nothing claims to show what the character can see"
         );
     }
 
@@ -647,7 +647,7 @@ mod tests {
         );
     }
 
-    /// Two Instances, then one: the remaining buddy is still on the menu, and
+    /// Two Instances, then one: the remaining character is still on the menu, and
     /// Quit is still Quit rather than hanging off a row that was dismissed.
     #[test]
     fn dismissing_one_of_two_instances_leaves_the_other_and_quit() {

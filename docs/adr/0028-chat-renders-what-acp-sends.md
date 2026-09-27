@@ -39,7 +39,7 @@ sent this field and we discarded it". A change that adds a capability the
 protocol does not carry is out, and so is a change that reads a protocol field
 and builds an interface around it rather than drawing it.
 
-ai-buddy is not rebuilding a vendor's IDE. No agent panel, no diff viewer, no
+fidget is not rebuilding a vendor's IDE. No agent panel, no diff viewer, no
 embedded terminal, no plan editor, no tool-call inspector — not as product
 surfaces, not inside a 420-point window. A proposal that starts to look like a
 coding-agent IDE is refused by this paragraph.
@@ -49,7 +49,7 @@ surface needs to read more like a harness than it does today, and the line
 between the two is fine enough that it has to be walked per field rather than
 settled by drawing as little as possible.
 
-The floor for the surface is that a user can tell what the buddy is doing and
+The floor for the surface is that a user can tell what the character is doing and
 read what it said without opening a terminal. It is a floor and not a ceiling.
 Depth past what the wire carries belongs to the Harness's own session dump,
 which the Action Log already points at.
@@ -77,7 +77,7 @@ Simplifying how something is drawn is allowed. Omitting it is not. An image, a
 resource link or an embedded resource may reach the reader as a name and a path
 rather than as the thing itself, but a turn that quietly says nothing is the
 failure this ADR exists to stop. Resource links in particular are a gap to
-close: ai-buddy is meant for computer use and tool use, so rich media arrives on
+close: fidget is meant for computer use and tool use, so rich media arrives on
 this wire as a matter of course.
 
 The thought trace is contested, and this ADR does not settle it. ADR-0025

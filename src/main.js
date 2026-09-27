@@ -30,7 +30,7 @@ function currentDisplayBounds() {
 }
 
 // Everything one Instance's sprite needs to be drawn. Per Instance rather than
-// shared because two buddies speak on their own schedules: one bubble machine
+// shared because two characters speak on their own schedules: one bubble machine
 // would hand a line meant for one to whichever drew last.
 function createView(id) {
   const sprite = document.createElement("img");
@@ -70,7 +70,7 @@ function createView(id) {
 
   bubble.append(bubbleContent, dots, more);
 
-  // The Instance's cues, in a layer of their own so a dismissed buddy takes
+  // The Instance's cues, in a layer of their own so a dismissed character takes
   // any still playing with it. Last of the three, so a cue sharing the sprite's
   // z-index is drawn over the art it marks rather than under it.
   const cueLayer = document.createElement("div");
@@ -490,7 +490,7 @@ function drawView(view, now) {
 // frame, so the overlay asked for a display frame at panel refresh forever,
 // whatever the sprite was doing. The asking is what costs, and not in this
 // process: WebKit runs a CVDisplayLink per display in the host, for as long as
-// a page wants frames, and #741 measured those threads at half an idle buddy's
+// a page wants frames, and #741 measured those threads at half an idle character's
 // wakeups. Every arrival arms this again, so a placement is still drawn the
 // frame after it lands.
 //
@@ -714,5 +714,5 @@ async function start() {
 start().catch((err) => {
   // No art or no frames means nothing to draw and nothing to hit-test, so say
   // so loudly rather than showing an empty overlay that looks like a hung app.
-  console.error("ai-buddy could not draw the Character:", err);
+  console.error("fidget could not draw the Character:", err);
 });

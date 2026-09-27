@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 
-$bin = "target\debug\ai-buddy.exe"
+$bin = "target\debug\fidget.exe"
 
 function Show-Usage {
     Write-Host @"
@@ -47,7 +47,7 @@ switch ($Scenario) {
 }
 
 if (-not (Test-Path $bin)) {
-    Write-Error "no $bin - run: cargo build --bin ai-buddy"
+    Write-Error "no $bin - run: cargo build --bin fidget"
     exit 2
 }
 
@@ -59,16 +59,16 @@ Write-Host "Log: $log"
 Write-Host ""
 
 # Set environment for tracing mask rebuilds
-$env:AI_BUDDY_TRACE_MASK_REBUILD = "1"
+$env:FIDGET_TRACE_MASK_REBUILD = "1"
 
 # Choose character and setup based on scenario
 switch ($Scenario) {
     "large" {
-        $env:AI_BUDDY_INSTANCES = "Black Mage"
+        $env:FIDGET_INSTANCES = "Black Mage"
         Write-Host "Using Black Mage (scale=3, larger rendered sprite)"
     }
     default {
-        $env:AI_BUDDY_INSTANCES = "BMO"
+        $env:FIDGET_INSTANCES = "BMO"
         Write-Host "Using BMO (126x128@1x)"
     }
 }

@@ -8,12 +8,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$REPO_ROOT"
 
-if [ -n "${AI_BUDDY_VERIFY_PREFIX:-}" ]; then
-  export PATH="$AI_BUDDY_VERIFY_PREFIX/usr/bin:$PATH"
-  export LD_LIBRARY_PATH="$AI_BUDDY_VERIFY_PREFIX/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  export XDG_DATA_DIRS="$AI_BUDDY_VERIFY_PREFIX/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-  export XDG_CONFIG_DIRS="$AI_BUDDY_VERIFY_PREFIX/etc/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"
-  echo "drive-overlay-x11: using AI_BUDDY_VERIFY_PREFIX=$AI_BUDDY_VERIFY_PREFIX"
+if [ -n "${FIDGET_VERIFY_PREFIX:-}" ]; then
+  export PATH="$FIDGET_VERIFY_PREFIX/usr/bin:$PATH"
+  export LD_LIBRARY_PATH="$FIDGET_VERIFY_PREFIX/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  export XDG_DATA_DIRS="$FIDGET_VERIFY_PREFIX/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+  export XDG_CONFIG_DIRS="$FIDGET_VERIFY_PREFIX/etc/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"
+  echo "drive-overlay-x11: using FIDGET_VERIFY_PREFIX=$FIDGET_VERIFY_PREFIX"
 fi
 
 if [ -z "${DISPLAY:-}" ]; then
@@ -34,7 +34,7 @@ done
 # shim via xfce4-terminal (same geometry/title/-e flags the script passes).
 if ! command -v xterm > /dev/null; then
   if command -v xfce4-terminal > /dev/null; then
-    SHIM_BIN="$AI_BUDDY_VERIFY_SCRATCH/bin"
+    SHIM_BIN="$FIDGET_VERIFY_SCRATCH/bin"
     mkdir -p "$SHIM_BIN"
     ln -sfn "$SCRIPT_DIR/xterm-shim.sh" "$SHIM_BIN/xterm"
     export PATH="$SHIM_BIN:$PATH"
@@ -55,7 +55,7 @@ set -e
 
 AFTER="$(find .verify -maxdepth 1 -type d -name 'x11-*' 2> /dev/null | sort || true)"
 NEW="$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") || true)"
-DEST="$AI_BUDDY_VERIFY_EVIDENCE/overlay-presence"
+DEST="$FIDGET_VERIFY_EVIDENCE/overlay-presence"
 mkdir -p "$DEST"
 if [ -n "$NEW" ]; then
   while IFS= read -r dir; do

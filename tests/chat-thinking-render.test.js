@@ -13,8 +13,8 @@ import { test } from "node:test";
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
 function chromeBin() {
-  if (process.env.AI_BUDDY_CHROME) {
-    return process.env.AI_BUDDY_CHROME;
+  if (process.env.FIDGET_CHROME) {
+    return process.env.FIDGET_CHROME;
   }
   for (const name of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]) {
     const found = spawnSync("bash", ["-lc", `command -v ${name}`], { encoding: "utf8" });
