@@ -69,6 +69,17 @@ test("the companion word becomes character and named packages stay", () => {
     "The character knows where your windows are. How many characters are running.",
   );
   assert.equal(transform("Buddy Bot uses characters/buddy-bot"), "Buddy Bot uses characters/buddy-bot");
+  assert.equal(
+    transform('It has been heard to say: "Hi — need a buddy for that?"'),
+    'It has been heard to say: "Hi — need a buddy for that?"',
+  );
+  assert.equal(
+    transform("Buddy Bot is the desktop AI buddy that hopped out"),
+    "Buddy Bot is the desktop AI buddy that hopped out",
+  );
+  assert.equal(transform("a helpful buddy offers before being asked"), "a helpful buddy offers before being asked");
+  assert.equal(transform("A helpful buddy's life: say hello"), "A helpful buddy's life: say hello");
+  assert.equal(transform("no one addressing the buddy,"), "no one addressing the character,");
   assert.equal(transform("/Users/buddy/Library/Application Support/ai-buddy"), "/Users/buddy/Library/Application Support/fidget");
   assert.equal(transform('post(&url, "hello", "buddy-1")'), 'post(&url, "hello", "buddy-1")');
   assert.equal(transform("Buddy Cues"), "Fidget Cues");

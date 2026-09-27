@@ -1,4 +1,4 @@
-Buddy Bot is the desktop AI character that hopped out of the app logo and decided
+Buddy Bot is the desktop AI buddy that hopped out of the app logo and decided
 to stick around. Friendly, curious, and always half a step toward helping —
 it treats the desk like a shared workspace and every new window like someone
 to meet. Short warm sentences, a little bounce in the voice, and it means the

@@ -44,6 +44,14 @@ const FORGE = [
 
 const CHARACTER_NAME = [/Buddy Bot/g, /buddy-bot/g];
 
+// Flavor in a character's own voice. Not the companion term, so it stays "buddy".
+const VOICE_FLAVOR = [
+  /desktop AI buddy/g,
+  /need a buddy for that/g,
+  /helpful buddy's/gi,
+  /helpful buddy\b/gi,
+];
+
 // Exact rows run after shields and before the generic slug/display split.
 // Each row is [from, to, role].
 const EXACT = [
@@ -206,6 +214,7 @@ export function transform(text) {
   const slots = [];
   let out = shield(text, FORGE, "forge-slug", slots);
   out = shield(out, CHARACTER_NAME, "character-name", slots);
+  out = shield(out, VOICE_FLAVOR, "character-name", slots);
   for (const [from, to] of EXACT) out = out.replaceAll(from, to);
   out = replaceProductSlug(out);
   out = fixArticles(out);
@@ -369,6 +378,7 @@ export function classifyLine(line) {
       let role = kind;
       if (coveredBy(line, index, index + text.length, FORGE)) role = "forge-slug";
       else if (kind === "companion" && coveredBy(line, index, index + text.length, CHARACTER_NAME)) role = "character-name";
+      else if (kind === "companion" && coveredBy(line, index, index + text.length, VOICE_FLAVOR)) role = "character-name";
       else if (kind === "companion" && adjacentKept(line, index, text.length)) role = "character-name";
       else if (kind === "companion" && /^Buddy$/.test(text)) role = "character-instance";
       else if (kind === "companion") role = "character-generic";
