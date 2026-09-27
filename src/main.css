@@ -154,8 +154,48 @@ body {
   border-bottom: 8px solid var(--bubble-panel);
 }
 
-/* Tails belong to Speech. The pop uses the cue settle curve, long enough
-   to read as one, and starts from the edge nearest the Character. */
+.thinking-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  /* This ellipsis is the chat surface's `.caret`, so the two surfaces say
+     *waiting* the same way, and three small saturated marks on an opaque
+     ground read on any wallpaper. */
+  background: var(--bubble-accent);
+  border-radius: 50%;
+  animation: thinking-bounce 1.2s infinite ease-in-out both;
+}
+
+.thinking-dots span:nth-child(1) {
+  animation-delay: -0.24s;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: -0.12s;
+}
+
+/* A dip and a lift, never `scale(0)`: a dot that leaves reads as art failing
+   to load, where one that dims and rises reads as waiting. Opacity and
+   transform only, so this composites without repainting. */
+@keyframes thinking-bounce {
+  0%, 60%, 100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* After thinking-bounce so the expression page's bubble slice — which treats
+   `background: transparent` as overlay layout — stays speech and thinking.
+   Tails stay on Speech. The pop uses the cue curve from the edge nearest the Character. */
 .bubble.quick-message {
   display: flex;
   align-items: flex-end;
@@ -247,45 +287,6 @@ body {
   display: block;
   flex: 0 0 auto;
   margin: 0 0 1px;
-}
-
-.thinking-dots {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-
-.thinking-dots span {
-  width: 6px;
-  height: 6px;
-  /* This ellipsis is the chat surface's `.caret`, so the two surfaces say
-     *waiting* the same way, and three small saturated marks on an opaque
-     ground read on any wallpaper. */
-  background: var(--bubble-accent);
-  border-radius: 50%;
-  animation: thinking-bounce 1.2s infinite ease-in-out both;
-}
-
-.thinking-dots span:nth-child(1) {
-  animation-delay: -0.24s;
-}
-
-.thinking-dots span:nth-child(2) {
-  animation-delay: -0.12s;
-}
-
-/* A dip and a lift, never `scale(0)`: a dot that leaves reads as art failing
-   to load, where one that dims and rises reads as waiting. Opacity and
-   transform only, so this composites without repainting. */
-@keyframes thinking-bounce {
-  0%, 60%, 100% {
-    opacity: 0.35;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
 }
 
 .sprite {
