@@ -83,7 +83,7 @@ function aiTab({ driving }) {
             type: "Popup",
             id: "harness",
             label: "AI source",
-            help: "Which \"AI brain\" answers for the character.",
+            help: "Which \"AI brain\" answers for the fidget.",
             options: HARNESSES,
             frozen: false,
             disclosure:

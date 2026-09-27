@@ -905,7 +905,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "session_actions".to_string(),
                     help: Some("Throws the conversation in flight away and opens a fresh one.".to_string()),
-                    disclosure: Some("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this character. The next wake is an opening turn rather than a follow-up. Memory is untouched.".to_string()),
+                    disclosure: Some("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this fidget. The next wake is an opening turn rather than a follow-up. Memory is untouched.".to_string()),
                     controls: vec![CompositeControl::Button {
                         id: NEW_SESSION_ID.to_string(),
                         label: "Start new session".to_string(),
@@ -1047,7 +1047,7 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 id: HARNESS_ID.to_string(),
                 label: Some(source_label),
                 writes: TextField::Harness,
-                help: Some("Which \"AI brain\" answers for the character.".to_string()),
+                help: Some("Which \"AI brain\" answers for the fidget.".to_string()),
                 options: harness_options(),
                 frozen,
                 batched: true,

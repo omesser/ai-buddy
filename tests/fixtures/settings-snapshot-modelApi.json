@@ -227,7 +227,7 @@
                 }
               ],
               "help": "Throws the conversation in flight away and opens a fresh one.",
-              "disclosure": "Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this character. The next wake is an opening turn rather than a follow-up. Memory is untouched."
+              "disclosure": "Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this fidget. The next wake is an opening turn rather than a follow-up. Memory is untouched."
             }
           ],
           "comment": "Control whether the character improvises, and how often it starts a conversation on its own.",
@@ -242,7 +242,7 @@
               "id": "harness",
               "label": "AI source",
               "writes": "Harness",
-              "help": "Which \"AI brain\" answers for the character.",
+              "help": "Which \"AI brain\" answers for the fidget.",
               "options": [
                 "Model API",
                 "Harness · claude",
