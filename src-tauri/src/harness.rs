@@ -1213,17 +1213,17 @@ impl Session {
                 }
                 match self.spawn_and_initialize() {
                     Ok(wire) => wire,
-                    // A file `PATH` has not got is not a child that might come
-                    // back. Backoff would only refuse the next wake for up to
-                    // five minutes after the user installs the CLI.
-                    Err(SpawnError::Missing) => return Err(self.note_missing()),
-                    Err(SpawnError::Exited(status)) => {
+                    Err(why) => {
+                        let message = match why {
+                            // A file `PATH` has not got is not a child that might
+                            // come back. Backoff would only refuse the next wake
+                            // for up to five minutes after the user installs the CLI.
+                            SpawnError::Missing => return Err(self.note_missing()),
+                            SpawnError::Exited(status) => exited(&self.launch, status),
+                            SpawnError::Failed(message) => message,
+                        };
                         let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
-                        return Err(self.note_failed(&mut state, exited(&self.launch, status)));
-                    }
-                    Err(SpawnError::Failed(why)) => {
-                        let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
-                        return Err(self.note_failed(&mut state, why));
+                        return Err(self.note_failed(&mut state, message));
                     }
                 }
             }
@@ -1289,8 +1289,8 @@ impl Session {
                 .lock()
                 .map_err(|_| SpawnError::Failed("harness state poisoned".to_string()))?;
             state.handshake = handshake.clone();
-            // A fresh process is a fresh chance to sign in. The retry belonged to
-            // the one that died.
+            // A fresh process is a fresh chance to sign in. The previous
+            // retry window does not apply to it.
             state.login = None;
             state.auth_tried = None;
         }
@@ -1358,9 +1358,9 @@ impl Session {
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
         let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
-        // `drop_conversation` does not wait on this open. Storing now would
-        // put back the conversation it just threw away. The cancel it sent
-        // had no prompt to land on, so the withdrawal note is not a turn.
+        // `drop_conversation` does not wait on this open. Storing the id
+        // puts back the conversation it throws away. Its cancel has no
+        // prompt, so the withdrawal note is not a turn.
         if state.conversation_generation(&key.instance) != generation {
             self.note_withdrawal(None);
             return Err("session replaced".to_string());
@@ -2058,13 +2058,13 @@ struct Attachment {
     forward: Option<Arc<Forward>>,
     /// Bumped on every swap. A switch still reaping the previous child checks
     /// this before it spawns, so a newer pick is the one that starts.
-    generation: u64,
+    switch_gen: u64,
 }
 
 static ATTACHED: Mutex<Attachment> = Mutex::new(Attachment {
     session: None,
     forward: None,
-    generation: 0,
+    switch_gen: 0,
 });
 
 fn attachment() -> MutexGuard<'static, Attachment> {
@@ -2138,8 +2138,8 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
     };
     // Swapped under the one lock `attached` reads. A gap here is a wake landing
     // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
-    slot.generation = slot.generation.wrapping_add(1);
-    let generation = slot.generation;
+    slot.switch_gen = slot.switch_gen.wrapping_add(1);
+    let switch_gen = slot.switch_gen;
     let old = std::mem::replace(&mut slot.session, opened.clone());
     drop(slot);
     match &opened {
@@ -2159,16 +2159,16 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
     let spawn_after = opened.filter(|_| spawning);
     // The caller is the UI thread. Reaping waits up to `REAP`, so it does
     // not happen here. The new child starts after that reap, off this thread.
-    if old.is_none() {
+    let Some(old) = old else {
         if let Some(session) = spawn_after {
             session.spawn_preflight();
         }
         return;
-    }
+    };
     let fallback = spawn_after.clone();
     let switched = thread::Builder::new()
         .name("harness-switch".into())
-        .spawn(move || finish_switch(old, spawn_after, generation));
+        .spawn(move || finish_switch(old, spawn_after, switch_gen));
     if let Err(why) = switched {
         eprintln!("harness: could not switch off the caller: {why}");
         if let Some(session) = fallback {
@@ -2178,22 +2178,21 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
 }
 
 /// Reap the child being replaced, then start the new one if this switch is
-/// still the latest. A newer pick bumps `generation` and starts itself.
-fn finish_switch(old: Option<Arc<Session>>, spawn_after: Option<Arc<Session>>, generation: u64) {
-    if let Some(session) = &spawn_after {
-        // A wake blocks here instead of spawning beside the child being reaped.
-        let _hold = session
-            .attach_gate
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(old) = old {
-            old.shutdown();
-        }
-    } else if let Some(old) = old {
+/// still the latest. A newer pick bumps `switch_gen` and starts itself.
+fn finish_switch(old: Arc<Session>, spawn_after: Option<Arc<Session>>, switch_gen: u64) {
+    {
+        // Hold the new session's gate across the reap, when there is one. A
+        // wake blocks there instead of spawning beside the child being reaped.
+        let _hold = spawn_after.as_ref().map(|session| {
+            session
+                .attach_gate
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+        });
         old.shutdown();
     }
     let slot = attachment();
-    if slot.generation != generation {
+    if slot.switch_gen != switch_gen {
         return;
     }
     if let Some(session) = spawn_after {
@@ -2515,7 +2514,9 @@ mod tests {
                     // `authenticate` is Ok and changes nothing.
                     let refuse = match script {
                         "auth" => recorded(count, "new") == 1,
-                        "auth-sign-in" | "stall-sign-in" => recorded(count, "authenticate") == 0,
+                        "auth-sign-in" | "stall-sign-in" | "stall-authenticate" => {
+                            recorded(count, "authenticate") == 0
+                        }
                         "auth-sign-in-noop" => true,
                         _ => false,
                     };
@@ -2538,6 +2539,12 @@ mod tests {
                 }
                 Some("authenticate") => {
                     record(count, "authenticate");
+                    // The long hop of login. `session/new` after it stays quick,
+                    // so a tick during this sleep is the authenticate wait.
+                    if script == "stall-authenticate" {
+                        record(count, "auth-stall");
+                        thread::sleep(SURFACE_STALL);
+                    }
                     say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                 }
                 Some("session/load") => {
@@ -4989,6 +4996,36 @@ mod tests {
     }
 
     #[test]
+    fn authenticate_leaves_chat_and_the_character_responsive() {
+        let (fx, session) = Fixture::new("stall-authenticate");
+        let session = Arc::new(session);
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_authenticated("fake --login"))
+        );
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.sign_in("fake", "buddy-1", "bmo", false))
+        };
+        assert!(
+            fx.wait_for("auth-stall", 1),
+            "sign-in never reached authenticate"
+        );
+        let (elapsed, actions) = surface_tick(&session);
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "chat and the character waited {elapsed:?} on authenticate"
+        );
+        assert!(
+            !actions.is_empty(),
+            "chat lost the sign-in button while authenticate was in flight"
+        );
+        assert_eq!(worker.join().unwrap(), Ok(()));
+        assert_eq!(session.inspect().login, None);
+        session.shutdown();
+    }
+
+    #[test]
     fn a_drop_during_session_open_is_not_put_back() {
         let (fx, session) = Fixture::new("stall-open");
         let session = Arc::new(session);
@@ -5279,6 +5316,41 @@ mod tests {
         assert!(
             !session.inspect().alive,
             "the dropped session still reads live"
+        );
+    }
+
+    /// `session/new` holds the wire thread, so an inline reap waits out `REAP`.
+    /// The switch returns while that open is still asleep.
+    #[test]
+    fn retarget_does_not_wait_out_a_session_open() {
+        let (fx, session) = Fixture::new("stall-open");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        assert!(fx.wait_for("open-stall", 1), "the open never stalled");
+        {
+            let mut slot = attachment();
+            slot.forward = Some(silent());
+            slot.session = Some(Arc::clone(&session));
+        }
+        let start = Instant::now();
+        retarget(None, false);
+        let waited = start.elapsed();
+        {
+            let mut slot = attachment();
+            slot.session = None;
+            slot.forward = None;
+        }
+        assert!(
+            waited < Duration::from_millis(500),
+            "retarget waited {waited:?} on the session being opened"
+        );
+        assert!(attached().is_none(), "the Off pick did not take");
+        assert!(
+            worker.join().unwrap().is_err(),
+            "the open finished on the harness retarget dropped"
         );
     }
 
