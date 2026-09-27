@@ -36,6 +36,12 @@ Single-context. Vocabulary is `CONTEXT.md`. v1 scope and requirements are
 `docs/SPEC.md`. Decisions live in `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
 
+## Taking over the GUI
+
+Ask before launching the app, focusing a window, or sending input: say what
+happens on screen and for how long, then wait for a go-ahead for that run. Only
+the agent's own private VM is exempt. See `docs/agents/gui-takeover.md`.
+
 ## Comments
 
 Comments say why, not what, and earn their length. See `docs/agents/comments.md`.

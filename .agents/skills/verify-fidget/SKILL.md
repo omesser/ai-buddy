@@ -7,6 +7,8 @@ description: "Drive the fidget desktop mascot (Tauri overlay) the way a user doe
 
 Project-local control skill for **fidget**, a Tauri desktop mascot whose primary surface is a full-display overlay sprite (perch, poke, summon/chat). Agents read this cold mid-task: every command below is literal.
 
+**Ask before every run.** Launching or driving the app takes over the owner's screen. Follow `docs/agents/gui-takeover.md`: set up, post what happens and for how long, and wait for a go-ahead for that run.
+
 ## Interview summary (do not re-derive)
 
 | Axis | Finding |
