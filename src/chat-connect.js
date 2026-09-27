@@ -160,7 +160,7 @@ export function landingCopy(opening) {
   if (harness?.failed) {
     return {
       title: `${name} failed to start`,
-      lede: `${harness.failed} Pick a different Harness below.`,
+      lede: `${harness.failed} Then pick ${name} again, or pick a different Harness below.`,
       command: null,
       signInLabel: null,
       hint: null,

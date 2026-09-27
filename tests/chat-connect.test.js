@@ -138,7 +138,7 @@ test("a launcher that died at startup names why on the landing", () => {
   assert.equal(canAnswer(opening), false);
   const copy = landingCopy(opening);
   assert.equal(copy.title, "Codex failed to start");
-  assert.equal(copy.lede, `${failed} Pick a different Harness below.`);
+  assert.equal(copy.lede, `${failed} Then pick Codex again, or pick a different Harness below.`);
 });
 
 test("initializing Harness gates chat and shows clear state", () => {

@@ -691,6 +691,11 @@ impl Session {
         });
         let session = Arc::clone(self);
         thread::spawn(move || {
+            // A preflight is someone asking now: startup, a new row, or a
+            // re-pick. The backoff is for wakes, which nobody asked for.
+            if let Ok(mut state) = session.state.lock() {
+                state.spawn_wait_until = None;
+            }
             let attached = session.attach(None);
             match &attached {
                 Ok(_) => eprintln!("harness: {} attached", session.launch.name),
@@ -706,6 +711,15 @@ impl Session {
             // opening is how `inspect.missing` reaches the landing (#726).
             (session.forward)(Forwarded::AttachSettled);
         });
+    }
+
+    /// Connect on the Harness already attached. One that is down, after a
+    /// failed launch or a dead child, is asked again; one that answers stands.
+    pub(crate) fn repick(self: &Arc<Self>) {
+        let inspect = self.inspect();
+        if !inspect.alive && !inspect.initializing {
+            self.spawn_preflight();
+        }
     }
 
     /// Take the turn lock from the wake in flight by cancelling it, or `None`
@@ -4667,16 +4681,28 @@ mod tests {
     fn a_repick_after_a_startup_death_attaches_at_once() {
         let (fx, session) = Fixture::new("abort-first");
         let session = Arc::new(session);
-        for _ in 0..2 {
-            session.spawn_preflight();
-            match fx.forwarded.recv_timeout(Duration::from_secs(10)) {
-                Ok(Forwarded::AttachSettled) => {}
-                other => panic!("expected AttachSettled, got {other:?}"),
-            }
-        }
+        session.spawn_preflight();
+        fx.attach_settled();
+        assert!(session.inspect().failed.is_some());
+        session.repick();
+        fx.attach_settled();
         let inspect = session.inspect();
         assert!(inspect.alive, "the re-pick stood behind the backoff");
         assert_eq!(inspect.failed, None);
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    /// A re-pick never restarts a Harness that is answering.
+    #[test]
+    fn a_repick_of_a_live_harness_stands() {
+        let (fx, session) = Fixture::new("plain");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        fx.attach_settled();
+        session.repick();
+        assert!(session.inspect().alive);
+        assert_eq!(fx.count("spawn"), 1, "the re-pick restarted a live Harness");
         session.shutdown();
         let _ = std::fs::remove_dir_all(&fx.dir);
     }

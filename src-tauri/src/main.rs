@@ -2014,6 +2014,15 @@ fn select_harness(
     let mut patch = settings::SettingsPatch::default();
     patch.set_text(settings::TextField::Harness, &harness);
     settings_session(&app, &state).apply(patch)?;
+    // Apply only retargets a changed row. The same Harness picked again after
+    // its launch failed is the user asking for another try.
+    let spawning = state
+        .settings
+        .lock()
+        .is_ok_and(|settings| model::director_in_force(settings.director_enabled));
+    if let Some(session) = harness::attached().filter(|_| spawning) {
+        session.repick();
+    }
     Ok(harness::login_hint(&harness))
 }
 
