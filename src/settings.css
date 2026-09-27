@@ -25,6 +25,7 @@
 
 .set-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 0 18px;
   border-bottom: 1px solid var(--chat-rule);

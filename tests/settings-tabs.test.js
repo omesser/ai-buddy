@@ -17,10 +17,10 @@ function snapshot(name) {
   return { form: read("snapshot"), values: read("values") };
 }
 
-const TABS = ["Presence", "Character", "AI", "Privacy", "Development"];
+const TABS = ["Presence", "Character", "AI", "Chat", "Privacy", "Development"];
 const html = readFileSync(new URL("../src/settings.html", import.meta.url), "utf8");
 
-test("the snapshot carries the five tabs, in order", () => {
+test("the snapshot carries the tabs, in order", () => {
   for (const name of ["modelApi", "harnessDriving"]) {
     assert.deepEqual(tabTitles(snapshot(name).form), TABS, name);
   }
@@ -37,15 +37,12 @@ test("the tab bar is a tablist of buttons over one panel", () => {
   assert.equal(selected.length, 1, "exactly one tab opens selected");
 });
 
-// A tablist whose tabs name no panel announces as five loose buttons. The
-// accessibility tree is the whole argument for leaving AppKit, so the link
-// that makes it a tablist is asserted rather than assumed (#706, condition 5).
 test("every tab names the panel it opens", () => {
   const controls = [...html.matchAll(/<button[^>]*\brole="tab"[^>]*\baria-controls="([^"]*)"/g)].map(
     (match) => match[1],
   );
 
-  assert.deepEqual(controls, ["set-panel", "set-panel", "set-panel", "set-panel", "set-panel"]);
+  assert.deepEqual(controls, TABS.map(() => "set-panel"));
   assert.match(html, /<main[^>]*\bid="set-panel"/, "the panel the tabs name has to exist");
 });
 
@@ -61,8 +58,8 @@ test("the page loads its module as a module and inlines no script", () => {
 test("a title picks its tab, and an unknown title picks the first", () => {
   const { form } = snapshot("modelApi");
 
-  assert.equal(selectTab(form, "Presence"), 0);
-  assert.equal(selectTab(form, "AI"), 2);
-  assert.equal(selectTab(form, "Development"), 4);
+  for (const [index, title] of TABS.entries()) {
+    assert.equal(selectTab(form, title), index);
+  }
   assert.equal(selectTab(form, "Completer"), 0, "a renamed tab opens the first one, never an empty panel");
 });
