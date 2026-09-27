@@ -249,7 +249,7 @@ pub(crate) fn attach_dir(raw: &str) -> Result<std::path::PathBuf, String> {
     }
     cwd.checked().map_err(|error| match error {
         SpawnError::Failed(why) => why,
-        SpawnError::Missing => "missing".to_string(),
+        _ => "missing".to_string(),
     })?;
     Ok(cwd.as_path().to_path_buf())
 }
@@ -685,13 +685,17 @@ impl Session {
     /// Where the Harness should be by the time the first wake arrives. Spawned
     /// so startup does not wait on `npx`; the outcome is one stderr line.
     pub fn spawn_preflight(self: &Arc<Self>) {
-        self.update_inspect(|inspect| inspect.initializing = true);
+        self.update_inspect(|inspect| {
+            inspect.initializing = true;
+            inspect.failed = None;
+        });
         let session = Arc::clone(self);
         thread::spawn(move || {
             let attached = session.attach(None);
             match &attached {
                 Ok(_) => eprintln!("harness: {} attached", session.launch.name),
                 Err(why) => {
+                    let why = why.trim_end_matches('.');
                     eprintln!("harness: {why}; StaticDirector is in force until it answers")
                 }
             }
@@ -1036,8 +1040,22 @@ impl Session {
             inspect.alive = false;
             inspect.missing = Some(command.clone());
             inspect.initializing = false;
+            inspect.failed = None;
         });
         not_installed(&command)
+    }
+
+    /// Record why a launcher that was there gave no wire, and charge the loss.
+    /// Kept as a sentence, because Chat and Settings put their own after it.
+    fn note_failed(&self, state: &mut State, why: String) -> String {
+        let why = if why.ends_with('.') {
+            why
+        } else {
+            format!("{why}.")
+        };
+        self.charge_loss(state);
+        self.update_inspect(|inspect| inspect.failed = Some(why.clone()));
+        why
     }
 
     /// The user's answer to a forwarded permission request. Never chosen here.
@@ -1143,10 +1161,10 @@ impl Session {
                     // back. Backoff would only refuse the next wake for up to
                     // five minutes after the user installs the CLI.
                     Err(SpawnError::Missing) => return Err(self.note_missing()),
-                    Err(SpawnError::Failed(why)) => {
-                        self.charge_loss(&mut state);
-                        return Err(why);
+                    Err(SpawnError::Exited(status)) => {
+                        return Err(self.note_failed(&mut state, exited(&self.launch, status)))
                     }
+                    Err(SpawnError::Failed(why)) => return Err(self.note_failed(&mut state, why)),
                 }
             }
         };
@@ -1195,10 +1213,10 @@ impl Session {
             self.update_inspect(|inspect| inspect.missing = None);
         }
         let wire = spawned.map_err(|why| match why {
-            SpawnError::Missing => SpawnError::Missing,
             SpawnError::Failed(why) => {
                 SpawnError::Failed(format!("`{}` {why}", self.launch.line()))
             }
+            other => other,
         })?;
         state.handshake = wire.handshake().clone();
         // A fresh process is a fresh chance to sign in. The gate belonged to
@@ -1210,6 +1228,7 @@ impl Session {
             inspect.mcp_http = state.handshake.mcp_http;
             inspect.alive = true;
             inspect.initializing = false;
+            inspect.failed = None;
         });
         let wire = Arc::new(wire);
         if !self.wanted.load(Ordering::SeqCst) {
@@ -1761,6 +1780,24 @@ fn wake_kind(reactive: bool) -> &'static str {
     } else {
         "proactive"
     }
+}
+
+/// A launcher that ran and was gone before `initialize`. `npx` is Node.js, and
+/// a Node.js that cannot start (a broken Homebrew link) dies exactly here.
+fn exited(launch: &Launch, status: Option<std::process::ExitStatus>) -> String {
+    let status = status
+        .map(|status| format!(", {status}"))
+        .unwrap_or_default();
+    let hint = match launch.argv[0].as_str() {
+        "npx" => {
+            " `npx` runs on Node.js: run `node --version` in a terminal to check that it starts."
+        }
+        _ => "",
+    };
+    format!(
+        "`{}` exited before initialize{status}.{hint}",
+        launch.line()
+    )
 }
 
 fn not_authenticated(command: &str) -> String {
@@ -4782,6 +4819,20 @@ mod tests {
                 "missing {command} should mention {url_part}, got: {message}"
             );
         }
+    }
+
+    /// An `npx` preset that dies at startup points at Node.js, not the preset.
+    #[test]
+    fn an_npx_launcher_that_exits_says_to_check_node() {
+        assert_eq!(
+            exited(&launch(Some("codex")).unwrap(), None),
+            "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize. \
+             `npx` runs on Node.js: run `node --version` in a terminal to check that it starts."
+        );
+        assert_eq!(
+            exited(&launch(Some("hermes")).unwrap(), None),
+            "`hermes acp` exited before initialize."
+        );
     }
 
     /// ADR-0016's newest-wins, at the Harness seam. The Poke that arrives

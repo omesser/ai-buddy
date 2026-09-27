@@ -364,6 +364,9 @@ fn auth_refused(error: &Error) -> bool {
 #[derive(Debug)]
 pub enum SpawnError {
     Missing,
+    /// The child ran and was gone before `initialize` answered, with its
+    /// status when the wire saw it go.
+    Exited(Option<std::process::ExitStatus>),
     Failed(String),
 }
 
@@ -460,9 +463,7 @@ impl Wire {
                 let _ = tx.send(Msg::Shutdown);
                 return Err(SpawnError::Failed("did not answer initialize".to_string()));
             }
-            Err(RecvTimeoutError::Disconnected) => {
-                return Err(SpawnError::Failed("exited before initialize".to_string()))
-            }
+            Err(RecvTimeoutError::Disconnected) => return Err(SpawnError::Exited(None)),
         };
         Ok(Self {
             tx,
@@ -665,6 +666,7 @@ fn run(
         let updates = incoming_tx.clone();
         let asks = incoming_tx.clone();
         let mut ready = Some(ready);
+        let mut refused = None;
         let outcome = Client
             .builder()
             .name("ai-buddy")
@@ -702,14 +704,16 @@ fn run(
                             mcp_http: response.agent_capabilities.mcp_capabilities.http,
                             auth_methods: response.auth_methods.iter().map(auth_offer).collect(),
                         });
-                    let failed = handshake.is_err();
-                    if let Some(ready) = ready.take() {
-                        let _ = ready.send(handshake.map_err(|why| {
-                            SpawnError::Failed(format!("initialize: {}", why.message))
-                        }));
-                    }
-                    if !failed {
-                        serve(&cx, rx, incoming_rx, &on_event).await;
+                    // A refusal is labelled below, once the child has had
+                    // the chance to say whether it is gone.
+                    match handshake {
+                        Ok(handshake) => {
+                            if let Some(ready) = ready.take() {
+                                let _ = ready.send(Ok(handshake));
+                            }
+                            serve(&cx, rx, incoming_rx, &on_event).await;
+                        }
+                        Err(why) => refused = Some(why.message),
                     }
                     Ok(())
                 },
@@ -719,12 +723,16 @@ fn run(
         // SDK can end the connection from its transport side first, a reply
         // written into a child that already exited, and drop the closure
         // above before it labels the error. The label belongs here too, or
-        // the same death reads as two different failures (#907).
+        // the same death reads as two different failures (#907). A child
+        // that is gone says how it went, which is the one clue to a launcher
+        // that died at startup, such as `node` failing to load.
         if let Some(ready) = ready.take() {
-            let _ = ready.send(Err(SpawnError::Failed(match outcome {
-                Ok(()) => "exited before initialize".to_string(),
-                Err(why) => format!("initialize: {}", why.message),
-            })));
+            let refused = refused.or(outcome.err().map(|why| why.message));
+            let _ = ready.send(Err(match (exit_status(&mut child), refused) {
+                (Some(status), _) => SpawnError::Exited(Some(status)),
+                (None, Some(why)) => SpawnError::Failed(format!("initialize: {why}")),
+                (None, None) => SpawnError::Exited(None),
+            }));
         }
         // The Harness may have been started through `npx`, which does not
         // reliably die on stdin EOF; kill the process group rather than
@@ -733,6 +741,20 @@ fn run(
         let _ = child.kill();
         let _ = child.status().await;
     });
+}
+
+/// How the child ended, if it has. The transport closes as the child exits,
+/// a moment before the kernel can report it, so this waits that moment and no
+/// longer. A child that only closed its stdout is still running.
+fn exit_status(child: &mut async_process::Child) -> Option<std::process::ExitStatus> {
+    let until = Instant::now() + Duration::from_millis(500);
+    loop {
+        match child.try_status() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if Instant::now() < until => thread::sleep(Duration::from_millis(10)),
+            _ => return None,
+        }
+    }
 }
 
 /// Whether `pgid` is a group we may SIGKILL. A real group, and not our own.

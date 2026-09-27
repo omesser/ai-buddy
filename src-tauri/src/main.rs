@@ -1775,6 +1775,9 @@ struct ChatHarness {
     missing: Option<String>,
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     initializing: bool,
+    /// Why a launcher that was there gave no wire. The one field here that
+    /// is a sentence: the exit status and next step are the Harness's to say.
+    failed: Option<String>,
 }
 
 fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
@@ -1785,6 +1788,7 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
         session: attached.session_id.clone(),
         missing: attached.missing.clone(),
         initializing: attached.initializing,
+        failed: attached.failed.clone(),
     })
 }
 
@@ -3934,6 +3938,30 @@ mod tests {
         assert_eq!(harness.name, "codex");
         assert_eq!(harness.missing.as_deref(), Some("npx"));
         assert!(!harness.alive);
+    }
+
+    /// A launcher that died at startup reaches Chat with its reason, or the
+    /// landing can only say the Harness has not come up.
+    #[test]
+    fn chat_opening_carries_why_the_launcher_died() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let why = "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize, signal: 6 (SIGABRT).";
+        let inspect = model::DirectorInspect {
+            harness: Some(crate::harness::HarnessInspect {
+                name: "codex".to_string(),
+                failed: Some(why.to_string()),
+                ..Default::default()
+            }),
+            ..stub_inspect()
+        };
+
+        let harness = chat_opening_from(instance, &inspect, "")
+            .harness
+            .expect("the opening carries the attachment");
+        assert_eq!(harness.failed.as_deref(), Some(why));
     }
 
     /// The landing payload while login is still required. The fragment is the

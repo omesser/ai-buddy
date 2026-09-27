@@ -155,6 +155,19 @@ export function landingCopy(opening) {
     };
   }
 
+  // The launcher ran and died before it answered. The Shell's sentence names
+  // it, its exit status, and for `npx` the Node.js check.
+  if (harness?.failed) {
+    return {
+      title: `${name} failed to start`,
+      lede: `${harness.failed} Pick a different Harness below.`,
+      command: null,
+      signInLabel: null,
+      hint: null,
+      signIn: [],
+    };
+  }
+
   if (harness && !harness.alive) {
     return {
       title: `${name} is not running`,

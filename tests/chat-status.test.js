@@ -148,6 +148,15 @@ test("a Harness that never came up says so rather than claiming the turn", () =>
   assert.equal(mindLine(opening), "hermes · not running");
 });
 
+test("a launcher that died at startup says it failed, not only that it is down", () => {
+  const opening = {
+    ...http,
+    harness: { name: "codex", session: null, alive: false, login: null, failed: "`npx` exited." },
+  };
+
+  assert.equal(mindLine(opening), "codex · failed to start");
+});
+
 // #949: Apply starts the attach, so the second the handshake takes is a wait
 // and not a verdict. `not running` there is the line that read as broken.
 test("a Harness still shaking hands says it is starting, not that it is down", () => {

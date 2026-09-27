@@ -124,6 +124,23 @@ test("a named Harness that has not come up stays on the landing", () => {
   assert.match(copy.lede, /Static weights/);
 });
 
+test("a launcher that died at startup names why on the landing", () => {
+  const failed =
+    "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize, signal: 6 (SIGABRT). " +
+    "`npx` runs on Node.js: run `node --version` in a terminal to check that it starts.";
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "codex",
+    harness: { name: "codex", session: null, alive: false, login: null, failed },
+  };
+  assert.equal(canAnswer(opening), false);
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Codex failed to start");
+  assert.equal(copy.lede, `${failed} Pick a different Harness below.`);
+});
+
 test("initializing Harness gates chat and shows clear state", () => {
   const opening = {
     name: "bmo",

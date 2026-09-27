@@ -178,6 +178,9 @@ export function mindLine(opening) {
   if (harness.initializing) {
     return `${harness.name} · starting`;
   }
+  if (harness.failed) {
+    return `${harness.name} · failed to start`;
+  }
   if (!harness.alive) {
     return `${harness.name} · not running`;
   }
