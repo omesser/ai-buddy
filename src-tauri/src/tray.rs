@@ -29,7 +29,7 @@ pub fn install(
         .menu(&menu)
         .icon(tray_icon)
         .show_menu_on_left_click(true)
-        .tooltip("Fidget")
+        .tooltip("fidget")
         .build(app)?;
 
     #[cfg(target_os = "macos")]
