@@ -4,6 +4,7 @@
 
 import { elicitSays } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
+import { mountChatAppearance } from "./chat-appearance.js";
 import { canAnswer, landingCopy } from "./chat-connect.js";
 import { createNamesNotice } from "./chat-names-hint.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
@@ -351,6 +352,8 @@ function applyChatUiClass(root, design) {
   root.classList.add(`chat-ui-${chatUi}`);
 }
 
+const applyChatAppearance = mountChatAppearance(document.documentElement);
+
 // Make applyChatUiClass available for tests
 if (typeof window !== "undefined") {
   window.__chatUiHelpers = { applyChatUiClass, normalizeChatUi };
@@ -372,6 +375,7 @@ function attached(opening) {
   // Apply saved Chat UI design.
   const html = document.documentElement;
   applyChatUiClass(html, opening.chat_ui || "minimal");
+  applyChatAppearance(opening.chat_appearance);
 
   const landing = document.getElementById("landing");
   const httpEmpty = document.getElementById("empty-http");
@@ -802,6 +806,14 @@ async function start() {
     { target: chat.label },
   );
 
+  await listen(
+    "chat-appearance",
+    ({ payload }) => {
+      applyChatAppearance(payload);
+    },
+    { target: chat.label },
+  );
+
   // Both listeners are up, so the state as it stands can be asked for. The bar
   // is pushed on change and a window opened between two of them would sit at
   // dashes until the sprite next did something different.
@@ -813,6 +825,7 @@ async function start() {
 
   // Apply Chat UI design immediately to prevent FOUC.
   applyChatUiClass(document.documentElement, opening.chat_ui || "minimal");
+  applyChatAppearance(opening.chat_appearance);
 
   showWho(opening);
   attached(opening);

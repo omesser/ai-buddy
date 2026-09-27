@@ -17,9 +17,9 @@ use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
-use super::chat_surface::{CHAT_EVENT, CHAT_STATUS_EVENT, CHAT_UI_EVENT};
+use super::chat_surface::{CHAT_APPEARANCE_EVENT, CHAT_EVENT, CHAT_STATUS_EVENT, CHAT_UI_EVENT};
 use super::session_log;
-use super::settings::SettingsOp;
+use super::settings::{ChatAppearance, SettingsOp};
 use super::{
     apply_menu_action, cancelled_caret, chat_label, close_chat, completer, describe_menu,
     dev_flags, harness, mcp_http, mcp_resources, menu, model, note_happened, open_chat,
@@ -596,11 +596,13 @@ pub(crate) fn run_frame_loop(
                                     &director,
                                     &app,
                                 );
-                                let chat_ui = settings
+                                let (chat_ui, chat_appearance) = settings
                                     .lock()
                                     .ok()
-                                    .map(|s| s.chat_ui.clone())
-                                    .unwrap_or_else(|| "minimal".to_string());
+                                    .map(|s| (s.chat_ui.clone(), s.chat_appearance))
+                                    .unwrap_or_else(|| {
+                                        ("minimal".to_string(), ChatAppearance::System)
+                                    });
                                 if let Ok(inspect) = inspect.lock() {
                                     push_chat_opening(
                                         &app,
@@ -609,6 +611,7 @@ pub(crate) fn run_frame_loop(
                                         &inspect,
                                         &characters,
                                         &chat_ui,
+                                        chat_appearance,
                                     );
                                 }
                             }
@@ -691,6 +694,15 @@ pub(crate) fn run_frame_loop(
                             let _ = app.emit_to(chat_label(&live.id), CHAT_UI_EVENT, &chat_ui);
                         }
                     }
+                    SettingsOp::ChatAppearanceChanged { chat_appearance } => {
+                        for live in &lives {
+                            let _ = app.emit_to(
+                                chat_label(&live.id),
+                                CHAT_APPEARANCE_EVENT,
+                                &chat_appearance,
+                            );
+                        }
+                    }
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }
@@ -756,11 +768,11 @@ pub(crate) fn run_frame_loop(
                                 "chars": written.text.chars().count(),
                             }),
                         );
-                        let chat_ui = settings
+                        let (chat_ui, chat_appearance) = settings
                             .lock()
                             .ok()
-                            .map(|s| s.chat_ui.clone())
-                            .unwrap_or_else(|| "minimal".to_string());
+                            .map(|s| (s.chat_ui.clone(), s.chat_appearance))
+                            .unwrap_or_else(|| ("minimal".to_string(), ChatAppearance::System));
                         if let Ok(inspect) = inspect.lock() {
                             push_chat_opening(
                                 &app,
@@ -769,6 +781,7 @@ pub(crate) fn run_frame_loop(
                                 &inspect,
                                 &characters,
                                 &chat_ui,
+                                chat_appearance,
                             );
                         }
                         continue;
@@ -931,14 +944,21 @@ pub(crate) fn run_frame_loop(
             }
 
             if reload_chat {
-                let chat_ui = settings
+                let (chat_ui, chat_appearance) = settings
                     .lock()
                     .ok()
-                    .map(|s| s.chat_ui.clone())
-                    .unwrap_or_else(|| "minimal".to_string());
+                    .map(|s| (s.chat_ui.clone(), s.chat_appearance))
+                    .unwrap_or_else(|| ("minimal".to_string(), ChatAppearance::System));
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.harness = harness::attached().map(|session| session.inspect());
-                    push_chat_openings(&app, &roster, &inspect, &characters, &chat_ui);
+                    push_chat_openings(
+                        &app,
+                        &roster,
+                        &inspect,
+                        &characters,
+                        &chat_ui,
+                        chat_appearance,
+                    );
                 }
             }
 
