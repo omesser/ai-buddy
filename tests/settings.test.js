@@ -366,7 +366,7 @@ test("the Character popups offer every installed package, the worn one selected"
   }
 });
 
-test("the Chat UI and Chat appearance popups live on Chat", () => {
+test("the UI Theme and Light/Dark Mode popups live on Chat", () => {
   const selects = drawn("Chat").filter((node) => node.tagName === "select");
   const offered = Object.fromEntries(
     selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
@@ -375,6 +375,8 @@ test("the Chat UI and Chat appearance popups live on Chat", () => {
     chat_ui: ["Minimal", "Terminal", "Glass"],
     chat_appearance: ["System", "Light", "Dark"],
   });
+  assert.equal(byId(tab(MODEL_API, "Chat"), "chat_ui").label, "UI Theme");
+  assert.equal(byId(tab(MODEL_API, "Chat"), "chat_appearance").label, "Light/Dark Mode");
   assert.equal(selects.find((select) => select.dataset.id === "chat_ui").value, "Minimal");
   assert.equal(selects.find((select) => select.dataset.id === "chat_appearance").value, "System");
   for (const title of TABS) {

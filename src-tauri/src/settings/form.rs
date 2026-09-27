@@ -1346,7 +1346,7 @@ fn chat_sections() -> Vec<FormSection> {
         rows: vec![
             FormRow::Popup {
                 id: "chat_ui".to_string(),
-                label: Some("Chat UI".to_string()),
+                label: Some("UI Theme".to_string()),
                 writes: TextField::ChatUI,
                 help: Some("Visual design for the chat surface.".to_string()),
                 options: vec!["Minimal".to_string(), "Terminal".to_string(), "Glass".to_string()],
@@ -1357,7 +1357,7 @@ fn chat_sections() -> Vec<FormSection> {
             },
             FormRow::Popup {
                 id: "chat_appearance".to_string(),
-                label: Some("Chat appearance".to_string()),
+                label: Some("Light/Dark Mode".to_string()),
                 writes: TextField::ChatAppearance,
                 help: Some("Light or dark for the Chat surface. System follows this computer.".to_string()),
                 options: vec!["System".to_string(), "Light".to_string(), "Dark".to_string()],

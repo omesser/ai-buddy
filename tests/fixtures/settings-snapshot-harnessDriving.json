@@ -507,7 +507,7 @@
             {
               "type": "Popup",
               "id": "chat_ui",
-              "label": "Chat UI",
+              "label": "UI Theme",
               "writes": "ChatUI",
               "help": "Visual design for the chat surface.",
               "options": [
@@ -523,7 +523,7 @@
             {
               "type": "Popup",
               "id": "chat_appearance",
-              "label": "Chat appearance",
+              "label": "Light/Dark Mode",
               "writes": "ChatAppearance",
               "help": "Light or dark for the Chat surface. System follows this computer.",
               "options": [
