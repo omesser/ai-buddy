@@ -143,6 +143,8 @@ pub struct WorldSnapshot {
     /// the caller did not say, and the Engine treats every tick as a fresh sample.
     /// A reused generation is a tick between polls, so a riding sprite coasts or hitch-steps.
     pub poll_generation: u64,
+    /// Whether a speech bubble is showing. A resting stroll does not translate while it is.
+    pub bubble_visible: bool,
 }
 
 /// Everything the renderer is told after one tick.
@@ -396,6 +398,10 @@ pub struct Engine {
     /// Whether the previous tick already carried `Verb::Menu`. The Shell re-injects that verb every tick the popup is held, so a cue keyed on the verb would fire for as long as the menu is open.
     /// The press edge is the cue; a gap clears this and the next press cues again.
     menu_held: bool,
+}
+
+fn locomotion_allowed(bubble_visible: bool) -> bool {
+    !bubble_visible
 }
 
 impl Engine {
@@ -1083,9 +1089,14 @@ impl Engine {
                 if self.velocity.y < 0.0 {
                     return Some(Contact::Airborne);
                 }
-                self.position.x += self.velocity.x * dt;
+                let dx = if locomotion_allowed(snapshot.bubble_visible) {
+                    self.velocity.x * dt
+                } else {
+                    0.0
+                };
+                self.position.x += dx;
                 if self.last_perch.is_some() {
-                    self.hold_offset_x += self.velocity.x * dt;
+                    self.hold_offset_x += dx;
                 }
 
                 // A walk on the floor beside the Dock stops clear of its side and climbs it.
@@ -3707,6 +3718,45 @@ mod tests {
             carrying_on.position.x > setting_off.position.x,
             "and keeps going without being told again: {carrying_on:?}"
         );
+    }
+
+    #[test]
+    fn a_walk_holds_still_while_a_speech_bubble_is_up_and_then_continues() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let started = engine.tick(&a_long_perch());
+        assert!(
+            started.position.x > 200.0,
+            "the stroll has started: {started:?}"
+        );
+
+        let held_x = started.position.x;
+        let held_animation_ms = started.animation_ms;
+        let tick_ms = 100u32;
+        let halt_ms = PRIMITIVE_MS + tick_ms;
+        let halt_ticks = halt_ms / tick_ms;
+        let mut halted = started;
+        for _ in 0..halt_ticks {
+            halted = engine.tick(&WorldSnapshot {
+                bubble_visible: true,
+                ..a_long_perch()
+            });
+        }
+
+        assert_eq!(halted.position.x, held_x);
+        assert_eq!(halted.animation_ms, held_animation_ms + halt_ms);
+        assert_eq!(halted.velocity.x, 120.0);
+
+        let resumed = engine.tick(&WorldSnapshot {
+            bubble_visible: false,
+            ..a_long_perch()
+        });
+        assert_eq!(resumed.position.x, halted.position.x + 12.0);
     }
 
     /// Both ends, because a walk that only ever goes one way would leave the
@@ -6557,6 +6607,7 @@ mod tests {
             verbs: vec![],
             proposal: None,
             poll_generation: 0,
+            bubble_visible: false,
         };
     }
 
