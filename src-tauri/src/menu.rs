@@ -31,6 +31,8 @@ pub enum MenuAction {
     ToggleDnd,
     /// Hide the Character instantly, same path as the hotkey.
     Hide,
+    /// Move every on-screen Character onto the display the cursor is on.
+    BringToThisDisplay,
     /// Fade away when a fullscreen application is frontmost. Settings writes the same flag.
     ToggleFullscreenHide,
     /// Open Memory in the user's editor.
@@ -103,6 +105,8 @@ pub struct MenuDescription {
 const DND_ID: &str = "dnd";
 
 const HIDE_ID: &str = "hide";
+
+const BRING_ID: &str = "bring-to-display";
 
 const CHAT_ID: &str = "chat";
 
@@ -237,6 +241,14 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         enabled: true,
     });
     actions.insert(HIDE_ID.to_string(), MenuAction::Hide);
+
+    // Next to Go away: both say where the Character is, not how it behaves.
+    entries.push(MenuEntry::Item {
+        id: BRING_ID.to_string(),
+        label: "Bring to this display".to_string(),
+        enabled: true,
+    });
+    actions.insert(BRING_ID.to_string(), MenuAction::BringToThisDisplay);
 
     entries.push(MenuEntry::Submenu {
         label: "Hide rules".to_string(),
@@ -805,6 +817,26 @@ mod tests {
                 Some(MenuEntry::Check { checked: false, .. })
             ),
             "unchecked when the Director is off"
+        );
+    }
+
+    /// The row sits with Go away. Choosing it moves Characters onto the
+    /// display under the cursor; the click handler is what knows that display.
+    #[test]
+    fn bring_to_this_display_is_listed_and_enabled() {
+        let description = describe(snapshot(&[], "bmo", false));
+
+        assert_eq!(
+            entry_with_id(&description, "bring-to-display"),
+            Some(&MenuEntry::Item {
+                id: "bring-to-display".to_string(),
+                label: "Bring to this display".to_string(),
+                enabled: true,
+            })
+        );
+        assert_eq!(
+            description.actions.get("bring-to-display"),
+            Some(&MenuAction::BringToThisDisplay)
         );
     }
 

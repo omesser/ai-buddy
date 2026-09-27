@@ -523,6 +523,9 @@ pub(crate) fn run_frame_loop(
                     &director,
                     &inspect,
                     &app,
+                    cursor_points,
+                    &displays.frames,
+                    &displays.usable_frames,
                 );
             }
             let mut menu_acted = !picked.is_empty();
@@ -550,6 +553,9 @@ pub(crate) fn run_frame_loop(
                             &director,
                             &inspect,
                             &app,
+                            cursor_points,
+                            &displays.frames,
+                            &displays.usable_frames,
                         );
                         menu_acted = true;
                     }

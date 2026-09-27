@@ -2494,6 +2494,46 @@ fn check_for_update(app: tauri::AppHandle) {
     });
 }
 
+/// Move every Instance onto the display under `cursor`. One already there stays.
+fn bring_roster_to_display(
+    roster: &mut Roster,
+    widths: &[(InstanceId, f64)],
+    monitors: &[Rect],
+    floors: &[Rect],
+    cursor: Point,
+) {
+    let mut ids = Vec::new();
+    let mut feet = Vec::new();
+    for (id, _) in roster.list() {
+        if let Some(instance) = roster.get(&id) {
+            feet.push(instance.feet());
+            ids.push(id);
+        }
+    }
+    let width_of: Vec<f64> = ids
+        .iter()
+        .map(|id| {
+            widths
+                .iter()
+                .find(|(known, _)| known == id)
+                .map(|(_, width)| *width)
+                .unwrap_or(0.0)
+        })
+        .collect();
+    let Some(landings) =
+        ai_buddy_core::engine::bring_landings(&feet, &width_of, monitors, floors, cursor)
+    else {
+        return;
+    };
+    for (id, landing) in ids.into_iter().zip(landings) {
+        if let Some(at) = landing {
+            if let Some(instance) = roster.get_mut(&id) {
+                instance.stand_at(at);
+            }
+        }
+    }
+}
+
 // One over the clippy cap. Settings, hide rules, and the Director each have
 // to hear the same click, and folding them would mix persist with proposal.
 #[allow(clippy::too_many_arguments)]
@@ -2511,6 +2551,9 @@ fn apply_menu_action(
     director: &model::DirectorSettings,
     inspect: &Arc<Mutex<model::DirectorInspect>>,
     app: &tauri::AppHandle,
+    cursor: Point,
+    monitors: &[Rect],
+    floors: &[Rect],
 ) {
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
@@ -2623,6 +2666,17 @@ fn apply_menu_action(
                 }
                 eprintln!("menu: {}", if away { "away" } else { "back" });
             }
+        }
+        menu::MenuAction::BringToThisDisplay => {
+            // Every Instance, not the one the menu was opened on. The row is
+            // about the display under the cursor, and a buddy left on the
+            // other monitor is the one the user still cannot see.
+            let widths: Vec<(InstanceId, f64)> = lives
+                .iter()
+                .map(|live| (live.id.clone(), sprite_width(&live.character)))
+                .collect();
+            bring_roster_to_display(roster, &widths, monitors, floors, cursor);
+            eprintln!("menu: bring to this display");
         }
         menu::MenuAction::ToggleFullscreenHide => {
             if let Ok(mut r) = rules.lock() {
@@ -4443,6 +4497,121 @@ mod tests {
             starting_positions(start, &[64.0]),
             vec![start],
             "one fidget still comes into the world where it always did"
+        );
+    }
+
+    /// Both buddies, not the one whose menu it was. The row is about the
+    /// display. A second click finds them already there and does not move them.
+    #[test]
+    fn bring_to_this_display_puts_every_instance_on_the_cursor_monitor() {
+        let character = stub_character("BMO");
+        let mut roster = Roster::new();
+        let left = roster.spawn(
+            &character,
+            "Left".to_string(),
+            Point {
+                x: 100.0,
+                y: 1080.0,
+            },
+        );
+        let right = roster.spawn(
+            &character,
+            "Right".to_string(),
+            Point {
+                x: 400.0,
+                y: 1080.0,
+            },
+        );
+        let widths = [(left.clone(), 128.0), (right.clone(), 128.0)];
+        let cursor = Point {
+            x: 2500.0,
+            y: 400.0,
+        };
+
+        bring_roster_to_display(
+            &mut roster,
+            &widths,
+            &[PRIMARY, SECOND],
+            &[PRIMARY, SECOND],
+            cursor,
+        );
+
+        assert_eq!(
+            roster.get(&left).expect("left").feet(),
+            Point {
+                x: 2436.0,
+                y: 982.0
+            }
+        );
+        assert_eq!(
+            roster.get(&right).expect("right").feet(),
+            Point {
+                x: 2564.0,
+                y: 982.0
+            }
+        );
+
+        bring_roster_to_display(
+            &mut roster,
+            &widths,
+            &[PRIMARY, SECOND],
+            &[PRIMARY, SECOND],
+            cursor,
+        );
+        assert_eq!(
+            roster.get(&left).expect("left").feet(),
+            Point {
+                x: 2436.0,
+                y: 982.0
+            },
+            "a second bring does not hop"
+        );
+        assert_eq!(
+            roster.get(&right).expect("right").feet(),
+            Point {
+                x: 2564.0,
+                y: 982.0
+            }
+        );
+    }
+
+    #[test]
+    fn bring_to_this_display_leaves_an_instance_already_on_that_monitor() {
+        let character = stub_character("BMO");
+        let mut roster = Roster::new();
+        let home = Point {
+            x: 2200.0,
+            y: 982.0,
+        };
+        let staying = roster.spawn(&character, "Here".to_string(), home);
+        let away = roster.spawn(
+            &character,
+            "There".to_string(),
+            Point {
+                x: 100.0,
+                y: 1080.0,
+            },
+        );
+        let widths = [(staying.clone(), 128.0), (away.clone(), 128.0)];
+
+        bring_roster_to_display(
+            &mut roster,
+            &widths,
+            &[PRIMARY, SECOND],
+            &[PRIMARY, SECOND],
+            Point {
+                x: 2500.0,
+                y: 400.0,
+            },
+        );
+
+        assert_eq!(roster.get(&staying).expect("staying").feet(), home);
+        assert_eq!(
+            roster.get(&away).expect("away").feet(),
+            Point {
+                x: 2500.0,
+                y: 982.0
+            }
         );
     }
 
