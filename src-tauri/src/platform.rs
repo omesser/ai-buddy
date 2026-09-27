@@ -250,6 +250,22 @@ mod x11;
 #[cfg(not(unix))]
 mod windows;
 
+/// Children spawned until [`restore_ctrl_c`] inherit "ignore Ctrl+C".
+#[cfg(windows)]
+pub(crate) fn suppress_ctrl_c_for_children() {
+    if !windows::suppress_ctrl_c_for_children() {
+        eprintln!("quit: could not keep spawned processes off Ctrl+C");
+    }
+}
+
+/// This process receives Ctrl+C again. Children already spawned do not.
+#[cfg(windows)]
+pub(crate) fn restore_ctrl_c() {
+    if !windows::restore_ctrl_c() {
+        eprintln!("quit: could not listen for Ctrl+C again");
+    }
+}
+
 /// Whether an X server answers this process — a real X11 session, or XWayland
 /// proxying for a Wayland one. `WAYLAND_DISPLAY` is set even for XWayland
 /// clients; under XWayland the EWMH/XShape path works (#266).

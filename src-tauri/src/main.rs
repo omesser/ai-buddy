@@ -2721,22 +2721,88 @@ fn quit_now() -> ! {
     std::process::exit(0);
 }
 
+/// One step of a console interrupt. The order is the behavior: WebView
+/// `Close` has to run on the UI thread before that thread calls `exit`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QuitAction {
+    Announce,
+    ShutdownHarness,
+    CloseWebviews,
+    ExitEventLoop,
+    ExitProcess,
+}
+
+/// What a console interrupt does, in order. Windows closes each WebView on
+/// the UI thread before the event loop ends. `process::exit` from the
+/// console handler kills that thread first, so `Chrome_WidgetWin_0` unregisters as 1411.
+fn quit_actions(orderly_platform: bool, already_quitting: bool) -> &'static [QuitAction] {
+    if already_quitting {
+        &[QuitAction::ExitProcess]
+    } else if orderly_platform {
+        &[
+            QuitAction::Announce,
+            QuitAction::ShutdownHarness,
+            QuitAction::CloseWebviews,
+            QuitAction::ExitEventLoop,
+        ]
+    } else {
+        &[
+            QuitAction::Announce,
+            QuitAction::ShutdownHarness,
+            QuitAction::ExitProcess,
+        ]
+    }
+}
+
+/// Turns Ctrl+C back on when setup returns, including the error path.
+/// Children spawned while it was suppressed keep ignoring it.
+#[cfg(windows)]
+struct RestoreCtrlC;
+
+#[cfg(windows)]
+impl Drop for RestoreCtrlC {
+    fn drop(&mut self) {
+        platform::restore_ctrl_c();
+    }
+}
+
 /// Ctrl+C is not `RunEvent::Exit`. The Harness child is in its own process
 /// group so that signal does not dump inside Node; this then kills it.
 /// Isolation waits until the handler is installed, or a failed catch leaves a tree Ctrl+C cannot reap.
-fn quit_harness_on_interrupt() {
-    match ctrlc::set_handler(|| {
-        if crate::harness::interrupt_already_quitting() {
-            std::process::exit(0);
+fn quit_harness_on_interrupt(app: tauri::AppHandle) {
+    match ctrlc::set_handler(move || {
+        let already = crate::harness::interrupt_already_quitting();
+        for action in quit_actions(cfg!(windows), already) {
+            perform_quit_action(*action, &app);
         }
-        eprintln!("quit");
-        crate::harness::shutdown();
-        std::process::exit(0);
     }) {
         Ok(()) => crate::harness::own_interrupt(),
         Err(why) => eprintln!(
             "harness: could not catch interrupt: {why}; child stays in this process group"
         ),
+    }
+}
+
+fn perform_quit_action(action: QuitAction, app: &tauri::AppHandle) {
+    match action {
+        QuitAction::Announce => eprintln!("quit"),
+        QuitAction::ShutdownHarness => crate::harness::shutdown(),
+        QuitAction::CloseWebviews => close_webviews_for_quit(app),
+        QuitAction::ExitEventLoop => app.exit(0),
+        QuitAction::ExitProcess => std::process::exit(0),
+    }
+}
+
+/// Posted before [`tauri::AppHandle::exit`], so the loop runs `Close` on the
+/// UI thread and only then stops. Dropping the WebView calls
+/// `ICoreWebView2Controller::Close` before the parent HWND goes away.
+fn close_webviews_for_quit(app: &tauri::AppHandle) {
+    for (label, window) in app.webview_windows() {
+        // `Webview::close`, not the window. The window close destroys the
+        // parent HWND first; the webview close runs `Controller::Close` first.
+        if let Err(why) = tauri::Webview::close(window.as_ref()) {
+            eprintln!("quit: {label} could not be closed: {why}");
+        }
     }
 }
 
@@ -3480,6 +3546,11 @@ fn main() {
             // On Windows and Linux, create a hidden anchor window that appears
             // in the taskbar/panel, matching the macOS Dock presence.
             // Clicking it opens Settings. Overlays stay off the taskbar.
+            #[cfg(windows)]
+            let _restore_ctrl_c = RestoreCtrlC;
+            // WebView2's browser inherits this and so ignores the console Ctrl+C.
+            #[cfg(windows)]
+            platform::suppress_ctrl_c_for_children();
             #[cfg(not(target_os = "macos"))]
             build_anchor_window(app.handle())?;
 
@@ -3575,7 +3646,12 @@ fn main() {
             mcp_resources::publish_excluded(&settings.excluded_applications);
             mcp_http::serve(mcp_tx);
             let forward_to = app.handle().clone();
-            quit_harness_on_interrupt();
+            // WebViews already exist, so the browser inherited the ignore bit.
+            // Turning Ctrl+C back on does not reach that child. The handler
+            // has to be in before the Harness leaves this process group.
+            #[cfg(windows)]
+            platform::restore_ctrl_c();
+            quit_harness_on_interrupt(app.handle().clone());
             harness::attach(
                 harness::Target::from_settings(
                     settings.harness_source().as_deref(),
@@ -4866,5 +4942,40 @@ mod tests {
     fn an_ambient_turn_superseded_by_another_wake_tells_chat_nothing() {
         assert!(cancelled_caret(false, &Happened::Proactive).is_none());
         assert!(cancelled_caret(false, &Happened::Poke).is_none());
+    }
+
+    /// Production change that would fail this: `process::exit` from the
+    /// console handler. That kills the UI thread before WebView2 `Close`.
+    #[test]
+    fn windows_ctrl_c_closes_webviews_before_the_event_loop_exits() {
+        assert_eq!(
+            quit_actions(true, false),
+            &[
+                QuitAction::Announce,
+                QuitAction::ShutdownHarness,
+                QuitAction::CloseWebviews,
+                QuitAction::ExitEventLoop,
+            ]
+        );
+    }
+
+    /// Unix has no `Chrome_WidgetWin_0` to unregister, so the first Ctrl+C
+    /// still leaves immediately. The Windows plan must not leak onto this path.
+    #[test]
+    fn unix_ctrl_c_still_exits_the_process() {
+        assert_eq!(
+            quit_actions(false, false),
+            &[
+                QuitAction::Announce,
+                QuitAction::ShutdownHarness,
+                QuitAction::ExitProcess,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_second_interrupt_exits_without_nesting_shutdown() {
+        assert_eq!(quit_actions(false, true), &[QuitAction::ExitProcess]);
+        assert_eq!(quit_actions(true, true), &[QuitAction::ExitProcess]);
     }
 }
