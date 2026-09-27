@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { applyEventOutcome, copyRunForPress, processResponse, writeRunClipboard } from "../src/settings.js";
 
 const SNIPPET =
-  "claude mcp add fidget -- /Applications/Fidget.app/Contents/MacOS/fidget --mcp";
+  "claude mcp add fidget -- /Applications/fidget.app/Contents/MacOS/fidget --mcp";
 
 test("processResponse maps a run to the operation string", () => {
   assert.deepEqual(processResponse({ action: "run", operation: "copy_byo_snippet" }), {

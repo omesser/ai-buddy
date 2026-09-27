@@ -60,8 +60,8 @@ const EXACT = [
   ['"productName": "ai-buddy"', '"productName": "Fidget"', "product-display"],
   ["<title>ai-buddy", "<title>Fidget", "product-display"],
   ['.tooltip("ai-buddy")', '.tooltip("Fidget")', "product-display"],
-  // Bundle folder follows productName. The binary inside stays the cargo slug.
-  ["ai-buddy.app", "Fidget.app", "product-display"],
+  // A bundle directory is a filename. The original was lowercase `ai-buddy.app`.
+  ["ai-buddy.app", "fidget.app", "product-slug"],
   // Consent fallbacks are the name macOS and the settings pane show.
   ['"ai-buddy".into()', '"Fidget".into()', "product-display"],
   ['.title("ai-buddy")', '.title("Fidget")', "product-display"],
@@ -268,7 +268,6 @@ function isLog(line) {
 
 // Spans that are the product as people see it, or the GDK class of the binary.
 const KEEP_CASE = [
-  /Fidget\.app\b/g,
   /"Fidget"\.into\(\)/g,
   /\.tooltip\("Fidget"\)/g,
   /\.title\("Fidget"\)/g,
@@ -293,9 +292,15 @@ function lowercaseProduct(line) {
 function lowercaseMcpName(line) {
   const command = /\bmcp (add|remove)\b/.test(line) || /^\s*Fidget\s+"/.test(line);
   if (!command) return line;
-  return line.replace(/\bFidget\b/g, (match, offset, whole) => (
-    whole.slice(offset + match.length).startsWith(".app") ? match : "fidget"
-  ));
+  return line.replace(/\bFidget\b/g, "fidget");
+}
+
+// Paths and filenames are the slug, including in a heading or a UX sentence.
+// `docs/Fidget/notes.md`, `scripts/Fidget.sh`, and `Fidget.app` all become `fidget`.
+function lowercasePathNames(line) {
+  return line
+    .replace(/(?<=[\\/])Fidget(?=[\\/"'\s]|$)/g, "fidget")
+    .replace(/\bFidget(?=\.[A-Za-z0-9])/g, "fidget");
 }
 
 export function recase(text, rel) {
@@ -310,6 +315,7 @@ export function recase(text, rel) {
     if (rel.endsWith(".md") && /^```/.test(line.trim())) fence = !fence;
     let next = line.replace(/\bcd Fidget\b/g, "cd fidget");
     next = next.replace(/\bFidget-/g, "fidget-");
+    next = lowercasePathNames(next);
     next = lowercaseMcpName(next);
     // A `#` line inside a fence is a shell comment, not a document heading.
     if (fence) return lowercaseProduct(next);
@@ -327,8 +333,9 @@ export function transformPath(rel) {
   next = next.replaceAll("ai-buddy", "fidget");
   next = next.replaceAll("ai_buddy", "fidget");
   next = next.replaceAll("AI_BUDDY", "FIDGET");
-  next = next.replaceAll("AI Buddy", "Fidget");
-  return next;
+  next = next.replaceAll("AI Buddy", "fidget");
+  next = next.replace(/^Fidget(?=[\\/.]|$)/, "fidget");
+  return lowercasePathNames(next);
 }
 
 function coveredBy(line, index, end, rules) {

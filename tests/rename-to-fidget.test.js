@@ -23,7 +23,7 @@ test("product identifiers split display and slug", () => {
   assert.equal(transform("<title>ai-buddy Settings</title>"), "<title>Fidget Settings</title>");
   assert.equal(transform('.tooltip("ai-buddy")'), '.tooltip("Fidget")');
   assert.equal(transform("dev.omesser.ai-buddy"), "dev.omesser.fidget");
-  assert.equal(transform("/Applications/ai-buddy.app/Contents/MacOS/ai-buddy"), "/Applications/Fidget.app/Contents/MacOS/fidget");
+  assert.equal(transform("/Applications/ai-buddy.app/Contents/MacOS/ai-buddy"), "/Applications/fidget.app/Contents/MacOS/fidget");
   assert.equal(transform("lets ai-buddy read titles"), "lets Fidget read titles");
   assert.equal(transform('Some("ai-buddy holds no credential")'), 'Some("Fidget holds no credential")');
   assert.equal(transform('"Point a Harness at ai-buddy"'), '"Point a Harness at Fidget"');
@@ -89,6 +89,10 @@ test("paths rename product slugs and keep the character package", () => {
     "docs/research/fidget-harness-two-way.md",
   );
   assert.equal(transformPath("characters/buddy-bot/character.manifest"), "characters/buddy-bot/character.manifest");
+  assert.equal(transformPath("docs/Fidget/notes.md"), "docs/fidget/notes.md");
+  assert.equal(transformPath("scripts/Fidget.sh"), "scripts/fidget.sh");
+  assert.equal(transformPath("branding/Fidget.png"), "branding/fidget.png");
+  assert.equal(transformPath("Fidget.app"), "fidget.app");
 });
 
 test("a transformed line has no product or companion residual", () => {
@@ -131,6 +135,10 @@ test("title case is only the product people see", () => {
   assert.equal(recase('fail "not a Fidget checkout"', ".agents/skills/verify-fidget/helpers/doctor.sh"), 'fail "not a fidget checkout"');
   assert.equal(recase('console.warn("Fidget: cue audio")', "src/cue.js"), 'console.warn("fidget: cue audio")');
   assert.equal(recase('note("This window could not reach Fidget.");', "src/chat.js"), 'note("This window could not reach Fidget.");');
+  assert.equal(
+    recase("See docs/Fidget/notes.md and branding/Fidget.png. Open /Applications/Fidget.app.", "README.md"),
+    "See docs/fidget/notes.md and branding/fidget.png. Open /Applications/fidget.app.",
+  );
 });
 
 test("the project board sentence does not keep the old title", () => {

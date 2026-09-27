@@ -1934,7 +1934,7 @@ mod tests {
     /// `byo_rows` reads the running executable's path and the loopback port
     /// the MCP server took, neither of which a committed fixture can hold.
     const FIXTURE_BYO_SNIPPET: &str =
-        "claude mcp add fidget -- /Applications/Fidget.app/Contents/MacOS/fidget --mcp";
+        "claude mcp add fidget -- /Applications/fidget.app/Contents/MacOS/fidget --mcp";
     const FIXTURE_BYO_STEPS: &str = "Run the line above in a terminal, then start claude.";
     const FIXTURE_MEMORY_PATH: &str = "/Users/fixture/Library/Application Support/fidget/memory";
 
