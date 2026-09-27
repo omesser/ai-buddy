@@ -6,12 +6,18 @@ asked to do real work on your machine.
 
 ## Language
 
+### The product
+
+**Fidget**:
+The product, written in title case in UX copy, docs, and headings.
+_Avoid_: Lowercase for this display name. Paths, slugs, and variables use the lowercase slug
+
 ### The character
 
 **Character**:
 The shippable unit a user installs and chooses between — identity, art,
 personality, and tuning bundled together.
-_Avoid_: Pet, mascot, avatar, Fidget (Fidget is the product, not a Character)
+_Avoid_: Pet, mascot, avatar. Title-case Fidget is the product, not a Character
 
 **Character Package**:
 The on-disk form of a Character: a directory or archive containing its
@@ -92,6 +98,13 @@ One spawned character: a Character plus a user-given name and a stable id. Insta
 differ in personality and behavior, never in what they know — the Instance
 Prompt is where that difference is written. ADR-0012.
 _Avoid_: Session, spawn, copy, clone
+
+**fidget**:
+In prose, a synonym for a Character Instance: the presence on the desk people
+used to call a buddy, not the Character Package and not the sprites being
+rendered. Prose may say character or fidget for that presence; the same
+lowercase spelling is the product's slug in paths and identifiers.
+_Avoid_: Title-case Fidget for this presence — that is the product
 
 **Memory**:
 The single durable record of what the characters know about the user. Shared by

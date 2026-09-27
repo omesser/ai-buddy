@@ -50,6 +50,7 @@ const VOICE_FLAVOR = [
   /need a buddy for that/g,
   /helpful buddy's/gi,
   /helpful buddy\b/gi,
+  /used to call a buddy/g,
 ];
 
 // Exact rows run after shields and before the generic slug/display split.
@@ -57,7 +58,7 @@ const VOICE_FLAVOR = [
 const EXACT = [
   [
     "_Avoid_: Pet, mascot, avatar, buddy (the app is the buddy, not the character)",
-    "_Avoid_: Pet, mascot, avatar, Fidget (Fidget is the product, not a Character)",
+    "_Avoid_: Pet, mascot, avatar. Title-case Fidget is the product, not a Character",
     "product-display",
   ],
   // The GitHub project is still titled with the old name. Point at the board
