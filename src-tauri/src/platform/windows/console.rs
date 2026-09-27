@@ -12,15 +12,17 @@
 use windows_sys::Win32::Foundation::{FALSE, TRUE};
 use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
 
+// `pub` so `windows` can re-export these. `pub(super)` is only visible inside
+// `windows`, and rustc rejects a re-export wider than the item.
 /// Children spawned while this is set inherit "ignore Ctrl+C".
-pub(super) fn suppress_ctrl_c_for_children() -> bool {
+pub fn suppress_ctrl_c_for_children() -> bool {
     // SAFETY: a null handler with TRUE is the documented ignore switch, not
     // a function pointer we call.
     unsafe { SetConsoleCtrlHandler(None, TRUE) != FALSE }
 }
 
 /// This process receives Ctrl+C again. Already-spawned children do not.
-pub(super) fn restore_ctrl_c() -> bool {
+pub fn restore_ctrl_c() -> bool {
     // SAFETY: null with FALSE clears the ignore bit set above. No pointer.
     unsafe { SetConsoleCtrlHandler(None, FALSE) != FALSE }
 }
