@@ -60,10 +60,24 @@ test("a reply with no thinking draws no entry", () => {
   assert.deepEqual(draws, []);
 });
 
-test("a block collapsed while it streams stays collapsed and keeps filling", () => {
+test("a row the user collapses while it fills keeps filling hidden, and the reply leaves it collapsed", () => {
   const { thinking, entries } = logged();
 
   thinking.thought("Counting the windows");
+  thinking.toggle(1);
+  thinking.thought("Counting the windows\nNaming the display");
+  thinking.landed();
+
+  assert.deepEqual(entries(), [
+    { id: 1, text: "Counting the windows\nNaming the display", state: "collapsed", at: undefined },
+  ]);
+});
+
+test("the reply collapses a still-filling row the user reopened", () => {
+  const { thinking, entries } = logged();
+
+  thinking.thought("Counting the windows");
+  thinking.toggle(1);
   thinking.toggle(1);
   thinking.thought("Counting the windows\nNaming the display");
   thinking.landed();

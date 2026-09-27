@@ -3,7 +3,8 @@
 // the whole text so far; an empty one says the turn stopped thinking.
 
 // streaming: open and filling. collapsed: the title and a handle. expanded:
-// opened again by the user. A user may collapse a block that is still filling.
+// opened again by the user. A user may collapse or reopen a row that is still
+// filling; the reply collapses it either way.
 const TOGGLED = { streaming: "collapsed", collapsed: "expanded", expanded: "collapsed" };
 
 export function createThinking(draw) {
@@ -19,7 +20,8 @@ export function createThinking(draw) {
 
   function landed() {
     if (!live) return;
-    if (live.state === "streaming") live.state = "collapsed";
+    // Whatever the user did while it filled, the reply closes it.
+    live.state = "collapsed";
     draw({ ...live });
     live = null;
   }
