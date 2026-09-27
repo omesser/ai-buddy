@@ -413,10 +413,8 @@ fn locomotion_allowed(bubble_visible: bool) -> bool {
 }
 
 /// Where each sprite should stand to be on the display under `cursor`.
-///
-/// `monitors` are full frames and `floors` the usable frames at the same
-/// indexes. A `None` entry is a sprite already on that display. No display
-/// reported is `None` overall. A cursor in a gap uses the nearest display.
+/// `floors` are the usable frames at the same indexes as `monitors`, so the
+/// feet do not land behind the Dock.
 pub fn bring_landings(
     feet: &[Point],
     widths: &[f64],
@@ -645,7 +643,6 @@ impl Engine {
     }
 
     /// Stand the sprite at `feet` and drop the motion that would carry it off.
-    ///
     /// A walk, a perch and a fall all outlive the request, and an idle clock
     /// already near sleep would nod off on the tick it arrived.
     pub fn stand_at(&mut self, feet: Point) {
@@ -7048,6 +7045,34 @@ mod tests {
                     y: 982.0
                 })
             ])
+        );
+    }
+
+    /// Feet on the upper floor are the lower display's top edge. The art hangs
+    /// above them, so a click on the lower display still has to bring them down.
+    #[test]
+    fn bring_landings_brings_a_sprite_down_off_the_upper_floor() {
+        let upper = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let lower = monitor(0.0, 1080.0, 1920.0, 1080.0);
+
+        assert_eq!(
+            bring_landings(
+                &[Point {
+                    x: 400.0,
+                    y: 1080.0
+                }],
+                &[128.0],
+                &[upper, lower],
+                &[upper, lower],
+                Point {
+                    x: 500.0,
+                    y: 1500.0
+                },
+            ),
+            Some(vec![Some(Point {
+                x: 500.0,
+                y: 2160.0
+            })])
         );
     }
 

@@ -42,11 +42,13 @@ pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
 /// and clamped, which need not land back on the edge. Squared at the call site.
 const FLOOR_SLACK: f64 = 1.0;
 
-/// Whether `feet` are on `display`, including the floor the half-open interior
-/// excludes. The display below claims that shared edge; the feet are still here.
+/// Whether `feet` are on `display`, including its floor and not its top edge.
+/// Art hangs above the feet, so the edge shared with a display above is that
+/// display's floor, not this interior.
 pub(crate) fn stands_on(feet: (f64, f64), display: &Rect) -> bool {
     let on_floor = display.spans_x(feet.0) && (feet.1 - display.bottom()).abs() <= FLOOR_SLACK;
-    covers(feet, display) || on_floor
+    let on_top_edge = display.spans_x(feet.0) && (feet.1 - display.y).abs() <= FLOOR_SLACK;
+    (covers(feet, display) && !on_top_edge) || on_floor
 }
 
 /// Whether a display's window has this point, right and bottom edges excluded.
