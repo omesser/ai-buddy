@@ -74,6 +74,22 @@ test("a FileLoadException Abort trap skips instead of failing", () => {
   assert.match(result.stderr, /FileLoadException/);
 });
 
+// Same host abort as verify-anchor-offscreen-win, but exit 1 and no
+// FileLoadException word: the old case only matched that word or exit 134.
+test("an unhandled Microsoft.Management.Infrastructure abort skips", () => {
+  const result = runHook({
+    env: {
+      PSSA_STATUS: "1",
+      PSSA_OUTPUT:
+        "An error has occurred that was not properly handled. Additional information is shown below. The PowerShell process will exit.\nFile name: 'Microsoft.Management.Infrastructure, Version=2.0.0.0, Culture=neutral,'",
+    },
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /skipped - pwsh crashed running PSScriptAnalyzer/);
+  assert.match(result.stderr, /Microsoft\.Management\.Infrastructure/);
+  assert.doesNotMatch(result.stderr, /FileLoadException/);
+});
+
 test("Abort trap text with exit 134 skips", () => {
   const result = runHook({
     env: { PSSA_STATUS: "134", PSSA_OUTPUT: "Abort trap: 6" },
