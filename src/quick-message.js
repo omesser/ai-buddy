@@ -84,6 +84,7 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
       return true;
     },
     enterSprite() {
+      if (disposed) return;
       overSprite = true;
       if (visible || hoverTimer !== null) return;
       hoverTimer = schedule(() => {
@@ -125,6 +126,7 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     summon: dismissOpen,
     submit,
     restore(value) {
+      if (disposed) return;
       text = value;
       visible = true;
       focused = true;
@@ -136,8 +138,15 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
       hide();
     },
     dispose() {
-      disposed = true;
+      // Tell the overlay while this Instance is still mapped. The composing
+      // report scans views, and a removed one must not leave its caret held.
       cancelHover();
+      text = "";
+      visible = false;
+      focused = false;
+      claimFocus = false;
+      if (!disposed) onChange?.();
+      disposed = true;
     },
   };
 }

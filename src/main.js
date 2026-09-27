@@ -394,9 +394,9 @@ function reportHotspots() {
   });
 }
 
-// An Instance that stopped arriving was dismissed. Its elements go with it, and
-// its bubble timers are cancelled first: a scheduled callback holding a removed
-// element would keep the view alive to no visible end.
+// An Instance that stopped arriving was dismissed. Its elements go with it.
+// Dispose while it is still mapped: the composing report scans views, so a
+// gone Instance must not leave its caret held.
 function removeView(id) {
   const view = views.get(id);
   if (!view) return;

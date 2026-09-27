@@ -19,6 +19,7 @@ function harness() {
   const tasks = [];
   let nextId = 1;
   const sent = [];
+  const changes = [];
   const qm = createQuickMessage({
     schedule(fn, ms) {
       const id = nextId;
@@ -32,6 +33,9 @@ function harness() {
     },
     send(text) {
       sent.push(text);
+    },
+    onChange() {
+      changes.push(qm.typing);
     },
   });
 
@@ -49,7 +53,7 @@ function harness() {
     }
   }
 
-  return { qm, sent, advance };
+  return { qm, sent, advance, changes };
 }
 
 function shown() {
@@ -155,6 +159,25 @@ test("a drag is a few pixels of movement, not the click itself", () => {
   assert.equal(crossedDrag(DRAG_DISMISS_PX - 1, 0), false);
   assert.equal(crossedDrag(DRAG_DISMISS_PX, 0), true);
   assert.equal(crossedDrag(0, DRAG_DISMISS_PX), true);
+});
+
+test("dispose clears the composer so composing cannot stick", () => {
+  const { qm, changes, advance } = shown();
+  qm.setText("hey");
+  const before = changes.length;
+
+  qm.dispose();
+  assert.equal(qm.visible, false);
+  assert.equal(qm.typing, false);
+  assert.equal(qm.text, "");
+  assert.equal(changes.at(-1), false);
+  assert.ok(changes.length > before, "the overlay is told the hold is gone");
+
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  qm.restore("hey");
+  assert.equal(qm.visible, false, "dispose is final");
+  assert.equal(qm.typing, false);
 });
 
 test("Escape does not dismiss", () => {
