@@ -1107,7 +1107,7 @@ fn byo_section() -> FormSection {
         comment: Some("For a Harness you start in your own terminal.".to_string()),
         disclosure: Some(
             "Registering Fidget as an MCP server there lets it speak, move and \
-             emote the character on your screen. Nothing here changes which mind the \
+             emote the fidget on your screen. Nothing here changes which mind the \
              Director uses."
                 .to_string(),
         ),
@@ -1195,7 +1195,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 id: CHARACTER_ID.to_string(),
                 label: None,
                 writes: TextField::Character,
-                help: Some("The character your character wears.".to_string()),
+                help: Some("The character your fidget wears.".to_string()),
                 options: live.installed.clone(),
                 frozen: false,
                 batched: false,
@@ -1212,7 +1212,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::List {
                     id: INSTANCES_ID.to_string(),
                     dismiss_label: "Dismiss".to_string(),
-                    help: Some("Characters on screen now.".to_string()),
+                    help: Some("Fidgets on screen now.".to_string()),
                     disclosure: Some("An Instance is one spawned character: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
                 },
                 FormRow::Composite {
