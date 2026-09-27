@@ -195,7 +195,7 @@ body {
 
 /* After thinking-bounce so the expression page's bubble slice — which treats
    `background: transparent` as overlay layout — stays speech and thinking.
-   Tails stay on Speech. The pop uses the cue curve from the edge nearest the Character. */
+   Tails stay on Speech. The pop rises through 0.92 and 1.03, then rests at 1. */
 .bubble.quick-message {
   display: flex;
   align-items: flex-end;
@@ -205,7 +205,7 @@ body {
   min-width: 168px;
   pointer-events: none;
   transform-origin: center bottom;
-  transform: scale(0.92);
+  transform: translateY(4px) scale(0.92);
   transition: opacity 300ms ease, transform 220ms ease;
 }
 
@@ -227,16 +227,16 @@ body {
   0% {
     animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
     opacity: 0;
-    transform: scale(0.86);
+    transform: translateY(4px) scale(0.92);
   }
   55% {
     animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
     opacity: 1;
-    transform: scale(1.045);
+    transform: translateY(-2px) scale(1.03);
   }
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -283,10 +283,28 @@ body {
   color: #8b93a7;
 }
 
-.bubble.quick-message.visible .bubble-more {
-  display: block;
+.quick-message-send {
   flex: 0 0 auto;
-  margin: 0 0 1px;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  appearance: none;
+  background: none;
+  color: var(--shared-accent);
+  cursor: pointer;
+}
+
+.quick-message-send svg {
+  display: block;
+  width: 10px;
+  height: 12px;
+  fill: currentColor;
 }
 
 .sprite {

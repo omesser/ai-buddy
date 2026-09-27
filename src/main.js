@@ -279,13 +279,20 @@ function attachQuickMessage(view, id) {
   field.rows = 1;
   // Same bound the Chat composer declares, which is CHAT_LIMIT.
   field.maxLength = 16000;
-  field.placeholder = "Say something...";
+  field.placeholder = "talk to me";
   field.autocomplete = "off";
   field.setAttribute("aria-label", "Quick message");
   const send = document.createElement("button");
   send.type = "button";
-  send.className = "bubble-more";
-  send.textContent = "Send";
+  send.className = "quick-message-send";
+  send.setAttribute("aria-label", "Send");
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 10 12");
+  icon.setAttribute("aria-hidden", "true");
+  const point = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  point.setAttribute("d", "M1 1 L9 6 L1 11 Z");
+  icon.append(point);
+  send.append(icon);
   row.append(mirror, field);
   quick.append(row, send);
   stage.append(quick);
