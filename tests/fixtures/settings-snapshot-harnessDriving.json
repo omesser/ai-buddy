@@ -119,6 +119,22 @@
               "batched": false,
               "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
               "status": null
+            },
+            {
+              "type": "Popup",
+              "id": "chat_appearance",
+              "label": "Chat appearance",
+              "writes": "ChatAppearance",
+              "help": "Light or dark for the Chat surface. System follows this computer.",
+              "options": [
+                "System",
+                "Light",
+                "Dark"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "The overlay and speech bubble are unchanged.",
+              "status": null
             }
           ],
           "comment": null,

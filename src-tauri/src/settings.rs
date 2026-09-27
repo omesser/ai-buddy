@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use ai_buddy_core::memory::MemoryManifest;
 use ai_buddy_core::roster::InstanceSpec;
 use ai_buddy_core::visibility::HideRules;
+use serde::de::{self, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -37,6 +38,96 @@ pub struct InstanceRow {
     /// in the Settings window: these rows are also how `chat_opening` reads the
     /// roster, and the Prompt tab is where the text is read and written.
     pub prompt: String,
+}
+
+/// Light or dark for Chat, or follow the computer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatAppearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ChatAppearance {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+        }
+    }
+
+    pub fn from_title(title: &str) -> Self {
+        match title.trim().to_ascii_lowercase().as_str() {
+            "light" => Self::Light,
+            "dark" => Self::Dark,
+            _ => Self::System,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ChatAppearance {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(ChatAppearanceVisitor)
+    }
+}
+
+struct ChatAppearanceVisitor;
+
+impl<'de> Visitor<'de> for ChatAppearanceVisitor {
+    type Value = ChatAppearance;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("any JSON value")
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::from_title(value))
+    }
+
+    fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+        self.visit_str(&value)
+    }
+
+    fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        Deserialize::deserialize(deserializer)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<IgnoredAny>()?.is_some() {}
+        Ok(ChatAppearance::System)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+        Ok(ChatAppearance::System)
+    }
 }
 
 /// What the settings window shows. Built from the live file and roster so the
@@ -94,6 +185,7 @@ pub struct SettingsView {
     pub consent_listed_as: String,
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
+    pub chat_appearance: ChatAppearance,
 }
 
 /// One row's value, in the three shapes the page draws.
@@ -555,6 +647,7 @@ impl SettingsView {
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
             chat_ui: settings.chat_ui.clone(),
+            chat_appearance: settings.chat_appearance,
         }
     }
 
@@ -657,6 +750,10 @@ impl SettingsView {
             "chat_ui".to_string(),
             text(&form::chat_ui_title(&self.chat_ui)),
         );
+        values.insert(
+            "chat_appearance".to_string(),
+            text(self.chat_appearance.title()),
+        );
         values
     }
 
@@ -703,6 +800,7 @@ impl SettingsView {
                     .map(String::as_str)
                     .unwrap_or_default(),
             )),
+            "chat_appearance" => Some(self.chat_appearance.title().to_string()),
             _ => None,
         }
     }
@@ -755,6 +853,9 @@ pub enum SettingsOp {
     /// Chat UI selection changed: swap the root class on every chat surface.
     ChatUIChanged {
         chat_ui: String,
+    },
+    ChatAppearanceChanged {
+        chat_appearance: ChatAppearance,
     },
 }
 
@@ -1153,6 +1254,13 @@ fn retarget_payload(settings: &Settings, store: &dyn SecretStore) -> Result<Sett
     })
 }
 
+fn chat_appearance_op(before: ChatAppearance, patch: &SettingsPatch) -> Option<SettingsOp> {
+    patch
+        .chat_appearance
+        .filter(|&next| next != before)
+        .map(|chat_appearance| SettingsOp::ChatAppearanceChanged { chat_appearance })
+}
+
 /// Everything Settings needs to read and write.
 pub struct SettingsSession {
     pub settings: Arc<Mutex<Settings>>,
@@ -1242,6 +1350,7 @@ impl SettingsSession {
             .as_ref()
             .is_some_and(|ui| *ui != settings.chat_ui);
         let new_chat_ui = patch.chat_ui.clone();
+        let appearance_op = chat_appearance_op(settings.chat_appearance, &patch);
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and turn ceiling.
         apply_and_seed(&mut settings, patch);
@@ -1311,6 +1420,9 @@ impl SettingsSession {
             if let Some(ui) = new_chat_ui {
                 let _ = self.ops.send(SettingsOp::ChatUIChanged { chat_ui: ui });
             }
+        }
+        if let Some(op) = appearance_op {
+            let _ = self.ops.send(op);
         }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
@@ -1404,6 +1516,7 @@ pub struct SettingsPatch {
     #[serde(default)]
     pub new_session: bool,
     pub chat_ui: Option<String>,
+    pub chat_appearance: Option<ChatAppearance>,
 }
 
 /// The Character every Instance switches to.
@@ -1511,6 +1624,7 @@ pub enum TextField {
     HarnessCwd,
     ExcludedApplications,
     ChatUI,
+    ChatAppearance,
 }
 
 impl SettingsPatch {
@@ -1598,6 +1712,9 @@ impl SettingsPatch {
                     Some(value.lines().map(|line| line.trim().to_string()).collect())
             }
             TextField::ChatUI => self.chat_ui = Some(form::chat_ui_choice(value)),
+            TextField::ChatAppearance => {
+                self.chat_appearance = Some(ChatAppearance::from_title(value))
+            }
         }
         true
     }
@@ -1769,6 +1886,9 @@ impl Settings {
         }
         if let Some(value) = patch.chat_ui {
             self.chat_ui = value;
+        }
+        if let Some(value) = patch.chat_appearance {
+            self.chat_appearance = value;
         }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
@@ -1960,6 +2080,8 @@ pub struct Settings {
     pub names_hint_dismissed: bool,
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
+    #[serde(default)]
+    pub chat_appearance: ChatAppearance,
 }
 
 impl Default for Settings {
@@ -2002,6 +2124,7 @@ impl Default for Settings {
             first_run_tour_shown: false,
             names_hint_dismissed: false,
             chat_ui: "minimal".to_string(),
+            chat_appearance: ChatAppearance::System,
         }
     }
 }
@@ -2256,6 +2379,7 @@ mod tests {
             director_blank: true,
             capturable: true,
             chat_ui: "minimal".into(),
+            chat_appearance: ChatAppearance::System,
             use_accessibility: true,
             use_window_names: false,
             use_input_monitoring: true,
@@ -2330,6 +2454,81 @@ mod tests {
         assert!(settings.director_model.is_empty());
         assert!(settings.pi_project_mcp);
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_file_without_chat_appearance_loads_system_and_keeps_a_set_field() {
+        let path = temp_path();
+        fs::write(&path, r#"{"director_enabled":false}"#).expect("write");
+        let settings = Settings::load(&path);
+        assert_eq!(settings.chat_appearance, ChatAppearance::System);
+        assert!(!settings.director_enabled);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_saved_light_appearance_loads_as_light() {
+        let path = temp_path();
+        let settings = Settings {
+            chat_appearance: ChatAppearance::Light,
+            ..Settings::default()
+        };
+        settings.save(&path).expect("save");
+        assert_eq!(Settings::load(&path).chat_appearance, ChatAppearance::Light);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_light_token_in_either_case_loads_as_light() {
+        for json in [
+            r#"{"chat_appearance":"light"}"#,
+            r#"{"chat_appearance":"Light"}"#,
+        ] {
+            let path = temp_path();
+            fs::write(&path, json).expect("write");
+            assert_eq!(
+                Settings::load(&path).chat_appearance,
+                ChatAppearance::Light,
+                "{json}"
+            );
+            let _ = fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn a_bad_chat_appearance_token_loads_as_system_and_keeps_a_sibling() {
+        for json in [
+            r#"{"director_enabled":false,"chat_appearance":"sepia"}"#,
+            r#"{"director_enabled":false,"chat_appearance":null}"#,
+            r#"{"director_enabled":false,"chat_appearance":1}"#,
+        ] {
+            let path = temp_path();
+            fs::write(&path, json).expect("write");
+            let settings = Settings::load(&path);
+            assert_eq!(settings.chat_appearance, ChatAppearance::System, "{json}");
+            assert!(!settings.director_enabled, "{json}");
+            let _ = fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn applying_appearance_sends_the_op_once() {
+        let settings = Settings::default();
+        let mut patch = SettingsPatch::default();
+        patch.set_text(TextField::ChatAppearance, "Light");
+        match chat_appearance_op(settings.chat_appearance, &patch) {
+            Some(SettingsOp::ChatAppearanceChanged { chat_appearance }) => {
+                assert_eq!(chat_appearance, ChatAppearance::Light);
+            }
+            other => panic!("expected ChatAppearanceChanged, got {other:?}"),
+        }
+        let mut next = settings.clone();
+        next.apply(patch.clone());
+        assert_eq!(next.chat_appearance, ChatAppearance::Light);
+        assert!(
+            chat_appearance_op(next.chat_appearance, &patch).is_none(),
+            "the same value must not send again"
+        );
     }
 
     #[test]
@@ -2612,6 +2811,7 @@ mod tests {
             director_blank: false,
             capturable: true,
             chat_ui: "minimal".into(),
+            chat_appearance: ChatAppearance::System,
             use_accessibility: true,
             use_window_names: false,
             use_input_monitoring: false,
@@ -4890,6 +5090,10 @@ mod tests {
                 Some(form::HARNESS_CUSTOM)
             );
             assert_eq!(view.popup_value(form::CHARACTER_ID), Some(String::new()));
+            assert_eq!(
+                view.popup_value("chat_appearance").as_deref(),
+                Some("System")
+            );
             assert_eq!(view.popup_value("nothing_like_it"), None);
         });
     }
