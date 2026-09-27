@@ -11,14 +11,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
-    AuthMethod, CancelNotification, ClientCapabilities, ContentBlock, CreateElicitationRequest,
-    CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
-    ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
-    ElicitationPropertySchema, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
-    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock,
+    CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
+    ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
+    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema, EnvVariable, Error,
+    ErrorCode, HttpHeader, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
+    McpServerHttp, McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -29,6 +29,10 @@ use tokio::sync::mpsc;
 /// After `session/cancel`, how long the turn lock waits for the `cancelled`
 /// reply before it is given back regardless.
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
+
+/// How long `authenticate` may block. A browser login is the user, not a
+/// stalled child, and a turn's budget would abandon it.
+const SIGN_IN_WAIT: Duration = Duration::from_secs(5 * 60);
 
 /// The MCP server `session/new` is told about.
 /// The loopback server is the shipped path (ADR-0023). Stdio is the fallback
@@ -62,14 +66,132 @@ pub struct Handshake {
     pub load_session: bool,
     /// Whether the Harness takes HTTP MCP servers.
     pub mcp_http: bool,
-    pub auth_methods: Vec<AuthHint>,
+    pub auth_methods: Vec<AuthOffer>,
 }
 
-/// One `authMethods` entry. Enough to name the fix in a sentence.
-#[derive(Clone, Debug)]
-pub struct AuthHint {
-    pub name: String,
-    pub description: Option<String>,
+/// An agent auth method id copied from the handshake. Nothing else can build one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct AgentMethodId(String);
+
+impl AgentMethodId {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One advertised auth method, without a terminal method's args or env.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthOffer {
+    Agent {
+        id: AgentMethodId,
+        name: String,
+        description: Option<String>,
+    },
+    /// No id: a terminal method is not sent to `authenticate`.
+    Terminal {
+        name: String,
+        description: Option<String>,
+    },
+    Unrecognized {
+        name: String,
+        description: Option<String>,
+    },
+}
+
+impl AuthOffer {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Agent { name, .. }
+            | Self::Terminal { name, .. }
+            | Self::Unrecognized { name, .. } => name,
+        }
+    }
+
+    pub(crate) fn description(&self) -> Option<&str> {
+        match self {
+            Self::Agent { description, .. }
+            | Self::Terminal { description, .. }
+            | Self::Unrecognized { description, .. } => description.as_deref(),
+        }
+    }
+}
+
+/// An in-app sign-in the landing can show. The id is an agent method's.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SignIn {
+    pub id: AgentMethodId,
+    pub label: String,
+}
+
+/// One `AuthMethod` as an `AuthOffer`. A blank agent id is not sendable, and
+/// a terminal method's args and env never leave this function.
+pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
+    match method {
+        AuthMethod::Agent(agent) => {
+            let id = agent.id.0.trim();
+            if id.is_empty() {
+                AuthOffer::Unrecognized {
+                    name: agent.name.clone(),
+                    description: agent.description.clone(),
+                }
+            } else {
+                AuthOffer::Agent {
+                    id: AgentMethodId(id.to_string()),
+                    name: agent.name.clone(),
+                    description: agent.description.clone(),
+                }
+            }
+        }
+        AuthMethod::Terminal(terminal) => AuthOffer::Terminal {
+            name: terminal.name.clone(),
+            description: terminal.description.clone(),
+        },
+        // A future variant is not an agent method. Treating it as one would
+        // send an id `authenticate` was never offered.
+        _ => AuthOffer::Unrecognized {
+            name: "sign in".to_string(),
+            description: None,
+        },
+    }
+}
+
+/// Codex reads this method's key from `authenticate` `_meta` or from
+/// `CODEX_API_KEY` / `OPENAI_API_KEY`. This app sends neither, so a button
+/// cannot collect it.
+const SHELVED_API_KEY: &str = "api-key";
+
+/// Whether an agent method id can be a button. The shelved API Key id cannot.
+pub(crate) fn sign_in_offered(id: &str) -> bool {
+    id != SHELVED_API_KEY
+}
+
+/// Agent methods with a visible name, in advertisement order, while login is
+/// still required. Terminal methods, unrecognized methods, and the shelved
+/// API Key id are not buttons.
+pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<SignIn> {
+    if !login_active {
+        return Vec::new();
+    }
+    offers
+        .iter()
+        .filter_map(|offer| {
+            let AuthOffer::Agent { id, name, .. } = offer else {
+                return None;
+            };
+            if !sign_in_offered(id.as_str()) {
+                return None;
+            }
+            let label = name.trim();
+            if label.is_empty() {
+                return None;
+            }
+            Some(SignIn {
+                id: id.clone(),
+                label: label.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// A forwarded `session/request_permission`, as the Chat surface draws it.
@@ -275,6 +397,10 @@ enum Msg {
         request: String,
         answer: ElicitationAnswer,
     },
+    Authenticate {
+        method_id: String,
+        reply: sync_mpsc::Sender<Result<(), String>>,
+    },
     Shutdown,
 }
 
@@ -449,6 +575,23 @@ impl Wire {
         });
     }
 
+    /// `authenticate` for an agent method, and nothing else. The response body
+    /// is not a session: the caller still has to open one.
+    pub fn authenticate(&self, method_id: &str) -> Result<(), String> {
+        let (reply, rx) = sync_mpsc::channel();
+        self.tx
+            .send(Msg::Authenticate {
+                method_id: method_id.to_string(),
+                reply,
+            })
+            .map_err(|_| "harness exited".to_string())?;
+        match rx.recv_timeout(SIGN_IN_WAIT) {
+            Ok(result) => result,
+            Err(RecvTimeoutError::Timeout) => Err("sign-in timed out".to_string()),
+            Err(RecvTimeoutError::Disconnected) => Err("harness exited".to_string()),
+        }
+    }
+
     /// The user's pick on a forwarded elicitation form. Decline is valid.
     pub fn answer_elicitation(&self, request: &str, answer: ElicitationAnswer) {
         let _ = self.tx.send(Msg::AnswerElicitation {
@@ -557,7 +700,7 @@ fn run(
                             agent: response.agent_info.map(|info| info.name),
                             load_session: response.agent_capabilities.load_session,
                             mcp_http: response.agent_capabilities.mcp_capabilities.http,
-                            auth_methods: response.auth_methods.iter().map(auth_hint).collect(),
+                            auth_methods: response.auth_methods.iter().map(auth_offer).collect(),
                         });
                     let failed = handshake.is_err();
                     if let Some(ready) = ready.take() {
@@ -685,6 +828,17 @@ async fn serve(
             // No turn is running, so there is no ask to answer and nothing to
             // cancel.
             Msg::Cancel | Msg::Answer { .. } | Msg::AnswerElicitation { .. } => {}
+            Msg::Authenticate { method_id, reply } => {
+                // `AuthMethodId` is an owned string. A borrow would have to be `'static`.
+                let outcome = cx
+                    .send_request(AuthenticateRequest::new(method_id))
+                    .block_task()
+                    .await;
+                let _ = reply.send(match outcome {
+                    Ok(_) => Ok(()),
+                    Err(error) => Err(error.message),
+                });
+            }
             Msg::Shutdown => break,
         }
     }
@@ -867,6 +1021,11 @@ async fn turn(
                 }
                 Some(Msg::Open { reply, .. }) => {
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
+                }
+                // Not sent under `session/prompt`. The click hears it now,
+                // instead of waiting out the sign-in budget on a dropped message.
+                Some(Msg::Authenticate { reply, .. }) => {
+                    let _ = reply.send(Err("a turn is in flight".to_string()));
                 }
                 None => {
                     end_turn(&mut asks, &mut forms, &mut thought, on_event);
@@ -1107,23 +1266,6 @@ fn end_turn(
     on_event(Event::Plan(Vec::new()));
 }
 
-fn auth_hint(method: &AuthMethod) -> AuthHint {
-    match method {
-        AuthMethod::Terminal(terminal) => AuthHint {
-            name: terminal.name.clone(),
-            description: terminal.description.clone(),
-        },
-        AuthMethod::Agent(agent) => AuthHint {
-            name: agent.name.clone(),
-            description: agent.description.clone(),
-        },
-        _ => AuthHint {
-            name: "sign in".to_string(),
-            description: None,
-        },
-    }
-}
-
 /// What a finished turn is worth, from the reason it stopped and the words
 /// it streamed. A cap-ended turn is shown as far as it got and marked. With
 /// nothing said it errors like any other stop and the Static Director takes it.
@@ -1234,9 +1376,9 @@ mod tests {
     fn an_auth_method_keeps_its_description_for_the_login_hint() {
         let method =
             AuthMethod::Agent(AuthMethodAgent::new("x", "Sign in").description("run x login"));
-        let hint = auth_hint(&method);
-        assert_eq!(hint.name, "Sign in");
-        assert_eq!(hint.description.as_deref(), Some("run x login"));
+        let offer = auth_offer(&method);
+        assert_eq!(offer.name(), "Sign in");
+        assert_eq!(offer.description(), Some("run x login"));
     }
 
     /// The shape `session/new` actually puts on the wire. The token rides in

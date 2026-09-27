@@ -20,7 +20,7 @@ use crate::acp_wire::{
 };
 use crate::action_log;
 
-pub use crate::acp_wire::{ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep};
+pub use crate::acp_wire::{ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep, SignIn};
 
 /// `pub(crate)` so the settings window can name the variable that owns a row.
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
@@ -76,7 +76,7 @@ const HANDOVER: Duration = Duration::from_secs(3);
 const HANDOVER_POLL: Duration = Duration::from_millis(20);
 
 /// What every caller is told when the child is gone.
-const LOST: &str = "harness exited";
+pub(crate) const LOST: &str = "harness exited";
 
 /// How long a withdrawal waits for the `parsed` line that belongs to it. The
 /// Shell writes that line frames after the turn ended, so this only has to
@@ -518,6 +518,9 @@ pub struct Session {
     /// wire. `shutdown` clears this first so a spawn that lands afterwards
     /// kills the child instead of storing it.
     wanted: AtomicBool,
+    /// `authenticate` is in flight. A second click is refused, and the flag
+    /// clears on the way out so a panic cannot leave the landing stuck.
+    signing_in: AtomicBool,
     /// What the first attach wrote into `cursor-agent`'s config, for
     /// `shutdown` to take back. The first record is kept across respawns:
     /// it is the one that knows what did not exist before us.
@@ -573,6 +576,15 @@ impl Drop for Serving<'_> {
     }
 }
 
+/// Clears `signing_in` however `sign_in` leaves, panic included.
+struct SignInFlight<'a>(&'a AtomicBool);
+
+impl Drop for SignInFlight<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 impl Session {
     fn new(
         launch: Launch,
@@ -604,6 +616,7 @@ impl Session {
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
             wanted: AtomicBool::new(true),
+            signing_in: AtomicBool::new(false),
             cursor: Mutex::new(None),
         }
     }
@@ -889,6 +902,63 @@ impl Session {
         not_authenticated(&command)
     }
 
+    /// In-app sign-in for one advertised agent method. `Ok` from the agent is
+    /// not signed-in: only a session that then opens clears the landing.
+    pub fn sign_in(
+        &self,
+        method_id: &str,
+        instance: &str,
+        character: &str,
+        blank: bool,
+    ) -> Result<(), String> {
+        let Some(wire) = self.current_wire() else {
+            return Err(LOST.to_string());
+        };
+        {
+            let state = self.state.lock().map_err(|_| LOST.to_string())?;
+            if state.login.is_none() {
+                return Ok(());
+            }
+            let known = state.handshake.auth_methods.iter().any(|offer| {
+                matches!(
+                    offer,
+                    crate::acp_wire::AuthOffer::Agent { id, .. }
+                        if id.as_str() == method_id && crate::acp_wire::sign_in_offered(method_id)
+                )
+            });
+            if !known {
+                return Err("that sign-in stays in your terminal".to_string());
+            }
+        }
+        if self
+            .signing_in
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err("sign-in already in progress".to_string());
+        }
+        let _flight = SignInFlight(&self.signing_in);
+        wire.authenticate(method_id)?;
+        let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+        // The retry gate would swallow the session/new this click just earned.
+        state.auth_tried = None;
+        let key = SessionKey {
+            instance: instance.to_string(),
+            character: character.to_string(),
+            blank,
+        };
+        // A saved `session/load` that returns Ok would clear the landing even
+        // when `authenticate` changed nothing. This click has to open fresh.
+        self.open_session(&wire, &mut state, &key, true).map(|_| ())
+    }
+
+    fn offered_sign_in(&self) -> Vec<SignIn> {
+        let Ok(state) = self.state.lock() else {
+            return Vec::new();
+        };
+        crate::acp_wire::sign_in_button(state.login.is_some(), &state.handshake.auth_methods)
+    }
+
     /// An answer is the proof the login happened, in a terminal ai-buddy never
     /// sees. The composer it disabled comes back the same way it went.
     fn signed_in(&self, state: &mut State) {
@@ -1088,7 +1158,7 @@ impl Session {
                 return Err(not_authenticated(command));
             }
         }
-        let id = self.open_session(&wire, &mut state, key)?;
+        let id = self.open_session(&wire, &mut state, key, false)?;
         Ok((wire, id))
     }
 
@@ -1160,12 +1230,17 @@ impl Session {
         wire: &Arc<Wire>,
         state: &mut State,
         key: &SessionKey,
+        fresh: bool,
     ) -> Result<String, String> {
-        let saved = state
-            .handshake
-            .load_session
-            .then(|| self.saved_id(key))
-            .flatten();
+        let saved = if fresh {
+            None
+        } else {
+            state
+                .handshake
+                .load_session
+                .then(|| self.saved_id(key))
+                .flatten()
+        };
         let mcp = mcp_server(&state.handshake);
         let cwd = self
             .cwd
@@ -1447,7 +1522,7 @@ fn probe(session: &Session) -> i32 {
     let methods: Vec<&str> = handshake
         .auth_methods
         .iter()
-        .map(|method| method.name.as_str())
+        .map(|method| method.name())
         .collect();
     println!(
         "  agent        {}",
@@ -1718,9 +1793,9 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
             .first()
             .map(|method| {
                 method
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| method.name.clone())
+                    .description()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| method.name().to_string())
             })
             .unwrap_or_else(|| login_hint(name))
     })
@@ -1932,6 +2007,65 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
 
 pub fn attached() -> Option<Arc<Session>> {
     attachment().session.clone()
+}
+
+/// Agent sign-in buttons for the attached session, or nothing when login is
+/// not still required. Callers do not re-check the method kind.
+pub(crate) fn sign_in_actions() -> Vec<SignIn> {
+    #[cfg(test)]
+    if let Some(actions) = SIGN_IN_SESSION.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|session| session.offered_sign_in())
+    }) {
+        return actions;
+    }
+    attached()
+        .map(|session| session.offered_sign_in())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+thread_local! {
+    static SIGN_IN_SESSION: std::cell::RefCell<Option<Arc<Session>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A session `sign_in_actions` can see without publishing it into the process
+/// attachment. Other tests read that slot, and a session left there would
+/// make them think a Harness is attached.
+#[cfg(test)]
+pub(crate) fn with_sign_in_gate(
+    login: Option<&str>,
+    methods: Vec<agent_client_protocol::schema::v1::AuthMethod>,
+    body: impl FnOnce(),
+) {
+    let dir = std::env::temp_dir().join(format!("ai-buddy-sign-in-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let session = Arc::new(Session::new(
+        Launch {
+            name: "codex".to_string(),
+            argv: vec!["codex".to_string()],
+        },
+        Ok(AttachCwd(dir.clone())),
+        SessionDataDir::at(dir.clone()),
+        Arc::new(Box::new(|_| {}) as Forward),
+    ));
+    {
+        let mut state = session.state.lock().unwrap();
+        state.login = login.map(str::to_string);
+        state.handshake.auth_methods = methods.iter().map(crate::acp_wire::auth_offer).collect();
+    }
+    SIGN_IN_SESSION.with(|slot| *slot.borrow_mut() = Some(session));
+    struct Clear(PathBuf);
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            SIGN_IN_SESSION.with(|slot| *slot.borrow_mut() = None);
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _clear = Clear(dir);
+    body();
 }
 
 /// Whether an attached Harness is actually answering, not merely configured.
@@ -2157,7 +2291,16 @@ mod tests {
                     if script == "die-opening" {
                         std::process::exit(3);
                     }
-                    if script == "auth" && recorded(count, "new") == 1 {
+                    // `auth-sign-in` opens once `authenticate` has run.
+                    // `auth-sign-in-noop` never does, like an adapter whose
+                    // `authenticate` is Ok and changes nothing.
+                    let refuse = match script {
+                        "auth" => recorded(count, "new") == 1,
+                        "auth-sign-in" => recorded(count, "authenticate") == 0,
+                        "auth-sign-in-noop" => true,
+                        _ => false,
+                    };
+                    if refuse {
                         say(
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "auth required"}}),
                         );
@@ -2173,6 +2316,10 @@ mod tests {
                         };
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
                     }
+                }
+                Some("authenticate") => {
+                    record(count, "authenticate");
+                    say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                 }
                 Some("session/load") => {
                     record(count, "load");
@@ -4208,6 +4355,35 @@ mod tests {
         session.shutdown();
     }
 
+    /// The Chat button's path (#1000): `authenticate`, then a fresh
+    /// `session/new`. Ok from `authenticate` is not signed-in, so the landing
+    /// clears only when that session opens, and stays up when it is refused.
+    #[test]
+    fn a_sign_in_clears_the_landing_only_when_the_next_session_opens() {
+        let (fx, session) = Fixture::new("auth-sign-in");
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_authenticated("fake --login"))
+        );
+        assert_eq!(session.sign_in("fake", "buddy-1", "bmo", false), Ok(()));
+        assert_eq!(fx.count("authenticate"), 1);
+        assert_eq!(fx.count("new"), 2);
+        assert_eq!(session.inspect().login, None);
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        session.shutdown();
+
+        let (fx, session) = Fixture::new("auth-sign-in-noop");
+        assert!(session.complete(&asking("hi")).is_err());
+        assert_eq!(
+            session.sign_in("fake", "buddy-1", "bmo", false),
+            Err(not_authenticated("fake --login"))
+        );
+        assert_eq!(fx.count("authenticate"), 1);
+        assert_eq!(fx.count("new"), 2);
+        assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
+        session.shutdown();
+    }
+
     /// The attach path's translation, on the turn path (#991). The session
     /// stays open: the token died, not the child, and the next answer is the
     /// proof the user signed in somewhere else.
@@ -4916,10 +5092,107 @@ mod tests {
         );
     }
 
+    /// A button is an agent method with a real id. A terminal method's id, args,
+    /// and env are a credential path and never ride along on the offer.
+    #[test]
+    fn sign_in_buttons_keep_agent_ids_and_drop_terminal_secrets() {
+        use agent_client_protocol::schema::v1::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
+        use std::collections::HashMap;
+
+        let mut env = HashMap::new();
+        env.insert("TOKEN".to_string(), "super-secret".to_string());
+        let terminal = AuthMethod::Terminal(
+            AuthMethodTerminal::new("term", "Outside")
+                .args(vec!["--not-stored".to_string()])
+                .env(env),
+        );
+        let agent = AuthMethod::Agent(AuthMethodAgent::new("chatgpt", "ChatGPT"));
+        let offers = vec![
+            crate::acp_wire::auth_offer(&agent),
+            crate::acp_wire::auth_offer(&terminal),
+        ];
+        let actions = crate::acp_wire::sign_in_button(true, &offers);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id.as_str(), "chatgpt");
+        assert_eq!(actions[0].label, "ChatGPT");
+        let debug = format!("{offers:?}");
+        assert!(!debug.contains("--not-stored"), "{debug}");
+        assert!(!debug.contains("super-secret"), "{debug}");
+        // `Terminal` is the variant name, so the id `term` is what remains.
+        assert!(!debug.replace("Terminal", "").contains("term"), "{debug}");
+
+        assert!(crate::acp_wire::sign_in_button(false, &offers).is_empty());
+        assert!(crate::acp_wire::sign_in_button(true, &[]).is_empty());
+        assert_eq!(
+            login_command("claude", &Handshake::default()),
+            "claude /login"
+        );
+
+        let pi = Handshake {
+            auth_methods: vec![crate::acp_wire::auth_offer(&terminal)],
+            ..Default::default()
+        };
+        assert_eq!(
+            login_command("pi", &pi),
+            "npx -y pi-acp@latest --terminal-login"
+        );
+        assert!(crate::acp_wire::sign_in_button(true, &pi.auth_methods).is_empty());
+
+        let blank = AuthMethod::Agent(AuthMethodAgent::new(" ", "ChatGPT"));
+        assert!(
+            crate::acp_wire::sign_in_button(true, &[crate::acp_wire::auth_offer(&blank)])
+                .is_empty()
+        );
+
+        let two = [
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "chatgpt", "ChatGPT",
+            ))),
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "apikey", "API Key",
+            ))),
+        ];
+        let actions = crate::acp_wire::sign_in_button(true, &two);
+        assert_eq!(
+            actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("chatgpt", "ChatGPT"), ("apikey", "API Key")]
+        );
+
+        let codex = [
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "api-key", "API Key",
+            ))),
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "chat-gpt", "ChatGPT",
+            ))),
+        ];
+        let actions = crate::acp_wire::sign_in_button(true, &codex);
+        assert_eq!(
+            actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("chat-gpt", "ChatGPT")]
+        );
+        assert_eq!(
+            login_command(
+                "codex",
+                &Handshake {
+                    auth_methods: codex.to_vec(),
+                    ..Default::default()
+                }
+            ),
+            "codex login"
+        );
+    }
+
     #[test]
     fn login_command_takes_the_table_for_a_named_harness_and_the_handshake_for_a_custom_one() {
         let hint = |description: Option<&str>| Handshake {
-            auth_methods: vec![crate::acp_wire::AuthHint {
+            auth_methods: vec![crate::acp_wire::AuthOffer::Unrecognized {
                 name: "ChatGPT".into(),
                 description: description.map(str::to_string),
             }],

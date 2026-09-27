@@ -6,6 +6,7 @@ import {
   canAnswer,
   composerPlaceholder,
   landingCopy,
+  loginPresentation,
 } from "../src/chat-connect.js";
 
 const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
@@ -161,7 +162,69 @@ test("needs-auth still names the login command", () => {
   });
   assert.equal(copy.title, "Codex needs login");
   assert.equal(copy.command, "codex login");
-  assert.equal(copy.hint, "Or run this in your terminal:");
+  assert.equal(copy.signInLabel, null);
+  assert.equal(copy.hint, "Run this in a terminal:");
+});
+
+test("needs-login offers agent sign-in beside the terminal command", () => {
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "codex",
+    login: "codex login",
+    sign_in: [
+      { id: "chatgpt", label: "ChatGPT" },
+      { id: "apikey", label: "API Key" },
+    ],
+    harness: {
+      name: "codex",
+      session: null,
+      alive: true,
+      login: "codex login",
+    },
+  };
+  assert.deepEqual(loginPresentation(opening), {
+    command: "codex login",
+    actions: [
+      { id: "chatgpt", label: "ChatGPT" },
+      { id: "apikey", label: "API Key" },
+    ],
+  });
+  const copy = landingCopy(opening);
+  assert.equal(copy.command, "codex login");
+  assert.equal(copy.signInLabel, "Login using:");
+  assert.equal(copy.hint, "Or run this in a terminal:");
+  assert.equal(
+    copy.signInWaiting,
+    "Finish signing in in your browser. Any code on that page came from Codex, so continue only if you just clicked this button.",
+  );
+  assert.deepEqual(copy.signIn, [
+    { id: "chatgpt", label: "ChatGPT" },
+    { id: "apikey", label: "API Key" },
+  ]);
+  assert.equal(canAnswer(opening), false);
+
+  const bare = { ...opening };
+  delete bare.sign_in;
+  assert.deepEqual(loginPresentation(bare).actions, []);
+  const bareCopy = landingCopy(bare);
+  assert.equal(bareCopy.command, "codex login");
+  assert.equal(bareCopy.signInLabel, null);
+  assert.equal(bareCopy.hint, "Run this in a terminal:");
+  assert.equal(bareCopy.signInWaiting, null);
+  assert.deepEqual(bareCopy.signIn, []);
+
+  assert.deepEqual(
+    loginPresentation({
+      configured: true,
+      enabled: true,
+      login: "codex login",
+      kind: "agent",
+    }).actions,
+    [],
+  );
+  assert.deepEqual(landingCopy({ configured: false, enabled: false }).signIn, []);
 });
 
 test("unconfigured and switched-off copy is unchanged", () => {

@@ -363,6 +363,34 @@ if (typeof window !== "undefined") {
 // `canAnswer`: configured is not enough when the launcher is missing or the
 // child never came up (#726). The composer is disabled rather than hidden,
 // so it reads as waiting.
+// One button per agent method. Rebuilt on every paint so a later opening
+// cannot leave a method that is no longer offered.
+function paintSignIn(actions, waiting) {
+  const host = document.getElementById("landing-sign-in");
+  host.replaceChildren();
+  for (const action of actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sign-in-btn";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      const pending = document.createElement("p");
+      pending.className = "hint sign-in-waiting";
+      pending.textContent = waiting;
+      button.after(pending);
+      button.disabled = true;
+      invoke("sign_in", { instance, methodId: action.id })
+        .catch((why) => note(String(why)))
+        .finally(() => {
+          pending.remove();
+          button.disabled = false;
+        });
+    });
+    host.append(button);
+  }
+  host.hidden = actions.length === 0;
+}
+
 function attached(opening) {
   const ready = canAnswer(opening);
   const isHttpMode = opening.configured && !opening.harness_name;
@@ -385,6 +413,9 @@ function attached(opening) {
   httpEmpty.hidden = true;
   httpOff.hidden = true;
 
+  paintSignIn([]);
+  document.getElementById("landing-sign-in-label").hidden = true;
+
   if (ready) {
     return true;
   }
@@ -403,9 +434,13 @@ function attached(opening) {
     const command = document.getElementById("landing-command");
     const hint = document.getElementById("landing-hint");
     const copy = landingCopy(opening);
+    paintSignIn(copy.signIn, copy.signInWaiting);
 
     title.textContent = copy.title;
     lede.textContent = copy.lede;
+    const signInLabel = document.getElementById("landing-sign-in-label");
+    signInLabel.textContent = copy.signInLabel ?? "";
+    signInLabel.hidden = !copy.signInLabel;
     if (copy.command) {
       command.textContent = copy.command;
       command.hidden = false;

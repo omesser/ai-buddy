@@ -35,6 +35,26 @@ function installUrlFor(missing, harnessName) {
   return urls[harnessName] || null;
 }
 
+// No login means no actions, even if `sign_in` is still on the opening.
+// `kind` is not a button. The shell already decided which methods are.
+export function loginPresentation(opening) {
+  if (!opening?.configured || !opening.enabled || !opening.login) {
+    return { command: null, actions: [] };
+  }
+  const raw = Array.isArray(opening.sign_in) ? opening.sign_in : [];
+  const actions = [];
+  for (const item of raw) {
+    if (!item || typeof item.id !== "string" || item.id === "") {
+      continue;
+    }
+    if (typeof item.label !== "string" || item.label === "") {
+      continue;
+    }
+    actions.push({ id: item.id, label: item.label });
+  }
+  return { command: opening.login, actions };
+}
+
 // Configured is not ready. A named Harness whose child never came up, or
 // whose launcher is missing, must not enable Ask {name} the way a live
 // session does. HTTP Completer mode has no harness object.
@@ -69,12 +89,23 @@ export function landingCopy(opening) {
   const harness = opening?.harness;
   const missing = harness?.missing;
 
+  // Buttons are the first tier and the command the second. With no button,
+  // the command is the only path, so it drops the "Or".
   if (opening?.configured && opening.enabled && opening.login) {
+    const signIn = loginPresentation(opening).actions;
+    const buttons = signIn.length > 0;
     return {
       title: `${name} needs login`,
       lede: `${name} needs login, or you can switch to a different Harness:`,
       command: opening.login,
-      hint: "Or run this in your terminal:",
+      signInLabel: buttons ? "Login using:" : null,
+      hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
+      // The Harness opens the browser itself and may prefill a code there that
+      // never reaches us (grok's inline flow). The click is what the user vouches for.
+      signInWaiting: buttons
+        ? `Finish signing in in your browser. Any code on that page came from ${name}, so continue only if you just clicked this button.`
+        : null,
+      signIn,
     };
   }
 
@@ -83,7 +114,9 @@ export function landingCopy(opening) {
       title: "Connect a Harness to get started",
       lede: "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.",
       command: null,
+      signInLabel: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -92,7 +125,9 @@ export function landingCopy(opening) {
       title: "Chat is switched off",
       lede: "Turn AI back on in Settings, or connect a Harness below.",
       command: null,
+      signInLabel: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -103,7 +138,9 @@ export function landingCopy(opening) {
       title: `${name} needs \`${missing}\``,
       lede: `\`${missing}\` is not installed. ai-buddy does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
       command: null,
+      signInLabel: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -112,7 +149,9 @@ export function landingCopy(opening) {
       title: `Initializing ${name}…`,
       lede: `${name} is starting up. Chat will be ready in a moment.`,
       command: null,
+      signInLabel: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -121,7 +160,9 @@ export function landingCopy(opening) {
       title: `${name} is not running`,
       lede: `${name} is set but has not come up. Static weights answer until it does. Pick a different Harness below.`,
       command: null,
+      signInLabel: null,
       hint: null,
+      signIn: [],
     };
   }
 
@@ -129,6 +170,8 @@ export function landingCopy(opening) {
     title: "Chat is switched off",
     lede: "Turn AI back on in Settings, or connect a Harness below.",
     command: null,
+    signInLabel: null,
     hint: null,
+    signIn: [],
   };
 }
