@@ -8,9 +8,14 @@ import {
   wrapText,
   placeBubble,
 } from "./bubble.js";
-import { canAnswer } from "./chat-connect.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
-import { createQuickMessage, crossedDrag, placeQuickMessage } from "./quick-message.js";
+import {
+  applyQuickMessageGate,
+  createQuickMessage,
+  crossedDrag,
+  placeQuickMessage,
+  quickMessageMirror,
+} from "./quick-message.js";
 
 const stage = document.getElementById("stage");
 
@@ -230,6 +235,38 @@ function positionQuick(view, spriteRect) {
 
 let reportedComposing = null;
 
+// A newer opening, from the command or from `chat-opening`, wins. The pill
+// stays frozen until one says chat can answer.
+function paintQuickGate(view, opening) {
+  applyQuickMessageGate(view.quickGate, opening);
+  // setAvailable skips the paint when the bit did not move. The sentence
+  // still can, and the mirror has to grow to fit it.
+  syncQuick(view);
+}
+
+function refreshQuickGate(view, id) {
+  const token = (view.gateToken = (view.gateToken ?? 0) + 1);
+  window.__TAURI__.core
+    .invoke("chat_opening", { instance: id })
+    .then((opening) => {
+      if (view.gateToken !== token) return;
+      paintQuickGate(view, opening);
+    })
+    .catch((err) => {
+      console.error("chat_opening", err);
+      if (view.gateToken !== token) return;
+      paintQuickGate(view, null);
+    });
+}
+
+function noteQuickOpening(opening) {
+  for (const view of views.values()) {
+    if (!view.quickGate) continue;
+    view.gateToken = (view.gateToken ?? 0) + 1;
+    paintQuickGate(view, opening);
+  }
+}
+
 function reportComposing() {
   let id = "";
   for (const [viewId, view] of views) {
@@ -248,14 +285,21 @@ function reportComposing() {
 function syncQuick(view) {
   const visible = view.quickMachine.visible;
   view.quick.classList.toggle("visible", visible);
-  if (!visible && document.activeElement === view.quickField) {
+  // A disabled field can still hold the caret from the moment it was ready.
+  if (
+    (!visible || !view.quickMachine.available) &&
+    document.activeElement === view.quickField
+  ) {
     view.quickField.blur();
   }
   if (view.quickField.value !== view.quickMachine.text) {
     view.quickField.value = view.quickMachine.text;
   }
-  const shown = view.quickField.value;
-  view.quickMirror.textContent = shown ? `${shown}\u200b` : "\u200b";
+  view.quickMirror.textContent = quickMessageMirror(
+    view.quickField.value,
+    view.quickField.placeholder,
+    view.quickMachine.available,
+  );
   if (view.quickMachine.takeFocus()) view.quickField.focus();
   reportComposing();
   if (!visible || !view.latest) {
@@ -297,13 +341,14 @@ function attachQuickMessage(view, id) {
   field.rows = 1;
   // Same bound the Chat composer declares, which is CHAT_LIMIT.
   field.maxLength = 16000;
-  field.placeholder = "talk to me";
+  field.disabled = true;
   field.autocomplete = "off";
   field.setAttribute("aria-label", "Quick message");
   const send = document.createElement("button");
   send.type = "button";
   send.className = "quick-message-send";
   send.setAttribute("aria-label", "Send");
+  send.disabled = true;
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   icon.setAttribute("viewBox", "0 0 12 12");
   icon.setAttribute("aria-hidden", "true");
@@ -324,29 +369,41 @@ function attachQuickMessage(view, id) {
   machine = createQuickMessage({
     schedule: (fn, ms) => window.setTimeout(fn, ms),
     clear: (timer) => window.clearTimeout(timer),
+    // Frozen until the first opening. The fetch below is what thaws it.
+    available: false,
     onChange() {
       syncQuick(view);
     },
     send(text) {
+      const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
         .invoke("chat_opening", { instance: id })
         .then((opening) => {
-          if (!canAnswer(opening)) {
+          // A newer opening already painted. Trust that one: this fetch is a
+          // stale picture, and the line still goes if that picture can answer.
+          if (view.gateToken === token) paintQuickGate(view, opening);
+          if (!machine.available) {
             machine.restore(text);
             return;
           }
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {
-          machine.restore(text);
+          if (machine.available) machine.restore(text);
           console.error("chat_send", err);
         });
     },
   });
   view.quickMachine = machine;
+  view.quickGate = { field, send, machine };
   view.quickMirror.textContent = "\u200b";
+  paintQuickGate(view, null);
+  refreshQuickGate(view, id);
 
-  view.sprite.addEventListener("pointerenter", () => machine.enterSprite());
+  view.sprite.addEventListener("pointerenter", () => {
+    machine.enterSprite();
+    refreshQuickGate(view, id);
+  });
   view.sprite.addEventListener("pointerleave", () => machine.leaveSprite());
   field.addEventListener("focus", () => machine.focus());
   field.addEventListener("blur", () => machine.blur());
@@ -543,6 +600,17 @@ async function start() {
   // listener with no target is an `Any` listener that tauri hands every emit,
   // so without this each display would draw whichever overlay's frame came last.
   const overlay = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
+
+  // Same event Chat's composer freezes on. Addressed here too, because
+  // emit_to the Chat label does not reach this window, and Chat may not
+  // be open when the harness settles.
+  await window.__TAURI__.event.listen(
+    "chat-opening",
+    ({ payload }) => {
+      noteQuickOpening(payload);
+    },
+    { target: overlay.label },
+  );
 
   await window.__TAURI__.event.listen(
     "frame",

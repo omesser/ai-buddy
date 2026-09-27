@@ -8,12 +8,15 @@ import { test } from "node:test";
 import {
   HOVER_DELAY_MS,
   DRAG_DISMISS_PX,
+  applyQuickMessageGate,
   createQuickMessage,
   crossedDrag,
   placeQuickMessage,
+  quickMessageMirror,
+  quickMessagePrompt,
 } from "../src/quick-message.js";
 
-function harness() {
+function harness(options = {}) {
   let time = 0;
   /** @type {{ id: number, fn: () => void, at: number }[]} */
   const tasks = [];
@@ -37,6 +40,7 @@ function harness() {
     onChange() {
       changes.push(qm.typing);
     },
+    available: options.available,
   });
 
   function advance(ms) {
@@ -206,6 +210,143 @@ test("an empty line is not sent", () => {
   assert.equal(qm.visible, true);
 });
 
+test("an unavailable pill appears but refuses text, focus, and send", () => {
+  const { qm, sent, advance } = harness({ available: false });
+
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "the status still has to be readable");
+  assert.equal(qm.available, false);
+  assert.equal(qm.typing, false, "a field that takes nothing is not a typing hold");
+  assert.equal(qm.takeFocus(), false);
+
+  qm.setText("hey");
+  qm.focus();
+  assert.equal(qm.text, "");
+  assert.equal(qm.typing, false);
+  assert.equal(qm.keydown("Enter"), false);
+  assert.equal(qm.submit(), false);
+  assert.deepEqual(sent, []);
+  assert.equal(qm.visible, true);
+});
+
+test("a refused send brings the frozen pill back without the line", () => {
+  const { qm, sent } = shown();
+  qm.setText("hey");
+  qm.dismiss();
+  qm.setAvailable(false);
+
+  qm.restore("hey");
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "");
+  assert.equal(qm.typing, false);
+  assert.deepEqual(sent, []);
+});
+
+test("freezing clears a draft and thawing claims the caret", () => {
+  const { qm, sent } = shown();
+  qm.setText("hey");
+
+  qm.setAvailable(false);
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "", "a draft would hide the unavailable sentence");
+  assert.equal(qm.typing, false);
+  assert.equal(qm.submit(), false);
+  assert.deepEqual(sent, []);
+
+  qm.setAvailable(true);
+  assert.equal(qm.available, true);
+  assert.equal(qm.typing, true);
+  assert.equal(qm.takeFocus(), true);
+  qm.setText("hey");
+  assert.equal(qm.submit(), true);
+  assert.deepEqual(sent, ["hey"]);
+});
+
+test("the unavailable sentence is the one the chat composer shows", () => {
+  const off = { name: "bmo", configured: true, enabled: false };
+  assert.equal(quickMessagePrompt(off), "Nothing can answer yet");
+  assert.equal(quickMessagePrompt(null), "Nothing can answer yet");
+
+  const starting = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "hermes",
+    harness: { name: "hermes", alive: false, initializing: true },
+  };
+  assert.equal(quickMessagePrompt(starting), "Starting Hermes…");
+
+  const down = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "hermes",
+    harness: { name: "hermes", alive: false, session: null },
+  };
+  assert.equal(quickMessagePrompt(down), "Nothing can answer yet");
+
+  const ready = { name: "bmo", configured: true, enabled: true };
+  assert.equal(quickMessagePrompt(ready), "talk to me");
+  assert.equal(
+    quickMessageMirror("", "Nothing can answer yet", false),
+    "Nothing can answer yet\u200b",
+    "the frozen pill reserves the sentence, or overflow clips it",
+  );
+  assert.equal(quickMessageMirror("", "talk to me", true), "\u200b");
+  assert.equal(quickMessageMirror("hey", "talk to me", true), "hey\u200b");
+});
+
+function gateDouble() {
+  return {
+    field: {
+      disabled: false,
+      placeholder: "",
+      labels: {},
+      setAttribute(name, value) {
+        this.labels[name] = value;
+      },
+    },
+    send: { disabled: false },
+    machine: {
+      ready: true,
+      setAvailable(value) {
+        this.ready = value;
+      },
+    },
+  };
+}
+
+test("the gate disables the field and send from the same opening chat uses", () => {
+  const frozen = gateDouble();
+  applyQuickMessageGate(frozen, { name: "bmo", configured: true, enabled: false });
+  assert.equal(frozen.machine.ready, false);
+  assert.equal(frozen.field.disabled, true);
+  assert.equal(frozen.send.disabled, true);
+  assert.equal(frozen.field.placeholder, "Nothing can answer yet");
+  assert.equal(frozen.field.labels["aria-label"], "Nothing can answer yet");
+
+  const starting = gateDouble();
+  applyQuickMessageGate(starting, {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "cursor-agent",
+    harness: { name: "cursor-agent", alive: false, initializing: true },
+  });
+  assert.equal(starting.field.disabled, true);
+  assert.equal(starting.send.disabled, true);
+  assert.equal(starting.field.placeholder, "Starting Cursor…");
+
+  const ready = gateDouble();
+  applyQuickMessageGate(ready, { name: "bmo", configured: true, enabled: true });
+  assert.equal(ready.machine.ready, true);
+  assert.equal(ready.field.disabled, false);
+  assert.equal(ready.send.disabled, false);
+  assert.equal(ready.field.placeholder, "talk to me");
+  assert.equal(ready.field.labels["aria-label"], "Quick message");
+});
+
 test("Enter sends and Shift+Enter does not", () => {
   const { qm, sent } = shown();
   qm.setText("hey");
@@ -263,7 +404,11 @@ test("the empty composer says talk to me and Send is a triangle, not a link", ()
   const js = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
 
-  assert.match(js, /placeholder = "talk to me"/);
+  assert.equal(
+    quickMessagePrompt({ name: "bmo", configured: true, enabled: true }),
+    "talk to me",
+  );
+  assert.match(js, /paintQuickGate\(view, null\)/);
   assert.match(js, /className = "quick-message-send"/);
   assert.match(js, /setAttribute\("aria-label", "Send"\)/);
   assert.match(js, /M2\.2 1\.4 L10\.2 6 L2\.2 10\.6/, "Send is the dark triangle from the motion mock");
@@ -283,6 +428,37 @@ test("the empty composer says talk to me and Send is a triangle, not a link", ()
     /\.bubble\.quick-message\.visible \.bubble-more/,
     "the composer does not borrow the Open chat underline",
   );
+});
+
+test("the overlay freezes the pill from chat's opening, including while it is already up", () => {
+  const js = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  const rs = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+
+  assert.match(js, /applyQuickMessageGate\(/);
+  assert.match(
+    js,
+    /listen\(\s*"chat-opening",[\s\S]*?target: overlay\.label/,
+    "the same push that thaws Chat reaches this overlay",
+  );
+  assert.match(js, /invoke\("chat_opening", \{ instance: id \}\)/);
+  assert.match(
+    rs,
+    /emit_to\(&overlay, CHAT_OPENING_EVENT, &opening\)/,
+    "emit_to a Chat label does not reach the overlay, and Chat may not be open",
+  );
+});
+
+test("a frozen send control does not keep the accent disc", () => {
+  const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
+  assert.match(
+    css,
+    /\.quick-message-send:disabled \{[^}]*background:\s*#2c3340;[^}]*cursor:\s*default/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.quick-message-send:disabled \{[^}]*var\(--shared-accent\)/,
+  );
+  assert.match(css, /\.quick-message-field:disabled \{[^}]*cursor:\s*default/);
 });
 
 test("overlay Send uses chat_send and does not poke the pet", () => {

@@ -101,7 +101,7 @@ test("quick-message showcase matches the overlay", () => {
   assert.match(js, /DRAG_DISMISS_PX = 4/);
   assert.match(cues, /HOVER_DELAY_MS = 2500/);
   assert.match(cues, /DRAG_DISMISS_PX = 4/);
-  assert.match(main, /placeholder = "talk to me"/);
+  assert.match(js, /return "talk to me"/);
   assert.match(cues, /placeholder="talk to me"/);
   assert.match(bubble, /placeholder="talk to me"/);
   assert.match(main, /M2\.2 1\.4 L10\.2 6 L2\.2 10\.6/);

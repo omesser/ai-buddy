@@ -2116,7 +2116,18 @@ fn push_chat_opening(
     let label = chat_label(id);
     let title = opening.name.clone();
     let handle = app.clone();
-    let _ = app.emit_to(label.clone(), CHAT_OPENING_EVENT, opening);
+    let _ = app.emit_to(label.clone(), CHAT_OPENING_EVENT, &opening);
+    // The pill freezes from this opening. `emit_to` the Chat label does not
+    // reach the overlay, and Chat may not be open when the harness settles.
+    let mut index = 0;
+    loop {
+        let overlay = overlay_label(index);
+        if app.get_webview_window(&overlay).is_none() {
+            break;
+        }
+        let _ = app.emit_to(&overlay, CHAT_OPENING_EVENT, &opening);
+        index += 1;
+    }
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
             if let Err(why) = window.set_title(&title) {

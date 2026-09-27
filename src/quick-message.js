@@ -2,6 +2,36 @@
 // when the composer is up and whether a press still belongs to the pet.
 
 import { placeBubble } from "./bubble.js";
+import { canAnswer, composerPlaceholder } from "./chat-connect.js";
+
+// Ready keeps this pill's own prompt. Unavailable uses the Chat composer's
+// sentence, including before the first opening arrives, so the two surfaces
+// cannot disagree about why nothing will answer.
+export function quickMessagePrompt(opening) {
+  if (canAnswer(opening)) return "talk to me";
+  return composerPlaceholder(opening);
+}
+
+// `field` and `send` are the overlay's controls. `machine` is this module.
+// One opening, the same one Chat paints from.
+export function applyQuickMessageGate({ field, send, machine }, opening) {
+  const ready = canAnswer(opening);
+  // Enable before the machine claims the caret. focus() on a still-disabled
+  // field is dropped, and the pill would thaw with nowhere to type.
+  field.disabled = !ready;
+  send.disabled = !ready;
+  field.placeholder = quickMessagePrompt(opening);
+  field.setAttribute("aria-label", ready ? "Quick message" : field.placeholder);
+  machine.setAvailable(ready);
+}
+
+// The mirror is what gives the pill its width. An empty draft mirrors a
+// hairline, which clips the unavailable sentence under overflow: hidden.
+export function quickMessageMirror(text, prompt, available) {
+  if (text) return `${text}\u200b`;
+  if (!available && prompt) return `${prompt}\u200b`;
+  return "\u200b";
+}
 
 export const HOVER_DELAY_MS = 2500;
 
@@ -12,7 +42,7 @@ export function crossedDrag(dx, dy) {
   return dx * dx + dy * dy >= DRAG_DISMISS_PX * DRAG_DISMISS_PX;
 }
 
-export function createQuickMessage({ schedule, clear, send, onChange }) {
+export function createQuickMessage({ schedule, clear, send, onChange, available = true }) {
   let visible = false;
   let text = "";
   let focused = false;
@@ -20,6 +50,7 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
   let disposed = false;
   let hoverTimer = null;
   let overSprite = false;
+  let ready = available;
 
   function changed() {
     if (!disposed) onChange?.();
@@ -43,10 +74,12 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
   function show() {
     if (visible || disposed) return;
     visible = true;
-    // The caret is the typing hold. Claiming it here, not after a later
-    // focus event, stops the walk on the tick the pill appears.
-    focused = true;
-    claimFocus = true;
+    // The caret is the typing hold. A frozen pill is a status, so claiming
+    // it would stop the walk for a field that takes nothing.
+    if (ready) {
+      focused = true;
+      claimFocus = true;
+    }
     changed();
   }
 
@@ -61,7 +94,7 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
 
   function submit() {
     const line = text.trim();
-    if (!visible || !line) return false;
+    if (!ready || !visible || !line) return false;
     text = "";
     hide();
     send(line);
@@ -75,8 +108,11 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     get text() {
       return text;
     },
+    get available() {
+      return ready;
+    },
     get typing() {
-      return visible && focused;
+      return visible && focused && ready;
     },
     takeFocus() {
       if (!claimFocus) return false;
@@ -98,11 +134,27 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
       // Leaving never dismisses. It only abandons a dwell that has not fired.
       cancelHover();
     },
+    setAvailable(next) {
+      if (disposed || next === ready) return;
+      ready = next;
+      if (!ready) {
+        // The placeholder is the only place this pill can say why. A draft
+        // would hide that sentence.
+        text = "";
+        focused = false;
+        claimFocus = false;
+      } else if (visible) {
+        focused = true;
+        claimFocus = true;
+      }
+      changed();
+    },
     setText(value) {
+      if (!ready) return;
       text = value;
     },
     focus() {
-      if (focused) return;
+      if (!ready || focused) return;
       focused = true;
       if (visible) changed();
     },
@@ -112,7 +164,7 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
       if (visible) changed();
     },
     keydown(key, mods = {}) {
-      if (!visible) return false;
+      if (!visible || !ready) return false;
       if (key === "Enter" && !mods.shiftKey && !mods.composing) return submit();
       return false;
     },
@@ -127,8 +179,17 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     submit,
     restore(value) {
       if (disposed) return;
-      text = value;
       visible = true;
+      if (!ready) {
+        // A refused send had already hidden the pill. Bring it back so the
+        // unavailable sentence is on screen, not the line that could not go.
+        text = "";
+        focused = false;
+        claimFocus = false;
+        changed();
+        return;
+      }
+      text = value;
       focused = true;
       claimFocus = true;
       changed();
