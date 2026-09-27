@@ -11,7 +11,7 @@ import { mountChatAppearance } from "./chat-appearance.js";
 // `values` is keyed by form row id and carries one scalar per row, except the
 // Instances list, which carries the rows themselves. A list item draws as
 // Name (character) and dismisses by id: the printed line is ambiguous between
-// two characters of the same name and Character. #875.
+// two fidgets of the same name and Character. #875.
 function listItems(value) {
   const items = Array.isArray(value) ? value : [];
   return items.map((item) => ({ label: `${item.name} (${item.character})`, id: item.id }));

@@ -83,7 +83,7 @@ test("window-titles-hint.html carries noindex and a visible Dated class line", (
   );
 });
 
-// #916 and ADR-0032: the hint names what the character knows, never the grant that
+// #916 and ADR-0032: the hint names what the fidget knows, never the grant that
 // buys it, and never a verb of sight. The Settings mock on the same page is
 // allowed to name Screen Recording, so only the hint elements are checked.
 test("window-titles-hint.html hint copy names no grant, no Capture and no sight", () => {

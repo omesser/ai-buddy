@@ -31,13 +31,13 @@ test("Speech already drawn, then said None, does not report a missing answer", (
 
   const log = play(turns, [
     {
-      said: "You may! Tell me one thing that would make me a more useful little character.",
+      said: "You may! Tell me one thing that would make me a more useful little fidget.",
     },
     { said: null },
   ]);
 
   assert.deepEqual(log, [
-    "You may! Tell me one thing that would make me a more useful little character.",
+    "You may! Tell me one thing that would make me a more useful little fidget.",
   ]);
   assert.equal(
     log.includes(MISSING_ANSWER),
