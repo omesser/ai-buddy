@@ -922,7 +922,8 @@ impl Session {
             let known = state.handshake.auth_methods.iter().any(|offer| {
                 matches!(
                     offer,
-                    crate::acp_wire::AuthOffer::Agent { id, .. } if id.as_str() == method_id
+                    crate::acp_wire::AuthOffer::Agent { id, .. }
+                        if id.as_str() == method_id && crate::acp_wire::sign_in_offered(method_id)
                 )
             });
             if !known {
@@ -5116,6 +5117,33 @@ mod tests {
                 .map(|action| (action.id.as_str(), action.label.as_str()))
                 .collect::<Vec<_>>(),
             vec![("chatgpt", "ChatGPT"), ("apikey", "API Key")]
+        );
+
+        let codex = [
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "api-key", "API Key",
+            ))),
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "chat-gpt", "ChatGPT",
+            ))),
+        ];
+        let actions = crate::acp_wire::sign_in_button(true, &codex);
+        assert_eq!(
+            actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("chat-gpt", "ChatGPT")]
+        );
+        assert_eq!(
+            login_command(
+                "codex",
+                &Handshake {
+                    auth_methods: codex.to_vec(),
+                    ..Default::default()
+                }
+            ),
+            "codex login"
         );
     }
 

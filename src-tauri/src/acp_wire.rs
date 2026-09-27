@@ -156,8 +156,19 @@ pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
     }
 }
 
+/// Codex reads this method's key from `authenticate` `_meta` or from
+/// `CODEX_API_KEY` / `OPENAI_API_KEY`. This app sends neither, so a button
+/// cannot collect it.
+const SHELVED_API_KEY: &str = "api-key";
+
+/// Whether an agent method id can be a button. The shelved API Key id cannot.
+pub(crate) fn sign_in_offered(id: &str) -> bool {
+    id != SHELVED_API_KEY
+}
+
 /// Agent methods with a visible name, in advertisement order, while login is
-/// still required. Terminal and unrecognized methods are not buttons.
+/// still required. Terminal methods, unrecognized methods, and the shelved
+/// API Key id are not buttons.
 pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<SignIn> {
     if !login_active {
         return Vec::new();
@@ -168,6 +179,9 @@ pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<Si
             let AuthOffer::Agent { id, name, .. } = offer else {
                 return None;
             };
+            if !sign_in_offered(id.as_str()) {
+                return None;
+            }
             let label = name.trim();
             if label.is_empty() {
                 return None;
