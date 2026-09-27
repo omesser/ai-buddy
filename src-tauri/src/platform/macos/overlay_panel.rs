@@ -19,6 +19,10 @@ fn overlay_panel_class() -> &'static AnyClass {
         let superclass = AnyClass::get(c"NSPanel").expect("AppKit always defines NSPanel");
         let mut builder = ClassBuilder::new(c"AiBuddyOverlayPanel", superclass)
             .expect("the class name is ours and registered once");
+        // Tauri's window is tao's `TaoWindow`, an NSWindow plus this BOOL. Where
+        // NSWindow's ivars end 8-aligned the BOOL grows the instance, so the swap
+        // needs the same ivar to keep sizes equal, and tao still reads it by name.
+        builder.add_ivar::<Bool>(c"focusable");
 
         extern "C" fn refuse(_this: &AnyObject, _sel: Sel) -> Bool {
             Bool::NO
@@ -54,9 +58,20 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ns_window = unsafe { &*ptr };
 
     // Re-class to our NSPanel subclass: NSPanel adds no ivars beyond NSWindow,
-    // so only the method table moves.
-    // SAFETY: the new class is an NSPanel, hence an NSWindow; toolkit messages stay valid.
-    unsafe { AnyObject::set_class(ns_window, overlay_panel_class()) };
+    // so with tao's ivar mirrored only the method table moves.
+    let (from, to) = (ns_window.class(), overlay_panel_class());
+    if from.instance_size() != to.instance_size() {
+        return Err(format!(
+            "cannot re-class {} ({} bytes) as {} ({} bytes)",
+            from.name().to_string_lossy(),
+            from.instance_size(),
+            to.name().to_string_lossy(),
+            to.instance_size()
+        ));
+    }
+    // SAFETY: the new class is an NSPanel, hence an NSWindow, of the same size;
+    // toolkit messages stay valid.
+    unsafe { AnyObject::set_class(ns_window, to) };
 
     let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
         | NSWindowCollectionBehavior::Stationary
@@ -89,5 +104,33 @@ fn sharing_type() -> NSWindowSharingType {
         NSWindowSharingType::ReadOnly
     } else {
         NSWindowSharingType::None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shape `tao` registers as `TaoWindow`: an NSWindow plus one BOOL.
+    fn tao_window_shape() -> &'static AnyClass {
+        let superclass = AnyClass::get(c"NSWindow").expect("AppKit always defines NSWindow");
+        let mut builder = ClassBuilder::new(c"AiBuddyTaoWindowShape", superclass)
+            .expect("registered once per test binary");
+        builder.add_ivar::<Bool>(c"focusable");
+        builder.register()
+    }
+
+    #[test]
+    fn the_panel_keeps_the_tao_window_layout_it_replaces() {
+        let tao = tao_window_shape();
+        let panel = overlay_panel_class();
+
+        let focusable = panel
+            .instance_variable(c"focusable")
+            .expect("tao still reads its focusable ivar after the swap");
+        let tao_focusable = tao.instance_variable(c"focusable").unwrap();
+        assert_eq!(focusable.offset(), tao_focusable.offset());
+        assert_eq!(focusable.type_encoding(), tao_focusable.type_encoding());
+        assert_eq!(panel.instance_size(), tao.instance_size());
     }
 }
