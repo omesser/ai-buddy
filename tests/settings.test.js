@@ -367,16 +367,19 @@ test("the Character popups offer every installed package, the worn one selected"
 
 // chat_ui is an application setting (ADR-0019), so the picker sits on
 // Presence. Minimal is the design a fresh settings file starts on.
-test("the Chat UI popup lives on Presence and offers the three designs", () => {
+test("the Chat UI and Chat appearance popups live on Presence", () => {
   const selects = drawn("Presence").filter((node) => node.tagName === "select");
   const offered = Object.fromEntries(
     selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
   );
   assert.deepEqual(offered, {
     chat_ui: ["Minimal", "Terminal", "Glass"],
+    chat_appearance: ["System", "Light", "Dark"],
   });
-  assert.equal(selects[0].value, "Minimal");
+  assert.equal(selects.find((select) => select.dataset.id === "chat_ui").value, "Minimal");
+  assert.equal(selects.find((select) => select.dataset.id === "chat_appearance").value, "System");
   assert.equal(drawn("Character").some((node) => node.dataset.id === "chat_ui"), false);
+  assert.equal(drawn("Character").some((node) => node.dataset.id === "chat_appearance"), false);
 });
 
 // A redraw is render() again, and replaceChildren() takes the focused control

@@ -75,7 +75,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use secrets::{KeyringStore, SecretStore};
 use serde::Serialize;
-use settings::{InstanceRow, Settings, SettingsOp, SettingsSession};
+use settings::{ChatAppearance, InstanceRow, Settings, SettingsOp, SettingsSession};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -1730,6 +1730,7 @@ struct ChatOpening {
     host: String,
     /// Which Chat UI design the user picked: "minimal", "terminal", or "glass".
     chat_ui: String,
+    chat_appearance: ChatAppearance,
     /// A Harness is attached but not signed in. Names the login command for
     /// the user's own terminal.
     login: Option<String>,
@@ -1796,6 +1797,7 @@ fn chat_opening_from(
         personality,
         std::iter::empty::<&str>(),
         "minimal",
+        ChatAppearance::System,
     )
 }
 
@@ -1805,6 +1807,7 @@ fn chat_opening_layers(
     personality: &str,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     chat_ui: &str,
+    chat_appearance: ChatAppearance,
 ) -> ChatOpening {
     let blank = model::blank();
     ChatOpening {
@@ -1816,6 +1819,7 @@ fn chat_opening_layers(
         model: inspect.model.clone(),
         host: inspect.host.clone(),
         chat_ui: chat_ui.to_string(),
+        chat_appearance,
         login: inspect
             .harness
             .as_ref()
@@ -1925,6 +1929,12 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .ok()
             .map(|settings| settings.chat_ui.clone())
             .unwrap_or_else(|| "minimal".to_string()),
+        chat_appearance: state
+            .settings
+            .lock()
+            .ok()
+            .map(|settings| settings.chat_appearance)
+            .unwrap_or_default(),
         instance_prompt,
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
@@ -2008,6 +2018,7 @@ fn push_chat_opening(
     inspect: &model::DirectorInspect,
     characters: &BTreeMap<String, Arc<Character>>,
     chat_ui: &str,
+    chat_appearance: ChatAppearance,
 ) {
     let Some(instance) = roster.get(id) else {
         return;
@@ -2018,6 +2029,7 @@ fn push_chat_opening(
         &personality_of(characters, instance),
         behavior_names_of(characters, instance),
         chat_ui,
+        chat_appearance,
     );
     let label = chat_label(id);
     let title = opening.name.clone();
@@ -2040,10 +2052,19 @@ fn push_chat_openings(
     inspect: &model::DirectorInspect,
     characters: &BTreeMap<String, Arc<Character>>,
     chat_ui: &str,
+    chat_appearance: ChatAppearance,
 ) {
     let ids: Vec<_> = roster.list().into_iter().map(|(id, _)| id).collect();
     for id in ids {
-        push_chat_opening(app, roster, &id, inspect, characters, chat_ui);
+        push_chat_opening(
+            app,
+            roster,
+            &id,
+            inspect,
+            characters,
+            chat_ui,
+            chat_appearance,
+        );
     }
 }
 
@@ -2403,13 +2424,21 @@ fn apply_menu_action(
                     director,
                     app,
                 );
-                let chat_ui = settings
+                let (chat_ui, chat_appearance) = settings
                     .lock()
                     .ok()
-                    .map(|s| s.chat_ui.clone())
-                    .unwrap_or_else(|| "minimal".to_string());
+                    .map(|s| (s.chat_ui.clone(), s.chat_appearance))
+                    .unwrap_or_else(|| ("minimal".to_string(), ChatAppearance::System));
                 if let Ok(inspect) = inspect.lock() {
-                    push_chat_opening(app, roster, instance_id, &inspect, characters, &chat_ui);
+                    push_chat_opening(
+                        app,
+                        roster,
+                        instance_id,
+                        &inspect,
+                        characters,
+                        &chat_ui,
+                        chat_appearance,
+                    );
                 }
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
@@ -2443,10 +2472,18 @@ fn apply_menu_action(
             if let Ok(mut settings) = settings.lock() {
                 settings.director_enabled = !settings.director_enabled;
                 let chat_ui = settings.chat_ui.clone();
+                let chat_appearance = settings.chat_appearance;
                 config.apply_switch(settings.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
-                    push_chat_openings(app, roster, &inspect, characters, &chat_ui);
+                    push_chat_openings(
+                        app,
+                        roster,
+                        &inspect,
+                        characters,
+                        &chat_ui,
+                        chat_appearance,
+                    );
                 }
                 persist_settings(&settings, settings_path);
                 eprintln!(
@@ -3896,6 +3933,7 @@ mod tests {
             "Nim is patient.",
             ["wave"],
             "minimal",
+            ChatAppearance::System,
         );
         assert_eq!(fresh.personality, "Nim is patient.");
         assert_eq!(fresh.instance_prompt, "", "empty by default");
@@ -3938,6 +3976,7 @@ mod tests {
                 "Nim is patient.",
                 ["wave"],
                 "minimal",
+                ChatAppearance::System,
             );
             assert_eq!(off.personality, "Nim is patient.");
             assert_eq!(off.instance_prompt, "Answer in haiku.");
@@ -3957,6 +3996,7 @@ mod tests {
                 "Nim is patient.",
                 ["wave"],
                 "minimal",
+                ChatAppearance::System,
             );
             assert_eq!(on.personality, "", "the built-in layer was emptied");
             assert_eq!(

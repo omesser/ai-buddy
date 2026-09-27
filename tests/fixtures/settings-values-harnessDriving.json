@@ -6,6 +6,7 @@
   "byo_token": "",
   "capturable": true,
   "character": "bmo",
+  "chat_appearance": "System",
   "chat_ui": "Minimal",
   "consent_accessibility": true,
   "consent_input_monitoring": false,

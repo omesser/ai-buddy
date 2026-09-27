@@ -42,6 +42,8 @@ pub(crate) const CHAT_PLAN_EVENT: &str = "chat-plan";
 /// Chat UI selection change, telling each chat surface to swap its root class.
 pub(crate) const CHAT_UI_EVENT: &str = "chat-ui";
 
+pub(crate) const CHAT_APPEARANCE_EVENT: &str = "chat-appearance";
+
 /// Retires one forwarded request in every open Chat surface, by request id.
 /// The ask went to all of them and one took the click; the rest would
 /// otherwise keep offering buttons on a question already answered.
