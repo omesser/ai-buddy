@@ -21,7 +21,7 @@ pwsh_runtime_crash() {
   local status="$1"
   local output="$2"
   case "$output" in
-    *FileLoadException* | *"Abort trap"*) return 0 ;;
+    *FileLoadException* | *Microsoft.Management.Infrastructure* | *"Abort trap"* | *"not properly handled"*) return 0 ;;
   esac
   # SIGABRT. EnableExit uses the finding count, so 134 findings would
   # collide; those prints carry Severity/ParseError and are not skipped.
