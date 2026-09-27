@@ -2296,15 +2296,15 @@ mod tests {
         // runs; end that line so the first reply is a line of its own.
         println!();
         record(count, "spawn");
+        let spawns = recorded(count, "spawn");
         // A launcher that dies before it reads a byte, the way `npx` does when
-        // dyld cannot load `node`.
-        if script == "abort-at-start" {
+        // dyld cannot load `node`. `abort-first` is that Node fixed afterwards.
+        if script == "abort-at-start" || (script == "abort-first" && spawns == 1) {
             eprintln!(
                 "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib"
             );
             std::process::abort();
         }
-        let spawns = recorded(count, "spawn");
         let mut session = "fresh-id".to_string();
         let mut pending_prompt: Option<Value> = None;
         let stdin = std::io::stdin();
@@ -4657,6 +4657,26 @@ mod tests {
         assert!(failed.starts_with(&exited), "{failed}");
         #[cfg(unix)]
         assert!(failed.contains("SIGABRT"), "no exit status in {failed}");
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    /// Picking the same Harness again after fixing what killed it attaches
+    /// now, not after the backoff the dead launch earned.
+    #[test]
+    fn a_repick_after_a_startup_death_attaches_at_once() {
+        let (fx, session) = Fixture::new("abort-first");
+        let session = Arc::new(session);
+        for _ in 0..2 {
+            session.spawn_preflight();
+            match fx.forwarded.recv_timeout(Duration::from_secs(10)) {
+                Ok(Forwarded::AttachSettled) => {}
+                other => panic!("expected AttachSettled, got {other:?}"),
+            }
+        }
+        let inspect = session.inspect();
+        assert!(inspect.alive, "the re-pick stood behind the backoff");
+        assert_eq!(inspect.failed, None);
         session.shutdown();
         let _ = std::fs::remove_dir_all(&fx.dir);
     }
