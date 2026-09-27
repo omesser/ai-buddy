@@ -287,10 +287,11 @@ function attachQuickMessage(view, id) {
   send.className = "quick-message-send";
   send.setAttribute("aria-label", "Send");
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  icon.setAttribute("viewBox", "0 0 10 12");
+  icon.setAttribute("viewBox", "0 0 12 12");
   icon.setAttribute("aria-hidden", "true");
   const point = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  point.setAttribute("d", "M1 1 L9 6 L1 11 Z");
+  point.setAttribute("d", "M2.2 1.4 L10.2 6 L2.2 10.6 L2.2 7.1 L6.5 6 L2.2 4.9 Z");
+  point.setAttribute("fill", "#14171e");
   icon.append(point);
   send.append(icon);
   row.append(mirror, field);

@@ -195,17 +195,18 @@ body {
 
 /* After thinking-bounce so the expression page's bubble slice — which treats
    `background: transparent` as overlay layout — stays speech and thinking.
-   Tails stay on Speech. The pop rises through 0.92 and 1.03, then rests at 1. */
+   Tails stay on Speech. The pop eases out through 1.02, then rests at 1. */
 .bubble.quick-message {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   width: max-content;
   max-width: 260px;
   min-width: 168px;
+  padding: 8px 8px 8px 13px;
   pointer-events: none;
   transform-origin: center bottom;
-  transform: translateY(4px) scale(0.92);
+  transform: translateY(8px) scale(0.94);
   transition: opacity 300ms ease, transform 220ms ease;
 }
 
@@ -225,14 +226,14 @@ body {
 
 @keyframes quick-message-pop {
   0% {
-    animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
     opacity: 0;
-    transform: translateY(4px) scale(0.92);
+    transform: translateY(8px) scale(0.94);
   }
-  55% {
-    animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  45% {
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
     opacity: 1;
-    transform: translateY(-2px) scale(1.03);
+    transform: translateY(-2px) scale(1.02);
   }
   100% {
     opacity: 1;
@@ -286,25 +287,26 @@ body {
 .quick-message-send {
   flex: 0 0 auto;
   align-self: center;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 50%;
   appearance: none;
-  background: none;
-  color: var(--shared-accent);
+  background: var(--shared-accent);
   cursor: pointer;
 }
 
 .quick-message-send svg {
   display: block;
-  width: 10px;
+  width: 12px;
   height: 12px;
-  fill: currentColor;
+  margin-left: 1px;
+  fill: #14171e;
 }
 
 .sprite {

@@ -230,9 +230,10 @@ test("the composer pops in and settles in 380ms, still without a tail", () => {
   );
   assert.match(
     css,
-    /@keyframes quick-message-pop[\s\S]*cubic-bezier\(0\.2, 0\.7, 0\.3, 1\)[\s\S]*translateY\(4px\) scale\(0\.92\)[\s\S]*translateY\(-2px\) scale\(1\.03\)[\s\S]*translateY\(0\) scale\(1\)/,
-    "the pop starts under full size, rises past it, and settles on the cue curve",
+    /@keyframes quick-message-pop[\s\S]*cubic-bezier\(0\.16, 1, 0\.3, 1\)[\s\S]*translateY\(8px\) scale\(0\.94\)[\s\S]*translateY\(-2px\) scale\(1\.02\)[\s\S]*translateY\(0\) scale\(1\)/,
+    "the pop eases out through 1.02, rises, and settles at 1",
   );
+  assert.doesNotMatch(css, /scale\(1\.03\)/);
   assert.match(css, /transform-origin:\s*center bottom/);
 });
 
@@ -243,10 +244,13 @@ test("the empty composer says talk to me and Send is a triangle, not a link", ()
   assert.match(js, /placeholder = "talk to me"/);
   assert.match(js, /className = "quick-message-send"/);
   assert.match(js, /setAttribute\("aria-label", "Send"\)/);
-  assert.match(js, /M1 1 L9 6 L1 11 Z/, "Send is a right-pointing triangle");
+  assert.match(js, /M2\.2 1\.4 L10\.2 6 L2\.2 10\.6/, "Send is the dark triangle from the motion mock");
+  assert.match(js, /fill", "#14171e"/);
   assert.doesNotMatch(js, /send\.textContent = "Send"/);
   assert.doesNotMatch(js, /send\.className = "bubble-more"/);
-  assert.match(css, /\.quick-message-send svg[\s\S]*fill:\s*currentColor/);
+  assert.match(css, /\.quick-message-send \{[^}]*width:\s*28px;\s*height:\s*28px;[^}]*border-radius:\s*50%;[^}]*background:\s*var\(--shared-accent\)/s);
+  assert.match(css, /\.quick-message-field::placeholder \{[^}]*color:\s*#8b93a7/s);
+  assert.match(css, /\.quick-message-send svg[\s\S]*fill:\s*#14171e/);
   assert.doesNotMatch(
     css,
     /\.bubble\.quick-message\.visible \.bubble-more/,
