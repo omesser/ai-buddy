@@ -1376,6 +1376,10 @@ pub(crate) fn run_frame_loop(
                 // The verbs are this Instance's alone, decided above. Taken
                 // rather than cloned: the snapshot is reused across Instances,
                 // and a verb left behind would be replayed next tick.
+                // This Instance only. The snapshot is shared, and a
+                // neighbour's caret must not stop this one.
+                world.composing =
+                    platform::overlay_composing().as_deref() == Some(live.id.as_str());
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.proposal = proposal;
                 world.bubble_visible = live.speech.visible_at(std::time::Instant::now());

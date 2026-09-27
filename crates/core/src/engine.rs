@@ -143,6 +143,9 @@ pub struct WorldSnapshot {
     /// the caller did not say, and the Engine treats every tick as a fresh sample.
     /// A reused generation is a tick between polls, so a riding sprite coasts or hitch-steps.
     pub poll_generation: u64,
+    /// This Instance's quick message has the caret. Walk and chase stop;
+    /// idle, sit and a perch in place do not.
+    pub composing: bool,
     /// Whether a speech bubble is showing. A resting stroll does not translate while it is.
     pub bubble_visible: bool,
 }
@@ -395,6 +398,10 @@ pub struct Engine {
     /// losing the ground ends it at once.
     poke_cooldown_ms: u32,
 
+    /// The quick message has the caret this tick. Copied off the snapshot
+    /// at the start so a proposal later in the tick sees the same hold.
+    composing: bool,
+
     /// Whether the previous tick already carried `Verb::Menu`. The Shell re-injects that verb every tick the popup is held, so a cue keyed on the verb would fire for as long as the menu is open.
     /// The press edge is the cue; a gap clears this and the next press cues again.
     menu_held: bool,
@@ -446,6 +453,7 @@ impl Engine {
             rush_reported: false,
             chase_ms: 0,
             poke_cooldown_ms: 0,
+            composing: false,
             menu_held: false,
         }
     }
@@ -526,6 +534,7 @@ impl Engine {
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
+        self.composing = snapshot.composing;
 
         // Idling is resting untouched. Time spent in the air or in someone's
         // hand does not count towards nodding off.
@@ -775,6 +784,17 @@ impl Engine {
                     self.velocity.x = 0.0
                 }
                 _ => {}
+            }
+        }
+
+        // Typing holds the feet. Idle, sit and perch stay; a walk already
+        // under way must not take this tick's step. A jump still leaves.
+        if self.composing && matches!(state, State::Grounded | State::Perched) {
+            if matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
+                self.stop_playing();
+            }
+            if self.on_screen() != Some(Primitive::Jump) {
+                self.velocity.x = 0.0;
             }
         }
 
@@ -1353,16 +1373,17 @@ impl Engine {
         true
     }
 
-    /// Whether the sprite's State permits every one of `primitives`. Expression
-    /// carries in any State; motion also needs the post-Poke cooldown, gated here
-    /// because chases and cursor reactions start walks too (#177).
+    /// Whether the sprite's State permits every one of `primitives`. Motion
+    /// needs the post-Poke cooldown (#177). Walk and chase also wait out a
+    /// quick message; a jump still may.
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk => true,
-            Primitive::Walk | Primitive::Chase | Primitive::Jump => {
-                on_feet && self.poke_cooldown_ms == 0
+            Primitive::Walk | Primitive::Chase => {
+                on_feet && self.poke_cooldown_ms == 0 && !self.composing
             }
+            Primitive::Jump => on_feet && self.poke_cooldown_ms == 0,
             _ => on_feet,
         })
     }
@@ -2762,6 +2783,79 @@ mod tests {
         assert!(
             strolling.iter().all(|frame| frame.velocity.x == WALK_SPEED),
             "and keeps going after the menu is dismissed: {strolling:?}"
+        );
+    }
+
+    /// The caret in a quick message is a hold, not a menu: the walk stops
+    /// where it is, and a jump is still how the sprite leaves.
+    #[test]
+    fn typing_a_quick_message_stops_the_walk_in_place() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let under_way = engine.tick(&a_long_perch());
+        assert_eq!(under_way.velocity.x, WALK_SPEED);
+        let x = under_way.position.x;
+
+        let held = engine.tick(&WorldSnapshot {
+            composing: true,
+            ..a_long_perch()
+        });
+        assert_eq!(
+            held.velocity.x, 0.0,
+            "the first composing tick does not step"
+        );
+        assert_eq!(held.position.x, x);
+        assert_ne!(held.animation, "walk");
+        assert_eq!(held.state, State::Perched);
+
+        let refused = engine.tick(&WorldSnapshot {
+            composing: true,
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let still = engine.tick(&WorldSnapshot {
+            composing: true,
+            ..a_long_perch()
+        });
+        assert_eq!(refused.velocity.x, 0.0);
+        assert_eq!(still.velocity.x, 0.0, "a new walk is refused while typing");
+        assert_eq!(still.position.x, x);
+
+        let resumed = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        assert_eq!(
+            resumed.velocity.x, 0.0,
+            "the proposal's step is the next tick"
+        );
+        let stepping = engine.tick(&a_long_perch());
+        assert_eq!(stepping.velocity.x, WALK_SPEED);
+    }
+
+    #[test]
+    fn typing_a_quick_message_still_lets_a_jump_leave() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.tick(&WorldSnapshot {
+            composing: true,
+            proposal: Some(BehaviorProposal {
+                behavior: "jump".to_string(),
+                dialogue: None,
+            }),
+            ..a_long_perch()
+        });
+        let jumped = engine.tick(&WorldSnapshot {
+            composing: true,
+            ..a_long_perch()
+        });
+        assert!(
+            jumped.velocity.y < 0.0,
+            "typing does not pin a jump, got {jumped:?}"
         );
     }
 
@@ -6607,6 +6701,7 @@ mod tests {
             verbs: vec![],
             proposal: None,
             poll_generation: 0,
+            composing: false,
             bubble_visible: false,
         };
     }

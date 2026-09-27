@@ -1370,6 +1370,13 @@ fn overlay_primary(down: bool) {
     platform::set_overlay_primary(down);
 }
 
+/// The overlay's quick message gained or lost the caret. Empty means none.
+/// Read each tick, so a dropped invoke cannot leave the pet stuck.
+#[tauri::command]
+fn overlay_composing(instance: String) {
+    platform::set_overlay_composing(Some(instance));
+}
+
 /// Same witness for the right button. Without it a right-click on the sprite
 /// is swallowed by the webview and the session poll never sees a Menu.
 #[tauri::command]
@@ -3344,6 +3351,7 @@ fn main() {
             character,
             overlay_primary,
             overlay_secondary,
+            overlay_composing,
             overlay_hotspots,
             overlay_hit_tests_hotspots,
             overlay_open_chat,

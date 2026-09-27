@@ -7,8 +7,9 @@ import { test } from "node:test";
 
 import {
   HOVER_DELAY_MS,
-  LEAVE_GRACE_MS,
+  DRAG_DISMISS_PX,
   createQuickMessage,
+  crossedDrag,
   placeQuickMessage,
 } from "../src/quick-message.js";
 
@@ -51,15 +52,26 @@ function harness() {
   return { qm, sent, advance };
 }
 
-test("the composer appears after a 200ms hover and not before", () => {
+function shown() {
+  const harnessed = harness();
+  harnessed.qm.enterSprite();
+  harnessed.advance(HOVER_DELAY_MS);
+  return harnessed;
+}
+
+test("the composer appears after a 2.5s hover, focused, and not before", () => {
   const { qm, advance } = harness();
 
   qm.enterSprite();
   advance(HOVER_DELAY_MS - 1);
   assert.equal(qm.visible, false, "a glance is not a hover");
+  assert.equal(qm.typing, false);
 
   advance(1);
   assert.equal(qm.visible, true);
+  assert.equal(qm.typing, true, "the caret is claimed as the pill appears");
+  assert.equal(qm.takeFocus(), true);
+  assert.equal(qm.takeFocus(), false, "the overlay focuses the field once");
 });
 
 test("leaving before the hover completes does not show the composer", () => {
@@ -72,76 +84,61 @@ test("leaving before the hover completes does not show the composer", () => {
   assert.equal(qm.visible, false);
 });
 
-test("leaving the character hides the composer once the gap is crossed", () => {
+test("a second enter does not postpone the dwell", () => {
   const { qm, advance } = harness();
 
   qm.enterSprite();
-  advance(HOVER_DELAY_MS);
-  qm.leaveSprite();
-  advance(LEAVE_GRACE_MS - 1);
-  assert.equal(qm.visible, true, "the pointer is still crossing onto the composer");
+  advance(1000);
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS - 1000);
+  assert.equal(qm.visible, true);
+});
 
-  advance(1);
+test("clicking away during the dwell does not show the composer later", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(1000);
+  qm.outside();
+  advance(HOVER_DELAY_MS);
   assert.equal(qm.visible, false);
 });
 
-test("moving onto the composer during the leave grace keeps it", () => {
-  const { qm, advance } = harness();
+test("leaving after the pill is up does not dismiss it", () => {
+  const { qm, advance } = shown();
 
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
+  qm.setText("hey");
   qm.leaveSprite();
-  advance(LEAVE_GRACE_MS - 1);
-  qm.enterComposer();
-  advance(LEAVE_GRACE_MS);
+  advance(500);
   assert.equal(qm.visible, true);
+  assert.equal(qm.text, "hey");
+  assert.equal(qm.typing, true);
 });
 
-test("a draft keeps the composer up after the pointer leaves", () => {
-  const { qm, advance } = harness();
+test("blurring the field keeps the pill and releases the typing hold", () => {
+  const { qm } = shown();
 
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
-  qm.setText("hey, status?");
-  qm.leaveSprite();
-  advance(LEAVE_GRACE_MS + 50);
+  qm.blur();
   assert.equal(qm.visible, true);
-  assert.equal(qm.text, "hey, status?");
-});
+  assert.equal(qm.typing, false);
 
-test("a focused empty field stays up when the pointer leaves", () => {
-  const { qm, advance } = harness();
-
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
   qm.focus();
-  qm.leaveSprite();
-  qm.leaveComposer();
-  advance(LEAVE_GRACE_MS + 50);
-  assert.equal(qm.visible, true);
+  assert.equal(qm.typing, true);
 });
 
-test("Escape dismisses an empty composer and keeps a draft", () => {
-  const empty = harness();
-  empty.qm.enterSprite();
-  empty.advance(HOVER_DELAY_MS);
-  assert.equal(empty.qm.keydown("Escape"), true);
-  assert.equal(empty.qm.visible, false);
-
-  const draft = harness();
-  draft.qm.enterSprite();
-  draft.advance(HOVER_DELAY_MS);
-  draft.qm.setText("hey");
-  assert.equal(draft.qm.keydown("Escape"), false);
-  assert.equal(draft.qm.visible, true);
-  assert.equal(draft.qm.text, "hey");
+test("click outside, a pet drag, and a double-click dismiss, draft included", () => {
+  for (const dismiss of ["outside", "drag", "summon"]) {
+    const { qm } = shown();
+    qm.setText("hey");
+    qm[dismiss]();
+    assert.equal(qm.visible, false, dismiss);
+    assert.equal(qm.text, "", dismiss);
+    assert.equal(qm.typing, false, dismiss);
+  }
 });
 
-test("a press on the character still reaches the pet", () => {
-  const { qm, advance } = harness();
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
-
+test("a poke still reaches the pet and does not dismiss the composer", () => {
+  const { qm } = shown();
   let pokes = 0;
   qm.press("character", () => {
     pokes += 1;
@@ -150,24 +147,35 @@ test("a press on the character still reaches the pet", () => {
     pokes += 1;
   });
   assert.equal(pokes, 1);
+  assert.equal(qm.visible, true);
+});
+
+test("a drag is a few pixels of movement, not the click itself", () => {
+  assert.equal(DRAG_DISMISS_PX, 4);
+  assert.equal(crossedDrag(DRAG_DISMISS_PX - 1, 0), false);
+  assert.equal(crossedDrag(DRAG_DISMISS_PX, 0), true);
+  assert.equal(crossedDrag(0, DRAG_DISMISS_PX), true);
+});
+
+test("Escape does not dismiss", () => {
+  const { qm } = shown();
+  assert.equal(qm.keydown("Escape"), false);
+  assert.equal(qm.visible, true);
 });
 
 test("Send delivers the trimmed line and hides the composer", () => {
-  const { qm, sent, advance } = harness();
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
+  const { qm, sent } = shown();
   qm.setText("  hey, status?  ");
 
   assert.equal(qm.submit(), true);
   assert.deepEqual(sent, ["hey, status?"]);
   assert.equal(qm.visible, false);
   assert.equal(qm.text, "");
+  assert.equal(qm.typing, false);
 });
 
 test("an empty line is not sent", () => {
-  const { qm, sent, advance } = harness();
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
+  const { qm, sent } = shown();
   qm.setText("   ");
 
   assert.equal(qm.submit(), false);
@@ -176,9 +184,7 @@ test("an empty line is not sent", () => {
 });
 
 test("Enter sends and Shift+Enter does not", () => {
-  const { qm, sent, advance } = harness();
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
+  const { qm, sent } = shown();
   qm.setText("hey");
 
   assert.equal(qm.keydown("Enter", { shiftKey: true }), false);
@@ -203,22 +209,10 @@ test("the composer sits above Speech when the two would share a box", () => {
   assert.equal(stacked.y, 300, "one gap above the Speech bubble, not on top of it");
 });
 
-test("reporting the leave again does not postpone hiding", () => {
-  const { qm, advance } = harness();
-
-  qm.enterSprite();
-  advance(HOVER_DELAY_MS);
-  qm.leaveSprite();
-  advance(LEAVE_GRACE_MS - 1);
-  qm.leaveSprite();
-  advance(1);
-  assert.equal(qm.visible, false);
-});
-
-test("the composer pops in and settles in 380ms, still without a tail", () => {
+test("the composer pops in and settles in 380ms, and leaves the same way", () => {
   const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
 
-  assert.equal(HOVER_DELAY_MS, 200, "the dwell before the pop stays a hover, not a glance");
+  assert.equal(HOVER_DELAY_MS, 2500);
   assert.match(
     css,
     /\.bubble\.quick-message::before,\s*\.bubble\.quick-message::after\s*\{[^}]*content:\s*none/s,
@@ -235,6 +229,11 @@ test("the composer pops in and settles in 380ms, still without a tail", () => {
   );
   assert.doesNotMatch(css, /scale\(1\.03\)/);
   assert.match(css, /transform-origin:\s*center bottom/);
+  assert.match(
+    css,
+    /\.bubble\.quick-message \{[^}]*transition:\s*opacity 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\), transform 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/s,
+    "dismiss eases out on the same 380ms the pop used",
+  );
 });
 
 test("the empty composer says talk to me and Send is a triangle, not a link", () => {
@@ -266,4 +265,26 @@ test("overlay Send uses chat_send and does not poke the pet", () => {
     "the line joins the Chat pipeline, and an open Chat surface is told",
   );
   assert.match(js, /quickMachine\.press\(where/, "a composer press is not a Poke");
+});
+
+test("the overlay autofocuses, dismisses on the locked gestures, and reports typing", () => {
+  const js = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+
+  assert.match(js, /view\.quickField\.focus\(\)/);
+  assert.match(js, /invoke\("overlay_composing", \{ instance: id \}\)/);
+  assert.match(js, /quickMachine\.outside\(\)/);
+  assert.match(js, /quickMachine\.drag\(\)/);
+  assert.match(js, /quickMachine\.summon\(\)/);
+  assert.match(js, /crossedDrag\(/);
+  assert.match(
+    js,
+    /where === "character" && event\.button === 0/,
+    "only a press on the pet can become the drag that dismisses",
+  );
+  assert.doesNotMatch(js, /quickMachine\.keydown\("Escape"\)/);
+  assert.doesNotMatch(
+    js,
+    /function notePointerLeft\(view\) \{\s*if \(!view\.quickMachine\.visible\) return;/,
+    "a leave during the 2.5s dwell has to cancel the timer",
+  );
 });

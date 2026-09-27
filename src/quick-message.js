@@ -3,33 +3,26 @@
 
 import { placeBubble } from "./bubble.js";
 
-export const HOVER_DELAY_MS = 200;
+export const HOVER_DELAY_MS = 2500;
 
-// placeBubble leaves 10px of air that is not an element, and the overlay
-// passes clicks through there. Hiding on the sprite's leave drops the
-// composer before the pointer can cross onto it.
-export const LEAVE_GRACE_MS = 120;
+// A click that stays put is a poke. Past this, the same press is a drag.
+export const DRAG_DISMISS_PX = 4;
+
+export function crossedDrag(dx, dy) {
+  return dx * dx + dy * dy >= DRAG_DISMISS_PX * DRAG_DISMISS_PX;
+}
 
 export function createQuickMessage({ schedule, clear, send, onChange }) {
   let visible = false;
   let text = "";
   let focused = false;
+  let claimFocus = false;
   let disposed = false;
   let hoverTimer = null;
-  let leaveTimer = null;
   let overSprite = false;
-  let overComposer = false;
 
   function changed() {
     if (!disposed) onChange?.();
-  }
-
-  function engaged() {
-    return focused || text.trim().length > 0;
-  }
-
-  function zone() {
-    return overSprite || overComposer;
   }
 
   function cancelHover() {
@@ -38,19 +31,32 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     hoverTimer = null;
   }
 
-  function cancelLeave() {
-    if (leaveTimer === null) return;
-    clear(leaveTimer);
-    leaveTimer = null;
-  }
-
   function hide() {
     cancelHover();
-    cancelLeave();
     const was = visible;
     visible = false;
     focused = false;
+    claimFocus = false;
     if (was) changed();
+  }
+
+  function show() {
+    if (visible || disposed) return;
+    visible = true;
+    // The caret is the typing hold. Claiming it here, not after a later
+    // focus event, stops the walk on the tick the pill appears.
+    focused = true;
+    claimFocus = true;
+    changed();
+  }
+
+  function dismissOpen() {
+    // A click away also abandons a dwell that has not opened yet, so the
+    // pill cannot appear after the pointer has already gone.
+    cancelHover();
+    if (!visible) return;
+    text = "";
+    hide();
   }
 
   function submit() {
@@ -62,20 +68,6 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     return true;
   }
 
-  function considerLeave() {
-    if (zone() || engaged() || !visible) {
-      cancelLeave();
-      return;
-    }
-    // A later leave must not restart the wait. The overlay reports leave
-    // again on the next frame, and resetting it would keep the composer up.
-    if (leaveTimer !== null) return;
-    leaveTimer = schedule(() => {
-      leaveTimer = null;
-      if (!zone() && !engaged()) hide();
-    }, LEAVE_GRACE_MS);
-  }
-
   return {
     get visible() {
       return visible;
@@ -83,49 +75,43 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     get text() {
       return text;
     },
+    get typing() {
+      return visible && focused;
+    },
+    takeFocus() {
+      if (!claimFocus) return false;
+      claimFocus = false;
+      return true;
+    },
     enterSprite() {
       overSprite = true;
-      cancelLeave();
       if (visible || hoverTimer !== null) return;
       hoverTimer = schedule(() => {
         hoverTimer = null;
-        if (disposed || (!overSprite && !overComposer)) return;
-        visible = true;
-        changed();
+        if (disposed || !overSprite) return;
+        show();
       }, HOVER_DELAY_MS);
     },
     leaveSprite() {
       overSprite = false;
-      if (!zone()) cancelHover();
-      considerLeave();
-    },
-    enterComposer() {
-      overComposer = true;
-      cancelLeave();
-    },
-    leaveComposer() {
-      overComposer = false;
-      considerLeave();
+      // Leaving never dismisses. It only abandons a dwell that has not fired.
+      cancelHover();
     },
     setText(value) {
       text = value;
-      if (!engaged()) considerLeave();
     },
     focus() {
+      if (focused) return;
       focused = true;
-      cancelLeave();
+      if (visible) changed();
     },
     blur() {
+      if (!focused) return;
       focused = false;
-      considerLeave();
+      if (visible) changed();
     },
     keydown(key, mods = {}) {
       if (!visible) return false;
-      if (key === "Escape") {
-        if (text.trim()) return false;
-        hide();
-        return true;
-      }
       if (key === "Enter" && !mods.shiftKey && !mods.composing) return submit();
       return false;
     },
@@ -134,10 +120,15 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
       if (where === "composer") return;
       report();
     },
+    outside: dismissOpen,
+    drag: dismissOpen,
+    summon: dismissOpen,
     submit,
     restore(value) {
       text = value;
       visible = true;
+      focused = true;
+      claimFocus = true;
       changed();
     },
     dismiss() {
@@ -147,7 +138,6 @@ export function createQuickMessage({ schedule, clear, send, onChange }) {
     dispose() {
       disposed = true;
       cancelHover();
-      cancelLeave();
     },
   };
 }

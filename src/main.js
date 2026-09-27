@@ -10,7 +10,7 @@ import {
 } from "./bubble.js";
 import { canAnswer } from "./chat-connect.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
-import { createQuickMessage, placeQuickMessage } from "./quick-message.js";
+import { createQuickMessage, crossedDrag, placeQuickMessage } from "./quick-message.js";
 
 const stage = document.getElementById("stage");
 
@@ -228,9 +228,27 @@ function positionQuick(view, spriteRect) {
       : null;
 }
 
+let reportedComposing = null;
+
+function reportComposing() {
+  let id = "";
+  for (const [viewId, view] of views) {
+    if (view.quickMachine.typing) {
+      id = viewId;
+      break;
+    }
+  }
+  if (id === reportedComposing) return;
+  reportedComposing = id;
+  window.__TAURI__.core.invoke("overlay_composing", { instance: id }).catch((err) => {
+    console.error("overlay_composing", err);
+  });
+}
+
 function syncQuick(view) {
-  view.quick.classList.toggle("visible", view.quickMachine.visible);
-  if (!view.quickMachine.visible && document.activeElement === view.quickField) {
+  const visible = view.quickMachine.visible;
+  view.quick.classList.toggle("visible", visible);
+  if (!visible && document.activeElement === view.quickField) {
     view.quickField.blur();
   }
   if (view.quickField.value !== view.quickMachine.text) {
@@ -238,7 +256,9 @@ function syncQuick(view) {
   }
   const shown = view.quickField.value;
   view.quickMirror.textContent = shown ? `${shown}\u200b` : "\u200b";
-  if (!view.quickMachine.visible || !view.latest) {
+  if (view.quickMachine.takeFocus()) view.quickField.focus();
+  reportComposing();
+  if (!visible || !view.latest) {
     view.quickHotspot = null;
     reportHotspots();
     arm();
@@ -256,12 +276,10 @@ function syncQuick(view) {
 
 // Click-through can drop the pointerleave. The next frame still knows the
 // cursor is gone, because :hover is clear once the window ignores it.
+// Runs before the pill is up too: a leave during the dwell cancels it.
 function notePointerLeft(view) {
-  if (!view.quickMachine.visible) return;
   if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
   else view.quickMachine.leaveSprite();
-  if (view.quick.matches(":hover")) view.quickMachine.enterComposer();
-  else view.quickMachine.leaveComposer();
 }
 
 function attachQuickMessage(view, id) {
@@ -330,8 +348,6 @@ function attachQuickMessage(view, id) {
 
   view.sprite.addEventListener("pointerenter", () => machine.enterSprite());
   view.sprite.addEventListener("pointerleave", () => machine.leaveSprite());
-  quick.addEventListener("pointerenter", () => machine.enterComposer());
-  quick.addEventListener("pointerleave", () => machine.leaveComposer());
   field.addEventListener("focus", () => machine.focus());
   field.addEventListener("blur", () => machine.blur());
   field.addEventListener("input", () => {
@@ -626,16 +642,34 @@ async function start() {
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
+  // A press on the pet, measured from pointerdown. The composer never arms
+  // this: a drag in the field is a selection, and it must not grab the pet.
+  let petDrag = null;
   document.addEventListener("pointerdown", (event) => {
-    const where = event.target.closest?.(".quick-message") ? "composer" : "character";
+    const composer = event.target.closest?.(".quick-message");
+    const sprite = event.target.closest?.(".sprite");
+    if (!composer && !sprite) {
+      for (const view of views.values()) view.quickMachine.outside();
+      petDrag = null;
+      return;
+    }
+    const where = composer ? "composer" : "character";
     let reachPet = views.size === 0;
+    let owner = null;
     for (const view of views.values()) {
-      // Same rule on every Character. One answer is enough, and a press on
-      // the composer must not capture the pointer or the pet gets the Poke.
+      const hit = (composer && view.quick === composer) || (sprite && view.sprite === sprite);
+      if (!hit) continue;
+      owner = view;
+      // A press on the composer must not capture the pointer or the pet gets the Poke.
       view.quickMachine.press(where, () => {
         reachPet = true;
       });
       break;
+    }
+    if (where === "character" && event.button === 0 && owner) {
+      petDrag = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    } else {
+      petDrag = null;
     }
     if (!reachPet) return;
     if (event.button === 0) {
@@ -645,20 +679,30 @@ async function start() {
       reportSecondary(true);
     }
   });
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    for (const view of views.values()) {
-      if (view.quickMachine.keydown("Escape")) {
-        event.preventDefault();
-        break;
-      }
-    }
+  document.addEventListener("pointermove", (event) => {
+    if (!petDrag || event.pointerId !== petDrag.id) return;
+    if (!crossedDrag(event.clientX - petDrag.x, event.clientY - petDrag.y)) return;
+    petDrag = null;
+    for (const view of views.values()) view.quickMachine.drag();
+  });
+  document.addEventListener("dblclick", (event) => {
+    if (!event.target.closest?.(".sprite")) return;
+    // Summon opens Chat. The composer yields so the two are not up together.
+    for (const view of views.values()) view.quickMachine.summon();
+  });
+  window.addEventListener("blur", () => {
+    for (const view of views.values()) view.quickMachine.outside();
   });
   document.addEventListener("pointerup", (event) => {
-    if (event.button === 0) reportPrimary(false);
-    else if (event.button === 2) reportSecondary(false);
+    if (event.button === 0) {
+      petDrag = null;
+      reportPrimary(false);
+    } else if (event.button === 2) {
+      reportSecondary(false);
+    }
   });
   document.addEventListener("pointercancel", () => {
+    petDrag = null;
     reportPrimary(false);
     reportSecondary(false);
   });
