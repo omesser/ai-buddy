@@ -222,45 +222,6 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
   assert.deepEqual(landingCopy({ configured: false, enabled: false }).signIn, []);
 });
 
-test("a sign-in in flight shows the Harness's device code under its button", () => {
-  const opening = {
-    name: "bmo",
-    configured: true,
-    enabled: true,
-    harness_name: "grok",
-    login: "grok login",
-    sign_in: [
-      { id: "cached_token", label: "cached_token" },
-      { id: "grok.com", label: "Grok" },
-    ],
-    sign_in_prompt: {
-      method: "grok.com",
-      code: "QB3D-P96A",
-      url: "https://auth.x.ai/device?user_code=QB3D-P96A",
-    },
-    harness: { name: "grok", session: null, alive: true, login: "grok login" },
-  };
-  assert.deepEqual(landingCopy(opening).signInCode, {
-    method: "grok.com",
-    label: "Your code:",
-    code: "QB3D-P96A",
-    url: "If no browser opened, go to https://auth.x.ai/device?user_code=QB3D-P96A",
-  });
-
-  const noUrl = { ...opening, sign_in_prompt: { method: "grok.com", code: "QB3D-P96A" } };
-  assert.equal(landingCopy(noUrl).signInCode.url, null);
-
-  const cleared = { ...opening };
-  delete cleared.sign_in_prompt;
-  assert.equal(landingCopy(cleared).signInCode, null);
-
-  const stranger = { ...opening, sign_in_prompt: { method: "gone", code: "QB3D-P96A" } };
-  assert.equal(landingCopy(stranger).signInCode, null);
-
-  assert.match(js, /paintSignIn\(copy\.signIn, copy\.signInCode\)/);
-  assert.match(js, /className = "sign-in-code"/);
-});
-
 test("unconfigured and switched-off copy is unchanged", () => {
   assert.equal(
     landingCopy({ configured: false, enabled: false }).title,

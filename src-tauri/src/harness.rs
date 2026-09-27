@@ -7,7 +7,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -518,9 +518,9 @@ pub struct Session {
     /// wire. `shutdown` clears this first so a spawn that lands afterwards
     /// kills the child instead of storing it.
     wanted: AtomicBool,
-    /// Whether `authenticate` is in flight, and the code the Harness printed
-    /// for it. Shared with the wire's event closure, which hears the printing.
-    sign_in: Arc<Mutex<SignInState>>,
+    /// `authenticate` is in flight. A second click is refused, and the flag
+    /// clears on the way out so a panic cannot leave the landing stuck.
+    signing_in: AtomicBool,
     /// What the first attach wrote into `cursor-agent`'s config, for
     /// `shutdown` to take back. The first record is kept across respawns:
     /// it is the one that knows what did not exist before us.
@@ -576,148 +576,13 @@ impl Drop for Serving<'_> {
     }
 }
 
-/// The device code a Harness printed while its `authenticate` is in flight,
-/// for the landing to show under that method's button. The user compares it
-/// with the one their browser shows. Nothing stores or sends it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct SignInPrompt {
-    pub method: crate::acp_wire::AgentMethodId,
-    pub code: String,
-    pub url: Option<String>,
-}
-
-/// A code with no sign-in in flight cannot be held.
-#[derive(Default)]
-enum SignInState {
-    #[default]
-    Idle,
-    Waiting {
-        method: crate::acp_wire::AgentMethodId,
-        code: Option<String>,
-        url: Option<String>,
-    },
-}
-
-impl SignInState {
-    /// Take a code and URL from one printed line. True when what the landing
-    /// shows changed. The first URL wins: a device flow prints its own first.
-    fn heard(&mut self, line: &str) -> bool {
-        let before = self.prompt();
-        let Self::Waiting { code, url, .. } = self else {
-            return false;
-        };
-        let (found_code, found_url) = device_prompt(line);
-        if found_code.is_some() {
-            *code = found_code;
-        }
-        if url.is_none() {
-            *url = found_url;
-        }
-        self.prompt() != before
-    }
-
-    fn prompt(&self) -> Option<SignInPrompt> {
-        match self {
-            Self::Waiting {
-                method,
-                code: Some(code),
-                url,
-            } => Some(SignInPrompt {
-                method: method.clone(),
-                code: code.clone(),
-                url: url.clone(),
-            }),
-            _ => None,
-        }
-    }
-}
-
-/// Ends the sign-in however `authenticate` returns, panic included, and
-/// repaints the landing when it was showing a code.
-struct SignInFlight<'a> {
-    state: &'a Mutex<SignInState>,
-    forward: &'a Forward,
-}
+/// Clears `signing_in` however `sign_in` leaves, panic included.
+struct SignInFlight<'a>(&'a AtomicBool);
 
 impl Drop for SignInFlight<'_> {
     fn drop(&mut self) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let shown = std::mem::take(&mut *state).prompt().is_some();
-        drop(state);
-        if shown {
-            (self.forward)(Forwarded::AttachSettled);
-        }
+        self.0.store(false, Ordering::SeqCst);
     }
-}
-
-/// Our own stderr line for a picked-up code. A user code is meant to be read
-/// and grants nothing without the user's approval, so it may be printed.
-fn sign_in_line(harness: &str, prompt: &SignInPrompt) -> String {
-    match &prompt.url {
-        Some(url) => format!("harness: {harness} sign-in code {} at {url}", prompt.code),
-        None => format!("harness: {harness} sign-in code {}", prompt.code),
-    }
-}
-
-/// The device code and the `https://` URL in one line a Harness printed.
-/// A code is a whole word of four and four capitals or digits, the shape grok
-/// and GitHub print.
-// ponytail: other shapes (Microsoft's nine letters, no dash) are not read; widen when a preset prints one.
-fn device_prompt(line: &str) -> (Option<String>, Option<String>) {
-    let plain = strip_ansi(line);
-    let mut code = None;
-    let mut url = None;
-    for word in plain.split_whitespace() {
-        if word.starts_with("https://") {
-            url = url.or_else(|| Some(word.to_string()));
-            continue;
-        }
-        let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric());
-        let bytes = word.as_bytes();
-        let shaped = bytes.len() == 9
-            && bytes.iter().enumerate().all(|(at, byte)| {
-                if at == 4 {
-                    *byte == b'-'
-                } else {
-                    byte.is_ascii_uppercase() || byte.is_ascii_digit()
-                }
-            });
-        if shaped {
-            code = code.or_else(|| Some(word.to_string()));
-        }
-    }
-    (code, url)
-}
-
-/// Terminal colour (CSI) and hyperlink (OSC) sequences out of a line, which a
-/// Harness writing for a terminal wraps around a code or URL.
-fn strip_ansi(line: &str) -> String {
-    let mut plain = String::with_capacity(line.len());
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\x1b' {
-            plain.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('[') => {
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
-                }
-            }
-            Some(']') => {
-                while let Some(c) = chars.next() {
-                    if c == '\x07' || (c == '\x1b' && chars.next_if_eq(&'\\').is_some()) {
-                        break;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    plain
 }
 
 impl Session {
@@ -751,7 +616,7 @@ impl Session {
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
             wanted: AtomicBool::new(true),
-            sign_in: Arc::default(),
+            signing_in: AtomicBool::new(false),
             cursor: Mutex::new(None),
         }
     }
@@ -1054,40 +919,26 @@ impl Session {
             if state.login.is_none() {
                 return Ok(());
             }
-            let known = state
-                .handshake
-                .auth_methods
-                .iter()
-                .find_map(|offer| match offer {
+            let known = state.handshake.auth_methods.iter().any(|offer| {
+                matches!(
+                    offer,
                     crate::acp_wire::AuthOffer::Agent { id, .. }
-                        if id.as_str() == method_id
-                            && crate::acp_wire::sign_in_offered(method_id) =>
-                    {
-                        Some(id.clone())
-                    }
-                    _ => None,
-                });
-            let Some(method) = known else {
+                        if id.as_str() == method_id && crate::acp_wire::sign_in_offered(method_id)
+                )
+            });
+            if !known {
                 return Err("that sign-in stays in your terminal".to_string());
-            };
-            let mut waiting = self.sign_in.lock().map_err(|_| LOST.to_string())?;
-            if !matches!(*waiting, SignInState::Idle) {
-                return Err("sign-in already in progress".to_string());
             }
-            *waiting = SignInState::Waiting {
-                method,
-                code: None,
-                url: None,
-            };
         }
-        let flight = SignInFlight {
-            state: &self.sign_in,
-            forward: &self.forward,
-        };
-        let authenticated = wire.authenticate(method_id);
-        // The code is spent once `authenticate` answers, whatever it said.
-        drop(flight);
-        authenticated?;
+        if self
+            .signing_in
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err("sign-in already in progress".to_string());
+        }
+        let _flight = SignInFlight(&self.signing_in);
+        wire.authenticate(method_id)?;
         let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
         // The retry gate would swallow the session/new this click just earned.
         state.auth_tried = None;
@@ -1099,10 +950,6 @@ impl Session {
         // A saved `session/load` that returns Ok would clear the landing even
         // when `authenticate` changed nothing. This click has to open fresh.
         self.open_session(&wire, &mut state, &key, true).map(|_| ())
-    }
-
-    pub fn sign_in_prompt(&self) -> Option<SignInPrompt> {
-        self.sign_in.lock().ok()?.prompt()
     }
 
     fn offered_sign_in(&self) -> Vec<SignIn> {
@@ -1333,26 +1180,10 @@ impl Session {
         let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
         let asked = Arc::clone(&self.asked);
-        let sign_in = Arc::clone(&self.sign_in);
-        let name = self.launch.name.clone();
         let spawned = Wire::spawn(
             self.launch.command(cwd),
             self.attach_timeout(),
-            Box::new(move |event| match event {
-                // Read only while a sign-in waits, and never logged.
-                Event::Printed(line) => {
-                    let shown = sign_in
-                        .lock()
-                        .ok()
-                        .and_then(|mut state| state.heard(&line).then(|| state.prompt()))
-                        .flatten();
-                    if let Some(prompt) = shown {
-                        eprintln!("{}", sign_in_line(&name, &prompt));
-                        forward(Forwarded::AttachSettled);
-                    }
-                }
-                event => note_event(&data, &forward, &asked, event),
-            }),
+            Box::new(move |event| note_event(&data, &forward, &asked, event)),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -1850,8 +1681,6 @@ fn note_event(dir: &Path, forward: &Forward, asked: &AtomicUsize, event: Event) 
         // session dump rather than copying it (CONTEXT.md). A thought chunk is
         // the part the Harness treats as disposable (ADR-0025).
         Event::Thought(line) => forward(Forwarded::Thought(line)),
-        // The session's sign-in reads these before this function is called.
-        Event::Printed(_) => {}
     }
 }
 
@@ -2180,11 +2009,6 @@ pub fn attached() -> Option<Arc<Session>> {
     attachment().session.clone()
 }
 
-/// The device code the attached session's sign-in is showing, if any.
-pub(crate) fn sign_in_prompt() -> Option<SignInPrompt> {
-    attached().and_then(|session| session.sign_in_prompt())
-}
-
 /// Agent sign-in buttons for the attached session, or nothing when login is
 /// not still required. Callers do not re-check the method kind.
 pub(crate) fn sign_in_actions() -> Vec<SignIn> {
@@ -2447,9 +2271,6 @@ mod tests {
                 // `Missing`.
                 Some("initialize") if script == "die-initializing" => std::process::exit(3),
                 Some("initialize") => {
-                    if script == "auth-sign-in-code" {
-                        eprintln!("a code-shaped line outside a sign-in ZZZZ-0000");
-                    }
                     if let Some(path) = count {
                         let _ = std::fs::write(
                             path.with_file_name("initialize.json"),
@@ -2475,9 +2296,7 @@ mod tests {
                     // `authenticate` is Ok and changes nothing.
                     let refuse = match script {
                         "auth" => recorded(count, "new") == 1,
-                        "auth-sign-in" | "auth-sign-in-code" => {
-                            recorded(count, "authenticate") == 0
-                        }
+                        "auth-sign-in" => recorded(count, "authenticate") == 0,
                         "auth-sign-in-noop" => true,
                         _ => false,
                     };
@@ -2499,22 +2318,6 @@ mod tests {
                     }
                 }
                 Some("authenticate") => {
-                    // grok 1.0.41's device-flow wording, printed to stderr
-                    // because stdout is the ACP stream. Held until the test
-                    // has read the code, like a user still in the browser.
-                    if script == "auth-sign-in-code" {
-                        eprintln!("To sign in, open this URL in your browser:");
-                        eprintln!("    https://auth.x.ai/device?user_code=QB3D-P96A");
-                        eprintln!("Confirm this code in your browser: \x1b[1mQB3D-P96A\x1b[0m");
-                        eprintln!("\x1b[90mOnly continue with a code you requested.\x1b[0m");
-                        let release = count.map(|path| path.with_file_name("release"));
-                        let deadline = Instant::now() + Duration::from_secs(10);
-                        while release.as_ref().is_some_and(|path| !path.exists())
-                            && Instant::now() < deadline
-                        {
-                            std::thread::sleep(Duration::from_millis(10));
-                        }
-                    }
                     record(count, "authenticate");
                     say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                 }
@@ -4579,65 +4382,6 @@ mod tests {
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         session.shutdown();
-    }
-
-    /// The device code a Harness prints during `authenticate` reaches the
-    /// Chat opening while the call is in flight, and leaves when it returns
-    /// (#1064). A code-shaped line outside a sign-in is not one.
-    #[test]
-    fn a_sign_in_shows_the_printed_device_code_until_authenticate_returns() {
-        let (fx, session) = Fixture::new("auth-sign-in-code");
-        assert_eq!(
-            session.complete(&asking("hi")),
-            Err(not_authenticated("fake --login"))
-        );
-        assert_eq!(session.sign_in_prompt(), None);
-        while fx.forwarded.try_recv().is_ok() {}
-        std::thread::scope(|scope| {
-            let signing = scope.spawn(|| session.sign_in("fake", "buddy-1", "bmo", false));
-            fx.attach_settled();
-            assert_eq!(
-                serde_json::to_value(session.sign_in_prompt()).unwrap(),
-                json!({
-                    "method": "fake",
-                    "code": "QB3D-P96A",
-                    "url": "https://auth.x.ai/device?user_code=QB3D-P96A",
-                })
-            );
-            assert_eq!(
-                sign_in_line("grok", &session.sign_in_prompt().unwrap()),
-                "harness: grok sign-in code QB3D-P96A at https://auth.x.ai/device?user_code=QB3D-P96A"
-            );
-            std::fs::write(fx.dir.join("release"), "").unwrap();
-            assert_eq!(signing.join().unwrap(), Ok(()));
-        });
-        assert_eq!(session.sign_in_prompt(), None);
-        assert_eq!(session.inspect().login, None);
-        session.shutdown();
-    }
-
-    /// What grok prints, colour and hyperlink escapes included, reads as the
-    /// code and the URL. Lowercase, longer, or undashed words are not codes.
-    #[test]
-    fn a_printed_device_code_is_read_through_terminal_escapes() {
-        assert_eq!(
-            device_prompt("Confirm this code in your browser: \x1b[1mQB3D-P96A\x1b[0m"),
-            (Some("QB3D-P96A".to_string()), None)
-        );
-        assert_eq!(
-            device_prompt(
-                "    \x1b]8;;https://auth.x.ai/device\x1b\\https://auth.x.ai/device\x1b]8;;\x1b\\"
-            ),
-            (None, Some("https://auth.x.ai/device".to_string()))
-        );
-        assert_eq!(
-            device_prompt("    (WDJB-MJHT)."),
-            (Some("WDJB-MJHT".to_string()), None)
-        );
-        assert_eq!(
-            device_prompt("qb3d-p96a QB3D-P96AX 123e4567-e89b QB3DP96A"),
-            (None, None)
-        );
     }
 
     /// The attach path's translation, on the turn path (#991). The session

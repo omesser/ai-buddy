@@ -364,8 +364,8 @@ if (typeof window !== "undefined") {
 // child never came up (#726). The composer is disabled rather than hidden,
 // so it reads as waiting.
 // One button per agent method. Rebuilt on every paint so a later opening
-// cannot leave a method, or a spent device code, that is no longer offered.
-function paintSignIn(actions, code = null) {
+// cannot leave a method that is no longer offered.
+function paintSignIn(actions) {
   const host = document.getElementById("landing-sign-in");
   host.replaceChildren();
   for (const action of actions) {
@@ -377,20 +377,6 @@ function paintSignIn(actions, code = null) {
       invoke("sign_in", { instance, methodId: action.id }).catch((why) => note(String(why)));
     });
     host.append(button);
-    if (code?.method === action.id) {
-      const line = document.createElement("p");
-      line.className = "sign-in-code";
-      const value = document.createElement("code");
-      value.textContent = code.code;
-      line.append(`${code.label} `, value);
-      host.append(line);
-      if (code.url) {
-        const url = document.createElement("p");
-        url.className = "hint sign-in-url";
-        url.textContent = code.url;
-        host.append(url);
-      }
-    }
   }
   host.hidden = actions.length === 0;
 }
@@ -438,7 +424,7 @@ function attached(opening) {
     const command = document.getElementById("landing-command");
     const hint = document.getElementById("landing-hint");
     const copy = landingCopy(opening);
-    paintSignIn(copy.signIn, copy.signInCode);
+    paintSignIn(copy.signIn);
 
     title.textContent = copy.title;
     lede.textContent = copy.lede;

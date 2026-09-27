@@ -38,10 +38,6 @@ Harnesses keep their credential in a home-relative file or the OS keychain.
 A CLI the user has already logged in to hands its login to a subprocess we
 spawn as the same user.
 
-A device code the Harness prints while an in-app sign-in waits is shown on the
-landing and in our stderr, not held: the user compares it with the browser, and
-it grants nothing without their approval there (#1064).
-
 Attachment is opt-in. ai-buddy spawns and holds a full agent process for as
 long as the app runs. Static weights and the HTTP Completer stay the path for
 everyone who declines.

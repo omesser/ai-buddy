@@ -1737,9 +1737,6 @@ struct ChatOpening {
     /// Agent methods the landing can run in-app. Omitted when there are none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     sign_in: Vec<harness::SignIn>,
-    /// The device code a clicked sign-in printed, while `authenticate` waits.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sign_in_prompt: Option<harness::SignInPrompt>,
     /// Which Harness is attached, when one is. Used to name it in the fourth
     /// empty state (needs authentication).
     harness_name: Option<String>,
@@ -1831,7 +1828,6 @@ fn chat_opening_layers(
             .as_ref()
             .and_then(|attached| attached.login.clone()),
         sign_in: harness::sign_in_actions(),
-        sign_in_prompt: harness::sign_in_prompt(),
         harness_name: inspect
             .harness
             .as_ref()
@@ -1928,7 +1924,6 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .and_then(|read| read.harness.as_ref())
             .and_then(|attached| attached.login.clone()),
         sign_in: harness::sign_in_actions(),
-        sign_in_prompt: harness::sign_in_prompt(),
         harness_name: inspect
             .as_ref()
             .and_then(|read| read.harness.as_ref())
