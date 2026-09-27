@@ -23,7 +23,7 @@ use std::collections::HashMap;
 pub enum MenuAction {
     /// Character ▸ <name>. Switch to the named Character Package.
     SwitchCharacter(String),
-    /// Spawn another character of the current Character.
+    /// Spawn another fidget of the current Character.
     SpawnInstance,
     /// Session Director on/off. Off leaves Static weights running the life.
     ToggleDirector,

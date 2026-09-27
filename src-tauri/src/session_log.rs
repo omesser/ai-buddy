@@ -258,7 +258,7 @@ mod tests {
         assert!(log.replay("buddy-1").is_empty());
     }
 
-    /// Production change that would fail this: Chat showing only the character's
+    /// Production change that would fail this: Chat showing only the fidget's
     /// lines after a close and reopen, dropping the typed request.
     #[test]
     fn typed_and_spoken_stay_in_order() {
@@ -288,7 +288,7 @@ mod tests {
 
     /// Production change that would fail this: forgetting every Instance's
     /// turns when one Instance's session is reopened. Saving an Instance Prompt
-    /// reopens that session only; the character beside it is still mid-conversation.
+    /// reopens that session only; the fidget beside it is still mid-conversation.
     #[test]
     fn forgetting_one_instance_leaves_the_others_conversation() {
         let mut log = Log::new();
@@ -311,7 +311,7 @@ mod tests {
         assert!(log.replay("buddy-1").is_empty());
     }
 
-    /// Production change that would fail this: emptying every character's log on a
+    /// Production change that would fail this: emptying every fidget's log on a
     /// Character switch, which replaces one Instance's session and leaves the
     /// rest answering out of the conversation their windows still show. #476.
     #[test]
@@ -509,8 +509,8 @@ mod tests {
         );
     }
 
-    /// Production change that would fail this: a line typed to one character, or
-    /// one character's replaced session, dropping another character's thinking.
+    /// Production change that would fail this: a line typed to one fidget, or
+    /// one fidget's replaced session, dropping another fidget's thinking.
     #[test]
     fn one_instances_typed_line_or_new_session_keeps_anothers_thinking() {
         let mut log = Log::new();

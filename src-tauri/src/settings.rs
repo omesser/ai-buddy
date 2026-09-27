@@ -820,7 +820,7 @@ impl SettingsView {
     /// The Instance a Dismiss press names.
     ///
     /// `None` for an id the roster no longer carries: the page draws from a
-    /// snapshot, and a character can go while that list is on screen. #875.
+    /// snapshot, and a fidget can go while that list is on screen. #875.
     pub fn instance(&self, id: &str) -> Option<&InstanceRow> {
         self.instances.iter().find(|row| row.id == id)
     }
@@ -2140,7 +2140,7 @@ pub struct Settings {
     /// Blank-AI mode: built-in prompt layers emptied, Instance Prompt kept
     /// (#657, #680).
     pub director_blank: bool,
-    /// Appear in screenshots and screen shares. True (default) means the character
+    /// Appear in screenshots and screen shares. True (default) means the fidget
     /// is capturable; false excludes it. macOS and Windows read it; the field
     /// is unconditional so the document round-trips on every platform.
     pub capturable: bool,
@@ -2165,7 +2165,7 @@ pub struct Settings {
     #[serde(default)]
     pub use_input_monitoring: bool,
     /// Whether the first-run gesture tour has been shown. Once only, persisted
-    /// per-app rather than per-Instance: a second character spawned later sees
+    /// per-app rather than per-Instance: a second fidget spawned later sees
     /// this flag set.
     pub first_run_tour_shown: bool,
     /// The user dismissed the window-names notice. One dismissal is for good.
@@ -2228,7 +2228,7 @@ impl Settings {
     /// Read the document at `path`. A missing file is first-run defaults.
     ///
     /// A file that cannot be parsed is also defaults rather than a refused
-    /// launch: a typo in a hand-edit must not cost the character, the same
+    /// launch: a typo in a hand-edit must not cost the fidget, the same
     /// degradation Memory already chose.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
@@ -3328,7 +3328,7 @@ mod tests {
 
             // What the frame loop does to put a Completer in front of a wake,
             // and what the wake itself sends.
-            let id = "character".to_string();
+            let id = "fidget".to_string();
             let mut slots = completer::tests::slots_awaiting_a_wake(&id);
             let mut completer = None;
             completer::retarget_model(
@@ -4295,7 +4295,7 @@ mod tests {
                 };
 
                 // What frame_loop.rs does with the payload.
-                let id = "character".to_string();
+                let id = "fidget".to_string();
                 let mut slots = completer::tests::slots_awaiting_a_wake(&id);
                 let mut completer = None;
                 completer::retarget_model(

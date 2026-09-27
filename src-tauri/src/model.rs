@@ -1582,7 +1582,7 @@ struct Event {
     delta: Option<String>,
     /// Thinking it adds, if the server marked any as thinking. Never `delta`:
     /// that is the reply, whose first line has to parse as a Behavior name and
-    /// whose rest the character says out loud (ADR-0034).
+    /// whose rest the fidget says out loud (ADR-0034).
     thought: Option<String>,
     /// It says the server is done, so an end of body after it is a whole
     /// reply rather than a connection cut.
@@ -2616,7 +2616,7 @@ pub(crate) mod tests {
     }
 
     /// Thinking reaches the Chat surface and never the reply, so nothing the
-    /// character says out loud was thought at it (ADR-0034). It is handed the whole
+    /// fidget says out loud was thought at it (ADR-0034). It is handed the whole
     /// thought, blank lines included, and an empty one when the turn ends.
     #[test]
     fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
@@ -3885,7 +3885,7 @@ pub(crate) mod tests {
     #[test]
     fn a_server_serving_nothing_says_so() {
         // Ollama with nothing pulled answers 200 with an empty list. That is
-        // knowable, and the reason the character is about to stay quiet.
+        // knowable, and the reason the fidget is about to stay quiet.
         let empty = preflight_verdict(Ok((200, r#"{"data":[]}"#.to_string())), "gemma4");
         assert!(empty.unwrap_err().contains("serving no models"));
     }
@@ -4117,7 +4117,7 @@ pub(crate) mod tests {
     fn framing_moves_the_personality_and_leaves_the_rest_alone() {
         let personality =
             "Cat claimed the desktop. It has been heard to say: \"Show me that one.\"";
-        let director = ModelDirector::new(Silent, ["stroll", "nap"], "character", "Cat", false);
+        let director = ModelDirector::new(Silent, ["stroll", "nap"], "fidget", "Cat", false);
         let today = director.prompt(&Context {
             personality: personality.to_string(),
             happened: Happened::Poke,
@@ -4160,7 +4160,7 @@ pub(crate) mod tests {
     ///
     /// The classifier is `ModelDirector::wake` itself rather than a copy, so
     /// the measurement cannot drift from what the app does. One session
-    /// throughout, because that is how the character runs. #175.
+    /// throughout, because that is how the fidget runs. #175.
     ///
     /// ```sh
     /// FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
@@ -4218,7 +4218,7 @@ pub(crate) mod tests {
                 framing,
             },
             behaviors.clone(),
-            "character",
+            "fidget",
             cat.name.clone(),
             false,
         );

@@ -4249,7 +4249,7 @@ mod tests {
     }
 
     /// Settings persist Character.name (`Trump`). The env var and the folder
-    /// are still the package stem (`trump`). Either has to start the same character.
+    /// are still the package stem (`trump`). Either has to start the same fidget.
     #[test]
     fn a_package_answers_to_its_folder_or_its_character_name() {
         let folder = Path::new("/characters/trump");
@@ -4352,7 +4352,7 @@ mod tests {
     }
 
     /// Every pre-Instances start path asks for no Instances, which
-    /// `load_instances` turns into the one character it has always run. One test
+    /// `load_instances` turns into the one fidget it has always run. One test
     /// rather than three: they share an environment variable and would race.
     #[test]
     fn naming_no_instances_asks_for_none_and_a_list_is_read_in_full() {
@@ -4360,7 +4360,7 @@ mod tests {
         assert_eq!(
             requested_instances(&Settings::default()),
             Ok(Vec::new()),
-            "the default single character is not a spec"
+            "the default single fidget is not a spec"
         );
 
         std::env::set_var(INSTANCES_VAR, "bmo:One,bmo:Two");
@@ -4385,7 +4385,7 @@ mod tests {
         );
     }
 
-    /// The arithmetic that keeps characters from landing in a stack, and the reason
+    /// The arithmetic that keeps fidgets from landing in a stack, and the reason
     /// it accumulates: stepping by each Character's own width puts a narrow
     /// sprite on top of the wide one it follows.
     #[test]
@@ -4421,7 +4421,7 @@ mod tests {
         assert_eq!(
             starting_positions(start, &[64.0]),
             vec![start],
-            "one character still comes into the world where it always did"
+            "one fidget still comes into the world where it always did"
         );
     }
 
@@ -4454,7 +4454,7 @@ mod tests {
         assert_eq!(phase_of(Duration::ZERO, u64::MAX), Duration::ZERO);
     }
 
-    /// The property the randomness is for: characters from one launch start their
+    /// The property the randomness is for: fidgets from one launch start their
     /// clocks at different, unevenly spaced points.
     #[test]
     fn buddies_from_one_launch_start_their_clocks_apart() {
@@ -4469,7 +4469,7 @@ mod tests {
         assert_eq!(
             distinct.len(),
             4,
-            "no two characters wake together: {phases:?}"
+            "no two fidgets wake together: {phases:?}"
         );
 
         // Uneven, which is what a draw buys over a share apiece: an even spread

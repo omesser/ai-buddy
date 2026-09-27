@@ -1,6 +1,6 @@
 //! Readonly MCP resources: Memory, the Action Log, and window names.
 //!
-//! One consent covers every name the character reports (ADR-0032). The owner and
+//! One consent covers every name the fidget reports (ADR-0032). The owner and
 //! the title reach `WindowRect` when it is usable (sensing layer), and this
 //! resource reads them again over its own path, under the same consent.
 

@@ -1,7 +1,7 @@
 //! The MCP server the app serves itself, on loopback HTTP.
 //!
 //! The one place tools are dispatched (ADR-0023), and so the one thing that
-//! reaches a character on screen. `crates/mcp-server` runs in a separate process
+//! reaches a fidget on screen. `crates/mcp-server` runs in a separate process
 //! — however it is reached, sidecar or `--mcp-stdio` — and relays back here
 //! rather than answering, because the tools have to be dispatched where the
 //! `Roster` lives, and the `Roster` lives on the frame-loop thread. This file

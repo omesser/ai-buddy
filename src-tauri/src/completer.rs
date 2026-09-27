@@ -352,7 +352,7 @@ pub(crate) mod tests {
             let settings = resolve("http://localhost:11434", "gemma4", None);
             let config = config_from(&settings);
             let mut slots = Slots::new();
-            let id = "character".to_string();
+            let id = "fidget".to_string();
             let saw = Arc::new(AtomicBool::new(false));
             slots.wake(
                 &id,
@@ -401,7 +401,7 @@ pub(crate) mod tests {
             let mut model = None;
             retarget_model(
                 &mut slots,
-                &"character".to_string(),
+                &"fidget".to_string(),
                 &mut model,
                 ["stroll"],
                 "cat",
@@ -423,7 +423,7 @@ pub(crate) mod tests {
             let mut model = None;
             retarget_model(
                 &mut slots,
-                &"character".to_string(),
+                &"fidget".to_string(),
                 &mut model,
                 ["stroll"],
                 "cat",
@@ -458,7 +458,7 @@ pub(crate) mod tests {
     #[test]
     fn abandon_drops_a_wake_that_still_arrives() {
         let mut slots = Slots::new();
-        let id = "character".to_string();
+        let id = "fidget".to_string();
         slots.wake(&id, answering("stroll", 40), wake_context());
         assert!(slots.waiting(&id), "the call is in flight");
 
@@ -475,7 +475,7 @@ pub(crate) mod tests {
     }
 
     /// The ellipsis is for a turn the user is waiting on. A proactive wake is
-    /// nobody's question, and showing it would tell the user the character is busy
+    /// nobody's question, and showing it would tell the user the fidget is busy
     /// with them when it is not.
     #[test]
     fn only_a_reactive_call_is_thinking() {
@@ -546,7 +546,7 @@ pub(crate) mod tests {
                 delay: Duration::from_millis(delay_ms),
             },
             ["stroll", "nap"],
-            "character",
+            "fidget",
             "cat",
             false,
         ))
@@ -585,7 +585,7 @@ pub(crate) mod tests {
     #[test]
     fn a_new_wake_supersedes_the_one_the_instance_had_on_the_wire() {
         let mut slots = Slots::new();
-        let id = "character".to_string();
+        let id = "fidget".to_string();
 
         slots.wake(&id, answering("stroll", 120), wake_context());
         slots.wake(
@@ -608,12 +608,12 @@ pub(crate) mod tests {
     }
 
     /// The other direction, which ADR-0033 turns around. A reactive call is an
-    /// answer the user is waiting for and an ambient tick is the character musing.
+    /// answer the user is waiting for and an ambient tick is the fidget musing.
     /// The muse is dropped rather than costing the user their answer.
     #[test]
     fn an_ambient_tick_does_not_supersede_a_reactive_call() {
         let mut slots = Slots::new();
-        let id = "character".to_string();
+        let id = "fidget".to_string();
 
         slots.wake(
             &id,
@@ -639,7 +639,7 @@ pub(crate) mod tests {
     #[test]
     fn take_carries_the_near_miss_the_worker_saw() {
         let mut slots = Slots::new();
-        let id = "character".to_string();
+        let id = "fidget".to_string();
 
         // `answering` declares stroll and nap, so cartwheel is neither.
         slots.wake(&id, answering("cartwheel", 0), wake_context());
@@ -658,7 +658,7 @@ pub(crate) mod tests {
     #[test]
     fn take_hands_back_the_context_the_wake_was_computed_for() {
         let mut slots = Slots::new();
-        let id = "character".to_string();
+        let id = "fidget".to_string();
         let asked = Context {
             happened: Happened::Poke,
             standing: "Finder".to_string(),
@@ -673,7 +673,7 @@ pub(crate) mod tests {
     }
 
     /// One registry, but the newest-wins latch is each Instance's own. Two
-    /// characters poked at once are two conversations.
+    /// fidgets poked at once are two conversations.
     #[test]
     fn one_instances_wake_leaves_anothers_slot_alone() {
         let mut slots = Slots::new();
@@ -684,9 +684,9 @@ pub(crate) mod tests {
         // Supersedes `first` only. `second` has said nothing about it.
         slots.wake(&first, answering("nap", 0), wake_context());
 
-        let theirs = polled(&mut slots, &second).expect("the second character still answers");
+        let theirs = polled(&mut slots, &second).expect("the second fidget still answers");
         assert_eq!(behavior_of(&theirs.wake), "nap");
-        let ours = polled(&mut slots, &first).expect("the first character answers too");
+        let ours = polled(&mut slots, &first).expect("the first fidget answers too");
         assert_eq!(behavior_of(&ours.wake), "nap");
     }
 
@@ -697,7 +697,7 @@ pub(crate) mod tests {
     fn superseding_raises_the_flag_the_worker_reads() {
         let saw = Arc::new(AtomicBool::new(false));
         let mut slots = Slots::new();
-        let id = "character".to_string();
+        let id = "fidget".to_string();
 
         slots.wake(
             &id,

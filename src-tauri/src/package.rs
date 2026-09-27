@@ -54,7 +54,7 @@ pub const SEARCH_PATH_VAR: &str = "FIDGET_CHARACTERS";
 
 /// The Character a new user meets, when nothing has chosen another.
 ///
-/// Name order is not a decision: without this, adding a package that sorts earlier would silently replace the character everybody sees.
+/// Name order is not a decision: without this, adding a package that sorts earlier would silently replace the fidget everybody sees.
 pub const DEFAULT_CHARACTER: &str = "bmo";
 
 /// The environment variable that starts one named Character rather than the first one found.
@@ -799,7 +799,7 @@ mod tests {
 
     /// Name order is not a decision. Without a default the Character a new user
     /// meets is whichever package sorts first, so adding one could silently
-    /// replace the character everybody sees.
+    /// replace the fidget everybody sees.
     #[test]
     fn the_default_character_is_met_first_and_is_not_the_only_one() {
         let candidates = vec![
