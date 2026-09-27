@@ -1447,7 +1447,7 @@ fn probe(session: &Session) -> i32 {
     let methods: Vec<&str> = handshake
         .auth_methods
         .iter()
-        .map(|method| method.name.as_str())
+        .map(|method| method.name())
         .collect();
     println!(
         "  agent        {}",
@@ -1718,9 +1718,9 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
             .first()
             .map(|method| {
                 method
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| method.name.clone())
+                    .description()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| method.name().to_string())
             })
             .unwrap_or_else(|| login_hint(name))
     })
@@ -4916,10 +4916,80 @@ mod tests {
         );
     }
 
+    /// A button is an agent method with a real id. A terminal method's id, args,
+    /// and env are a credential path and never ride along on the offer.
+    #[test]
+    fn sign_in_buttons_keep_agent_ids_and_drop_terminal_secrets() {
+        use agent_client_protocol::schema::v1::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
+        use std::collections::HashMap;
+
+        let mut env = HashMap::new();
+        env.insert("TOKEN".to_string(), "super-secret".to_string());
+        let terminal = AuthMethod::Terminal(
+            AuthMethodTerminal::new("term", "Outside")
+                .args(vec!["--not-stored".to_string()])
+                .env(env),
+        );
+        let agent = AuthMethod::Agent(AuthMethodAgent::new("chatgpt", "ChatGPT"));
+        let offers = vec![
+            crate::acp_wire::auth_offer(&agent),
+            crate::acp_wire::auth_offer(&terminal),
+        ];
+        let actions = crate::acp_wire::sign_in_button(true, &offers);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id.as_str(), "chatgpt");
+        assert_eq!(actions[0].label, "ChatGPT");
+        let debug = format!("{offers:?}");
+        assert!(!debug.contains("--not-stored"), "{debug}");
+        assert!(!debug.contains("super-secret"), "{debug}");
+        // `Terminal` is the variant name, so the id `term` is what remains.
+        assert!(!debug.replace("Terminal", "").contains("term"), "{debug}");
+
+        assert!(crate::acp_wire::sign_in_button(false, &offers).is_empty());
+        assert!(crate::acp_wire::sign_in_button(true, &[]).is_empty());
+        assert_eq!(
+            login_command("claude", &Handshake::default()),
+            "claude /login"
+        );
+
+        let pi = Handshake {
+            auth_methods: vec![crate::acp_wire::auth_offer(&terminal)],
+            ..Default::default()
+        };
+        assert_eq!(
+            login_command("pi", &pi),
+            "npx -y pi-acp@latest --terminal-login"
+        );
+        assert!(crate::acp_wire::sign_in_button(true, &pi.auth_methods).is_empty());
+
+        let blank = AuthMethod::Agent(AuthMethodAgent::new(" ", "ChatGPT"));
+        assert!(
+            crate::acp_wire::sign_in_button(true, &[crate::acp_wire::auth_offer(&blank)])
+                .is_empty()
+        );
+
+        let two = [
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "chatgpt", "ChatGPT",
+            ))),
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(
+                "apikey", "API Key",
+            ))),
+        ];
+        let actions = crate::acp_wire::sign_in_button(true, &two);
+        assert_eq!(
+            actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("chatgpt", "ChatGPT"), ("apikey", "API Key")]
+        );
+    }
+
     #[test]
     fn login_command_takes_the_table_for_a_named_harness_and_the_handshake_for_a_custom_one() {
         let hint = |description: Option<&str>| Handshake {
-            auth_methods: vec![crate::acp_wire::AuthHint {
+            auth_methods: vec![crate::acp_wire::AuthOffer::Unrecognized {
                 name: "ChatGPT".into(),
                 description: description.map(str::to_string),
             }],

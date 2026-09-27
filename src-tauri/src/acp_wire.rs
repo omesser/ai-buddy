@@ -62,14 +62,121 @@ pub struct Handshake {
     pub load_session: bool,
     /// Whether the Harness takes HTTP MCP servers.
     pub mcp_http: bool,
-    pub auth_methods: Vec<AuthHint>,
+    pub auth_methods: Vec<AuthOffer>,
 }
 
-/// One `authMethods` entry. Enough to name the fix in a sentence.
-#[derive(Clone, Debug)]
-pub struct AuthHint {
-    pub name: String,
-    pub description: Option<String>,
+/// An agent auth method id copied from the handshake. Nothing else can build one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct AgentMethodId(String);
+
+impl AgentMethodId {
+    #[allow(dead_code)]
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One advertised auth method, without a terminal method's args or env.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthOffer {
+    Agent {
+        id: AgentMethodId,
+        name: String,
+        description: Option<String>,
+    },
+    /// No id: a terminal method is not sent to `authenticate`.
+    Terminal {
+        name: String,
+        description: Option<String>,
+    },
+    Unrecognized {
+        name: String,
+        description: Option<String>,
+    },
+}
+
+impl AuthOffer {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Agent { name, .. }
+            | Self::Terminal { name, .. }
+            | Self::Unrecognized { name, .. } => name,
+        }
+    }
+
+    pub(crate) fn description(&self) -> Option<&str> {
+        match self {
+            Self::Agent { description, .. }
+            | Self::Terminal { description, .. }
+            | Self::Unrecognized { description, .. } => description.as_deref(),
+        }
+    }
+}
+
+/// An in-app sign-in the landing can show. The id is an agent method's.
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SignIn {
+    pub id: AgentMethodId,
+    pub label: String,
+}
+
+/// Keep the kind. A blank agent id is not sendable, and a terminal method's
+/// args and env never leave this function.
+pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
+    match method {
+        AuthMethod::Agent(agent) => {
+            let id = agent.id.0.trim();
+            if id.is_empty() {
+                AuthOffer::Unrecognized {
+                    name: agent.name.clone(),
+                    description: agent.description.clone(),
+                }
+            } else {
+                AuthOffer::Agent {
+                    id: AgentMethodId(id.to_string()),
+                    name: agent.name.clone(),
+                    description: agent.description.clone(),
+                }
+            }
+        }
+        AuthMethod::Terminal(terminal) => AuthOffer::Terminal {
+            name: terminal.name.clone(),
+            description: terminal.description.clone(),
+        },
+        // A future variant is not an agent method. Treating it as one would
+        // send an id `authenticate` was never offered.
+        _ => AuthOffer::Unrecognized {
+            name: "sign in".to_string(),
+            description: None,
+        },
+    }
+}
+
+/// Agent methods with a visible name, in advertisement order, while login is
+/// still required. Terminal and unrecognized methods are not buttons.
+#[allow(dead_code)]
+pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<SignIn> {
+    if !login_active {
+        return Vec::new();
+    }
+    offers
+        .iter()
+        .filter_map(|offer| {
+            let AuthOffer::Agent { id, name, .. } = offer else {
+                return None;
+            };
+            let label = name.trim();
+            if label.is_empty() {
+                return None;
+            }
+            Some(SignIn {
+                id: id.clone(),
+                label: label.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// A forwarded `session/request_permission`, as the Chat surface draws it.
@@ -557,7 +664,7 @@ fn run(
                             agent: response.agent_info.map(|info| info.name),
                             load_session: response.agent_capabilities.load_session,
                             mcp_http: response.agent_capabilities.mcp_capabilities.http,
-                            auth_methods: response.auth_methods.iter().map(auth_hint).collect(),
+                            auth_methods: response.auth_methods.iter().map(auth_offer).collect(),
                         });
                     let failed = handshake.is_err();
                     if let Some(ready) = ready.take() {
@@ -1107,23 +1214,6 @@ fn end_turn(
     on_event(Event::Plan(Vec::new()));
 }
 
-fn auth_hint(method: &AuthMethod) -> AuthHint {
-    match method {
-        AuthMethod::Terminal(terminal) => AuthHint {
-            name: terminal.name.clone(),
-            description: terminal.description.clone(),
-        },
-        AuthMethod::Agent(agent) => AuthHint {
-            name: agent.name.clone(),
-            description: agent.description.clone(),
-        },
-        _ => AuthHint {
-            name: "sign in".to_string(),
-            description: None,
-        },
-    }
-}
-
 /// What a finished turn is worth, from the reason it stopped and the words
 /// it streamed. A cap-ended turn is shown as far as it got and marked. With
 /// nothing said it errors like any other stop and the Static Director takes it.
@@ -1234,9 +1324,9 @@ mod tests {
     fn an_auth_method_keeps_its_description_for_the_login_hint() {
         let method =
             AuthMethod::Agent(AuthMethodAgent::new("x", "Sign in").description("run x login"));
-        let hint = auth_hint(&method);
-        assert_eq!(hint.name, "Sign in");
-        assert_eq!(hint.description.as_deref(), Some("run x login"));
+        let offer = auth_offer(&method);
+        assert_eq!(offer.name(), "Sign in");
+        assert_eq!(offer.description(), Some("run x login"));
     }
 
     /// The shape `session/new` actually puts on the wire. The token rides in
