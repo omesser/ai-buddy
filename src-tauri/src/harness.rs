@@ -509,8 +509,7 @@ pub struct Session {
     /// out still leaves this at zero. Shared with the wire's reader thread.
     asked: Arc<AtomicUsize>,
     /// Instance behind each session id a prompt went out on, so the wire's
-    /// reader thread can name whose turn a thought is. Beside `state`, which
-    /// an attach holds across a round trip to that same thread.
+    /// reader thread can name whose turn a thought is without taking `state`.
     owners: Arc<Mutex<HashMap<String, String>>>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
@@ -519,9 +518,12 @@ pub struct Session {
     /// `parsed` line for that wake. Keyed by loser so a later cancel cannot
     /// pair a withdrawn `turn` line with a `parsed` line that says failed.
     withdrawn: Mutex<HashMap<String, (String, Instant)>>,
-    /// Bookkeeping, and the blocking `initialize`/`session/*` hop under it, so
-    /// two wakes cannot open two sessions.
+    /// Bookkeeping only. Chat and the frame loop take this while a handshake
+    /// is in flight, so the blocking hop lives on `attach_gate` instead.
     state: Mutex<State>,
+    /// One spawn or session open at a time. Not taken by Chat or the frame
+    /// loop: those wait on `state`, and this one is held across the wire.
+    attach_gate: Mutex<()>,
     /// Separate from `state` so `shutdown` never waits on an attach in flight.
     wire: Mutex<Option<Arc<Wire>>>,
     inspect: Mutex<HarnessInspect>,
@@ -553,9 +555,16 @@ struct State {
     auth_tried: Option<Instant>,
     spawn_failures: u32,
     spawn_wait_until: Option<Instant>,
+    /// Per Instance, bumped when its conversation is dropped. An open that
+    /// started earlier must not store its id afterwards.
+    conversation_gen: HashMap<String, u64>,
 }
 
 impl State {
+    fn conversation_generation(&self, instance: &str) -> u64 {
+        self.conversation_gen.get(instance).copied().unwrap_or(0)
+    }
+
     /// The child answered, so no earlier death is a death in a row any more.
     /// Every outcome but a loss proves it. A stop reason, and even a turn we
     /// gave up waiting on, came back from a process that is still there.
@@ -625,6 +634,7 @@ impl Session {
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
+            attach_gate: Mutex::new(()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
             wanted: AtomicBool::new(true),
@@ -971,10 +981,21 @@ impl Session {
             return Err("sign-in already in progress".to_string());
         }
         let _flight = SignInFlight(&self.signing_in);
+        // Across `authenticate` and the open after it, so a wake cannot
+        // start a second session in the middle. Chat does not take this.
+        let _gate = self.attach_gate.lock().map_err(|_| LOST.to_string())?;
+        {
+            let state = self.state.lock().map_err(|_| LOST.to_string())?;
+            if state.login.is_none() {
+                return Ok(());
+            }
+        }
         wire.authenticate(method_id)?;
-        let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
-        // The retry gate would swallow the session/new this click just earned.
-        state.auth_tried = None;
+        {
+            let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+            // The retry gate would swallow the session/new this click just earned.
+            state.auth_tried = None;
+        }
         let key = SessionKey {
             instance: instance.to_string(),
             character: character.to_string(),
@@ -982,7 +1003,7 @@ impl Session {
         };
         // A saved `session/load` that returns Ok would clear the landing even
         // when `authenticate` changed nothing. This click has to open fresh.
-        self.open_session(&wire, &mut state, &key, true).map(|_| ())
+        self.open_session(&wire, &key, true).map(|_| ())
     }
 
     fn offered_sign_in(&self) -> Vec<SignIn> {
@@ -1166,50 +1187,66 @@ impl Session {
         if !self.wanted.load(Ordering::SeqCst) {
             return Err("harness detached".to_string());
         }
-        let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
+        let _gate = self
+            .attach_gate
+            .lock()
+            .map_err(|_| "harness state poisoned")?;
+        if !self.wanted.load(Ordering::SeqCst) {
+            return Err("harness detached".to_string());
+        }
         let wire = match self.current_wire() {
             Some(wire) => wire,
             None => {
-                // A new child does not have the previous process's sessions.
-                state.sessions.clear();
-                if let Some(until) = state.spawn_wait_until {
-                    if Instant::now() < until {
-                        return Err(format!(
-                            "harness {} not running; retrying in {}s",
-                            self.launch.line(),
-                            (until - Instant::now()).as_secs()
-                        ));
+                {
+                    let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
+                    // A new child does not have the previous process's sessions.
+                    state.sessions.clear();
+                    if let Some(until) = state.spawn_wait_until {
+                        if Instant::now() < until {
+                            return Err(format!(
+                                "harness {} not running; retrying in {}s",
+                                self.launch.line(),
+                                (until - Instant::now()).as_secs()
+                            ));
+                        }
                     }
                 }
-                match self.spawn_and_initialize(&mut state) {
+                match self.spawn_and_initialize() {
                     Ok(wire) => wire,
                     // A file `PATH` has not got is not a child that might come
                     // back. Backoff would only refuse the next wake for up to
                     // five minutes after the user installs the CLI.
                     Err(SpawnError::Missing) => return Err(self.note_missing()),
                     Err(SpawnError::Exited(status)) => {
-                        return Err(self.note_failed(&mut state, exited(&self.launch, status)))
+                        let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
+                        return Err(self.note_failed(&mut state, exited(&self.launch, status)));
                     }
-                    Err(SpawnError::Failed(why)) => return Err(self.note_failed(&mut state, why)),
+                    Err(SpawnError::Failed(why)) => {
+                        let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
+                        return Err(self.note_failed(&mut state, why));
+                    }
                 }
             }
         };
         let Some(key) = key else {
             return Ok((wire, String::new()));
         };
-        if let Some(opened) = state.sessions.get(key) {
-            return Ok((wire, opened.id.clone()));
-        }
-        if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
-            if tried.elapsed() < self.auth_retry {
-                return Err(not_authenticated(command));
+        {
+            let state = self.state.lock().map_err(|_| "harness state poisoned")?;
+            if let Some(opened) = state.sessions.get(key) {
+                return Ok((wire, opened.id.clone()));
+            }
+            if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
+                if tried.elapsed() < self.auth_retry {
+                    return Err(not_authenticated(command));
+                }
             }
         }
-        let id = self.open_session(&wire, &mut state, key, false)?;
+        let id = self.open_session(&wire, key, false)?;
         Ok((wire, id))
     }
 
-    fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Wire>, SpawnError> {
+    fn spawn_and_initialize(&self) -> Result<Arc<Wire>, SpawnError> {
         // The store first. Empty cwd is `data_dir`, which we own; `checked`
         // would refuse a first-run folder that does not exist yet. A user
         // path still goes through `checked` with no `create_dir_all` (#782).
@@ -1245,14 +1282,21 @@ impl Session {
             }
             other => other,
         })?;
-        state.handshake = wire.handshake().clone();
-        // A fresh process is a fresh chance to sign in. The gate belonged to
-        // the one that died.
-        state.login = None;
-        state.auth_tried = None;
+        let handshake = wire.handshake().clone();
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| SpawnError::Failed("harness state poisoned".to_string()))?;
+            state.handshake = handshake.clone();
+            // A fresh process is a fresh chance to sign in. The retry belonged to
+            // the one that died.
+            state.login = None;
+            state.auth_tried = None;
+        }
         self.update_inspect(|inspect| {
-            inspect.agent = state.handshake.agent.clone();
-            inspect.mcp_http = state.handshake.mcp_http;
+            inspect.agent = handshake.agent.clone();
+            inspect.mcp_http = handshake.mcp_http;
             inspect.alive = true;
             inspect.initializing = false;
             inspect.failed = None;
@@ -1277,20 +1321,24 @@ impl Session {
     fn open_session(
         &self,
         wire: &Arc<Wire>,
-        state: &mut State,
         key: &SessionKey,
         fresh: bool,
     ) -> Result<String, String> {
-        let saved = if fresh {
-            None
-        } else {
-            state
-                .handshake
-                .load_session
-                .then(|| self.saved_id(key))
-                .flatten()
+        let (saved, mcp, generation) = {
+            let state = self.state.lock().map_err(|_| LOST.to_string())?;
+            let saved = if fresh {
+                None
+            } else {
+                state
+                    .handshake
+                    .load_session
+                    .then(|| self.saved_id(key))
+                    .flatten()
+            };
+            let mcp = mcp_server(&state.handshake);
+            let generation = state.conversation_generation(&key.instance);
+            (saved, mcp, generation)
         };
-        let mcp = mcp_server(&state.handshake);
         let cwd = self
             .cwd
             .as_ref()
@@ -1299,12 +1347,24 @@ impl Session {
         let id = match wire.open(saved.clone(), cwd, mcp.clone(), self.attach_timeout()) {
             Ok(id) => id,
             Err(OpenError::Lost) => {
-                self.lost(wire, state);
+                let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+                self.lost(wire, &mut state);
                 return Err(LOST.to_string());
             }
-            Err(OpenError::AuthRequired) => return Err(self.refuse_login(state)),
+            Err(OpenError::AuthRequired) => {
+                let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+                return Err(self.refuse_login(&mut state));
+            }
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
+        let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+        // `drop_conversation` does not wait on this open. Storing now would
+        // put back the conversation it just threw away. The cancel it sent
+        // had no prompt to land on, so the withdrawal note is not a turn.
+        if state.conversation_generation(&key.instance) != generation {
+            self.note_withdrawal(None);
+            return Err("session replaced".to_string());
+        }
         state.sessions.insert(
             key.clone(),
             OpenedSession {
@@ -1312,7 +1372,7 @@ impl Session {
                 loaded: saved.as_deref() == Some(id.as_str()),
             },
         );
-        self.signed_in(state);
+        self.signed_in(&mut state);
         self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
         self.save_session(key, &id);
         action_log::append(
@@ -1371,6 +1431,10 @@ impl Session {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
+        *state
+            .conversation_gen
+            .entry(instance.to_string())
+            .or_default() += 1;
         let keys: Vec<SessionKey> = state
             .sessions
             .keys()
@@ -1992,11 +2056,15 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
 struct Attachment {
     session: Option<Arc<Session>>,
     forward: Option<Arc<Forward>>,
+    /// Bumped on every swap. A switch still reaping the previous child checks
+    /// this before it spawns, so a newer pick is the one that starts.
+    generation: u64,
 }
 
 static ATTACHED: Mutex<Attachment> = Mutex::new(Attachment {
     session: None,
     forward: None,
+    generation: 0,
 });
 
 fn attachment() -> MutexGuard<'static, Attachment> {
@@ -2070,22 +2138,66 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
     };
     // Swapped under the one lock `attached` reads. A gap here is a wake landing
     // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
+    slot.generation = slot.generation.wrapping_add(1);
+    let generation = slot.generation;
     let old = std::mem::replace(&mut slot.session, opened.clone());
     drop(slot);
-    if let Some(old) = old {
-        // On the calling thread, the UI thread for the only caller. Affordable
-        // because `Msg::Shutdown` ends a turn in flight rather than being
-        // swallowed by it, so `wait_for_exit` returns as fast as the kill does.
-        old.shutdown();
-    }
     match &opened {
         None => eprintln!("harness: detached; HTTP Completer is the Director's \"AI brain\""),
         Some(session) => {
             eprintln!("harness: {} is the Completer now", session.launch.line());
             if spawning {
-                session.spawn_preflight();
+                // Visible before this returns. Chat shows the wait, and a
+                // same-pick repick does not start a second child.
+                session.update_inspect(|inspect| {
+                    inspect.initializing = true;
+                    inspect.failed = None;
+                });
             }
         }
+    }
+    let spawn_after = opened.filter(|_| spawning);
+    // The caller is the UI thread. Reaping waits up to `REAP`, so it does
+    // not happen here. The new child starts after that reap, off this thread.
+    if old.is_none() {
+        if let Some(session) = spawn_after {
+            session.spawn_preflight();
+        }
+        return;
+    }
+    let fallback = spawn_after.clone();
+    let switched = thread::Builder::new()
+        .name("harness-switch".into())
+        .spawn(move || finish_switch(old, spawn_after, generation));
+    if let Err(why) = switched {
+        eprintln!("harness: could not switch off the caller: {why}");
+        if let Some(session) = fallback {
+            session.spawn_preflight();
+        }
+    }
+}
+
+/// Reap the child being replaced, then start the new one if this switch is
+/// still the latest. A newer pick bumps `generation` and starts itself.
+fn finish_switch(old: Option<Arc<Session>>, spawn_after: Option<Arc<Session>>, generation: u64) {
+    if let Some(session) = &spawn_after {
+        // A wake blocks here instead of spawning beside the child being reaped.
+        let _hold = session
+            .attach_gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(old) = old {
+            old.shutdown();
+        }
+    } else if let Some(old) = old {
+        old.shutdown();
+    }
+    let slot = attachment();
+    if slot.generation != generation {
+        return;
+    }
+    if let Some(session) = spawn_after {
+        session.spawn_preflight();
     }
 }
 
@@ -2266,6 +2378,10 @@ mod tests {
     /// and two of these can tell a fresh budget from a resumed one.
     const ASK_WORK: Duration = Duration::from_millis(600);
 
+    /// Longer than a responsive surface tick, shorter than an attach timeout.
+    /// A handshake that holds the frame loop or Chat open blocks for this long.
+    const SURFACE_STALL: Duration = Duration::from_secs(2);
+
     /// The fake ACP agent. This test binary re-executed with `script=<name>`
     /// among its filters, speaking newline JSON-RPC on stdio. Returns at once
     /// under a normal `cargo test`, where no script is named.
@@ -2363,6 +2479,9 @@ mod tests {
                 // `Missing`.
                 Some("initialize") if script == "die-initializing" => std::process::exit(3),
                 Some("initialize") => {
+                    if script == "stall-initialize" {
+                        thread::sleep(SURFACE_STALL);
+                    }
                     if let Some(path) = count {
                         let _ = std::fs::write(
                             path.with_file_name("initialize.json"),
@@ -2383,12 +2502,20 @@ mod tests {
                     if script == "die-opening" {
                         std::process::exit(3);
                     }
+                    // After `authenticate`, so the first refusal that puts the
+                    // landing up stays quick and only the sign-in open stalls.
+                    if script == "stall-open"
+                        || (script == "stall-sign-in" && recorded(count, "authenticate") > 0)
+                    {
+                        record(count, "open-stall");
+                        thread::sleep(SURFACE_STALL);
+                    }
                     // `auth-sign-in` opens once `authenticate` has run.
                     // `auth-sign-in-noop` never does, like an adapter whose
                     // `authenticate` is Ok and changes nothing.
                     let refuse = match script {
                         "auth" => recorded(count, "new") == 1,
-                        "auth-sign-in" => recorded(count, "authenticate") == 0,
+                        "auth-sign-in" | "stall-sign-in" => recorded(count, "authenticate") == 0,
                         "auth-sign-in-noop" => true,
                         _ => false,
                     };
@@ -4791,6 +4918,104 @@ mod tests {
         assert_eq!(fx.count("spawn"), 1, "the re-pick restarted a live Harness");
         session.shutdown();
         let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    fn surface_tick(session: &Arc<Session>) -> (Duration, Vec<SignIn>) {
+        struct Clear;
+        impl Drop for Clear {
+            fn drop(&mut self) {
+                SIGN_IN_SESSION.with(|slot| *slot.borrow_mut() = None);
+            }
+        }
+        let started = Instant::now();
+        let _ = session.inspect();
+        SIGN_IN_SESSION.with(|slot| *slot.borrow_mut() = Some(Arc::clone(session)));
+        let _clear = Clear;
+        let actions = sign_in_actions();
+        session.drop_conversation("surface");
+        (started.elapsed(), actions)
+    }
+
+    #[test]
+    fn a_slow_initialize_leaves_chat_and_the_character_responsive() {
+        let (fx, session) = Fixture::new("stall-initialize");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        assert!(
+            fx.wait_for("spawn", 1),
+            "the child never started, so the stall was not in flight"
+        );
+        let (elapsed, _) = surface_tick(&session);
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "chat and the character waited {elapsed:?} on initialize"
+        );
+        assert!(
+            session.inspect().initializing,
+            "the handshake finished before the surface tick"
+        );
+        session.shutdown();
+        let _ = fx.forwarded.recv_timeout(Duration::from_secs(5));
+    }
+
+    #[test]
+    fn signing_in_leaves_chat_and_the_character_responsive() {
+        let (fx, session) = Fixture::new("stall-sign-in");
+        let session = Arc::new(session);
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_authenticated("fake --login"))
+        );
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.sign_in("fake", "buddy-1", "bmo", false))
+        };
+        assert!(
+            fx.wait_for("open-stall", 1),
+            "sign-in never reached session/new"
+        );
+        let (elapsed, actions) = surface_tick(&session);
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "chat and the character waited {elapsed:?} on sign-in"
+        );
+        assert!(
+            !actions.is_empty(),
+            "chat lost the sign-in button while login was in flight"
+        );
+        assert_eq!(worker.join().unwrap(), Ok(()));
+        assert_eq!(session.inspect().login, None);
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_drop_during_session_open_is_not_put_back() {
+        let (fx, session) = Fixture::new("stall-open");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        assert!(fx.wait_for("open-stall", 1), "the open never stalled");
+        let started = Instant::now();
+        session.drop_conversation("buddy-1");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "the character tick waited {elapsed:?} on session/new"
+        );
+        let first = worker.join().unwrap();
+        assert!(
+            first.is_err(),
+            "the open that was dropped still counted: {first:?}"
+        );
+        assert_eq!(session.inspect().session_id, None);
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("new"), 2, "the dropped id was reused");
+        session.shutdown();
     }
 
     /// Initializing gates chat during ACP handshake. Set true at spawn_preflight,
