@@ -133,9 +133,15 @@ function unshield(text, slots) {
   return out;
 }
 
+// `"".includes` is not a character test: `"/-_".includes("")` is true, so a
+// missing neighbor (start or end of the string) must not count as a shield.
+function charIn(ch, chars) {
+  return ch.length === 1 && chars.includes(ch);
+}
+
 function slugOrDisplay(before, after, next = "") {
   if (before === "-" || after === "-" || before === "_" || after === "_") return "fidget";
-  if ("/\\`.".includes(before) || "/\\`".includes(after)) return "fidget";
+  if (charIn(before, "/\\`.") || charIn(after, "/\\`")) return "fidget";
   // A token wrapped in quotes is a slug. 's after the token is possessive
   // prose (Fidget's), not a closing quote.
   if ((before === '"' || before === "'") && (after === '"' || after === "'")) {
@@ -165,7 +171,7 @@ function productToken(whole, offset) {
   const after = offset + 8 < whole.length ? whole[offset + 8] : "";
   const next = offset + 9 < whole.length ? whole[offset + 9] : "";
   // pass:ai-buddy, O=ai-buddy. A trailing period or colon in prose is not a slug.
-  if (":=".includes(before)) return "fidget";
+  if (charIn(before, ":=")) return "fidget";
   // ai-buddy.exe, ai-buddy.window-names. "not by ai-buddy." stays display.
   if (after === "." && /[A-Za-z0-9_]/.test(next)) return "fidget";
   // ai-buddy://windows. "outside ai-buddy:" stays display.
@@ -198,7 +204,7 @@ function replaceCompanion(text) {
     const before = offset > 0 ? whole[offset - 1] : "";
     const after = offset + match.length < whole.length ? whole[offset + match.length] : "";
     // Path segments and hyphenated ids (/Users/buddy/, buddy-1, buddy-bot).
-    if ("/-_".includes(before) || "/-_".includes(after)) return match;
+    if (charIn(before, "/-_") || charIn(after, "/-_")) return match;
     return to;
   });
   text = word(/\bbuddies\b/g, "characters");
@@ -237,6 +243,7 @@ const DISPLAY_FILES = new Set([
 ]);
 const DISPLAY_PREFIXES = [
   "docs/design/",
+  "docs/research/",
   "src-tauri/src/settings",
   "tests/fixtures/settings-",
   "spike/settings-webview/",
@@ -291,6 +298,12 @@ const KEEP_CASE = [
   /`Fidget` window/g,
   /is_toolchain\("Fidget"\)/g,
   /Fidget ·/g,
+  /participant Fidget as Fidget/g,
+  /Fidget->>/g,
+  />>Fidget/g,
+  /'Fidget'/g,
+  /Overlay title is Fidget/g,
+  /title Fidget,/g,
 ];
 
 function lowercaseProduct(line) {
@@ -324,7 +337,8 @@ export function recase(text, rel) {
   return rewritten.split("\n").map((line) => {
     if (rel.endsWith(".md") && /^```/.test(line.trim())) fence = !fence;
     let next = line.replace(/\bcd Fidget\b/g, "cd fidget");
-    next = next.replace(/\bFidget-/g, "fidget-");
+    // Hyphen compounds (Fidget-side) are slugs. A mermaid arrow (Fidget->>) is not.
+    next = next.replace(/\bFidget-(?!>)/g, "fidget-");
     next = lowercasePathNames(next);
     next = lowercaseMcpName(next);
     // A `#` line inside a fence is a shell comment, not a document heading.
@@ -365,7 +379,7 @@ function coveredBy(line, index, end, rules) {
 function adjacentKept(line, index, length) {
   const before = index > 0 ? line[index - 1] : "";
   const after = index + length < line.length ? line[index + length] : "";
-  return "/-_".includes(before) || "/-_".includes(after);
+  return charIn(before, "/-_") || charIn(after, "/-_");
 }
 
 export function classifyLine(line) {

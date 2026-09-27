@@ -144,6 +144,13 @@ test("title case is only the product people see", () => {
   );
   assert.equal(recase("exposing Fidget-side tools", "DESIGN.md"), "exposing fidget-side tools");
   assert.equal(
+    recase(
+      "```mermaid\n  Fidget->>Agent: go\n  Agent->>Fidget: back\n  Agent-->>Fidget: stop\n```\n",
+      "docs/research/fidget-harness-two-way.md",
+    ),
+    "```mermaid\n  Fidget->>Agent: go\n  Agent->>Fidget: back\n  Agent-->>Fidget: stop\n```\n",
+  );
+  assert.equal(
     recase("# Real heading\n```\n# Fidget restarts\n```\n", "docs/research/notes.md"),
     "# Real heading\n```\n# fidget restarts\n```\n",
   );
@@ -154,6 +161,21 @@ test("title case is only the product people see", () => {
     recase("See docs/Fidget/notes.md and branding/Fidget.png. Open /Applications/Fidget.app.", "README.md"),
     "See docs/fidget/notes.md and branding/fidget.png. Open /Applications/fidget.app.",
   );
+});
+
+test("an empty neighbor does not shield buddy at the start or end", () => {
+  assert.equal(transform("buddy hops"), "character hops");
+  assert.equal(transform("hops buddy"), "hops character");
+  assert.equal(transform("buddy"), "character");
+  assert.equal(transform("Buddies hop"), "Characters hop");
+  assert.equal(transform("ai-buddy hops"), "Fidget hops");
+  assert.equal(transform("buddy-1 hops"), "buddy-1 hops");
+  assert.equal(transform("/buddy/path"), "/buddy/path");
+  const start = classifyLine("buddy hops");
+  assert.ok(start.some((hit) => hit.text === "buddy" && hit.role === "character-generic"));
+  const end = classifyLine("hops buddy");
+  assert.ok(end.some((hit) => hit.text === "buddy" && hit.role === "character-generic"));
+  assert.ok(classifyLine("buddy-1").every((hit) => hit.role === "character-name"));
 });
 
 test("the project board sentence does not keep the old title", () => {

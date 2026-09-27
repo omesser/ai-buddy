@@ -188,7 +188,7 @@ layer, execution).
 
 This note documents a decision and the options above. It **does not** claim:
 
-1. **Buddy ships/embeds/owns screenshots.** It does not. Dropping Capture means
+1. **Fidget ships/embeds/owns screenshots.** It does not. Dropping Capture means
    fidget never takes screenshots, never analyzes pixels, and never bundles
    vision/OCR for desktop content.
 

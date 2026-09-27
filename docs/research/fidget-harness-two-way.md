@@ -5,8 +5,8 @@ turn in a user-supplied Harness — replacing the `Completer` seam in
 `crates/core/src/director.rs` — while that same turn can still call fidget's
 MCP tools?
 
-**Answer.** Use the **Agent Client Protocol** (ACP) for Buddy → Harness and keep
-**MCP** for Harness → Buddy, in one ACP session. fidget becomes the ACP
+**Answer.** Use the **Agent Client Protocol** (ACP) for Fidget → Harness and keep
+**MCP** for Harness → Fidget, in one ACP session. fidget becomes the ACP
 *client*: it spawns the harness, calls `session/new` once with its own MCP server
 listed in `mcpServers`, and every Director wake or chat turn is a
 `session/prompt` whose result arrives with a `stopReason` when the agent's whole
@@ -39,11 +39,11 @@ agent is handed at `session/new`.
 
 ```mermaid
 sequenceDiagram
-  participant fidget as fidget
+  participant Fidget as Fidget
   participant Agent as Harness
-  Buddy->>Agent: ACP session/prompt
-  Agent->>Buddy: MCP speak / play_behavior
-  Agent-->>Buddy: ACP stopReason
+  Fidget->>Agent: ACP session/prompt
+  Agent->>Fidget: MCP speak / play_behavior
+  Agent-->>Fidget: ACP stopReason
 ```
 
 A poke is the prompt. `speak` is a tool call *inside* that turn. Completer
@@ -353,7 +353,7 @@ the Pi maintainers.
 <https://agentclientprotocol.com/get-started/agents>
 
 **Consequence for fidget:** Pi is the harness that needs a bespoke adapter
-either way. Buddy → Pi is `--mode rpc`. Pi → Buddy cannot be MCP; it has to be a
+either way. Fidget → Pi is `--mode rpc`. Pi → Fidget cannot be MCP; it has to be a
 Pi extension exposing the character tools, which is the route OpenPets took
 (`packages/pi` — "@open-pets/pi (Pi CLI extension integration)").
 <https://github.com/alvinunreal/openpets>
@@ -479,10 +479,10 @@ advertises an A2A server endpoint. Don't stretch it.
    a transcript. Forward `session/request_permission` to the harness's own
    surface; never answer it automatically (decision 11, and the Hermes/Buzz
    warning above).
-7. **Pi gets a second adapter, not a compromise.** Buddy → Pi is
+7. **Pi gets a second adapter, not a compromise.** Fidget → Pi is
    `pi --mode rpc` with `{"type":"prompt",...}` and `streamingBehavior`; Pi →
-   Buddy is a Pi extension wrapping the same tool set, because Pi has no MCP.
-   The shipped path is now the registry adapter; Buddy→Pi is `npx -y pi-acp@latest`; Pi→Buddy tools are still a Pi extension, not MCP. Point at #607.
+   Fidget is a Pi extension wrapping the same tool set, because Pi has no MCP.
+   The shipped path is now the registry adapter; Fidget→Pi is `npx -y pi-acp@latest`; Pi→Fidget tools are still a Pi extension, not MCP. Point at #607.
 8. **Treat Claude Code `channels` as an optional enhancement behind a flag**, if
    proactive wake latency ever justifies it. It is the only way to push into a
    session the user started themselves, and it is a research preview behind an
@@ -496,7 +496,7 @@ advertises an A2A server endpoint. Don't stretch it.
   wrong regardless: the server supplies the tools, the server runs the loop, and
   "The list of messages in a sampling request **SHOULD NOT** be retained between
   separate requests." That is ADR-0008's split brain with extra steps.
-- **MCP as the Buddy → Harness direction, in any form.** "No other message
+- **MCP as the Fidget → Harness direction, in any form.** "No other message
   direction exists." A fidget tool call cannot start a turn.
 - **A custom TCP MCP transport as the #166 answer.** Allowed by the spec, dialled
   by no harness. Loopback Streamable HTTP plus a stdio shim covers all five.
