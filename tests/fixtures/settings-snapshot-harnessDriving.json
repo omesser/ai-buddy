@@ -189,7 +189,7 @@
               "frozen": false,
               "help": "Lets the model pick what happens next.",
               "comment": null,
-              "disclosure": "With this off, the character runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.",
+              "disclosure": "With this off, the fidget runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.",
               "status": null
             },
             {
@@ -230,8 +230,8 @@
               "disclosure": "Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this fidget. The next wake is an opening turn rather than a follow-up. Memory is untouched."
             }
           ],
-          "comment": "Control whether the character improvises, and how often it starts a conversation on its own.",
-          "disclosure": "The character can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".",
+          "comment": "Control whether the fidget improvises, and how often it starts a conversation on its own.",
+          "disclosure": "The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".",
           "status": null
         },
         {
@@ -708,8 +708,8 @@
               "status": null
             }
           ],
-          "comment": "Also for development and testing. Off is the character as shipped.",
-          "disclosure": "Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the character says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.",
+          "comment": "Also for development and testing. Off is the fidget as shipped.",
+          "disclosure": "Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the fidget says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.",
           "status": null
         },
         {
@@ -775,7 +775,7 @@
             }
           ],
           "comment": "Also for development and testing. Leave empty for the default.",
-          "disclosure": "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for 30 seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the character or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+          "disclosure": "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for 30 seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
           "status": null
         },
         {

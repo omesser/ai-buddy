@@ -79,19 +79,19 @@ pub const CAPABILITIES: &[Capability] = &[
         id: CapabilityId::Accessibility,
         title: "Accessibility",
         buys: "Exact Dock geometry, so the sprite does not walk into the Dock.",
-        costs: "macOS Accessibility. The character reads the Dock's bounds; it does not control your computer.",
+        costs: "macOS Accessibility. The fidget reads the Dock's bounds; it does not control your computer.",
     },
     Capability {
         id: CapabilityId::WindowNames,
         title: "Window and application names",
         buys: "Window titles, and which application each window belongs to.",
-        costs: "macOS Screen Recording. The character reads the names of what is open; it does not capture the screen.",
+        costs: "macOS Screen Recording. The fidget reads the names of what is open; it does not capture the screen.",
     },
     Capability {
         id: CapabilityId::InputMonitoring,
         title: "Input Monitoring",
-        buys: "The character notices the mouse the moment it moves, instead of up to a second later while it sits idle.",
-        costs: "macOS Input Monitoring. The character listens for mouse movement and clicks — that a mouse moved, never what you type.",
+        buys: "The fidget notices the mouse the moment it moves, instead of up to a second later while it sits idle.",
+        costs: "macOS Input Monitoring. The fidget listens for mouse movement and clicks — that a mouse moved, never what you type.",
     },
 ];
 
@@ -101,13 +101,13 @@ pub const CAPABILITIES: &[Capability] = &[
         id: CapabilityId::Accessibility,
         title: "Accessibility",
         buys: "Exact taskbar geometry, so the sprite does not walk into the taskbar.",
-        costs: "Windows UI Automation. The character reads the taskbar's bounds; it does not control your computer.",
+        costs: "Windows UI Automation. The fidget reads the taskbar's bounds; it does not control your computer.",
     },
     Capability {
         id: CapabilityId::WindowNames,
         title: "Window and Application Names",
         buys: "Other applications' window titles, and which application each window belongs to.",
-        costs: "No system permission required. The character reads titles via GetWindowText and application names from the running process.",
+        costs: "No system permission required. The fidget reads titles via GetWindowText and application names from the running process.",
     },
 ];
 
@@ -832,7 +832,7 @@ mod tests {
                         "id": "WindowNames",
                         "title": "Window and application names",
                         "buys": "Window titles, and which application each window belongs to.",
-                        "costs": "macOS Screen Recording. The character reads the names of what is open; it does not capture the screen.",
+                        "costs": "macOS Screen Recording. The fidget reads the names of what is open; it does not capture the screen.",
                         "granted": false,
                     })
                 );

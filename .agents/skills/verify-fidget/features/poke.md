@@ -1,16 +1,16 @@
 # Poke
 
-A single click on the sprite body makes the character react (react animation) and records a Poke verb; clicks on transparent pixels pass through to whatever is underneath.
+A single click on the sprite body makes the fidget react (react animation) and records a Poke verb; clicks on transparent pixels pass through to whatever is underneath.
 
 ## Sub-features
 
 - `poke-hit` click on drawn pixels produces `verbs:.*Poke` in the trace log.
 - `poke-miss` (macOS verify) cursor over transparent corner logs `HIT` or click-through status without hitting the sprite.
-- `poke-resume` after the react animation (~600ms), the character returns to idle (Grounded) or sit (Perched); any interrupted walk does not resume (Director's fresh call determines the next motion).
+- `poke-resume` after the react animation (~600ms), the fidget returns to idle (Grounded) or sit (Perched); any interrupted walk does not resume (Director's fresh call determines the next motion).
 
 ## How to get to it (user POV)
 
-- With the character visible on the desktop, click once on its body without dragging.
+- With the fidget visible on the desktop, click once on its body without dragging.
 - Do not double-click (that is Summon).
 - Do not start a drag (that is pick-up).
 

@@ -44,5 +44,5 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 - [Overlay presence](./overlay-presence.md) — display-sized overlay, EWMH / floating level, frame loop start.
 - [Poke](./poke.md) — single click on the sprite body yields a react / Poke verb.
-- [Summon / chat](./summon-chat.md) — double-click opens Chat for that character.
+- [Summon / chat](./summon-chat.md) — double-click opens Chat for that fidget.
 - [Capturable / hide from captures](./capturable.md) — appear-in-screenshots override via env and Settings.

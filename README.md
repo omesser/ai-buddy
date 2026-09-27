@@ -40,16 +40,16 @@ Try [Fidget Cues](https://omesser.github.io/ai-buddy/cues.html) — gestures and
 ![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
 
 - **Poke** — click once for a react, then it resumes.
-- **Summon** — double-click to open a chat window for that character.
+- **Summon** — double-click to open a chat window for that fidget.
 - **Pick up** — click and drag; it follows the cursor.
 - **Throw** — release while moving; it flies on an arc and lands.
 - **Perch** — let it settle on a window's top edge; drag slowly to ride, fling to drop.
-- **Hide** — Control-Option-Command-B toggles the character instantly.
+- **Hide** — Control-Option-Command-B toggles the fidget instantly.
 - **Fullscreen** — fades out for fullscreen apps, fades back when you exit.
 
 ### Talk to it
 
-Summon opens a chat window belonging to that character. What you type is another
+Summon opens a chat window belonging to that fidget. What you type is another
 turn in the same conversation that decides what it does on your desktop, so an
 answer arrives as speech in the bubble and as a Behavior it plays, not only as
 text. Lines it says when nobody asked appear here too, labelled with what it was
@@ -57,7 +57,7 @@ reacting to.
 
 <img src="./docs/readme/chat-surface.png" width="420" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" />
 
-The bar along the bottom names what the character is doing right now — the Behavior,
+The bar along the bottom names what the fidget is doing right now — the Behavior,
 the Primitive under it, the Animation playing, its State, and how long until it
 next thinks. It needs a Director; see [Running it](#running-it).
 
@@ -217,7 +217,7 @@ How they handle session differs, and changes what Fidget can do with them:
 Two transports, two distinct axes:
 
 1. **ACP** (Fidget ↔ Harness): always stdio. How Fidget attaches to the Harness and prompts it.
-2. **MCP** (Harness → Fidget tools): How the Harness calls back so `speak` and sensing reach the character.
+2. **MCP** (Harness → Fidget tools): How the Harness calls back so `speak` and sensing reach the fidget.
 
 **MCP transport** is gated by what the Harness advertises in ACP `initialize` → `agentCapabilities.mcpCapabilities.http`:
 - **true** → loopback HTTP URL + bearer token (ADR-0023, #491)
@@ -247,7 +247,7 @@ Two transports, two distinct axes:
 
 ### Computer use
 
-Fidget never reads screen pixels. Sensing is OS window metadata — bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)) — so `describe_screen` describes the window layout, not what is on screen. Decline it and the character still knows where the windows are, and not what they are. The character takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
+Fidget never reads screen pixels. Sensing is OS window metadata — bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)) — so `describe_screen` describes the window layout, not what is on screen. Decline it and the fidget still knows where the windows are, and not what they are. The fidget takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
 
 That bounds Fidget's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through Fidget, whose MCP serves no input events.
 

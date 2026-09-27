@@ -4,7 +4,7 @@
 export const HEADING = "Window names are off";
 
 export const BODY =
-  "The character knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.";
+  "The fidget knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.";
 
 export const BUTTONS = [
   { action: "open-settings", label: "Open Settings" },

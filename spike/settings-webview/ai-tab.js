@@ -34,9 +34,9 @@ function aiTab({ driving }) {
       {
         heading: "AI",
         comment:
-          "Control whether the character improvises, and how often it starts a conversation on its own.",
+          "Control whether the fidget improvises, and how often it starts a conversation on its own.",
         disclosure:
-          "The character can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".",
+          "The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".",
         status: null,
         rows: [
           {
@@ -46,7 +46,7 @@ function aiTab({ driving }) {
             frozen: false,
             help: "Lets the model pick what happens next.",
             disclosure:
-              "With this off, the character runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.",
+              "With this off, the fidget runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.",
             status: null,
           },
           {
@@ -56,7 +56,7 @@ function aiTab({ driving }) {
             frozen: false,
             help: "Acts on its own, not only when asked.",
             disclosure:
-              "Ambient wakes are proactive model calls: the character addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.",
+              "Ambient wakes are proactive model calls: the fidget addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.",
             status: null,
           },
           {

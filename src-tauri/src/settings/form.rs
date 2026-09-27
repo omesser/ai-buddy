@@ -867,8 +867,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "AI".to_string(),
-            comment: Some("Control whether the character improvises, and how often it starts a conversation on its own.".to_string()),
-            disclosure: Some("The character can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
+            comment: Some("Control whether the fidget improvises, and how often it starts a conversation on its own.".to_string()),
+            disclosure: Some("The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
             status: None,
             rows: vec![
                 FormRow::Checkbox {
@@ -878,7 +878,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     frozen: director_frozen,
                     help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
-                    disclosure: Some("With this off, the character runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
+                    disclosure: Some("With this off, the fidget runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
                     status: director_status,
                 },
                 FormRow::Checkbox {
@@ -1546,8 +1546,8 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Blank AI".to_string(),
-            comment: Some("Also for development and testing. Off is the character as shipped.".to_string()),
-            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the character says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            comment: Some("Also for development and testing. Off is the fidget as shipped.".to_string()),
+            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the fidget says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
             status: None,
             rows: vec![flag_row(
                 DIRECTOR_BLANK_ID,
@@ -1561,7 +1561,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the character or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,

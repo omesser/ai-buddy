@@ -19,12 +19,12 @@ test("the bundle identifier and product name are Fidget", () => {
   assert.equal(conf.plugins.updater.endpoints[0].includes("github.com/omesser/ai-buddy/"), true);
 });
 
-test("the names notice calls the companion a character", () => {
+test("the names notice calls the on-screen presence a fidget", () => {
   const notice = createNamesNotice({ act: async () => "quiet" });
   const { view } = notice.receive({ hint: "due", generation: 1 });
   assert.equal(
     view.body,
-    "The character knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.",
+    "The fidget knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.",
   );
 });
 

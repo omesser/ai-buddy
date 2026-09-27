@@ -1,6 +1,6 @@
 # Overlay presence
 
-The character draws on a display-sized always-on-top overlay that skips the taskbar, loads a Character Package, and runs a frame loop (Falling / Grounded / Perched) the user can see as the sprite on the desktop.
+The fidget draws on a display-sized always-on-top overlay that skips the taskbar, loads a Character Package, and runs a frame loop (Falling / Grounded / Perched) the user can see as the sprite on the desktop.
 
 ## Sub-features
 

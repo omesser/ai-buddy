@@ -1,11 +1,11 @@
 # Summon / chat
 
-Double-clicking the character opens its Chat surface: the same conversation that drives desktop Behavior, so answers show as bubble speech and as a Behavior, not only as text.
+Double-clicking the fidget opens its Chat surface: the same conversation that drives desktop Behavior, so answers show as bubble speech and as a Behavior, not only as text.
 
 ## Sub-features
 
 - `summon-verb` double-click records `verbs:.*Summon` in the frame/trace log.
-- `summon-chat-open` a Chat window for that character appears (when the session can show windows).
+- `summon-chat-open` a Chat window for that fidget appears (when the session can show windows).
 - `summon-status` the Chat status bar shows plain-language activity; Behavior/State values appear under Advanced.
 
 ## How to get to it (user POV)
@@ -24,7 +24,7 @@ Preconditions:
 
 - **macOS Summon (preferred).** Run `cargo run -p fidget-verify -- summon`. Real double-click, asserts `verbs:.*Summon`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/summon/`.
 - **Summon verb (X11 hand-rolled).** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite feet `pos()` from the last `frame:` line. Click the body above the feet: `xdotool mousemove --sync $X $(($Y - 40))`, then `xdotool click --repeat 2 --delay 50 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$FIDGET_VERIFY_EVIDENCE/summon-chat/`.
-- **Chat window (interactive desktop).** After the double-click, observe a Chat window belonging to the character. Capture a screenshot with `FIDGET_CAPTURABLE=1` into evidence when the platform allows.
+- **Chat window (interactive desktop).** After the double-click, observe a Chat window belonging to the fidget. Capture a screenshot with `FIDGET_CAPTURABLE=1` into evidence when the platform allows.
 - **Harness without sprite.** Chat Completer wiring without the overlay: `FIDGET_HARNESS=<name> scripts/probe-harness.sh` (exit `0` = end_turn). This does **not** prove Summon UI; record it as harness-only if used.
 - **Proof.** Require the Summon verb line for the gesture path. Treat Chat window visibility as a second observer when a GUI session exists.
 

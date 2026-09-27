@@ -199,7 +199,7 @@ that adding a character is drawing, not programming.
     that the conversation feels like it is with the character rather than with a text box.
 61. As a user, I want the character to visibly react while the Harness works, so that I can
     tell something is happening.
-62. As a user, I want the Harness to be able to read what the character can see, so that I can
+62. As a user, I want the Harness to be able to read what the fidget can see, so that I can
     ask about what is on my screen.
 63. As a user, I want the Harness to be able to make the character speak and act, so that
     answers arrive through the character.

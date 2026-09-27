@@ -246,7 +246,7 @@
     <p class="lede">Window titles and application names sit behind one consent (ADR-0032), off by default
       and off until the user turns it on. Many users never find the Settings row, so <code>list_windows</code>
       and <code>describe_screen</code> keep reporting anonymous rectangles, <code>fidget://windows</code>
-      stays empty, and the character knows where the windows are but not what they are. This proposes a hint
+      stays empty, and the fidget knows where the windows are but not what they are. This proposes a hint
       that closes that gap once, without ever reading as the product asking for more surveillance
       permission.</p>
   </header>
@@ -322,14 +322,14 @@
       </div>
       <div class="notice" id="notice" hidden>
         <h4>Window names are off</h4>
-        <p>The character knows where your windows are, not what they are. One switch in Settings turns on
+        <p>The fidget knows where your windows are, not what they are. One switch in Settings turns on
           titles and application names together.</p>
         <div class="row">
           <button class="mini primary" data-act="settings">Open Settings</button>
           <button class="mini" data-act="dismiss">No thanks</button>
         </div>
       </div>
-      <div class="composer">Message the character…</div>
+      <div class="composer">Message the fidget…</div>
     </div>
 
     <div class="bubble" id="bubble" hidden>
@@ -369,7 +369,7 @@
         </div>
         <details>
           <summary>What is this?</summary>
-          <p>macOS Screen Recording lets Fidget read window titles. The character does not capture the screen. One switch covers titles and application names alike, so with it off the character knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.</p>
+          <p>macOS Screen Recording lets your fidget read window titles. Fidget does not capture the screen. One switch covers titles and application names alike, so with it off fidget knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.</p>
         </details>
         <p class="os-note">The operating system's own permission dialog comes from this checkbox, and from
           nothing else. It is not mocked here, and the hint never triggers it.</p>
@@ -441,14 +441,14 @@ enum NamesHint {
 
   <h2>What the copy refuses to say</h2>
   <p>The hint never names macOS Screen Recording, never names ScreenCast, never says screenshot, and never
-    reaches for a verb of sight — a character that <em>sees</em> is a character that captures, whatever the next
-    clause says. It names what the character knows and what it does not — where the windows are, not what they
+    reaches for a verb of sight — a fidget that <em>sees</em> is a fidget that captures, whatever the next
+    clause says. It names what the fidget knows and what it does not — where the windows are, not what they
     are — in the words the Settings row's own disclosure already uses, and the row names the grant one line
     down, which is where #888 and #979 put it and where a disclosure belongs. A hint that leads with the
-    permission is asking for the permission; a hint that leads with the capability is describing the character.</p>
+    permission is asking for the permission; a hint that leads with the capability is describing the fidget.</p>
   <p>One consent, one thing it gates. Before ADR-0032 the copy had to explain a split — application names
-    free, titles gated — and that split is gone, so the hint no longer says what the character still knows without
-    consent, because without it the character knows no name at all. The same product rule holds on every OS. Only
+    free, titles gated — and that split is gone, so the hint no longer says what the fidget still knows without
+    consent, because without it the fidget knows no name at all. The same product rule holds on every OS. Only
     the platform label under the Settings row changes: Screen Recording on macOS, ScreenCast on Linux, no
     system permission on Windows.</p>
 

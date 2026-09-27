@@ -1,6 +1,6 @@
 # Capturable / hide from captures
 
-By default the character appears in screenshots and screen shares. Settings → Hide → "Appear in screenshots and screen shares" (and `FIDGET_CAPTURABLE`) force capturable or hidden so verify scripts can screenshot the sprite or test the hide path.
+By default the fidget appears in screenshots and screen shares. Settings → Hide → "Appear in screenshots and screen shares" (and `FIDGET_CAPTURABLE`) force capturable or hidden so verify scripts can screenshot the sprite or test the hide path.
 
 ## Sub-features
 

@@ -376,7 +376,7 @@ which on macOS 10.15+ is Screen Recording
 
 Accessibility becomes a deliberate upgrade tied to the Functional Layer, where
 the user understands the trade. The upgrade path is settings: a **What the
-character can see** pane names each grant, what it buys, and what it costs, and
+fidget can see** pane names each grant, what it buys, and what it costs, and
 the system prompt fires only when the user flips one on.
 
 Both of those grants are macOS TCC rows, and Linux has no equivalent: X11
