@@ -2015,8 +2015,10 @@ fn select_harness(
 
 /// In-app sign-in for one advertised agent method. Keyed by the Instance id a
 /// wake carries. The display name would open a slot nothing later loads.
+/// Off the main thread: a device flow holds `authenticate` for minutes, and a
+/// sync command would freeze the overlay for all of it.
 #[tauri::command]
-fn sign_in(
+async fn sign_in(
     instance: String,
     method_id: String,
     state: tauri::State<'_, SettingsState>,
@@ -2034,7 +2036,11 @@ fn sign_in(
     let Some(session) = harness::attached() else {
         return Err(harness::LOST.to_string());
     };
-    session.sign_in(&method_id, &instance, &character, model::blank())
+    tauri::async_runtime::spawn_blocking(move || {
+        session.sign_in(&method_id, &instance, &character, model::blank())
+    })
+    .await
+    .map_err(|why| format!("sign-in stopped: {why}"))?
 }
 
 /// Push a full opening to an already-open Chat surface, without creating
