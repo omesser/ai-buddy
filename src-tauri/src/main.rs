@@ -69,6 +69,7 @@ use ai_buddy_core::memory;
 use ai_buddy_core::overlay::SpriteRect;
 use ai_buddy_core::roster::{self, InstanceId, InstanceSpec, Roster};
 use ai_buddy_core::snapshot::starting_position;
+use ai_buddy_core::speech::SpeechBubble;
 use ai_buddy_core::visibility::HideRules;
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
@@ -189,6 +190,7 @@ struct InstanceState {
     /// The last line spoken and which overlay showed it, so a crossing
     /// carries it (#178). See `carry_line`.
     spoken: Option<Spoken>,
+    speech: SpeechBubble,
     drawn_last: Option<Drawn>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
@@ -2723,6 +2725,7 @@ fn spawn_live(
         chat_turn: false,
         pointer: Pointer::with_double_click_ms(platform::double_click_interval_ms()),
         spoken: None,
+        speech: SpeechBubble::default(),
         drawn_last: None,
         traced_last: None,
         status_last: None,
@@ -2996,6 +2999,7 @@ fn spawn_instances(
             chat_turn: false,
             pointer: Pointer::with_double_click_ms(platform::double_click_interval_ms()),
             spoken: None,
+            speech: SpeechBubble::default(),
             drawn_last: None,
             traced_last: None,
             status_last: None,
