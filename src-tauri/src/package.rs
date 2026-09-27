@@ -506,7 +506,7 @@ mod tests {
             personality: character.personality.clone(),
             instance_prompt: String::new(),
             state: ai_buddy_core::engine::State::Grounded,
-            happened: ai_buddy_core::director::Happened::Ambient,
+            happened: ai_buddy_core::director::Happened::Proactive,
             standing: String::new(),
         };
 

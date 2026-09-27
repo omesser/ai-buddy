@@ -44,7 +44,7 @@ pub struct InstanceRow {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SettingsView {
     pub director_enabled: bool,
-    pub ambient_wakes: bool,
+    pub proactive_wakes: bool,
     pub do_not_disturb: bool,
     pub sound: bool,
     pub hidden: bool,
@@ -523,7 +523,7 @@ impl SettingsView {
             // The value in force, as the Development rows show theirs: an
             // exported switch reads as it exported, however the file has it.
             director_enabled: model::director_in_force(settings.director_enabled),
-            ambient_wakes: settings.ambient_wakes,
+            proactive_wakes: settings.proactive_wakes,
             do_not_disturb: settings.do_not_disturb,
             sound: settings.sound,
             hidden: settings.hidden,
@@ -598,8 +598,8 @@ impl SettingsView {
                 RowValue::Bool(self.director_enabled),
             ),
             (
-                form::AMBIENT_ID.to_string(),
-                RowValue::Bool(self.ambient_wakes),
+                form::PROACTIVE_ID.to_string(),
+                RowValue::Bool(self.proactive_wakes),
             ),
             (form::HARNESS_ID.to_string(), text(&self.harness)),
             (
@@ -740,7 +740,7 @@ pub enum SettingsOp {
     Retarget {
         settings: DirectorSettings,
         enabled: bool,
-        ambient_allowed: bool,
+        proactive_allowed: bool,
         configured: bool,
     },
     /// Director switch or Completer source changed: already-open Chat
@@ -773,7 +773,7 @@ fn key_was_typed(text: &str) -> bool {
 /// Empty after the same trim env keys use is delete: a quoted blank must not
 /// become a Bearer of quotes.
 pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Result<(), String> {
-    match patch.director_api_key.as_deref() {
+    match patch.completer.director_api_key.as_deref() {
         None => Ok(()),
         Some(value) => match model::trim_key(value) {
             Some(key) => store.set(DIRECTOR_API_KEY, &key),
@@ -849,12 +849,14 @@ fn apply_with_store(
 /// file. URL and model retarget only when the value actually changed — both
 /// windows commit on every blur, an untouched field included.
 fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
-    patch.director_api_key.is_some()
+    patch.completer.director_api_key.is_some()
         || patch
+            .completer
             .director_base_url
             .as_ref()
             .is_some_and(|url| url != &settings.director_base_url)
         || patch
+            .completer
             .director_model
             .as_ref()
             .is_some_and(|model| model != &settings.director_model)
@@ -862,14 +864,17 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
         // `model::endpoint_from`, so a change to either only reaches the
         // Director through a rebuild.
         || patch
+            .completer
             .director_timeout_secs
             .as_ref()
             .is_some_and(|secs| secs != &settings.director_timeout_secs)
         || patch
+            .completer
             .harness_turn_timeout_secs
             .as_ref()
             .is_some_and(|secs| secs != &settings.harness_turn_timeout_secs)
         || patch
+            .completer
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
@@ -877,6 +882,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
         // `Endpoint::takes_effort` back to optimistic, which is the whole of
         // that flag's reset path (#638).
         || patch
+            .completer
             .director_reasoning_effort
             .as_ref()
             .is_some_and(|effort| effort != &settings.director_reasoning_effort)
@@ -887,6 +893,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
         // a Character, half not, and no way to tell which reply was which
         // (#657).
         || patch
+            .completer
             .director_blank
             .is_some_and(|blank| blank != settings.director_blank)
         // Every Completer source change retargets since #500, Off and a
@@ -896,6 +903,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
         // The wake interval reaches a running Director the same way: the rebuild
         // is where `model::config_from` reads it (#262).
         || patch
+            .completer
             .director_wake_secs
             .as_ref()
             .is_some_and(|secs| secs != &settings.director_wake_secs)
@@ -913,6 +921,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 fn harness_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
     let source_changed = harness_source_changed(settings, patch);
     let cwd_raw_changed = patch
+        .completer
         .harness_cwd
         .as_ref()
         .is_some_and(|cwd| cwd != &settings.harness_cwd);
@@ -944,6 +953,7 @@ fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
     // opening it draws over that is one the window only asked for once (#679).
     patch.new_session
         || patch
+            .completer
             .director_enabled
             .is_some_and(|on| on != settings.director_enabled)
         || harness_source_changed(settings, patch)
@@ -952,7 +962,7 @@ fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
 
 fn harness_source_changed(settings: &Settings, patch: &SettingsPatch) -> bool {
     // Presence of the row is not a change: both windows commit on blur.
-    if patch.harness.is_none() && patch.harness_command.is_none() {
+    if patch.completer.harness.is_none() && patch.completer.harness_command.is_none() {
         return false;
     }
     let mut next = settings.clone();
@@ -1093,7 +1103,7 @@ impl<'a> DirectorDraft<'a> {
             patch.set_text(TextField::DirectorModel, text);
         }
         if let Some(key) = self.key_edit(view) {
-            patch.director_api_key = Some(key.to_string());
+            patch.completer.director_api_key = Some(key.to_string());
         }
         if let Some(text) = self.harness_edit(view) {
             patch.set_text(TextField::Harness, text);
@@ -1138,7 +1148,7 @@ fn retarget_payload(settings: &Settings, store: &dyn SecretStore) -> Result<Sett
     Ok(SettingsOp::Retarget {
         settings: director,
         enabled: cfg.enabled,
-        ambient_allowed: settings.ambient_wakes,
+        proactive_allowed: settings.proactive_wakes,
         configured: cfg.configured,
     })
 }
@@ -1205,11 +1215,11 @@ impl SettingsSession {
     }
 
     pub fn apply(&self, patch: SettingsPatch) -> Result<(), String> {
-        let switching = patch.character.clone();
-        let rebind = patch.hide_hotkey.clone();
+        let switching = patch.roster.character.clone();
+        let rebind = patch.presence.hide_hotkey.clone();
         let new_session = patch.new_session;
         write_director_key(self.secrets.as_ref(), &patch)?;
-        if let Some(raw) = patch.director_api_key.as_deref() {
+        if let Some(raw) = patch.completer.director_api_key.as_deref() {
             self.remember_written_key(raw);
         }
         #[cfg(not(target_os = "linux"))]
@@ -1282,7 +1292,7 @@ impl SettingsSession {
                         let _ = self.ops.send(SettingsOp::Retarget {
                             settings: director,
                             enabled: cfg.enabled,
-                            ambient_allowed: snapshot.ambient_wakes,
+                            proactive_allowed: snapshot.proactive_wakes,
                             configured: cfg.configured,
                         });
                     }
@@ -1368,43 +1378,21 @@ impl SettingsSession {
     }
 }
 
-/// What the settings window can change in one call.
-#[derive(Clone, Default, Deserialize, PartialEq)]
+/// One Apply. A field left `None` is not a change, in a group or beside one.
+/// Spawn and Dismiss stay `SettingsOp`s.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct SettingsPatch {
-    pub director_enabled: Option<bool>,
-    pub ambient_wakes: Option<bool>,
+    pub roster: RosterPatch,
+    pub completer: CompleterPatch,
+    pub presence: PresencePatch,
     pub do_not_disturb: Option<bool>,
     pub sound: Option<bool>,
-    pub hidden: Option<bool>,
-    pub hide_in_fullscreen: Option<bool>,
-    pub hide_hotkey: Option<String>,
     pub launch_at_login: Option<bool>,
-    pub excluded_applications: Option<Vec<String>>,
-    pub character: Option<String>,
-    pub director_base_url: Option<String>,
-    pub director_model: Option<String>,
-    pub director_timeout_secs: Option<String>,
-    pub director_max_tokens: Option<String>,
-    pub director_reasoning_effort: Option<String>,
-    pub director_wake_secs: Option<String>,
-    pub harness: Option<String>,
-    pub harness_command: Option<String>,
-    pub harness_auth_retry_secs: Option<String>,
-    pub harness_turn_timeout_secs: Option<String>,
-    pub byo_harness: Option<String>,
-    pub mcp_bin: Option<String>,
-    pub harness_cwd: Option<String>,
-    #[serde(default)]
-    pub pi_project_mcp: Option<bool>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
     pub trace_engine: Option<bool>,
-    pub director_blank: Option<bool>,
     pub capturable: Option<bool>,
-    /// Present so callers can write the store; `Settings::apply` ignores it
-    /// because the key is not a file field.
-    pub director_api_key: Option<String>,
     #[serde(default)]
     pub use_accessibility: Option<bool>,
     #[serde(default)]
@@ -1418,6 +1406,47 @@ pub struct SettingsPatch {
     pub chat_ui: Option<String>,
 }
 
+/// The Character every Instance switches to.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct RosterPatch {
+    pub character: Option<String>,
+}
+
+/// HTTP knobs, Harness launch, and the proactive switch, in one Apply.
+#[derive(Clone, Default, Deserialize, PartialEq)]
+pub struct CompleterPatch {
+    pub director_enabled: Option<bool>,
+    pub proactive_wakes: Option<bool>,
+    pub director_base_url: Option<String>,
+    pub director_model: Option<String>,
+    pub director_timeout_secs: Option<String>,
+    pub director_max_tokens: Option<String>,
+    pub director_reasoning_effort: Option<String>,
+    pub director_wake_secs: Option<String>,
+    /// Present so callers can write the store; `Settings::apply` ignores it
+    /// because the key is not a file field.
+    pub director_api_key: Option<String>,
+    pub director_blank: Option<bool>,
+    pub harness: Option<String>,
+    pub harness_command: Option<String>,
+    pub harness_auth_retry_secs: Option<String>,
+    pub harness_turn_timeout_secs: Option<String>,
+    pub harness_cwd: Option<String>,
+    pub mcp_bin: Option<String>,
+    pub byo_harness: Option<String>,
+    #[serde(default)]
+    pub pi_project_mcp: Option<bool>,
+}
+
+/// Whether the sprite is shown, and which applications hide it.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct PresencePatch {
+    pub hidden: Option<bool>,
+    pub hide_in_fullscreen: Option<bool>,
+    pub hide_hotkey: Option<String>,
+    pub excluded_applications: Option<Vec<String>>,
+}
+
 /// A boolean field of `SettingsPatch`, as the form row writing it names it.
 ///
 /// A name rather than a `&str` so the row and the setter cannot disagree: with
@@ -1426,7 +1455,7 @@ pub struct SettingsPatch {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum BoolField {
     DirectorEnabled,
-    AmbientWakes,
+    ProactiveWakes,
     DoNotDisturb,
     Sound,
     Hidden,
@@ -1492,19 +1521,19 @@ impl SettingsPatch {
     /// cover is a compile error.
     pub fn set_bool(&mut self, field: BoolField, value: bool) {
         match field {
-            BoolField::DirectorEnabled => self.director_enabled = Some(value),
-            BoolField::AmbientWakes => self.ambient_wakes = Some(value),
+            BoolField::DirectorEnabled => self.completer.director_enabled = Some(value),
+            BoolField::ProactiveWakes => self.completer.proactive_wakes = Some(value),
             BoolField::DoNotDisturb => self.do_not_disturb = Some(value),
             BoolField::Sound => self.sound = Some(value),
-            BoolField::Hidden => self.hidden = Some(value),
-            BoolField::HideInFullscreen => self.hide_in_fullscreen = Some(value),
+            BoolField::Hidden => self.presence.hidden = Some(value),
+            BoolField::HideInFullscreen => self.presence.hide_in_fullscreen = Some(value),
             BoolField::LaunchAtLogin => self.launch_at_login = Some(value),
             BoolField::TraceFrames => self.trace_frames = Some(value),
             BoolField::TraceHittest => self.trace_hittest = Some(value),
             BoolField::TraceDirector => self.trace_director = Some(value),
             BoolField::TraceEngine => self.trace_engine = Some(value),
-            BoolField::DirectorBlank => self.director_blank = Some(value),
-            BoolField::PiProjectMcp => self.pi_project_mcp = Some(value),
+            BoolField::DirectorBlank => self.completer.director_blank = Some(value),
+            BoolField::PiProjectMcp => self.completer.pi_project_mcp = Some(value),
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
@@ -1523,90 +1552,54 @@ impl SettingsPatch {
     /// of that test.
     pub fn set_text(&mut self, field: TextField, value: &str) -> bool {
         match field {
-            TextField::Character => self.character = Some(value.to_string()),
-            TextField::DirectorBaseUrl => self.director_base_url = Some(value.to_string()),
-            TextField::DirectorModel => self.director_model = Some(value.to_string()),
-            TextField::DirectorTimeoutSecs => self.director_timeout_secs = Some(value.to_string()),
-            TextField::DirectorMaxTokens => self.director_max_tokens = Some(value.to_string()),
+            TextField::Character => self.roster.character = Some(value.to_string()),
+            TextField::DirectorBaseUrl => {
+                self.completer.director_base_url = Some(value.to_string())
+            }
+            TextField::DirectorModel => self.completer.director_model = Some(value.to_string()),
+            TextField::DirectorTimeoutSecs => {
+                self.completer.director_timeout_secs = Some(value.to_string())
+            }
+            TextField::DirectorMaxTokens => {
+                self.completer.director_max_tokens = Some(value.to_string())
+            }
             // Trimmed, not validated: a stray space around `high` is a typo,
             // but `high` itself is only the user's host's business (#638).
             TextField::DirectorReasoningEffort => {
-                self.director_reasoning_effort = Some(value.trim().to_string())
+                self.completer.director_reasoning_effort = Some(value.trim().to_string())
             }
-            TextField::DirectorWakeSecs => self.director_wake_secs = Some(value.to_string()),
+            TextField::DirectorWakeSecs => {
+                self.completer.director_wake_secs = Some(value.to_string())
+            }
             // The popup hands over its title; the file keeps the value
             // `harness::launch` reads, so Off is blank and Custom is `custom`.
-            TextField::Harness => self.harness = Some(form::harness_choice(value)),
-            TextField::HarnessCommand => self.harness_command = Some(value.trim().to_string()),
+            TextField::Harness => self.completer.harness = Some(form::harness_choice(value)),
+            TextField::HarnessCommand => {
+                self.completer.harness_command = Some(value.trim().to_string())
+            }
             TextField::HarnessAuthRetrySecs => {
-                self.harness_auth_retry_secs = Some(value.to_string())
+                self.completer.harness_auth_retry_secs = Some(value.to_string())
             }
             TextField::HarnessTurnTimeoutSecs => {
-                self.harness_turn_timeout_secs = Some(value.to_string())
+                self.completer.harness_turn_timeout_secs = Some(value.to_string())
             }
             // Trimmed like the command line beside it: a path pasted out of a
             // terminal carries the space that follows it.
-            TextField::ByoHarness => self.byo_harness = Some(value.trim().to_string()),
-            TextField::McpBin => self.mcp_bin = Some(value.trim().to_string()),
-            TextField::HarnessCwd => self.harness_cwd = Some(value.trim().to_string()),
+            TextField::ByoHarness => self.completer.byo_harness = Some(value.trim().to_string()),
+            TextField::McpBin => self.completer.mcp_bin = Some(value.trim().to_string()),
+            TextField::HarnessCwd => self.completer.harness_cwd = Some(value.trim().to_string()),
             TextField::DirectorApiKey if key_was_typed(value) => {
-                self.director_api_key = Some(value.to_string())
+                self.completer.director_api_key = Some(value.to_string())
             }
             TextField::DirectorApiKey => return false,
             // One name per line, the shape both windows' multiline field holds.
             TextField::ExcludedApplications => {
-                self.excluded_applications =
+                self.presence.excluded_applications =
                     Some(value.lines().map(|line| line.trim().to_string()).collect())
             }
             TextField::ChatUI => self.chat_ui = Some(form::chat_ui_choice(value)),
         }
         true
-    }
-}
-
-impl fmt::Debug for SettingsPatch {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SettingsPatch")
-            .field("director_enabled", &self.director_enabled)
-            .field("ambient_wakes", &self.ambient_wakes)
-            .field("do_not_disturb", &self.do_not_disturb)
-            .field("sound", &self.sound)
-            .field("hidden", &self.hidden)
-            .field("hide_in_fullscreen", &self.hide_in_fullscreen)
-            .field("hide_hotkey", &self.hide_hotkey)
-            .field("launch_at_login", &self.launch_at_login)
-            .field("excluded_applications", &self.excluded_applications)
-            .field("character", &self.character)
-            .field("director_base_url", &self.director_base_url)
-            .field("director_model", &self.director_model)
-            .field("director_timeout_secs", &self.director_timeout_secs)
-            .field("director_max_tokens", &self.director_max_tokens)
-            .field("director_reasoning_effort", &self.director_reasoning_effort)
-            .field("director_wake_secs", &self.director_wake_secs)
-            .field("harness", &self.harness)
-            .field(
-                "harness_command",
-                &self.harness_command.as_deref().map(command_line_debug),
-            )
-            .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
-            .field("harness_turn_timeout_secs", &self.harness_turn_timeout_secs)
-            .field("byo_harness", &self.byo_harness)
-            .field("mcp_bin", &self.mcp_bin)
-            .field("harness_cwd", &self.harness_cwd)
-            .field("trace_frames", &self.trace_frames)
-            .field("trace_hittest", &self.trace_hittest)
-            .field("trace_director", &self.trace_director)
-            .field("trace_engine", &self.trace_engine)
-            .field("director_blank", &self.director_blank)
-            .field("capturable", &self.capturable)
-            .field(
-                "director_api_key",
-                &self.director_api_key.as_deref().map(model::key_fingerprint),
-            )
-            .field("use_accessibility", &self.use_accessibility)
-            .field("use_window_names", &self.use_window_names)
-            .field("use_input_monitoring", &self.use_input_monitoring)
-            .finish()
     }
 }
 
@@ -1625,6 +1618,37 @@ fn command_line_debug(line: &str) -> String {
     }
 }
 
+impl fmt::Debug for CompleterPatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompleterPatch")
+            .field("director_enabled", &self.director_enabled)
+            .field("proactive_wakes", &self.proactive_wakes)
+            .field("director_base_url", &self.director_base_url)
+            .field("director_model", &self.director_model)
+            .field("director_timeout_secs", &self.director_timeout_secs)
+            .field("director_max_tokens", &self.director_max_tokens)
+            .field("director_reasoning_effort", &self.director_reasoning_effort)
+            .field("director_wake_secs", &self.director_wake_secs)
+            .field(
+                "director_api_key",
+                &self.director_api_key.as_deref().map(model::key_fingerprint),
+            )
+            .field("director_blank", &self.director_blank)
+            .field("harness", &self.harness)
+            .field(
+                "harness_command",
+                &self.harness_command.as_deref().map(command_line_debug),
+            )
+            .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
+            .field("harness_turn_timeout_secs", &self.harness_turn_timeout_secs)
+            .field("harness_cwd", &self.harness_cwd)
+            .field("mcp_bin", &self.mcp_bin)
+            .field("byo_harness", &self.byo_harness)
+            .field("pi_project_mcp", &self.pi_project_mcp)
+            .finish()
+    }
+}
+
 impl Settings {
     /// Whether a frame may make a sound. Do Not Disturb is quiet but not
     /// gone (#84), so it takes the audio cue and leaves the visual one; the
@@ -1634,11 +1658,11 @@ impl Settings {
     }
 
     pub fn apply(&mut self, patch: SettingsPatch) {
-        if let Some(value) = patch.director_enabled {
+        if let Some(value) = patch.completer.director_enabled {
             self.director_enabled = value;
         }
-        if let Some(value) = patch.ambient_wakes {
-            self.ambient_wakes = value;
+        if let Some(value) = patch.completer.proactive_wakes {
+            self.proactive_wakes = value;
         }
         if let Some(value) = patch.do_not_disturb {
             self.do_not_disturb = value;
@@ -1646,43 +1670,43 @@ impl Settings {
         if let Some(value) = patch.sound {
             self.sound = value;
         }
-        if let Some(value) = patch.hidden {
+        if let Some(value) = patch.presence.hidden {
             self.hidden = value;
         }
-        if let Some(value) = patch.hide_in_fullscreen {
+        if let Some(value) = patch.presence.hide_in_fullscreen {
             self.hide_in_fullscreen = value;
         }
-        if let Some(value) = patch.hide_hotkey {
+        if let Some(value) = patch.presence.hide_hotkey {
             self.hide_hotkey = value;
         }
         if let Some(value) = patch.launch_at_login {
             self.launch_at_login = value;
         }
-        if let Some(value) = patch.excluded_applications {
+        if let Some(value) = patch.presence.excluded_applications {
             self.excluded_applications = value;
         }
-        if let Some(value) = patch.character {
+        if let Some(value) = patch.roster.character {
             self.character = value;
         }
-        if let Some(value) = patch.director_base_url {
+        if let Some(value) = patch.completer.director_base_url {
             self.director_base_url = value;
         }
-        if let Some(value) = patch.director_model {
+        if let Some(value) = patch.completer.director_model {
             self.director_model = value;
         }
-        if let Some(value) = patch.director_timeout_secs {
+        if let Some(value) = patch.completer.director_timeout_secs {
             self.director_timeout_secs = value;
         }
-        if let Some(value) = patch.director_max_tokens {
+        if let Some(value) = patch.completer.director_max_tokens {
             self.director_max_tokens = value;
         }
-        if let Some(value) = patch.director_reasoning_effort {
+        if let Some(value) = patch.completer.director_reasoning_effort {
             self.director_reasoning_effort = value;
         }
-        if let Some(value) = patch.director_wake_secs {
+        if let Some(value) = patch.completer.director_wake_secs {
             self.director_wake_secs = value;
         }
-        if let Some(value) = patch.harness {
+        if let Some(value) = patch.completer.harness {
             // A command line the source field carries — hand-edited there, or
             // read there under the variable's own grammar — is drawn in the
             // command-line row, which writes the *other* field. Move it before
@@ -1695,22 +1719,22 @@ impl Settings {
             }
             self.harness = value;
         }
-        if let Some(value) = patch.harness_command {
+        if let Some(value) = patch.completer.harness_command {
             self.harness_command = value;
         }
-        if let Some(value) = patch.harness_auth_retry_secs {
+        if let Some(value) = patch.completer.harness_auth_retry_secs {
             self.harness_auth_retry_secs = value;
         }
-        if let Some(value) = patch.harness_turn_timeout_secs {
+        if let Some(value) = patch.completer.harness_turn_timeout_secs {
             self.harness_turn_timeout_secs = value;
         }
-        if let Some(value) = patch.byo_harness {
+        if let Some(value) = patch.completer.byo_harness {
             self.byo_harness = value;
         }
-        if let Some(value) = patch.mcp_bin {
+        if let Some(value) = patch.completer.mcp_bin {
             self.mcp_bin = value;
         }
-        if let Some(value) = patch.harness_cwd {
+        if let Some(value) = patch.completer.harness_cwd {
             self.harness_cwd = value;
         }
         if let Some(value) = patch.trace_frames {
@@ -1725,10 +1749,10 @@ impl Settings {
         if let Some(value) = patch.trace_engine {
             self.trace_engine = value;
         }
-        if let Some(value) = patch.director_blank {
+        if let Some(value) = patch.completer.director_blank {
             self.director_blank = value;
         }
-        if let Some(value) = patch.pi_project_mcp {
+        if let Some(value) = patch.completer.pi_project_mcp {
             self.pi_project_mcp = value;
         }
         if let Some(value) = patch.capturable {
@@ -1814,7 +1838,9 @@ pub struct Settings {
     /// Session Director on. Off leaves Static weights running the life.
     pub director_enabled: bool,
     /// Proactive session wakes. Off keeps the Director for Poke and Summon.
-    pub ambient_wakes: bool,
+    /// Older files still spell the key `ambient_wakes`.
+    #[serde(alias = "ambient_wakes")]
+    pub proactive_wakes: bool,
     /// Quiet: on screen, not starting things. Persists so a restart stays quiet.
     pub do_not_disturb: bool,
     /// The cues a gesture plays are heard, not only seen (#277).
@@ -1940,7 +1966,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             director_enabled: true,
-            ambient_wakes: true,
+            proactive_wakes: true,
             do_not_disturb: false,
             sound: true,
             hidden: false,
@@ -2182,7 +2208,7 @@ mod tests {
 
         assert_eq!(Settings::load(&path), Settings::default());
         assert!(Settings::default().director_enabled);
-        assert!(Settings::default().ambient_wakes);
+        assert!(Settings::default().proactive_wakes);
         assert!(Settings::default().hide_in_fullscreen);
         assert!(Settings::default().sound);
         assert!(!Settings::default().do_not_disturb);
@@ -2199,7 +2225,7 @@ mod tests {
 
         let settings = Settings {
             director_enabled: false,
-            ambient_wakes: false,
+            proactive_wakes: false,
             do_not_disturb: true,
             sound: false,
             hidden: true,
@@ -2397,9 +2423,12 @@ mod tests {
     fn apply_ignores_the_api_key_patch_on_the_file() {
         let mut settings = Settings::default();
         settings.apply(SettingsPatch {
-            director_base_url: Some("https://api.x.ai".to_string()),
-            director_model: Some("grok-4.6".to_string()),
-            director_api_key: Some("sk-should-not-land".to_string()),
+            completer: CompleterPatch {
+                director_base_url: Some("https://api.x.ai".to_string()),
+                director_model: Some("grok-4.6".to_string()),
+                director_api_key: Some("sk-should-not-land".to_string()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         });
         assert_eq!(settings.director_base_url, "https://api.x.ai");
@@ -2414,7 +2443,10 @@ mod tests {
     #[test]
     fn settings_patch_debug_omits_the_raw_key() {
         let patch = SettingsPatch {
-            director_api_key: Some("sk-super-secret-key".into()),
+            completer: CompleterPatch {
+                director_api_key: Some("sk-super-secret-key".into()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         let dump = format!("{patch:?}");
@@ -2428,18 +2460,18 @@ mod tests {
         );
     }
 
-    /// Ambient wakes are their own switch. Turning them off must not turn the
+    /// Proactive model calls are their own switch. Turning them off must not turn the
     /// Director off, or Poke would go silent with idle life.
     #[test]
-    fn ambient_wakes_can_be_off_while_the_director_stays_on() {
+    fn proactive_wakes_can_be_off_while_the_director_stays_on() {
         let settings = Settings {
             director_enabled: true,
-            ambient_wakes: false,
+            proactive_wakes: false,
             ..Settings::default()
         };
 
         assert!(settings.director_enabled);
-        assert!(!settings.ambient_wakes);
+        assert!(!settings.proactive_wakes);
     }
 
     /// A hand-edit that drops a key, or an older file, must not refuse to load.
@@ -2450,7 +2482,7 @@ mod tests {
 
         let settings = Settings::load(&path);
         assert!(!settings.director_enabled);
-        assert!(settings.ambient_wakes, "unset ambient stays on");
+        assert!(settings.proactive_wakes, "unset proactive stays on");
         assert!(
             settings.sound,
             "a file from before the setting stays audible"
@@ -2471,6 +2503,20 @@ mod tests {
         fs::write(&path, "not json {").expect("write");
 
         assert_eq!(Settings::load(&path), Settings::default());
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A file from before the rename. The old key off must not load as on.
+    #[test]
+    fn an_old_ambient_wakes_key_still_loads_as_off() {
+        let path = temp_path();
+        fs::write(&path, r#"{"ambient_wakes":false}"#).expect("write");
+        let settings = Settings::load(&path);
+        assert!(!settings.proactive_wakes);
+        settings.save(&path).expect("save");
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(text.contains("\"proactive_wakes\": false"), "{text}");
+        assert!(!text.contains("ambient_wakes"), "{text}");
         let _ = fs::remove_file(&path);
     }
 
@@ -2535,7 +2581,7 @@ mod tests {
     fn the_settings_view_is_what_the_window_shows() {
         let settings = Settings {
             director_enabled: false,
-            ambient_wakes: false,
+            proactive_wakes: false,
             do_not_disturb: true,
             sound: false,
             hidden: true,
@@ -2587,7 +2633,7 @@ mod tests {
             None,
         );
         assert!(!view.director_enabled);
-        assert!(!view.ambient_wakes);
+        assert!(!view.proactive_wakes);
         assert!(view.do_not_disturb);
         assert!(!view.sound);
         assert!(view.hidden);
@@ -2802,7 +2848,10 @@ mod tests {
     fn write_director_key_sets_the_store_and_not_the_file() {
         let store = MemoryStore::new();
         let patch = SettingsPatch {
-            director_api_key: Some("sk-from-settings".to_string()),
+            completer: CompleterPatch {
+                director_api_key: Some("sk-from-settings".to_string()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         write_director_key(&store, &patch).unwrap();
@@ -2817,7 +2866,10 @@ mod tests {
         let store = MemoryStore::new();
         store.set(DIRECTOR_API_KEY, "sk-from-settings").unwrap();
         let patch = SettingsPatch {
-            director_api_key: Some(String::new()),
+            completer: CompleterPatch {
+                director_api_key: Some(String::new()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         write_director_key(&store, &patch).unwrap();
@@ -2827,7 +2879,10 @@ mod tests {
     #[test]
     fn write_director_key_fails_loudly_when_store_set_fails() {
         let patch = SettingsPatch {
-            director_api_key: Some("sk-new-key".into()),
+            completer: CompleterPatch {
+                director_api_key: Some("sk-new-key".into()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         let result = write_director_key(&FailingStore, &patch);
@@ -3091,10 +3146,13 @@ mod tests {
             }
             .patch(&view)
             .expect("a new URL and model is dirty");
-            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
-            assert_eq!(patch.director_model.as_deref(), Some("grok-4.6"));
+            assert_eq!(
+                patch.completer.director_base_url.as_deref(),
+                Some("https://api.x.ai")
+            );
+            assert_eq!(patch.completer.director_model.as_deref(), Some("grok-4.6"));
             assert!(
-                patch.director_api_key.is_none(),
+                patch.completer.director_api_key.is_none(),
                 "an untouched key field is not part of the batch"
             );
             assert!(
@@ -3131,8 +3189,8 @@ mod tests {
             let patch = draft
                 .patch(&view)
                 .expect("the model row is still the user's");
-            assert!(patch.director_base_url.is_none());
-            assert_eq!(patch.director_model.as_deref(), Some("grok-4.6"));
+            assert!(patch.completer.director_base_url.is_none());
+            assert_eq!(patch.completer.director_model.as_deref(), Some("grok-4.6"));
         });
     }
 
@@ -3174,7 +3232,7 @@ mod tests {
             }
             .patch(&view)
             .expect("a staged clear is dirty");
-            assert_eq!(patch.director_api_key.as_deref(), Some(""));
+            assert_eq!(patch.completer.director_api_key.as_deref(), Some(""));
         });
     }
 
@@ -3209,7 +3267,7 @@ mod tests {
             .patch(&view)
             .expect("a typed key is dirty");
             assert_eq!(
-                patch.director_api_key.as_deref(),
+                patch.completer.director_api_key.as_deref(),
                 Some("sk-typed-after-clear")
             );
         });
@@ -3257,8 +3315,11 @@ mod tests {
                 }
             );
             let patch = draft.patch(&view).expect("a typed URL is dirty");
-            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
-            assert!(patch.director_model.is_none());
+            assert_eq!(
+                patch.completer.director_base_url.as_deref(),
+                Some("https://api.x.ai")
+            );
+            assert!(patch.completer.director_model.is_none());
         });
     }
 
@@ -3292,8 +3353,8 @@ mod tests {
             };
             assert!(draft.staged(&view).harness);
             let patch = draft.patch(&view).expect("a pick is dirty");
-            assert_eq!(patch.harness.as_deref(), Some("opencode"));
-            assert!(patch.director_base_url.is_none());
+            assert_eq!(patch.completer.harness.as_deref(), Some("opencode"));
+            assert!(patch.completer.director_base_url.is_none());
             assert!(
                 completer_retargets(&endpoint_settings(), &patch),
                 "Apply has to retarget once, not the pick"
@@ -3320,9 +3381,12 @@ mod tests {
                 ..DirectorDraft::live(&view, &description)
             };
             let patch = draft.patch(&view).expect("a typed URL is dirty");
-            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
-            assert!(patch.harness.is_none());
-            assert!(patch.harness_command.is_none());
+            assert_eq!(
+                patch.completer.director_base_url.as_deref(),
+                Some("https://api.x.ai")
+            );
+            assert!(patch.completer.harness.is_none());
+            assert!(patch.completer.harness_command.is_none());
             let settings = endpoint_settings();
             assert!(!harness_retargets(&settings, &patch));
             assert!(completer_retargets(&settings, &patch));
@@ -3386,8 +3450,8 @@ mod tests {
             let patch = unfilled
                 .patch(&view)
                 .expect("and arms Apply, over the wipe");
-            assert_eq!(patch.director_base_url.as_deref(), Some(""));
-            assert_eq!(patch.director_model.as_deref(), Some(""));
+            assert_eq!(patch.completer.director_base_url.as_deref(), Some(""));
+            assert_eq!(patch.completer.director_model.as_deref(), Some(""));
         });
     }
 
@@ -3395,8 +3459,11 @@ mod tests {
     fn tabbing_out_of_an_unchanged_endpoint_does_not_retarget() {
         let settings = endpoint_settings();
         let patch = SettingsPatch {
-            director_base_url: Some(settings.director_base_url.clone()),
-            director_model: Some(settings.director_model.clone()),
+            completer: CompleterPatch {
+                director_base_url: Some(settings.director_base_url.clone()),
+                director_model: Some(settings.director_model.clone()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(
@@ -3415,7 +3482,10 @@ mod tests {
             ..endpoint_settings()
         };
         let changed = SettingsPatch {
-            director_reasoning_effort: Some("high".into()),
+            completer: CompleterPatch {
+                director_reasoning_effort: Some("high".into()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(
@@ -3424,7 +3494,10 @@ mod tests {
         );
 
         let same = SettingsPatch {
-            director_reasoning_effort: Some("low".into()),
+            completer: CompleterPatch {
+                director_reasoning_effort: Some("low".into()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(
@@ -3437,14 +3510,20 @@ mod tests {
     fn a_changed_base_url_or_model_retargets() {
         let settings = endpoint_settings();
         let url = SettingsPatch {
-            director_base_url: Some("https://api.x.ai".into()),
-            director_model: Some(settings.director_model.clone()),
+            completer: CompleterPatch {
+                director_base_url: Some("https://api.x.ai".into()),
+                director_model: Some(settings.director_model.clone()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &url));
         let model = SettingsPatch {
-            director_base_url: Some(settings.director_base_url.clone()),
-            director_model: Some("grok-4.6".into()),
+            completer: CompleterPatch {
+                director_base_url: Some(settings.director_base_url.clone()),
+                director_model: Some("grok-4.6".into()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &model));
@@ -3458,12 +3537,18 @@ mod tests {
     fn toggling_blank_ai_retargets_and_leaving_it_alone_does_not() {
         let settings = endpoint_settings();
         let on = SettingsPatch {
-            director_blank: Some(true),
+            completer: CompleterPatch {
+                director_blank: Some(true),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &on));
         let unchanged = SettingsPatch {
-            director_blank: Some(settings.director_blank),
+            completer: CompleterPatch {
+                director_blank: Some(settings.director_blank),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(
@@ -3476,14 +3561,20 @@ mod tests {
     fn a_key_patch_always_retargets() {
         let settings = endpoint_settings();
         let set = SettingsPatch {
-            director_base_url: Some(settings.director_base_url.clone()),
-            director_model: Some(settings.director_model.clone()),
-            director_api_key: Some("sk-new".into()),
+            completer: CompleterPatch {
+                director_base_url: Some(settings.director_base_url.clone()),
+                director_model: Some(settings.director_model.clone()),
+                director_api_key: Some("sk-new".into()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &set));
         let clear = SettingsPatch {
-            director_api_key: Some(String::new()),
+            completer: CompleterPatch {
+                director_api_key: Some(String::new()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &clear));
@@ -3502,12 +3593,12 @@ mod tests {
                     settings,
                     enabled,
                     configured,
-                    ambient_allowed,
+                    proactive_allowed,
                 } => {
                     assert_eq!(settings.api_key, "sk-stored-key");
                     assert!(configured);
                     assert!(enabled);
-                    assert!(ambient_allowed);
+                    assert!(proactive_allowed);
                     let dump = format!("{settings:?}");
                     assert!(
                         !dump.contains("sk-stored-key"),
@@ -3719,7 +3810,10 @@ mod tests {
             (
                 "base URL",
                 SettingsPatch {
-                    director_base_url: Some("https://api.x.ai".into()),
+                    completer: CompleterPatch {
+                        director_base_url: Some("https://api.x.ai".into()),
+                        ..CompleterPatch::default()
+                    },
                     ..SettingsPatch::default()
                 },
                 "https://api.x.ai/",
@@ -3728,7 +3822,10 @@ mod tests {
             (
                 "model",
                 SettingsPatch {
-                    director_model: Some("gpt-5".into()),
+                    completer: CompleterPatch {
+                        director_model: Some("gpt-5".into()),
+                        ..CompleterPatch::default()
+                    },
                     ..SettingsPatch::default()
                 },
                 "https://api.openai.com/",
@@ -3737,7 +3834,10 @@ mod tests {
             (
                 "API key",
                 SettingsPatch {
-                    director_api_key: Some("sk-typed-in-the-window".into()),
+                    completer: CompleterPatch {
+                        director_api_key: Some("sk-typed-in-the-window".into()),
+                        ..CompleterPatch::default()
+                    },
                     ..SettingsPatch::default()
                 },
                 "https://api.openai.com/",
@@ -3820,11 +3920,17 @@ mod tests {
 
         for patch in [
             SettingsPatch {
-                director_timeout_secs: Some("45".into()),
+                completer: CompleterPatch {
+                    director_timeout_secs: Some("45".into()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             },
             SettingsPatch {
-                director_max_tokens: Some("300".into()),
+                completer: CompleterPatch {
+                    director_max_tokens: Some("300".into()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             },
         ] {
@@ -3836,8 +3942,11 @@ mod tests {
         assert!(!completer_retargets(
             &settings,
             &SettingsPatch {
-                director_timeout_secs: Some("20".into()),
-                director_max_tokens: Some("80".into()),
+                completer: CompleterPatch {
+                    director_timeout_secs: Some("20".into()),
+                    director_max_tokens: Some("80".into()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             }
         ));
@@ -3856,14 +3965,20 @@ mod tests {
         assert!(completer_retargets(
             &settings,
             &SettingsPatch {
-                director_wake_secs: Some("300".into()),
+                completer: CompleterPatch {
+                    director_wake_secs: Some("300".into()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             }
         ));
         assert!(!completer_retargets(
             &settings,
             &SettingsPatch {
-                director_wake_secs: Some("120".into()),
+                completer: CompleterPatch {
+                    director_wake_secs: Some("120".into()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             }
         ));
@@ -3999,8 +4114,11 @@ mod tests {
             &mut settings,
             &FailingStore,
             SettingsPatch {
-                director_base_url: Some("https://api.x.ai".into()),
-                director_api_key: Some("sk-new".into()),
+                completer: CompleterPatch {
+                    director_base_url: Some("https://api.x.ai".into()),
+                    director_api_key: Some("sk-new".into()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             },
         );
@@ -4018,8 +4136,11 @@ mod tests {
             &mut settings,
             &FailingStore,
             SettingsPatch {
-                director_base_url: Some("https://api.x.ai".into()),
-                director_api_key: Some(String::new()),
+                completer: CompleterPatch {
+                    director_base_url: Some("https://api.x.ai".into()),
+                    director_api_key: Some(String::new()),
+                    ..CompleterPatch::default()
+                },
                 ..SettingsPatch::default()
             },
         );
@@ -4417,7 +4538,10 @@ mod tests {
         let settings = Settings::default();
         assert!(settings.director_enabled);
         let patch = SettingsPatch {
-            director_enabled: Some(false),
+            completer: CompleterPatch {
+                director_enabled: Some(false),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(
@@ -4435,7 +4559,10 @@ mod tests {
             ..Settings::default()
         };
         let patch = SettingsPatch {
-            director_enabled: Some(true),
+            completer: CompleterPatch {
+                director_enabled: Some(true),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(chat_surface_reloads(&settings, &patch));
@@ -4445,7 +4572,10 @@ mod tests {
     fn an_unchanged_director_switch_does_not_reload_chat() {
         let settings = Settings::default();
         let patch = SettingsPatch {
-            director_enabled: Some(true),
+            completer: CompleterPatch {
+                director_enabled: Some(true),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(!chat_surface_reloads(&settings, &patch));
@@ -4505,13 +4635,19 @@ mod tests {
     fn a_new_endpoint_reloads_chat() {
         let settings = Settings::default();
         let patch = SettingsPatch {
-            director_base_url: Some("http://localhost:11434".to_string()),
+            completer: CompleterPatch {
+                director_base_url: Some("http://localhost:11434".to_string()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(chat_surface_reloads(&settings, &patch));
 
         let unchanged = SettingsPatch {
-            director_base_url: Some(settings.director_base_url.clone()),
+            completer: CompleterPatch {
+                director_base_url: Some(settings.director_base_url.clone()),
+                ..CompleterPatch::default()
+            },
             ..SettingsPatch::default()
         };
         assert!(

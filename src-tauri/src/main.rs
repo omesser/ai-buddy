@@ -23,6 +23,7 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
+mod chat_surface;
 mod completer;
 mod consent;
 mod cursor_mcp;
@@ -44,6 +45,10 @@ mod session_log;
 mod settings;
 mod tray;
 
+use chat_surface::{
+    Settled, CHAT_ELICITATION_EVENT, CHAT_EVENT, CHAT_OPENING_EVENT, CHAT_PERMISSION_EVENT,
+    CHAT_PERMISSION_SETTLED_EVENT, CHAT_PLAN_EVENT, CHAT_THOUGHT_EVENT,
+};
 use frame_loop::run_frame_loop;
 
 use std::collections::{BTreeMap, HashMap};
@@ -105,50 +110,6 @@ fn chat_label(id: &str) -> String {
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
 
-/// The event carrying one turn's answer to a Chat surface.
-const CHAT_EVENT: &str = "chat";
-
-/// Spatial Layer state for a Chat surface's status bar. Separate from
-/// `CHAT_EVENT`: this arrives whenever the sprite does something different,
-/// whether or not anyone has typed.
-const CHAT_STATUS_EVENT: &str = "chat-status";
-
-/// Full opening to an already-open Chat surface, so `attached()` can re-run
-/// without a webview reload. An event rather than a second command, because
-/// the window is already listening.
-const CHAT_OPENING_EVENT: &str = "chat-opening";
-
-/// The event telling one Chat surface that the session behind it was replaced,
-/// carrying why in the words the log prints. `chat.js` says what the window
-/// does with it, and why. #476.
-const CHAT_SESSION_EVENT: &str = "chat-session";
-
-/// Forwarded `session/request_permission` to every open Chat surface. The
-/// session is shared and the Shell does not know which window the user is
-/// looking at. The first answer wins. ai-buddy never answers it (ADR-0018).
-const CHAT_PERMISSION_EVENT: &str = "chat-permission";
-
-/// A forwarded `elicitation/create` form. Same fan-out as a permission ask:
-/// every open Chat surface draws it, the first answer wins.
-const CHAT_ELICITATION_EVENT: &str = "chat-elicitation";
-
-/// The Harness's latest thought, for the strip above the composer. Each one
-/// replaces the last; an empty line is the turn saying it has stopped
-/// thinking, which takes the strip away (ADR-0025).
-const CHAT_THOUGHT_EVENT: &str = "chat-thought";
-
-/// The event carrying the agent's plan to every open Chat surface. Each one
-/// replaces the whole list, and an empty one is the turn taking it away (#697).
-const CHAT_PLAN_EVENT: &str = "chat-plan";
-
-/// Chat UI selection change, telling each chat surface to swap its root class.
-const CHAT_UI_EVENT: &str = "chat-ui";
-
-/// Retires one forwarded request in every open Chat surface, by request id.
-/// The ask went to all of them and one took the click; the rest would
-/// otherwise keep offering buttons on a question already answered.
-const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
-
 /// Unsettled forwarded asks, held so `chat_ready` can replay them to a
 /// surface that opens later. One lock over both fields and the emits that
 /// read them: a settlement between replay and emit would draw a live row that is never retired.
@@ -163,16 +124,6 @@ struct Pending {
 }
 
 struct PendingAsks(Mutex<Pending>);
-
-/// What retires one row in every open Chat surface.
-#[derive(Clone, Serialize)]
-struct Settled {
-    request: String,
-    /// The option that won; `None` when nothing was picked. Every window
-    /// draws this rather than its own click: two can draw one request, and
-    /// the wire drops every answer after the first.
-    option: Option<String>,
-}
 
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
@@ -221,7 +172,7 @@ struct InstanceState {
     recent: Vec<String>,
     pace: Pace,
     since_wake: Duration,
-    since_ambient: Duration,
+    since_proactive: Duration,
     previous_idle: Duration,
     /// Whether the call on the wire answers a typed line, so the surface can be
     /// told when newest-wins throws that answer away (ADR-0016). `Slots` knows
@@ -2149,8 +2100,8 @@ struct ChatReply {
 
 /// What the Shell owes a Chat surface when a newer wake cancels the slot
 /// (ADR-0016). `None` unless a typed question was the turn on the wire:
-/// a poke or an ambient wake opened no question on this surface, so a
-/// notice there would answer nobody (#890).
+/// a poke or a proactive wake opened no question on this surface, so a
+/// notice there would answer nobody.
 fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
     chat_turn.then(|| ChatReply {
         said: None,
@@ -2188,7 +2139,7 @@ struct ChatStatus {
 struct ChatStatusPush<'a> {
     #[serde(flatten)]
     status: &'a ChatStatus,
-    /// Milliseconds until the next ambient wake, or `None` when none is
+    /// Milliseconds until the next proactive wake, or `None` when none is
     /// coming. A deadline pushed once rather than a number every second: the
     /// window counts it down itself.
     wake_ms: Option<u64>,
@@ -2622,7 +2573,7 @@ fn switch_instance(
         );
         session_log::new_session(app, instance_id, "the Character changed");
         live.recent.clear();
-        live.happened = Happened::Ambient;
+        live.happened = Happened::Proactive;
         live.addressed = true;
     }
 }
@@ -2673,11 +2624,11 @@ fn spawn_live(
         pace: paced(config, &character),
         since_wake: Duration::ZERO,
         since_state: Duration::ZERO,
-        since_ambient: Duration::ZERO,
+        since_proactive: Duration::ZERO,
         previous_idle: Duration::MAX,
         last_state: None,
         addressed: false,
-        happened: Happened::Ambient,
+        happened: Happened::Proactive,
         chat_turn: false,
         pointer: Pointer::with_double_click_ms(platform::double_click_interval_ms()),
         spoken: None,
@@ -2946,11 +2897,11 @@ fn spawn_instances(
             // still reads as coordinated and puts N model calls in one instant.
             since_wake: phase_of(config.wake_every, phases.draw()),
             since_state: Duration::ZERO,
-            since_ambient: Duration::ZERO,
+            since_proactive: Duration::ZERO,
             previous_idle: Duration::MAX,
             last_state: None,
             addressed: false,
-            happened: Happened::Ambient,
+            happened: Happened::Proactive,
             chat_turn: false,
             pointer: Pointer::with_double_click_ms(platform::double_click_interval_ms()),
             spoken: None,
@@ -3445,7 +3396,7 @@ fn main() {
             };
             let mut config = model::config_from(&director);
             config.apply_switch(settings.director_enabled);
-            config.ambient_allowed = settings.ambient_wakes;
+            config.proactive_allowed = settings.proactive_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect(&director)));
             app.manage(Arc::clone(&inspect));
             for line in model::env_switch_warnings(&dev_flags::switch_vars()) {
@@ -3726,7 +3677,7 @@ mod tests {
         model::DirectorInspect {
             enabled: true,
             configured: true,
-            ambient_wakes: true,
+            proactive_wakes: true,
             wake_secs: 60,
             last_payload: None,
             harness: None,
@@ -4030,7 +3981,7 @@ mod tests {
 
     #[test]
     fn with_nothing_waiting_the_latest_moment_wins() {
-        let mut happened = Happened::Ambient;
+        let mut happened = Happened::Proactive;
         note_happened(&mut happened, Happened::Poke);
         note_happened(&mut happened, Happened::Throw);
 
@@ -4453,11 +4404,11 @@ mod tests {
         assert_eq!(asked_again["superseded_by"], "spoken to");
     }
 
-    /// The half a careless fix breaks. A poke or an ambient wake opened no
-    /// question on the Chat surface, so a notice there answers nobody (#890).
+    /// The half a careless fix breaks. A poke or a proactive wake opened no
+    /// question on the Chat surface, so a notice there answers nobody.
     #[test]
     fn an_ambient_turn_superseded_by_another_wake_tells_chat_nothing() {
-        assert!(cancelled_caret(false, &Happened::Ambient).is_none());
+        assert!(cancelled_caret(false, &Happened::Proactive).is_none());
         assert!(cancelled_caret(false, &Happened::Poke).is_none());
     }
 }

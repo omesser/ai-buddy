@@ -131,7 +131,7 @@ test("no row in either snapshot is one this renderer has no case for", () => {
 const AI_ROWS = [
   ["heading", null, "AI"],
   ["checkbox", "director", "AI on"],
-  ["checkbox", "ambient", "Ambient session wakes"],
+  ["checkbox", "proactive", "Proactive model calls"],
   ["textfield", "director_wake_secs", "First wake, in seconds"],
   ["button", "new_session", "Start new session"],
   ["heading", null, "AI source"],
@@ -262,7 +262,7 @@ test("a row whose id is not its field name still draws the value the snapshot ca
 
   const ai = tab(MODEL_API, "AI");
   assert.equal(byId(ai, "director").value, true);
-  assert.equal(byId(ai, "ambient").value, true);
+  assert.equal(byId(ai, "proactive").value, true);
   assert.equal(byId(ai, "director_wake_secs").value, "180");
   assert.equal(byId(ai, "payload").value, "Ambient wake for bmo, 3 behaviors, 412 tokens.");
 

@@ -14,7 +14,7 @@ const PREEMPTED_BY = {
   summoned: "You summoned me",
   grabbed: "You picked me up",
   perched: "I perched",
-  ambient: "My next thought started",
+  proactive: "My next thought started",
 };
 
 export function preemptedNote(cause) {

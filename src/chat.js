@@ -57,7 +57,7 @@ let them = "";
 // new day once.
 let previousAt = null;
 
-// The last thing the Shell said about the Spatial Layer, and when the ambient
+// The last thing the Shell said about the Spatial Layer, and when the proactive
 // wake it named falls due. The Shell pushes that deadline once rather than a
 // number every second; the arithmetic between costs the frame loop nothing.
 let status = null;

@@ -690,7 +690,7 @@ impl Session {
 
     /// Take the turn lock from the wake in flight by cancelling it, or `None`
     /// for the one wake that may not. Newest-wins (ADR-0016) on one session
-    /// (ADR-0008). A reactive Poke must not give way to the next ambient tick.
+    /// (ADR-0008). A reactive Poke must not give way to the next proactive wake.
     fn supersede(&self, request: &WakeRequest) -> Option<MutexGuard<'_, ()>> {
         if !request.reactive && self.serving_reactive.load(Ordering::SeqCst) {
             return None;
@@ -2502,7 +2502,7 @@ mod tests {
 
     /// The same wake, arriving on the Director's own backoff rather than
     /// because the user did something. ADR-0008 names the two kinds.
-    fn ambient(prompt: &str) -> WakeRequest {
+    fn proactive(prompt: &str) -> WakeRequest {
         WakeRequest {
             reactive: false,
             ..asking(prompt)
@@ -3900,7 +3900,7 @@ mod tests {
             woken(Happened::Chat("hi".into())),
         );
         assert!(fx.wait_for("prompt", 1));
-        slots.wake(&id, harness_director(&session), woken(Happened::Ambient));
+        slots.wake(&id, harness_director(&session), woken(Happened::Proactive));
 
         let answered = polled(&mut slots).expect("the chat turn's answer");
         assert!(
@@ -4820,7 +4820,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// The one wake that waits instead. An ambient tick cancelling the Poke
+    /// The one wake that waits instead. A proactive wake cancelling the Poke
     /// it arrived behind would be worse than the refusal.
     #[test]
     fn a_proactive_wake_never_cancels_a_reactive_turn() {
@@ -4832,7 +4832,7 @@ mod tests {
         };
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         assert_eq!(
-            session.complete(&ambient("again")),
+            session.complete(&proactive("again")),
             Err("harness busy".to_string())
         );
         // Read before the reactive turn's own timeout cancel, which is the

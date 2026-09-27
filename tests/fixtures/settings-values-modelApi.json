@@ -1,5 +1,5 @@
 {
-  "ambient": true,
+  "proactive": true,
   "byo_harness": "claude",
   "byo_snippet": "claude mcp add ai-buddy -- /Applications/ai-buddy.app/Contents/MacOS/ai-buddy --mcp",
   "byo_steps": "Run the line above in a terminal, then start claude.",

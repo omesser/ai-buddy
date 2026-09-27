@@ -17,6 +17,7 @@ use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
+use super::chat_surface::{CHAT_EVENT, CHAT_STATUS_EVENT, CHAT_UI_EVENT};
 use super::session_log;
 use super::settings::SettingsOp;
 use super::{
@@ -25,8 +26,8 @@ use super::{
     overlay_label, paced, place_overlays, platform, publish_instances, push_chat_opening,
     push_chat_openings, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
     ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
-    MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
-    CHAT_STATUS_EVENT, CHAT_UI_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK,
+    FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// How long an overlay may go without being told anything.
@@ -618,7 +619,7 @@ pub(crate) fn run_frame_loop(
                     SettingsOp::Retarget {
                         settings,
                         enabled,
-                        ambient_allowed,
+                        proactive_allowed,
                         configured,
                     } => {
                         // What every live `Pace` was built from, and the only
@@ -632,12 +633,12 @@ pub(crate) fn run_frame_loop(
                         director = settings;
                         config = model::config_from(&director);
                         config.enabled = enabled;
-                        config.ambient_allowed = ambient_allowed;
+                        config.proactive_allowed = proactive_allowed;
                         config.configured = configured;
                         if let Ok(mut inspect) = inspect.lock() {
                             inspect.enabled = config.enabled;
                             inspect.configured = config.configured;
-                            inspect.ambient_wakes = config.ambient_allowed;
+                            inspect.proactive_wakes = config.proactive_allowed;
                             // A Retarget is how the endpoint moves, so it is
                             // also how the Chat header stops naming the old
                             // one (#474).
@@ -911,7 +912,7 @@ pub(crate) fn run_frame_loop(
             }
 
             if let Ok(settings) = settings.lock() {
-                config.ambient_allowed = settings.ambient_wakes;
+                config.proactive_allowed = settings.proactive_wakes;
                 config.apply_switch(settings.director_enabled);
                 let dnd = settings.do_not_disturb;
                 // Reread every tick, like the flags above, so a mute in
@@ -919,7 +920,7 @@ pub(crate) fn run_frame_loop(
                 sound_allowed = settings.sound_allowed();
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
-                    inspect.ambient_wakes = settings.ambient_wakes;
+                    inspect.proactive_wakes = settings.proactive_wakes;
                 }
                 drop(settings);
                 for (id, _) in roster.list() {
@@ -1202,7 +1203,7 @@ pub(crate) fn run_frame_loop(
                 live.since_wake += elapsed;
                 live.since_state += elapsed;
                 if !displays_asleep {
-                    live.since_ambient += elapsed;
+                    live.since_proactive += elapsed;
                 }
 
                 let mut proposal = None;
@@ -1433,11 +1434,11 @@ pub(crate) fn run_frame_loop(
                     if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
                         if director::session_due(
                             live.addressed,
-                            live.since_ambient,
+                            live.since_proactive,
                             &live.pace,
                             activity.displays_asleep,
                             instance.do_not_disturb(),
-                            config.ambient_allowed,
+                            config.proactive_allowed,
                         ) && config.enabled
                         {
                             let context = Context {
@@ -1459,8 +1460,8 @@ pub(crate) fn run_frame_loop(
                                 live.pace.after_ambient();
                             }
                             live.addressed = false;
-                            live.happened = Happened::Ambient;
-                            live.since_ambient = Duration::ZERO;
+                            live.happened = Happened::Proactive;
+                            live.since_proactive = Duration::ZERO;
                             let payload = model.prompt(&context);
                             // Read before the `Context` is handed to the slot,
                             // and applied only if the slot took the call.
@@ -1580,20 +1581,20 @@ pub(crate) fn run_frame_loop(
                     live.traced_last = None;
                 }
 
-                // Pushed on change for the same reason. `ambient_coming` is
-                // `session_due`'s ambient arm, so the bar counts down only
+                // Pushed on change for the same reason. `proactive_coming` is
+                // `session_due`'s proactive arm, so the bar counts down only
                 // to a wake that is coming.
-                let ambient_coming = config.enabled
-                    && config.ambient_allowed
+                let proactive_coming = config.enabled
+                    && config.proactive_allowed
                     && live.model.is_some()
                     && !instance.do_not_disturb()
                     && !last_activity
                         .as_ref()
                         .is_some_and(|activity| activity.displays_asleep);
-                let wake_ms = ambient_coming.then(|| {
+                let wake_ms = proactive_coming.then(|| {
                     live.pace
                         .wait()
-                        .saturating_sub(live.since_ambient)
+                        .saturating_sub(live.since_proactive)
                         .as_millis() as u64
                 });
                 let status = ChatStatus {

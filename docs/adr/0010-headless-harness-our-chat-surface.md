@@ -45,7 +45,7 @@ appears here, ambient as much as reactive — a line said in the Speech bubble
 and nowhere else leaves one conversation with two places to read it and this
 log missing the half the user did not type. One the user did not type is
 labelled with what the Director was reacting to, in the status bar's own words:
-a Summon and a Poke are prompts too, and only the ambient wake is unprompted.
+a Summon and a Poke are prompts too, and only the proactive wake is unprompted.
 A response that proposes a Behavior and no Speech has no line to draw; the bar
 above names the Behavior, and nothing is held for a surface that opens later.
 
@@ -86,7 +86,7 @@ project has no build step; one window does not justify a bundler and
   under theirs.** opencode alone supports it. Its child sessions start with
   fresh context, so a child per message is ADR-0008's split brain with extra
   steps; one long-lived child fixes that and still binds the buddy to whichever
-    60|  repository the user happened to have open, and drops ambient wakes into the
+    60|  repository the user happened to have open, and drops proactive wakes into the
   session list of their real work.
 - **A Rust-native chat window** in egui, iced or Slint. A third UI toolkit
   beside the webview and the two native Shells, and hand-rolled text layout, to

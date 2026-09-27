@@ -18,7 +18,7 @@ goes out saying `what just happened: picked up`, throw it, it flies and lands �
 and fifteen seconds later the buddy says "hey, put me down!" from the floor. The
 Engine already refuses a Behavior that no longer fits, because `permitted`
 requires `on_feet`; Speech had no such guard, and a Poke arriving a millisecond
-after an ambient wake waited out the whole of `timeout_global` — 20s hosted,
+after a proactive wake waited out the whole of `timeout_global` — 20s hosted,
 120s on a local server — before its prompt was even sent.
 
 ## Considered Options
