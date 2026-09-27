@@ -269,7 +269,7 @@ test("phase2 check 4 is PASS/FAIL from GetWindow stacking, not REVIEW", () => {
   assert.match(above, /-lt/);
 
   const find = extractFunction(phase2Src, "Find-OverlayHwnds");
-  assert.match(find, /fidget/);
+  assert.match(find, /\$t -ne 'Fidget'/);
   assert.match(find, /GetWindowRect/);
   assert.match(find, /\$t -eq 'Settings'/);
 
@@ -346,7 +346,7 @@ test("overlay finder fixtures: large Fidget matches; Settings, 1x1 anchor, and C
   assert.equal(isOverlay(otherPid, settingsHwnd, minW, minH), false);
 
   const find = extractFunction(phase2Src, "Find-OverlayHwnds");
-  assert.match(find, /\$t -ne 'fidget'/);
+  assert.match(find, /\$t -ne 'Fidget'/);
   assert.match(find, /\$w -ge \$script:overlayMinW/);
   assert.match(find, /\$hgt -ge \$script:overlayMinH/);
   assert.match(find, /\$processId -ne \$script:overlayPid/);
