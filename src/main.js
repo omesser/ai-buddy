@@ -407,6 +407,9 @@ function removeView(id) {
   view.quick.remove();
   view.cueLayer.remove();
   views.delete(id);
+  // After the view is gone, so a scan cannot still name it. dispose already
+  // dropped the caret; this is the report that clears a stale id.
+  reportComposing();
 }
 
 function drawView(view, now) {

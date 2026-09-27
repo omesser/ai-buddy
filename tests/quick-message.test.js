@@ -300,6 +300,11 @@ test("the overlay autofocuses, dismisses on the locked gestures, and reports typ
 
   assert.match(js, /view\.quickField\.focus\(\)/);
   assert.match(js, /invoke\("overlay_composing", \{ instance: id \}\)/);
+  assert.match(
+    js,
+    /function removeView\(id\) \{[\s\S]*?quickMachine\.dispose\(\)[\s\S]*?views\.delete\(id\);[\s\S]*?reportComposing\(\);/,
+    "dispose leaves the map, then the composing report cannot keep that id",
+  );
   assert.match(js, /quickMachine\.outside\(\)/);
   assert.match(js, /quickMachine\.drag\(\)/);
   assert.match(js, /quickMachine\.summon\(\)/);
