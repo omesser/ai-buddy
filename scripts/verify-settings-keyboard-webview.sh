@@ -25,7 +25,7 @@ failures=0
 lock_held=0
 app_pid=""
 
-TABS="Presence Character AI Privacy Development Chat"
+TABS="Presence Character AI Chat Privacy Development"
 
 info() { printf '\033[36m[INFO]\033[0m %s\n' "$*"; }
 pass() { printf '\033[32m[PASS]\033[0m %s\n' "$*"; }

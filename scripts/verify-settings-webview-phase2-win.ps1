@@ -506,7 +506,7 @@ if ($Report.webviewConfirmed) {
   Log 'CHECK1 PASS (Tauri Window; WebView2 process not listed)'
 }
 
-$tabs = @('Presence', 'Character', 'AI', 'Privacy', 'Development', 'Chat')
+$tabs = @('Presence', 'Character', 'AI', 'Chat', 'Privacy', 'Development')
 $tabPass = $true
 if (-not $win) {
   $tabPass = $false

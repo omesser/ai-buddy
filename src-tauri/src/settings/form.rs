@@ -1748,16 +1748,16 @@ pub fn describe_with(live: &Live) -> FormDescription {
             sections: director_sections(live),
         },
         FormTab {
+            title: "Chat".to_string(),
+            sections: chat_sections(),
+        },
+        FormTab {
             title: "Privacy".to_string(),
             sections: privacy_sections(live),
         },
         FormTab {
             title: "Development".to_string(),
             sections: development_sections(live),
-        },
-        FormTab {
-            title: "Chat".to_string(),
-            sections: chat_sections(),
         },
     ];
     // Only the buttons: every writing row carries the field it writes.
@@ -2134,9 +2134,9 @@ mod tests {
                 "Presence",
                 "Character",
                 "AI",
+                "Chat",
                 "Privacy",
-                "Development",
-                "Chat"
+                "Development"
             ]
         );
         for tab in &description.tabs {

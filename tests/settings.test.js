@@ -24,7 +24,7 @@ const STATES = [
   ["a Harness drives", HARNESS],
 ];
 
-const TABS = ["Presence", "Character", "AI", "Privacy", "Development", "Chat"];
+const TABS = ["Presence", "Character", "AI", "Chat", "Privacy", "Development"];
 
 function tab(state, title) {
   const found = state.form.tabs.find((candidate) => candidate.title === title);
@@ -732,7 +732,7 @@ test("non-AI tabs hide footer when it has no content (Bug 1)", async () => {
     },
   };
 
-  const NON_AI_TABS = ["Presence", "Character", "Privacy", "Development", "Chat"];
+  const NON_AI_TABS = ["Presence", "Character", "Chat", "Privacy", "Development"];
 
   for (const tabTitle of NON_AI_TABS) {
     mockFooter.children = [];

@@ -17,7 +17,7 @@ function snapshot(name) {
   return { form: read("snapshot"), values: read("values") };
 }
 
-const TABS = ["Presence", "Character", "AI", "Privacy", "Development", "Chat"];
+const TABS = ["Presence", "Character", "AI", "Chat", "Privacy", "Development"];
 const html = readFileSync(new URL("../src/settings.html", import.meta.url), "utf8");
 
 test("the snapshot carries the tabs, in order", () => {

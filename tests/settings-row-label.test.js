@@ -70,7 +70,7 @@ const STATES = [
 
 test("every label holds the control it names", () => {
   for (const [when, name] of STATES) {
-    for (const title of ["Presence", "Character", "AI", "Privacy", "Development", "Chat"]) {
+    for (const title of ["Presence", "Character", "AI", "Chat", "Privacy", "Development"]) {
       for (const label of page(name, title).filter((node) => node.tagName === "label")) {
         const control = descendants(label).find((node) => CONTROLS.includes(node.tagName));
         assert.ok(control, `a label in ${title} holds no control when ${when}`);
