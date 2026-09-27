@@ -823,6 +823,25 @@ body {
   min-width: 0;
 }
 
+/* One row that gives way in order as the window narrows: the mind line wraps
+   first, then the name, then the Character chip. Grid rather than flex shrink
+   factors, because an auto track grows to its max-content before a 1fr track
+   gets any room, which makes the order exact instead of proportional. Scoped
+   to the header because log rows share .who. */
+.tb .who {
+  display: grid;
+  grid-template-columns: auto minmax(min-content, 1fr);
+  align-items: baseline;
+}
+
+/* The same rule one level down: the chip's auto track fills before the name's. */
+.ident {
+  display: grid;
+  grid-template-columns: minmax(min-content, 1fr) auto;
+  align-items: baseline;
+  gap: 7px;
+}
+
 .name {
   font-weight: 800;
   font-size: 14.5px;
@@ -840,33 +859,26 @@ body {
 
 /* Unboxed, unlike the Character beside it: the Character names this window and
    this only says what is behind it, so it takes the header's quietest weight
-   and elides rather than pushing the name off the line. */
+   and is the first thing to give way. */
 .mind {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 5px;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
   font-family: var(--chat-mono);
   font-size: 11px;
   color: var(--chat-ink-3);
 }
 
-/* Its own flex item, so a long session id elides the text and never the mark:
-   the glyph is what says this line is a mind at all. */
+/* Its own flex item, so the text wraps beside the mark and never under it:
+   the glyph is what says this line is a mind at all. Baseline-aligned so it
+   stays by the first line once the text wraps. */
 .mind-mark {
   flex: 0 0 auto;
   display: block;
   width: 14px;
   height: 14px;
   opacity: 0.9;
-}
-
-.mind-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Under the name, not beside it: the title row stays a single line so a hint
