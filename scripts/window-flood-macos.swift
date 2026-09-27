@@ -2,7 +2,7 @@
 // cascaded over whatever is on screen, so a bench can measure what a large
 // window list costs. It covers the screen for as long as it runs.
 //
-// Refuses to start unless AI_BUDDY_BENCH_GREEN_LIGHT=1, the switch the bench
+// Refuses to start unless FIDGET_BENCH_GREEN_LIGHT=1, the switch the bench
 // scripts already use, because the person at the machine has to agree to lose
 // the screen first. Capped at 300 windows so a typo cannot bury the display.
 //
@@ -11,14 +11,14 @@
 // none behind. Prints one JSON line: how many it opened, how many of those the
 // window server lists on screen (after a brief settle wait), and the
 // on-screen total.
-// Usage: AI_BUDDY_BENCH_GREEN_LIGHT=1 swift scripts/window-flood-macos.swift count [quit-after-secs]
+// Usage: FIDGET_BENCH_GREEN_LIGHT=1 swift scripts/window-flood-macos.swift count [quit-after-secs]
 
 import AppKit
 
-guard ProcessInfo.processInfo.environment["AI_BUDDY_BENCH_GREEN_LIGHT"] == "1" else {
+guard ProcessInfo.processInfo.environment["FIDGET_BENCH_GREEN_LIGHT"] == "1" else {
     FileHandle.standardError.write(
         Data(
-            "window-flood-macos.swift covers the screen with windows. Set AI_BUDDY_BENCH_GREEN_LIGHT=1 once the person at the machine has agreed.\n"
+            "window-flood-macos.swift covers the screen with windows. Set FIDGET_BENCH_GREEN_LIGHT=1 once the person at the machine has agreed.\n"
                 .utf8))
     exit(2)
 }
@@ -61,7 +61,7 @@ for i in 0..<count {
     let window = NSWindow(
         contentRect: NSRect(x: x, y: y, width: size.width, height: size.height),
         styleMask: [.titled], backing: .buffered, defer: false)
-    window.title = "ai-buddy flood \(i)"
+    window.title = "Fidget flood \(i)"
     window.alphaValue = 0.3
     window.ignoresMouseEvents = true
     window.level = .normal

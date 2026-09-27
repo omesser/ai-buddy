@@ -1,4 +1,4 @@
-//! What a caller of `ai-buddy-verify` is allowed to depend on: the exit code
+//! What a caller of `fidget-verify` is allowed to depend on: the exit code
 //! behind each outcome, how a run's checks roll up into one outcome, the
 //! `--json` object, and the `PROOF.md` section (#647 stone 3).
 //!
@@ -8,9 +8,9 @@
 
 use std::fs;
 
-use ai_buddy_verify::contract::{Outcome, RunReport};
-use ai_buddy_verify::paths::RunPaths;
-use ai_buddy_verify::proof;
+use fidget_verify::contract::{Outcome, RunReport};
+use fidget_verify::paths::RunPaths;
+use fidget_verify::proof;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -75,7 +75,7 @@ fn a_tool_error_outranks_a_failed_check_and_exits_three() {
     let paths = run_paths(&dir);
     let mut report = RunReport::new("overlay", &paths, false);
     report.check(Outcome::Fail, "overlay script", "exit 1");
-    report.check(Outcome::Error, "repo root", "not an ai-buddy checkout");
+    report.check(Outcome::Error, "repo root", "not a Fidget checkout");
 
     assert_eq!(report.outcome(), Outcome::Error);
     assert_eq!(report.outcome().exit_code(), 3);

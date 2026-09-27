@@ -17,7 +17,7 @@ fn overlay_panel_class() -> &'static AnyClass {
 
     CLASS.get_or_init(|| {
         let superclass = AnyClass::get(c"NSPanel").expect("AppKit always defines NSPanel");
-        let mut builder = ClassBuilder::new(c"AiBuddyOverlayPanel", superclass)
+        let mut builder = ClassBuilder::new(c"FidgetOverlayPanel", superclass)
             .expect("the class name is ours and registered once");
         // Tauri's window is tao's `TaoWindow`, an NSWindow plus this BOOL. Where
         // NSWindow's ivars end 8-aligned the BOOL grows the instance, so the swap
@@ -47,7 +47,7 @@ fn overlay_panel_class() -> &'static AnyClass {
 
 /// Make the overlay a floating, non-activating panel that follows the user
 /// across Spaces and stays out of the application switcher. Capturable by
-/// default (ADR-0024); Presence or `AI_BUDDY_CAPTURABLE=0` excludes it.
+/// default (ADR-0024); Presence or `FIDGET_CAPTURABLE=0` excludes it.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ptr = window
         .ns_window()
@@ -114,7 +114,7 @@ mod tests {
     /// The shape `tao` registers as `TaoWindow`: an NSWindow plus one BOOL.
     fn tao_window_shape() -> &'static AnyClass {
         let superclass = AnyClass::get(c"NSWindow").expect("AppKit always defines NSWindow");
-        let mut builder = ClassBuilder::new(c"AiBuddyTaoWindowShape", superclass)
+        let mut builder = ClassBuilder::new(c"FidgetTaoWindowShape", superclass)
             .expect("registered once per test binary");
         builder.add_ivar::<Bool>(c"focusable");
         builder.register()

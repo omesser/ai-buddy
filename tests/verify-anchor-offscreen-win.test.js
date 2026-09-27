@@ -56,11 +56,11 @@ function rect(left, top, width, height) {
 // DESKTOP-UQIE144 at #972: a 3440x1440 primary and a 1200x1920 portrait beside it.
 const monitors = [rect(0, 0, 3440, 1440), rect(3440, 0, 1200, 1920)];
 
-const parkedAnchor = { Name: "parkedAnchor", Class: "Tauri Window", Title: "ai-buddy", ...rect(-32000, -32000, 136, 39) };
+const parkedAnchor = { Name: "parkedAnchor", Class: "Tauri Window", Title: "Fidget", ...rect(-32000, -32000, 136, 39) };
 const taoEventTarget = { Name: "taoEventTarget", Class: "Tao Thread Event Target", Title: "", ...rect(0, 0, 16, 16) };
-const overlay = { Name: "overlay", Class: "Tauri Window", Title: "ai-buddy", ...rect(0, 0, 3440, 1440) };
+const overlay = { Name: "overlay", Class: "Tauri Window", Title: "Fidget", ...rect(0, 0, 3440, 1440) };
 const settings = { Name: "settings", Class: "Tauri Window", Title: "Settings", ...rect(1400, 400, 600, 520) };
-const onDesktopAnchor = { Name: "onDesktopAnchor", Class: "Tauri Window", Title: "ai-buddy", ...rect(1652, 1401, 136, 39) };
+const onDesktopAnchor = { Name: "onDesktopAnchor", Class: "Tauri Window", Title: "Fidget", ...rect(1652, 1401, 136, 39) };
 
 test(
   "a parked anchor beside Tao's event-loop window reads as off the desktop",

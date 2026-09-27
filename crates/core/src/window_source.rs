@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 /// How often the Shell should read the source while the sprite is still.
-/// Windows move at human speed, and a sitting buddy does not need the list
+/// Windows move at human speed, and a sitting character does not need the list
 /// sixty times a second. A ride switches to `RIDE_POLL_INTERVAL`.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 

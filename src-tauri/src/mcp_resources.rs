@@ -1,17 +1,17 @@
 //! Readonly MCP resources: Memory, the Action Log, and window names.
 //!
-//! One consent covers every name the buddy reports (ADR-0032). The owner and
+//! One consent covers every name the character reports (ADR-0032). The owner and
 //! the title reach `WindowRect` when it is usable (sensing layer), and this
 //! resource reads them again over its own path, under the same consent.
 
 use std::fs;
 use std::sync::Mutex;
 
-use ai_buddy_core::dispatch::DenyList;
+use fidget_core::dispatch::DenyList;
 
-pub const WINDOWS_URI: &str = "ai-buddy://windows";
-pub const MEMORY_URI: &str = "ai-buddy://memory";
-pub const ACTION_LOG_URI: &str = "ai-buddy://action-log";
+pub const WINDOWS_URI: &str = "fidget://windows";
+pub const MEMORY_URI: &str = "fidget://memory";
+pub const ACTION_LOG_URI: &str = "fidget://action-log";
 
 /// MCP request bodies stop at 1 MiB (`mcp_http::BODY_LIMIT`). The current
 /// Action Log file can be 2 MiB before rotation, so a full read would be
@@ -91,7 +91,7 @@ pub fn window_titles_text(
 
 /// Memory Manifest bytes. Missing or empty is empty text, not an error.
 pub fn memory_text() -> String {
-    memory_from_path(&ai_buddy_core::memory::shared_path())
+    memory_from_path(&fidget_core::memory::shared_path())
 }
 
 /// Memory at `path`. A missing file is empty text, not an error.
@@ -166,11 +166,7 @@ mod tests {
         let uris: Vec<&str> = catalog().iter().map(|r| r.uri).collect();
         assert_eq!(
             uris,
-            vec![
-                "ai-buddy://windows",
-                "ai-buddy://memory",
-                "ai-buddy://action-log"
-            ]
+            vec!["fidget://windows", "fidget://memory", "fidget://action-log"]
         );
     }
 
@@ -194,13 +190,13 @@ mod tests {
         };
         let text = window_titles_text(
             [
-                window("Terminal", "ai-buddy"),
+                window("Terminal", "fidget"),
                 window("1Password", "Login"),
                 window("Finder", "Desktop"),
             ],
             &denylist,
         );
-        assert_eq!(text, "Terminal\tai-buddy\nFinder\tDesktop");
+        assert_eq!(text, "Terminal\tfidget\nFinder\tDesktop");
     }
 
     #[test]
@@ -215,7 +211,7 @@ mod tests {
 
     #[test]
     fn memory_is_the_file_bytes_and_missing_is_empty() {
-        let dir = std::env::temp_dir().join(format!("ai-buddy-mcp-memory-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("fidget-mcp-memory-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temp dir");
         let path = dir.join("memory.md");
         std::fs::write(&path, "# Facts\n\n- likes tea\n").expect("wrote Memory");

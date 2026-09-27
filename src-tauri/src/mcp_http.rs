@@ -1,7 +1,7 @@
 //! The MCP server the app serves itself, on loopback HTTP.
 //!
 //! The one place tools are dispatched (ADR-0023), and so the one thing that
-//! reaches a buddy on screen. `crates/mcp-server` runs in a separate process
+//! reaches a character on screen. `crates/mcp-server` runs in a separate process
 //! — however it is reached, sidecar or `--mcp-stdio` — and relays back here
 //! rather than answering, because the tools have to be dispatched where the
 //! `Roster` lives, and the `Roster` lives on the frame-loop thread. This file
@@ -36,7 +36,7 @@ use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
-use ai_buddy_core::dispatch::{list_tools, DispatchError, ErrorCode};
+use fidget_core::dispatch::{list_tools, DispatchError, ErrorCode};
 use serde_json::{json, Value};
 
 use crate::mcp_resources;
@@ -90,11 +90,8 @@ impl Endpoint {
     /// A method so the token leaves this type only where it is handed to that process.
     pub fn stdio_env(&self) -> Vec<(String, String)> {
         vec![
-            (ai_buddy_mcp_server::URL_VAR.to_string(), self.url.clone()),
-            (
-                ai_buddy_mcp_server::TOKEN_VAR.to_string(),
-                self.token.clone(),
-            ),
+            (fidget_mcp_server::URL_VAR.to_string(), self.url.clone()),
+            (fidget_mcp_server::TOKEN_VAR.to_string(), self.token.clone()),
         ]
     }
 }
@@ -305,7 +302,7 @@ pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<Stri
                 .and_then(Value::as_str)
                 .unwrap_or(PROTOCOL_VERSION),
             "capabilities": {"tools": {}, "resources": {}},
-            "serverInfo": {"name": "ai-buddy", "version": env!("CARGO_PKG_VERSION")},
+            "serverInfo": {"name": "fidget", "version": env!("CARGO_PKG_VERSION")},
         })),
         "ping" => Ok(json!({})),
         "tools/list" => {
@@ -519,7 +516,7 @@ mod tests {
         .expect("a request is answered");
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         assert_eq!(value["result"]["protocolVersion"], json!("2024-11-05"));
-        assert_eq!(value["result"]["serverInfo"]["name"], json!("ai-buddy"));
+        assert_eq!(value["result"]["serverInfo"]["name"], json!("fidget"));
     }
 
     #[test]
@@ -554,11 +551,7 @@ mod tests {
             .collect();
         assert_eq!(
             uris,
-            vec![
-                "ai-buddy://windows",
-                "ai-buddy://memory",
-                "ai-buddy://action-log"
-            ]
+            vec!["fidget://windows", "fidget://memory", "fidget://action-log"]
         );
     }
 
@@ -577,11 +570,7 @@ mod tests {
 
     #[test]
     fn resources_read_returns_text_for_each_catalog_uri() {
-        for uri in [
-            "ai-buddy://windows",
-            "ai-buddy://memory",
-            "ai-buddy://action-log",
-        ] {
+        for uri in ["fidget://windows", "fidget://memory", "fidget://action-log"] {
             let value = read_resource(uri);
             assert!(value.get("error").is_none(), "read {uri} failed: {value}");
             let content = &value["result"]["contents"][0];
@@ -593,7 +582,7 @@ mod tests {
 
     #[test]
     fn resources_read_rejects_an_unknown_uri() {
-        let value = read_resource("ai-buddy://nope");
+        let value = read_resource("fidget://nope");
         assert!(value.get("result").is_none(), "unknown URI succeeded");
         assert_eq!(value["error"]["code"], json!(-32602));
     }

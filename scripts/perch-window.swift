@@ -75,7 +75,7 @@ func appKitRect(top: Double) -> NSRect {
 
 let window = NSWindow(
     contentRect: appKitRect(top: y), styleMask: [.titled], backing: .buffered, defer: false)
-window.title = "ai-buddy perch"
+window.title = "Fidget perch"
 // Again as a frame, because a titled window's frame is its content rectangle
 // plus a title bar and every step below sets the frame. Setting it both ways
 // would make the first rectangle the odd one out.

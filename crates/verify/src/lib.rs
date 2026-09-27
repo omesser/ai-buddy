@@ -1,6 +1,6 @@
-//! `ai-buddy-verify` — agent/CI verify entry (ADR-0027).
+//! `fidget-verify` — agent/CI verify entry (ADR-0027).
 //!
-//! Binary: `cargo run -p ai-buddy-verify -- <doctor|units|overlay|poke|summon|cleanup>`
+//! Binary: `cargo run -p fidget-verify -- <doctor|units|overlay|poke|summon|cleanup>`
 //!
 //! What a caller may depend on — exit codes, `--json`, the `PROOF.md` section —
 //! is [`contract`].

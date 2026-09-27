@@ -3,7 +3,7 @@
 # while a Character is summoned (#849 / #706 artefact 5).
 # Usage:
 #   ./scripts/verify-settings-webview-select-macos.sh
-#   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-webview-select-macos.sh
+#   FIDGET_VERIFY_BIN=path/to/fidget ./scripts/verify-settings-webview-select-macos.sh
 
 # Needs Accessibility for scripts/ax-settings.swift. Not CI.
 # One fact: the open menu's window layer is above the overlay, a mouse pick
@@ -14,7 +14,7 @@ set -uo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root" || exit 1
 
-bin="${AI_BUDDY_VERIFY_BIN:-$root/target/debug/ai-buddy}"
+bin="${FIDGET_VERIFY_BIN:-$root/target/debug/fidget}"
 out="$root/.verify/settings-webview-select-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out"
 
@@ -27,7 +27,7 @@ fail() {
 }
 
 [ -x "$bin" ] || {
-  fail "no binary at $bin - cargo build -p ai-buddy first, or set AI_BUDDY_VERIFY_BIN"
+  fail "no binary at $bin - cargo build -p fidget first, or set FIDGET_VERIFY_BIN"
   exit 1
 }
 
@@ -49,11 +49,11 @@ for link in .claude .claude.json .codex .config; do
 done
 
 log="$out/app.log"
-env -u AI_BUDDY_DIRECTOR_API_KEY \
-  HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
-  AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
-  AI_BUDDY_TRACE_FRAMES=1 \
-  AI_BUDDY_TRACE_HITTEST=1 \
+env -u FIDGET_DIRECTOR_API_KEY \
+  HOME="$home" FIDGET_CAPTURABLE=1 FIDGET_CHARACTER=timber-wolf \
+  FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$root/characters}" \
+  FIDGET_TRACE_FRAMES=1 \
+  FIDGET_TRACE_HITTEST=1 \
   "$bin" > "$log" 2>&1 &
 app_pid=$!
 

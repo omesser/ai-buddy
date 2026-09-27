@@ -1,4 +1,4 @@
-//! The agent contract: what a caller of `ai-buddy-verify` may depend on
+//! The agent contract: what a caller of `fidget-verify` may depend on
 //! (#647 stone 3 under ADR-0027). A run is a list of checks, one exit code,
 //! one optional JSON object, and one appended `PROOF.md` section.
 //!
@@ -7,7 +7,7 @@
 //! | 0 | `PASS` | everything that ran passed |
 //! | 1 | `FAIL` | a check failed. The thing under test is broken |
 //! | 2 | `SKIP` | nothing could be proven on this host. An unsupported OS or an absent lane, not a defect |
-//! | 3 | `ERROR` | the tool could not run. Bad flags, no ai-buddy checkout, unwritable evidence. Not a verification failure |
+//! | 3 | `ERROR` | the tool could not run. Bad flags, no Fidget checkout, unwritable evidence. Not a verification failure |
 //!
 //! A run's outcome is the worst of its checks, ranked error, fail, skip, pass.
 //! A run that recorded no check at all is an `ERROR`, because it proved
@@ -26,7 +26,7 @@
 //! ## 2026-09-16T18:30:00Z doctor PASS (exit 0)
 //!
 //! run-id: 20260916-183000-1234
-//! evidence: /tmp/ai-buddy-verify-20260916-183000-1234/evidence
+//! evidence: /tmp/fidget-verify-20260916-183000-1234/evidence
 //!
 //! - PASS workspace layout: Cargo.toml + src-tauri
 //! - SKIP swift: not on PATH

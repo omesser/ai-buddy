@@ -1,4 +1,4 @@
-//! When the Character gets out of the way. DESIGN.md decision 8 gives ai-buddy
+//! When the Character gets out of the way. DESIGN.md decision 8 gives Fidget
 //! one window level and no restacking, so staying out of the user's way means
 //! disappearing. A rule (fullscreen frontmost) fades; the hotkey answers at once.
 //!
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(rules.update(fullscreen()), faded_out());
     }
 
-    /// Go-away is the same flag across a restart, so a buddy sent away does
+    /// Go-away is the same flag across a restart, so a character sent away does
     /// not come back on its own.
     #[test]
     fn away_can_be_restored_from_settings() {

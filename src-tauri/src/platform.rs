@@ -1,6 +1,6 @@
 //! The seam between the Shell and whatever operating system it is running on.
 //!
-//! `ai-buddy-core` declares what the app needs — a `WindowSource`, an
+//! `fidget-core` declares what the app needs — a `WindowSource`, an
 //! `ActivitySource`, a window that refuses keyboard focus. This module picks who
 //! answers. macOS answers with AppKit and CoreGraphics; every other platform
 //! gets the degraded mode `docs/SPEC.md` describes, which is a supported state
@@ -17,8 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::sensing::ActivitySource;
-use ai_buddy_core::window_source::{Rect, WindowSource};
+use fidget_core::sensing::ActivitySource;
+use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
 /// One button as the overlay webview witnesses it. `CGEventSource` misses
@@ -478,7 +478,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    mask_data: Option<&fidget_core::overlay::AlphaMask>,
     sprite_x: i32,
     sprite_y: i32,
     sprite_facing: i32,
@@ -524,7 +524,7 @@ pub fn read_mask_rebuild_stats() -> (u64, u64) {
 #[cfg(not(unix))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    mask_data: Option<&fidget_core::overlay::AlphaMask>,
     sprite_x: i32,
     sprite_y: i32,
     sprite_facing: i32,
@@ -869,14 +869,14 @@ pub enum LinuxWindowSource {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 impl WindowSource for LinuxWindowSource {
-    fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
+    fn capabilities(&self) -> fidget_core::window_source::Capabilities {
         match self {
             Self::X11(source) => source.capabilities(),
             Self::Wayland(source) => source.capabilities(),
         }
     }
 
-    fn read(&self) -> ai_buddy_core::window_source::WorldGeometry {
+    fn read(&self) -> fidget_core::window_source::WorldGeometry {
         match self {
             Self::X11(source) => source.read(),
             Self::Wayland(source) => source.read(),
@@ -895,12 +895,12 @@ pub struct DisplayOnlySource(DisplayCache);
 /// the windows and the Engine gets a floor and walls with no Perches.
 #[cfg(all(unix, not(target_os = "macos")))]
 impl WindowSource for DisplayOnlySource {
-    fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
-        ai_buddy_core::window_source::Capabilities::default()
+    fn capabilities(&self) -> fidget_core::window_source::Capabilities {
+        fidget_core::window_source::Capabilities::default()
     }
 
-    fn read(&self) -> ai_buddy_core::window_source::WorldGeometry {
-        ai_buddy_core::window_source::WorldGeometry {
+    fn read(&self) -> fidget_core::window_source::WorldGeometry {
+        fidget_core::window_source::WorldGeometry {
             usable_frames: self.0.read().usable_frames,
             windows: Vec::new(),
             dock: None,
@@ -945,7 +945,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
 /// Portable Tauri so degraded mode still has screen edges. Convert each
 /// monitor with that monitor's scale, never the primary's (`docs/SPEC.md`).
 fn read_displays(app: &tauri::AppHandle) -> Displays {
-    use ai_buddy_core::window_source::{floor_under_dock, in_points, plausible_dock, usable_frame};
+    use fidget_core::window_source::{floor_under_dock, in_points, plausible_dock, usable_frame};
 
     let Ok(monitors) = app.available_monitors() else {
         return Displays::default();
@@ -1191,7 +1191,7 @@ mod tests {
     #[test]
     fn the_file_is_there_before_the_opener_is() {
         let dir = std::env::temp_dir().join(format!(
-            "ai-buddy-open-{}-{:?}",
+            "fidget-open-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -1255,7 +1255,7 @@ mod tests {
     #[test]
     fn open_path_succeeds_for_metacharacter_path() {
         let root = std::env::temp_dir().join(format!(
-            "ai-buddy-open-meta-{}-{:?}",
+            "fidget-open-meta-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));

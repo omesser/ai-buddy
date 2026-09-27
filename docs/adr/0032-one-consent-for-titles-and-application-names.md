@@ -8,7 +8,7 @@ decision to drop the Capture tiers stands as written.
 One walk over the window list reads a window's position, its owning
 application, and its title. One consent gates the title. The owner comes back
 either way, and so does the frontmost application's name, which a different
-call supplies. Decline, and the buddy still knows Signal and Tor Browser are
+call supplies. Decline, and the character still knows Signal and Tor Browser are
 running. What you turned off is knowing which window is which.
 
 Nothing ever argued for that split. It arrived with ADR-0005's Free tier,
@@ -20,7 +20,7 @@ is never requested while the consent catalog requests it to read titles.
 ## Decision
 
 **One consent gates window titles and application names alike.** Without it the
-buddy reports neither. Window geometry, stacking order, time, idle duration and
+character reports neither. Window geometry, stacking order, time, idle duration and
 recent Behaviors stay free.
 
 The old split rests on content against category. A title is free text out of
@@ -44,12 +44,12 @@ project's choice, not the operating system's. #975 records the judgment.
   application names need this one; nothing else in the tier does.
 - "Screen Recording permission is never requested" is withdrawn, because
   enabling the titles consent requests that grant on macOS. What stands is that
-  ai-buddy builds no Capture path, so no screenshot, no pixel analysis, and no
+  Fidget builds no Capture path, so no screenshot, no pixel analysis, and no
   OCR or vision model for desktop content.
 
 ## Consequences
 
-- **Without the consent the buddy knows less, which is what the row buys.**
+- **Without the consent the character knows less, which is what the row buys.**
   The Director loses the frontmost application name, a Perch is "a window"
   rather than "a Terminal window", `list_windows` and `describe_screen` report
   geometry alone, and the windows resource is empty.

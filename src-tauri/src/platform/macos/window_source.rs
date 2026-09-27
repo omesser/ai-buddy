@@ -5,7 +5,7 @@
 //! level to any process; only `kCGWindowName` — the title — is withheld until
 //! Screen Recording is granted.
 //!
-//! The buddy withholds more than macOS does. `kCGWindowOwnerName` and
+//! The character withholds more than macOS does. `kCGWindowOwnerName` and
 //! `kCGWindowName` are both names, one consent covers the pair (ADR-0032), and
 //! this walk reads neither key without it. Bounds and level are free, so the
 //! sprite still perches on a window it cannot name.
@@ -17,7 +17,7 @@ use objc2_core_graphics::{
 };
 use objc2_foundation::{ns_string, NSArray, NSDictionary, NSNumber, NSString};
 
-use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+use fidget_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 
 use crate::mcp_resources::WindowTitle;
 
@@ -302,7 +302,7 @@ mod tests {
                 previous = Some(geometry);
             }
 
-            std::thread::sleep(ai_buddy_core::window_source::POLL_INTERVAL);
+            std::thread::sleep(fidget_core::window_source::POLL_INTERVAL);
         }
 
         // Wall time, most of it spent blocked on the window server rather than

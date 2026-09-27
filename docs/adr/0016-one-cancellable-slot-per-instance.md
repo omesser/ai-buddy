@@ -15,7 +15,7 @@ inside `take` rather than compared against the present by whoever applies it.
 
 The bug that argues for it is one the user can feel. Grab the sprite, a wake
 goes out saying `what just happened: picked up`, throw it, it flies and lands —
-and fifteen seconds later the buddy says "hey, put me down!" from the floor. The
+and fifteen seconds later the character says "hey, put me down!" from the floor. The
 Engine already refuses a Behavior that no longer fits, because `permitted`
 requires `on_feet`; Speech had no such guard, and a Poke arriving a millisecond
 after a proactive wake waited out the whole of `timeout_global` — 20s hosted,
@@ -27,7 +27,7 @@ after a proactive wake waited out the whole of `timeout_global` — 20s hosted,
   five-term condition, which is what shipped until #312. Correct by inspection
   of one caller, and correct only for as long as there is one caller: #16's
   Harness and #17's chat are the second and the third.
-- **Queue the events instead of superseding them.** The buddy then works through
+- **Queue the events instead of superseding them.** The character then works through
   a backlog of Pokes the user has forgotten making. Coalescing into a one-slot
   latch is the right shape for a mascot; a queue is the right shape for a job
   runner.
@@ -42,8 +42,8 @@ after a proactive wake waited out the whole of `timeout_global` — 20s hosted,
 ## Per-Instance newest-wins, global concurrency cap
 
 Two different questions, deliberately answered in different places. "Should this
-buddy's old Poke be abandoned for its new Throw?" is always yes, and the slot
-settles it with no dial. "Should buddy B wait because buddy A is mid-call?" is a
+character's old Poke be abandoned for its new Throw?" is always yes, and the slot
+settles it with no dial. "Should character B wait because character A is mid-call?" is a
 policy, and the registry is shared across Instances so that it has somewhere to
 be expressed at all — N separate slots could not express it without a second,
 outer mechanism. It starts at no cap, which is exactly what N independent
@@ -68,4 +68,4 @@ is withdrawn by the next `open_turn`, and a turn some later one has replaced
 closes without touching the session at all.
 
 Reversing this means going back to a convention checked by hand at every call
-site, and to a buddy that answers a question the world has moved past.
+site, and to a character that answers a question the world has moved past.

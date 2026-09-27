@@ -1,4 +1,4 @@
-# ai-buddy
+# Fidget
 
 A desktop companion in the spirit of Windows 95-era desktop mascots: an animated
 sprite that lives on your screen, reacts to the windows around it, and can be
@@ -11,7 +11,7 @@ asked to do real work on your machine.
 **Character**:
 The shippable unit a user installs and chooses between — identity, art,
 personality, and tuning bundled together.
-_Avoid_: Pet, mascot, avatar, buddy (the app is the buddy, not the character)
+_Avoid_: Pet, mascot, avatar, Fidget (Fidget is the product, not a Character)
 
 **Character Package**:
 The on-disk form of a Character: a directory or archive containing its
@@ -52,10 +52,10 @@ The Director mode that empties the built-in prompt layers — the package
 Personality Prompt and the app-level instructions (voice rules, Behavior roster,
 reply contract) — and still sends an Instance Prompt the user wrote. Off by
 default. The Prompt tab shows those emptied fields as Empty: what you see is
-what is sent. With no contract the reply is prose, so the buddy talks and plays
+what is sent. With no contract the reply is prose, so the character talks and plays
 no Behavior unless the Instance Prompt asks for one. That is the control run
 for telling a model's misbehaviour apart from the shipped prompt, and for
-iterating a prompt under ai-buddy's conditions. #657, #680.
+iterating a prompt under Fidget's conditions. #657, #680.
 _Avoid_: Empty personality — that is a Character with an empty file, which
 still gets the voice rules and the contract
 
@@ -88,13 +88,13 @@ The animations every Character Package must supply for the engine to drive it.
 _Avoid_: Base set, defaults
 
 **Character Instance**:
-One spawned buddy: a Character plus a user-given name and a stable id. Instances
+One spawned character: a Character plus a user-given name and a stable id. Instances
 differ in personality and behavior, never in what they know — the Instance
 Prompt is where that difference is written. ADR-0012.
 _Avoid_: Session, spawn, copy, clone
 
 **Memory**:
-The single durable record of what the buddies know about the user. Shared by
+The single durable record of what the characters know about the user. Shared by
 every Character Instance, and owned by the user: readable, editable in any text
 editor, and wipeable.
 _Avoid_: History, context, knowledge base, store, profile
@@ -126,7 +126,7 @@ The role that proposes a Behavior, and Speech when the session is on. Static
 weights fill Behaviors and never speak; an attached Harness is that role and
 proposes Speech by calling speak. Never runs in the frame loop and never
 drives animation directly. Covers both Static Director and AI Director (ModelDirector).
-The environment variables `AI_BUDDY_DIRECTOR_*` configure the HTTP Completer,
+The environment variables `FIDGET_DIRECTOR_*` configure the HTTP Completer,
 which is one fill of this role (#466). `DirectorSettings` and `DirectorConfig`
 keep those names. They hold the HTTP knobs under this role (#589).
 _Avoid_: Brain, agent, planner. In user-facing Settings and README: the role
@@ -139,7 +139,7 @@ the Chat surface. `harness::Session` is the ACP process that holds it.
 _Avoid_: Harness session, chat thread
 
 **Proactive model call**:
-A Director session wake that fires because the buddy was left alone long
+A Director session wake that fires because the character was left alone long
 enough, not because the user addressed it.
 _Avoid_: Unused model call, unused wake, active prompting
 
@@ -213,8 +213,8 @@ rather than merely going unheard; non-streaming hosts are answered whole). When
 a Harness is attached, it fills the trait instead. Settings names the HTTP
 fill's timeout and turn ceiling. A Harness turn has its own budget
 (#690). The environment variables
-`AI_BUDDY_DIRECTOR_BASE_URL`, `AI_BUDDY_DIRECTOR_MODEL`, and
-`AI_BUDDY_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
+`FIDGET_DIRECTOR_BASE_URL`, `FIDGET_DIRECTOR_MODEL`, and
+`FIDGET_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
 _Avoid_: Using "Completer" as Settings or README brand (say AI, Model, API, AI
 source, or Harness), or as synonym for HTTP-only fill
 
@@ -228,12 +228,12 @@ The token bound on one HTTP Completer turn, thought and answer together. A
 safeguard against a model that will not stop, not a budget sized for a reply,
 so one number covers every wake, local or hosted (#877). A host seen to mark
 its thinking is given a higher one (#606). Settings names the row, and
-`AI_BUDDY_DIRECTOR_MAX_TOKENS` outranks both numbers.
+`FIDGET_DIRECTOR_MAX_TOKENS` outranks both numbers.
 _Avoid_: Reply cap, reply length, token budget
 
 **Executor**:
 Whatever posts synthetic mouse and keyboard events to the operating system.
-Owned by the Harness or a desktop-control MCP server, not by ai-buddy.
+Owned by the Harness or a desktop-control MCP server, not by Fidget.
 _Avoid_: Driver, automation layer, robot
 
 **Action Log**:
@@ -245,7 +245,7 @@ _Avoid_: Memory log, transcript, audit trail
 ### Sensing
 
 **Free sensing**:
-OS metadata, never pixels. The only sensing tier ai-buddy ships. Window
+OS metadata, never pixels. The only sensing tier Fidget ships. Window
 geometry, time, idle duration and recent Behaviors need no permission. Window
 titles and application names — the frontmost application and a window's owner
 alike — need one consent, and it is the same consent for both. The tier's name
@@ -254,7 +254,7 @@ tools `list_windows` and `describe_screen`. ADR-0031, ADR-0032.
 _Avoid_: Ambient sensing, monitoring
 
 **Ambient Capture, On-Demand Capture, Local Gate**:
-Dropped. ai-buddy never takes screenshots, never analyzes screen pixels, and
+Dropped. Fidget never takes screenshots, never analyzes screen pixels, and
 never embeds OCR or vision models for desktop content awareness. Agents that
 need pixel access or desktop control use harness-native computer use (Cursor
 Cloud Agents, Codex Computer Use plugin, Hermes computer_use toolset) or attach
@@ -284,7 +284,7 @@ _Avoid_: Invoke, activate, wake
 ### Expression
 
 **Speech**:
-The line the buddy says. The session Director proposes it on a wake — Static
+The line the character says. The session Director proposes it on a wake — Static
 never speaks — and an attached Harness proposes it by calling speak.
 _Avoid_: talk (the Required Animation), message, utterance
 
@@ -327,7 +327,7 @@ _Avoid_: Reasoning pane, thoughts, chain of thought, transcript, thought strip
 **Chat surface**:
 The window a Summon opens: where the user types to the attached Harness and
 reads the answers too long for a Speech bubble. Belongs to the Character
-Instance that was Summoned, and is drawn by ai-buddy rather than by the
+Instance that was Summoned, and is drawn by Fidget rather than by the
 Harness. #17, ADR-0010.
 _Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
 design, not the window)

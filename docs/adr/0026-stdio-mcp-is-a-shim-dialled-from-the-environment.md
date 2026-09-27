@@ -20,7 +20,7 @@ ask the first one.
 
 Asking means finding the app's port and its token. The token is 32 fresh bytes
 per app run held in memory, and a token another local user can read is that
-user's ability to move the buddy, so ADR-0010's credential rules apply as much
+user's ability to move the character, so ADR-0010's credential rules apply as much
 to ours as to a Harness's: it may not reach a log, a trace, or a file.
 
 ## Decision
@@ -38,7 +38,7 @@ from inside itself would mean a second dispatch path that only one route
 reaches, which is the divergence ADR-0023 closed.
 
 **The endpoint is discovered from the process environment, not from a
-descriptor file.** The app sets `AI_BUDDY_MCP_URL` and `AI_BUDDY_MCP_TOKEN` on
+descriptor file.** The app sets `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` on
 the MCP server entry it hands the Harness, and the Harness applies them when it
 spawns the shim. A file would have to be owner-only, in a directory that is
 also owner-only, survive a crash without going stale, and be cleaned up on
@@ -52,7 +52,7 @@ variable, a refused connection, a rejected token and an answer too large or too
 empty to trust are all one contract: the request is answered with a failure the
 Harness can see, and a notification, which gets no response, is reported on
 standard error alone. The URL is refused unless it names this machine, because
-the token authorises moving the buddy and a variable naming another host would
+the token authorises moving the character and a variable naming another host would
 post it there.
 
 ## Consequences
@@ -65,7 +65,7 @@ A Harness that drops the environment on the MCP servers it spawns gets no
 tools, loudly, rather than stub ones quietly. That is the trade the failure
 contract buys.
 
-The token remains absent from disk. `AI_BUDDY_MCP_TOKEN` is visible in the
+The token remains absent from disk. `FIDGET_MCP_TOKEN` is visible in the
 shim's own environment, which on macOS and Linux only the same user can read —
 the same protection the Harness's own credential file already relies on.
 
@@ -83,7 +83,7 @@ nor its environment. It loads servers only from an approved `.cursor/mcp.json`,
 so the only way to reach it is to write there. Attach merges one entry into
 `<cwd>/.cursor/mcp.json` holding the same loopback URL and `Authorization`
 header an HTTP-capable Harness is handed directly, then runs `cursor-agent mcp
-enable ai-buddy` before spawning `acp`.
+enable fidget` before spawning `acp`.
 
 This is the reversal named above, taken deliberately and scoped to one Harness.
 The costs it predicted are the ones now paid, and they are paid rather than
@@ -93,7 +93,7 @@ outlives the app authorises nothing. Cleanup: detach removes the entry, and the
 file and directory when attach created them.
 
 What it buys is that `cursor-agent` uses the same transport as every other
-Harness, on every platform ai-buddy ships. A unix socket with no token was built
+Harness, on every platform Fidget ships. A unix socket with no token was built
 and measured first and would have kept the credential off disk entirely, but it
 is `cfg(unix)`, and leaving Windows without tools to avoid a 0600 file in a
 directory the user already controls is the worse trade.

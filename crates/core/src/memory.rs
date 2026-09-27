@@ -1,4 +1,4 @@
-//! Memory: the one Markdown file recording what the buddies know about the user.
+//! Memory: the one Markdown file recording what the characters know about the user.
 //! Shared by every Character Instance and owned by the user, who can read, edit
 //! and wipe it. Headings are advisory: unparsable content is carried across untouched.
 //!
@@ -35,7 +35,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub fn data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("ai-buddy")
+        .join("fidget")
 }
 
 /// User home, distinct from `data_dir`. Empty attach cwd is `data_dir` (#782);
@@ -46,9 +46,9 @@ pub fn home_dir() -> Option<PathBuf> {
 
 /// The one file every Instance and every Harness shares, named here rather than
 /// by each caller so it cannot quietly become two paths, which would look like
-/// a buddy that forgot. `AI_BUDDY_MEMORY` overrides it for tests and the probe.
+/// a character that forgot. `FIDGET_MEMORY` overrides it for tests and the probe.
 pub fn shared_path() -> PathBuf {
-    match std::env::var_os("AI_BUDDY_MEMORY") {
+    match std::env::var_os("FIDGET_MEMORY") {
         Some(path) => PathBuf::from(path),
         None => data_dir().join("memory.md"),
     }
@@ -62,7 +62,7 @@ pub struct MemoryManifest {
     ///
     /// ponytail: one lock per manifest, which covers the several-Instances-one-
     /// process case the spec describes. Cross-process file locking if a second
-    /// ai-buddy ever writes the same Memory.
+    /// Fidget ever writes the same Memory.
     writing: Mutex<()>,
 }
 
@@ -75,7 +75,7 @@ impl MemoryManifest {
     }
 
     /// Everything Memory holds, as the user would see it in an editor. Memory
-    /// the user has never written is empty, not missing: a buddy that has learned
+    /// the user has never written is empty, not missing: a character that has learned
     /// nothing yet is a normal state, not an error.
     pub fn recall(&self) -> io::Result<String> {
         match fs::read_to_string(&self.path) {
@@ -158,7 +158,7 @@ fn scratch_path(path: &Path) -> PathBuf {
 }
 
 /// Give `fresh` the permissions `path` has, if `path` is there at all. A new
-/// file arrives with whatever the umask says, and Memory holds what the buddies
+/// file arrives with whatever the umask says, and Memory holds what the characters
 /// know about the user, so narrowing who reads it must survive a write and a wipe.
 fn keep_permissions_of(path: &Path, fresh: &Path) -> io::Result<()> {
     match fs::metadata(path) {
@@ -277,7 +277,7 @@ mod tests {
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let unique = NEXT.fetch_add(1, Ordering::Relaxed);
             let dir = std::env::temp_dir()
-                .join(format!("ai-buddy-{label}-{}-{unique}", std::process::id()));
+                .join(format!("fidget-{label}-{}-{unique}", std::process::id()));
             fs::create_dir_all(&dir).expect("temp dir is creatable");
             Self(dir)
         }
@@ -296,8 +296,8 @@ mod tests {
     #[test]
     fn memory_lives_in_the_user_data_dir() {
         assert!(
-            data_dir().ends_with("ai-buddy"),
-            "Application Support/ai-buddy, not a temp folder a reboot wipes"
+            data_dir().ends_with("fidget"),
+            "Application Support/fidget, not a temp folder a reboot wipes"
         );
         assert_eq!(
             data_dir().join("memory.md").file_name().unwrap(),
@@ -337,7 +337,7 @@ mod tests {
         );
     }
 
-    /// The user edits Memory in their own editor while ai-buddy is running. The
+    /// The user edits Memory in their own editor while Fidget is running. The
     /// same manifest, never re-created, has to see it.
     #[test]
     fn an_external_edit_is_picked_up_without_restarting() {
@@ -361,13 +361,13 @@ mod tests {
         );
     }
 
-    /// Nothing about the file may require ai-buddy to have created it.
+    /// Nothing about the file may require Fidget to have created it.
     #[test]
     fn a_hand_written_file_loads_and_is_appended_to_in_place() {
         let hand_written = "\
-# What the buddies know
+# What the characters know
 
-Typed by me, before ai-buddy ever ran.
+Typed by me, before Fidget ever ran.
 
 ## Facts
 
@@ -395,9 +395,9 @@ Typed by me, before ai-buddy ever ran.
         assert_eq!(
             manifest.recall().expect("recall reads back"),
             "\
-# What the buddies know
+# What the characters know
 
-Typed by me, before ai-buddy ever ran.
+Typed by me, before Fidget ever ran.
 
 ## Facts
 
@@ -537,7 +537,7 @@ Some notes I typed at the top, under no heading at all.
         assert_eq!(
             memory.lines().filter(|line| line.starts_with('#')).count(),
             1,
-            "and Memory still has only the heading ai-buddy wrote: {memory}"
+            "and Memory still has only the heading Fidget wrote: {memory}"
         );
     }
 
@@ -761,7 +761,7 @@ Some notes I typed at the top, under no heading at all.
     }
 
     /// Memory is shared by every Character Instance and they write it from one
-    /// process. Two buddies recording at the same moment must both land: a write
+    /// process. Two characters recording at the same moment must both land: a write
     /// `remember` reported and the file does not hold is a lie to the user.
     #[test]
     fn concurrent_remembers_all_land() {

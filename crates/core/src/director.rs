@@ -126,7 +126,7 @@ pub struct WakeRequest {
     /// Instance id and changes the Character Prompt (ADR-0012), so the
     /// Harness cannot key a session on the Instance alone.
     pub character: String,
-    /// Whether the user addressed the buddy, as against a proactive wake.
+    /// Whether the user addressed the character, as against a proactive wake.
     pub reactive: bool,
     /// Whether this wake is blank-AI mode's: built-in layers emptied.
     /// On the wire rather than a switch: a Completer that remembers a session
@@ -141,12 +141,12 @@ pub struct WakeRequest {
 pub enum Claim {
     /// The user did something to the sprite. It takes a call that is only thinking.
     Interaction,
-    /// The user opened a surface to read what the buddy says. It must not
+    /// The user opened a surface to read what the character says. It must not
     /// cancel the response it was opened for.
     Opener,
     /// The user typed a line. It takes a call that is only thinking.
     Line,
-    /// The buddy musing on its own account. It never takes a reactive call.
+    /// The character musing on its own account. It never takes a reactive call.
     Ambient,
 }
 
@@ -181,7 +181,7 @@ pub trait Completer {
 }
 
 /// What a reply the token cap ended is marked with, in the one place it is
-/// written down: the remembered reply. Nowhere else: not in what the buddy
+/// written down: the remembered reply. Nowhere else: not in what the character
 /// speaks, and never before `parse_proposal` sees the reply.
 pub const TRUNCATED_MARK: &str = "[response truncated]";
 
@@ -263,7 +263,7 @@ pub struct ModelDirector<C> {
     behaviors: Vec<String>,
     /// Whose wakes these are. A constructor argument rather than something the
     /// Shell may remember to set: there is one Director per Instance already,
-    /// and a request that named no buddy would log as none.
+    /// and a request that named no character would log as none.
     instance: InstanceId,
     /// Which Character this Instance is. A retarget keeps `instance` and
     /// changes this, so the Harness can keep both sessions.
@@ -454,7 +454,7 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
 }
 
 /// Wait between proactive model calls. Grows by `model_base.pow(model_power)`
-/// after each proactive call, resets when the user addresses the buddy.
+/// after each proactive call, resets when the user addresses the character.
 /// The Character Manifest names those two.
 #[derive(Clone, Debug)]
 pub struct Pace {
@@ -467,7 +467,7 @@ pub struct Pace {
 impl Pace {
     /// First proactive wait, and the value a reactive wake resets to.
     pub const FIRST: Duration = Duration::from_secs(2 * 60);
-    /// Ceiling after repeated proactive wakes with no one addressing the buddy.
+    /// Ceiling after repeated proactive wakes with no one addressing the character.
     pub const CAP: Duration = Duration::from_secs(2 * 60 * 60);
 
     pub fn new() -> Self {
@@ -734,7 +734,7 @@ impl Seeded {
     }
 
     /// The next draw. Well mixed even from adjacent seeds, which is what lets
-    /// one launch seed a buddy apiece.
+    /// one launch seed a character apiece.
     pub fn draw(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
@@ -1006,7 +1006,7 @@ mod tests {
         assert!(at(Duration::from_secs(300)).iter().all(|n| n == "nap"));
         assert!(
             at(Duration::from_secs(60)).is_empty(),
-            "a minute away suits neither, and the buddy simply carries on"
+            "a minute away suits neither, and the character simply carries on"
         );
     }
 
@@ -1203,7 +1203,7 @@ mod tests {
 
         assert!(
             session_due(true, Duration::ZERO, &pace, false, false, true),
-            "the user addressed the buddy"
+            "the user addressed the character"
         );
         assert!(
             !session_due(false, Duration::ZERO, &pace, false, false, true),
@@ -1345,7 +1345,7 @@ mod tests {
         }
     }
 
-    /// The Action Log's `prompt` event can only name the buddy that woke and
+    /// The Action Log's `prompt` event can only name the character that woke and
     /// say whether the user caused it if the request carries both. The
     /// Completer is handed nothing else.
     #[test]
@@ -1358,7 +1358,7 @@ mod tests {
         let asked = director.completer.seen().expect("a request was sent");
         assert_eq!(asked.instance, "buddy-1");
         assert_eq!(asked.character, "bmo");
-        assert!(asked.reactive, "Poke is the user addressing the buddy");
+        assert!(asked.reactive, "Poke is the user addressing the character");
         assert_eq!(asked.prompt, expected, "the prompt still travels whole");
 
         let unprompted = Context {
@@ -1930,7 +1930,7 @@ mod tests {
             "the reply contract comes before the invitation: {opening}"
         );
         for catalog in [
-            "ai-buddy://",
+            "fidget://",
             "mcp__",
             "list_windows",
             "describe_screen",
@@ -1944,7 +1944,7 @@ mod tests {
         }
         assert!(
             !opening.contains("never promise"),
-            "a buddy that has tools is not told it has no abilities: {opening}"
+            "a character that has tools is not told it has no abilities: {opening}"
         );
         assert!(
             !follow_up(&moment).contains("use the tools you have"),

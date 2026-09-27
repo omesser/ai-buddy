@@ -65,7 +65,7 @@ pub struct KeyringStore {
 impl KeyringStore {
     pub fn new() -> Self {
         Self {
-            service: "ai-buddy".to_string(),
+            service: "fidget".to_string(),
         }
     }
 }

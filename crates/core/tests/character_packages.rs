@@ -12,8 +12,8 @@
 //! shipped character's load and required animations are covered by the shell
 //! crate's integration test.
 
-use ai_buddy_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
-use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
+use fidget_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
+use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::path::Path;

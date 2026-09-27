@@ -5,17 +5,17 @@
 
 # The Character is found from the frame trace and the OS window region, never
 # by colour, and every click re-samples the newest sprite(x,y) with no pre-click
-# pause: the buddy strolls. Each point is confirmed with PtInRegion and GA_ROOT.
+# pause: the character strolls. Each point is confirmed with PtInRegion and GA_ROOT.
 
-# Assumes a checkout with a built target\debug\ai-buddy.exe; Node runs the
+# Assumes a checkout with a built target\debug\fidget.exe; Node runs the
 # Completer stub.
 # Usage:
 #   .\scripts\win-smoke-588-openchat.ps1
-#   $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\win-smoke-588-openchat.ps1
+#   $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\win-smoke-588-openchat.ps1
 #
 # Env knobs:
-#   AI_BUDDY_VERIFY_BIN   override the binary path (default target\debug\ai-buddy.exe)
-#   AI_BUDDY_SMOKE_PORT   stub port (default 18765)
+#   FIDGET_VERIFY_BIN   override the binary path (default target\debug\fidget.exe)
+#   FIDGET_SMOKE_PORT   stub port (default 18765)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -36,9 +36,9 @@ function Cleanup {
   if ($script:StubProc -and -not $script:StubProc.HasExited) {
     Stop-Process -Id $script:StubProc.Id -Force -ErrorAction SilentlyContinue
   }
-  # Leftover ai-buddy processes from a crashed prior run would hold overlays on
+  # Leftover Fidget processes from a crashed prior run would hold overlays on
   # screen and steal this run's window enumeration.
-  Get-Process ai-buddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Get-Process Fidget -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 function Fail($m) {
@@ -188,17 +188,17 @@ public class Smoke {
 # top-left. Center is the Summon target.
 $SpriteSize = 90
 
-$Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root "target\debug\ai-buddy.exe" }
+$Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $Root "target\debug\fidget.exe" }
 if (-not (Test-Path $Bin)) {
   Warn "missing $Bin - attempting a debug build (needs VsDevCmd on PATH)"
-  & cargo build --bin ai-buddy 2>&1 | Tee-Object -FilePath (Join-Path $Out "build.log")
+  & cargo build --bin fidget 2>&1 | Tee-Object -FilePath (Join-Path $Out "build.log")
   if (-not (Test-Path $Bin)) { Fail "no binary and build failed - open a VsDevCmd shell and run: cargo build" }
 }
 Pass "Binary ready: $Bin"
 
 $Stub = Join-Path $Root "scripts\win-smoke-588-completer-stub.cjs"
 if (-not (Test-Path $Stub)) { Fail "missing stub $Stub" }
-$Port = if ($env:AI_BUDDY_SMOKE_PORT) { $env:AI_BUDDY_SMOKE_PORT } else { "18765" }
+$Port = if ($env:FIDGET_SMOKE_PORT) { $env:FIDGET_SMOKE_PORT } else { "18765" }
 
 # --- Displays: park the console on the secondary, leave the primary clear for
 # the Character so a screenshot is not the console. ---
@@ -224,7 +224,7 @@ $stubPsi.UseShellExecute = $false
 $stubPsi.RedirectStandardError = $true
 $stubPsi.RedirectStandardOutput = $true
 $stubPsi.CreateNoWindow = $true
-$stubPsi.EnvironmentVariables["AI_BUDDY_SMOKE_PORT"] = $Port
+$stubPsi.EnvironmentVariables["FIDGET_SMOKE_PORT"] = $Port
 $script:StubProc = New-Object System.Diagnostics.Process
 $script:StubProc.StartInfo = $stubPsi
 try { $null = $script:StubProc.Start() } catch { Fail "could not start node stub (is node on PATH?): $_" }
@@ -240,15 +240,15 @@ Pass "Completer stub on 127.0.0.1:$Port (pid=$($script:StubProc.Id))"
 
 # --- App: HTTP Completer pointed at the stub, overlay left capturable so it is
 # in screenshots, frame trace on so the Character can be located from code. ---
-$env:AI_BUDDY_CHARACTER = "buddy-bot"
-$env:AI_BUDDY_OPEN_SETTINGS = "0"
-$env:AI_BUDDY_CAPTURABLE = "1"
-$env:AI_BUDDY_TRACE_FRAMES = "1"
-$env:AI_BUDDY_DIRECTOR = "1"
-$env:AI_BUDDY_HARNESS = ""              # force the plain HTTP Completer path
-$env:AI_BUDDY_DIRECTOR_BASE_URL = "http://127.0.0.1:$Port"
-$env:AI_BUDDY_DIRECTOR_WAKE_SECS = "3"  # a short first ambient wake, not the 2m default
-Remove-Item Env:AI_BUDDY_DIRECTOR_API_KEY -ErrorAction SilentlyContinue  # loopback needs none
+$env:FIDGET_CHARACTER = "buddy-bot"
+$env:FIDGET_OPEN_SETTINGS = "0"
+$env:FIDGET_CAPTURABLE = "1"
+$env:FIDGET_TRACE_FRAMES = "1"
+$env:FIDGET_DIRECTOR = "1"
+$env:FIDGET_HARNESS = ""              # force the plain HTTP Completer path
+$env:FIDGET_DIRECTOR_BASE_URL = "http://127.0.0.1:$Port"
+$env:FIDGET_DIRECTOR_WAKE_SECS = "3"  # a short first ambient wake, not the 2m default
+Remove-Item Env:FIDGET_DIRECTOR_API_KEY -ErrorAction SilentlyContinue  # loopback needs none
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Bin

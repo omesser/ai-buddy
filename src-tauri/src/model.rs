@@ -9,13 +9,13 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use ai_buddy_core::director::{self, Completer, Pace, Reply, WakeRequest, WAKE_EVERY};
+use fidget_core::director::{self, Completer, Pace, Reply, WakeRequest, WAKE_EVERY};
 use serde::Serialize;
 use url::{Host, Url};
 
 /// Model API turn. After this, fall back to `StaticDirector`.
 /// One budget for remote and local HTTP, not `harness::TURN_TIMEOUT`.
-/// A cold local server sets `AI_BUDDY_DIRECTOR_TIMEOUT_SECS`.
+/// A cold local server sets `FIDGET_DIRECTOR_TIMEOUT_SECS`.
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Prompt, raw reply, and parse. Off unless asked: a Character Prompt is
@@ -42,26 +42,26 @@ fn trace_block(which: &str, text: &str) {
 }
 
 /// `pub(crate)` so the settings window can name the variable that owns a row.
-pub(crate) const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
-pub(crate) const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
-pub(crate) const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
-pub(crate) const ENABLED: &str = "AI_BUDDY_DIRECTOR";
+pub(crate) const API_KEY: &str = "FIDGET_DIRECTOR_API_KEY";
+pub(crate) const BASE_URL: &str = "FIDGET_DIRECTOR_BASE_URL";
+pub(crate) const MODEL: &str = "FIDGET_DIRECTOR_MODEL";
+pub(crate) const ENABLED: &str = "FIDGET_DIRECTOR";
 /// First ambient session wait, in seconds. Not a heartbeat.
 /// `pub(crate)` so the settings window can name the row it owns.
-pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
+pub(crate) const WAKE_SECS: &str = "FIDGET_DIRECTOR_WAKE_SECS";
 
 /// Model API timeout, in seconds, and the turn ceiling, in tokens.
 /// `pub(crate)` so the settings window can name the frozen row.
-pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
-pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
+pub(crate) const TIMEOUT_SECS: &str = "FIDGET_DIRECTOR_TIMEOUT_SECS";
+pub(crate) const MAX_TOKENS: &str = "FIDGET_DIRECTOR_MAX_TOKENS";
 
 /// How hard the model is asked to think. Takes any string: what a value
 /// means is the host's, and on llama.cpp and oMLX the chat template's.
-pub(crate) const REASONING_EFFORT: &str = "AI_BUDDY_DIRECTOR_REASONING_EFFORT";
+pub(crate) const REASONING_EFFORT: &str = "FIDGET_DIRECTOR_REASONING_EFFORT";
 
 /// Blank-AI mode: send what just happened and nothing else. A switch, so it
 /// reads the same words every other switch does, and owns its Development row.
-pub(crate) const BLANK: &str = "AI_BUDDY_DIRECTOR_BLANK";
+pub(crate) const BLANK: &str = "FIDGET_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
@@ -95,7 +95,7 @@ const TURN_CEILING: u32 = 1024;
 /// scope already allow reasoning by default. A turn still going at 8192 is
 /// stuck rather than thinking, and the Action Log says so.
 ///
-/// `AI_BUDDY_DIRECTOR_MAX_TOKENS` outranks it: a number the user typed is an
+/// `FIDGET_DIRECTOR_MAX_TOKENS` outranks it: a number the user typed is an
 /// instruction, not a default to improve on.
 const THINK_CEILING: u32 = 8192;
 
@@ -112,7 +112,7 @@ pub struct DirectorInspect {
     pub proactive_wakes: bool,
     pub wake_secs: u64,
     pub last_payload: Option<String>,
-    /// The attached Harness, when `AI_BUDDY_HARNESS` named one. Its `login`
+    /// The attached Harness, when `FIDGET_HARNESS` named one. Its `login`
     /// is set when attached but not authenticated, and it names the command.
     pub harness: Option<crate::harness::HarnessInspect>,
     /// The HTTP Completer in force. The model, and the host without its
@@ -126,7 +126,7 @@ pub struct DirectorInspect {
 pub struct DirectorConfig {
     pub enabled: bool,
     pub configured: bool,
-    /// What `AI_BUDDY_DIRECTOR` says, if it says anything. Read here rather
+    /// What `FIDGET_DIRECTOR` says, if it says anything. Read here rather
     /// than in `apply_switch`, which the frame loop calls every tick, and
     /// nothing sets the variable once the process is running.
     env_says: Option<bool>,
@@ -166,7 +166,7 @@ impl DirectorConfig {
     }
 }
 
-/// What `AI_BUDDY_DIRECTOR_API_KEY` held, after quotes and whitespace.
+/// What `FIDGET_DIRECTOR_API_KEY` held, after quotes and whitespace.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum KeyRead {
     Unset,
@@ -423,7 +423,7 @@ pub fn host_of(base: &str) -> String {
 }
 
 /// Is this base URL served from this machine or this LAN?
-/// A local host makes `AI_BUDDY_DIRECTOR_API_KEY` optional.
+/// A local host makes `FIDGET_DIRECTOR_API_KEY` optional.
 fn is_local(base: &str) -> bool {
     let Some(url) = url_of(base) else {
         return false;
@@ -546,7 +546,7 @@ pub struct Endpoint {
     model: String,
     timeout: Duration,
     max_tokens: u32,
-    /// Did `max_tokens` come from `AI_BUDDY_DIRECTOR_MAX_TOKENS` or the
+    /// Did `max_tokens` come from `FIDGET_DIRECTOR_MAX_TOKENS` or the
     /// settings row, rather than from the built-in default? A pinned cap is
     /// the one thing `THINK_CEILING` does not overrule. Decided here, not at
     /// the read site, for the reason `effort` and `timeout` are: the endpoint
@@ -910,7 +910,7 @@ impl Endpoint {
         accept: &str,
     ) -> ureq::RequestBuilder<B> {
         let mut request = request
-            .header("User-Agent", "ai-buddy")
+            .header("User-Agent", "fidget")
             .header("Accept", accept);
         if !self.api_key.is_empty() {
             request = request.header("Authorization", &format!("Bearer {}", self.api_key));
@@ -1008,7 +1008,7 @@ impl Completer for Endpoint {
             Err(why) => Err(why.as_str()),
         };
         note_http_call(
-            &ai_buddy_core::memory::data_dir(),
+            &fidget_core::memory::data_dir(),
             request,
             noted,
             &self.out_of_budget(&self.url, &Truncation::Parseable(String::new())),
@@ -1178,8 +1178,8 @@ pub fn run_probe() -> i32 {
     crate::dev_flags::seed(&crate::settings::Settings::default());
     let Some(endpoint) = endpoint() else {
         eprintln!(
-            "probe-model: no AI_BUDDY_DIRECTOR_API_KEY, and \
-             AI_BUDDY_DIRECTOR_BASE_URL is not a local server"
+            "probe-model: no FIDGET_DIRECTOR_API_KEY, and \
+             FIDGET_DIRECTOR_BASE_URL is not a local server"
         );
         return 2;
     };
@@ -1464,7 +1464,7 @@ enum Streamed {
     /// so the untested servers in the README's table are expected to follow.
     /// One that does not still answers, because `post` retries it whole, but
     /// it looks truncated on every wake and so pays two POSTs forever without
-    /// ever learning better; `AI_BUDDY_TRACE_DIRECTOR` names it in one line.
+    /// ever learning better; `FIDGET_TRACE_DIRECTOR` names it in one line.
     /// The upgrade, if a real server ever turns up like this, is to keep what
     /// arrived rather than re-ask for it (#302).
     Cut,
@@ -1582,7 +1582,7 @@ struct Event {
     delta: Option<String>,
     /// Thinking it adds, if the server marked any as thinking. Never `delta`:
     /// that is the reply, whose first line has to parse as a Behavior name and
-    /// whose rest the buddy says out loud (ADR-0034).
+    /// whose rest the character says out loud (ADR-0034).
     thought: Option<String>,
     /// It says the server is done, so an end of body after it is a whole
     /// reply rather than a connection cut.
@@ -1788,7 +1788,7 @@ fn think(instance: &str, line: &str) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use ai_buddy_core::director::{Context, Happened, ModelDirector};
+    use fidget_core::director::{Context, Happened, ModelDirector};
     use std::sync::mpsc::{self, Receiver};
 
     /// Run `body` with the three Director vars set as given and the switch
@@ -1803,13 +1803,13 @@ pub(crate) mod tests {
         with_vars(key, base, model, None, None, body)
     }
 
-    /// Run `body` with `AI_BUDDY_DIRECTOR` exported as `value` and the other
+    /// Run `body` with `FIDGET_DIRECTOR` exported as `value` and the other
     /// three cleared, so the developer's shell cannot decide the result.
     pub(crate) fn with_env_switch(value: &str, body: impl FnOnce()) {
         with_vars(None, None, None, Some(value), None, body)
     }
 
-    /// Run `body` with `AI_BUDDY_HARNESS` set as given, under the same lock.
+    /// Run `body` with `FIDGET_HARNESS` set as given, under the same lock.
     /// Settings tests read that Completer-source row through the same
     /// `env_override` as the endpoint rows.
     pub(crate) fn with_harness(value: Option<&str>, body: impl FnOnce()) {
@@ -2064,8 +2064,8 @@ pub(crate) mod tests {
     fn resolve_does_not_write_env() {
         with_env(None, None, None, || {
             let _ = resolve("https://api.x.ai", "grok-4.6", Some("sk-stored"));
-            assert!(std::env::var("AI_BUDDY_DIRECTOR_API_KEY").is_err());
-            assert!(std::env::var("AI_BUDDY_DIRECTOR_BASE_URL").is_err());
+            assert!(std::env::var("FIDGET_DIRECTOR_API_KEY").is_err());
+            assert!(std::env::var("FIDGET_DIRECTOR_BASE_URL").is_err());
         });
     }
 
@@ -2361,7 +2361,7 @@ pub(crate) mod tests {
             "the Director parses the model's own words, with no mark in them"
         );
         assert_eq!(
-            ai_buddy_core::director::parse_proposal(&handed.text)
+            fidget_core::director::parse_proposal(&handed.text)
                 .unwrap()
                 .dialogue,
             None,
@@ -2616,7 +2616,7 @@ pub(crate) mod tests {
     }
 
     /// Thinking reaches the Chat surface and never the reply, so nothing the
-    /// buddy says out loud was thought at it (ADR-0034). It is handed the whole
+    /// character says out loud was thought at it (ADR-0034). It is handed the whole
     /// thought, blank lines included, and an empty one when the turn ends.
     #[test]
     fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
@@ -3885,7 +3885,7 @@ pub(crate) mod tests {
     #[test]
     fn a_server_serving_nothing_says_so() {
         // Ollama with nothing pulled answers 200 with an empty list. That is
-        // knowable, and the reason the buddy is about to stay quiet.
+        // knowable, and the reason the character is about to stay quiet.
         let empty = preflight_verdict(Ok((200, r#"{"data":[]}"#.to_string())), "gemma4");
         assert!(empty.unwrap_err().contains("serving no models"));
     }
@@ -4117,7 +4117,7 @@ pub(crate) mod tests {
     fn framing_moves_the_personality_and_leaves_the_rest_alone() {
         let personality =
             "Cat claimed the desktop. It has been heard to say: \"Show me that one.\"";
-        let director = ModelDirector::new(Silent, ["stroll", "nap"], "buddy", "Cat", false);
+        let director = ModelDirector::new(Silent, ["stroll", "nap"], "character", "Cat", false);
         let today = director.prompt(&Context {
             personality: personality.to_string(),
             happened: Happened::Poke,
@@ -4160,31 +4160,31 @@ pub(crate) mod tests {
     ///
     /// The classifier is `ModelDirector::wake` itself rather than a copy, so
     /// the measurement cannot drift from what the app does. One session
-    /// throughout, because that is how the buddy runs. #175.
+    /// throughout, because that is how the character runs. #175.
     ///
     /// ```sh
-    /// AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-    /// AI_BUDDY_DIRECTOR_MODEL=gemma4 \
-    /// cargo test -p ai-buddy measure_the_reply_contract -- --ignored --nocapture
+    /// FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+    /// FIDGET_DIRECTOR_MODEL=gemma4 \
+    /// cargo test -p fidget measure_the_reply_contract -- --ignored --nocapture
     /// ```
     ///
-    /// `AI_BUDDY_BENCH_WAKES` sets the sample size; it defaults to 40.
-    /// `AI_BUDDY_BENCH_FRAMING` picks the phrasing — `today` (the default),
+    /// `FIDGET_BENCH_WAKES` sets the sample size; it defaults to 40.
+    /// `FIDGET_BENCH_FRAMING` picks the phrasing — `today` (the default),
     /// `framed`, or `after` — and the run reports how much of its prose was a
     /// personality sample line quoted back.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {
-        use ai_buddy_core::director::{Context, Happened, ModelDirector, Wake};
-        use ai_buddy_core::engine::State;
-        use ai_buddy_core::sensing::Activity;
+        use fidget_core::director::{Context, Happened, ModelDirector, Wake};
+        use fidget_core::engine::State;
+        use fidget_core::sensing::Activity;
         use std::path::Path;
         use std::time::{Instant, SystemTime};
 
         // Forty tells 5% from 50%. It does not tell 5% from 8%. Nothing
         // pins `temperature` or a seed, because the app sends neither.
         // Raise it when a tighter number is worth the minutes.
-        let wakes: usize = std::env::var("AI_BUDDY_BENCH_WAKES")
+        let wakes: usize = std::env::var("FIDGET_BENCH_WAKES")
             .ok()
             .and_then(|raw| raw.parse().ok())
             .filter(|&n: &usize| n > 0)
@@ -4192,7 +4192,7 @@ pub(crate) mod tests {
 
         // For the exported timeout, as `run_probe` does.
         crate::dev_flags::seed(&crate::settings::Settings::default());
-        let endpoint = endpoint().expect("AI_BUDDY_DIRECTOR_BASE_URL and _MODEL in the env");
+        let endpoint = endpoint().expect("FIDGET_DIRECTOR_BASE_URL and _MODEL in the env");
         let model = endpoint.model().to_string();
         let origin = endpoint.origin();
 
@@ -4200,10 +4200,10 @@ pub(crate) mod tests {
         // its Personality Prompt and its declared Behavior names.
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../characters/cat");
         let files = crate::package::read(&root).expect("the shipped cat package reads");
-        let cat = ai_buddy_core::character::load(&files).expect("and loads");
+        let cat = fidget_core::character::load(&files).expect("and loads");
         let behaviors: Vec<String> = cat.behaviors.keys().cloned().collect();
 
-        let framing = match std::env::var("AI_BUDDY_BENCH_FRAMING")
+        let framing = match std::env::var("FIDGET_BENCH_FRAMING")
             .unwrap_or_default()
             .as_str()
         {
@@ -4218,7 +4218,7 @@ pub(crate) mod tests {
                 framing,
             },
             behaviors.clone(),
-            "buddy",
+            "character",
             cat.name.clone(),
             false,
         );

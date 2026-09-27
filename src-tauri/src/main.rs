@@ -1,4 +1,4 @@
-//! ai-buddy's overlay shell.
+//! Fidget's overlay shell.
 //!
 //! One transparent, always-on-top window per display renders the Character.
 //! Click-through on macOS is per-window rather than per-pixel, so a screen-sized
@@ -59,21 +59,21 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy_core::character::{Character, Primitive};
-use ai_buddy_core::director::{
-    app_instructions, happened_cell, Happened, ModelDirector, Pace, Seeded, StaticDirector,
-};
-use ai_buddy_core::engine::{Cue, Point, State, Verb};
-use ai_buddy_core::input::Pointer;
-use ai_buddy_core::memory;
-use ai_buddy_core::overlay::SpriteRect;
-use ai_buddy_core::roster::{self, InstanceId, InstanceSpec, Roster};
-use ai_buddy_core::snapshot::starting_position;
-use ai_buddy_core::speech::SpeechBubble;
-use ai_buddy_core::visibility::HideRules;
-use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use fidget_core::character::{Character, Primitive};
+use fidget_core::director::{
+    app_instructions, happened_cell, Happened, ModelDirector, Pace, Seeded, StaticDirector,
+};
+use fidget_core::engine::{Cue, Point, State, Verb};
+use fidget_core::input::Pointer;
+use fidget_core::memory;
+use fidget_core::overlay::SpriteRect;
+use fidget_core::roster::{self, InstanceId, InstanceSpec, Roster};
+use fidget_core::snapshot::starting_position;
+use fidget_core::speech::SpeechBubble;
+use fidget_core::visibility::HideRules;
+use fidget_core::window_source::{Rect, WindowSource};
 use secrets::{KeyringStore, SecretStore};
 use serde::Serialize;
 use settings::{ChatAppearance, InstanceRow, Settings, SettingsOp, SettingsSession};
@@ -161,7 +161,7 @@ struct Traced {
 }
 
 /// Shell state one Instance keeps between ticks. Sharing any of it would be
-/// visible: one Director would lockstep two buddies; one `Pointer` would
+/// visible: one Director would lockstep two characters; one `Pointer` would
 /// count a double-click on one toward a Summon on the other.
 struct InstanceState {
     id: InstanceId,
@@ -419,7 +419,7 @@ struct Placed {
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
     owner: Option<usize>,
     #[allow(dead_code)]
-    mask: ai_buddy_core::overlay::AlphaMask,
+    mask: fidget_core::overlay::AlphaMask,
 }
 
 /// Every Animation's frames as `data:` URLs, in play order. Paths would need
@@ -828,7 +828,7 @@ mod settings_event_tests {
         );
         assert_eq!(session.ran(), ["dismiss bmo-1"]);
 
-        // A buddy the roster let go while the list was on screen.
+        // A character the roster let go while the list was on screen.
         assert_eq!(
             dismiss_press(&session, &view, "instances", "ghost-1"),
             SettingsEventResponse::Nothing
@@ -1437,7 +1437,7 @@ fn build_overlay(
     display: Rect,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
-        .title("ai-buddy")
+        .title("Fidget")
         .transparent(true)
         .decorations(false)
         .shadow(false)
@@ -1561,7 +1561,7 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
 }
 
 /// Draw one forwarded permission request on every Chat surface, visible and
-/// unminimized. ai-buddy never answers it (ADR-0018). Only a Chat surface draws
+/// unminimized. Fidget never answers it (ADR-0018). Only a Chat surface draws
 /// the options. A bubble can only point at a window that is not open.
 fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
@@ -1597,7 +1597,7 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
         ask.title.as_deref().unwrap_or("—")
     );
     // Do Not Disturb wins even over a question with a deadline: opening this
-    // window activates ai-buddy. The turn then times out, and never an
+    // window activates Fidget. The turn then times out, and never an
     // answer of ours (ADR-0018).
     if do_not_disturb(app) {
         return;
@@ -1975,7 +1975,7 @@ fn chat_prompt(
             instance,
             text: prompt,
         }))
-        .map_err(|_| "ai-buddy is not listening.".to_string())
+        .map_err(|_| "Fidget is not listening.".to_string())
 }
 
 /// The user's pick on a forwarded permission request. The only path by which
@@ -2257,7 +2257,7 @@ fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>
     let text: String = text
         .trim()
         .chars()
-        .take(ai_buddy_core::director::CHAT_LIMIT)
+        .take(fidget_core::director::CHAT_LIMIT)
         .collect();
     if text.is_empty() {
         return;
@@ -2847,13 +2847,13 @@ fn describe_menu(
 }
 
 /// The environment variable naming the Instances to run. An env var rather
-/// than a flag because that is how ai-buddy is already configured, and a
+/// than a flag because that is how Fidget is already configured, and a
 /// second mechanism for the same kind of answer is a second place to look it up.
-const INSTANCES_VAR: &str = "AI_BUDDY_INSTANCES";
+const INSTANCES_VAR: &str = "FIDGET_INSTANCES";
 
 /// Which Instances the launch configuration asks for. The environment wins
 /// when a developer set it; otherwise settings. Empty is still first-run:
-/// `load_instances` turns it into the one buddy the app has always run.
+/// `load_instances` turns it into the one character the app has always run.
 fn requested_instances(settings: &Settings) -> Result<Vec<InstanceSpec>, String> {
     match std::env::var(INSTANCES_VAR) {
         Ok(raw) => roster::parse_specs(&raw),
@@ -2881,7 +2881,7 @@ fn load_all_characters(
             Ok(files) => files,
             Err(_) => continue,
         };
-        if let Ok(character) = ai_buddy_core::character::load(&files) {
+        if let Ok(character) = fidget_core::character::load(&files) {
             art.insert(
                 character.name.clone(),
                 CharacterArt {
@@ -2896,7 +2896,7 @@ fn load_all_characters(
 }
 
 /// Load the Character each requested Instance names, sharing one load
-/// among namesakes. None asked still runs the one buddy the app has always
+/// among namesakes. None asked still runs the one character the app has always
 /// run; an Instance with no name of its own takes the Character's.
 fn load_instances(
     app: &tauri::AppHandle,
@@ -2969,7 +2969,7 @@ fn follow_lone_default(
 
 /// Spawn every requested Instance into a Roster, and build the Shell state
 /// each keeps beside its Engine. Memory is one file for every Instance:
-/// `Roster` holds it behind an `Arc` so a second buddy already knows the user.
+/// `Roster` holds it behind an `Arc` so a second character already knows the user.
 fn spawn_instances(
     loaded: &[(InstanceSpec, Arc<Character>)],
     start: Point,
@@ -2990,7 +2990,7 @@ fn spawn_instances(
 
     // Where each Instance's wake clock starts. Drawn from the same launch
     // seed rather than the clock again: `as_nanos` three times in a row
-    // differs in low bits only, and would put every buddy within a millisecond.
+    // differs in low bits only, and would put every character within a millisecond.
     let mut phases = Seeded::new(seed);
 
     let widths: Vec<f64> = loaded
@@ -3030,7 +3030,7 @@ fn spawn_instances(
             recent: Vec::new(),
             pace: paced(config, character),
             // Started somewhere inside the interval rather than at nothing, so
-            // N buddies do not all decide on the same tick. Deciding together
+            // N characters do not all decide on the same tick. Deciding together
             // still reads as coordinated and puts N model calls in one instant.
             since_wake: phase_of(config.wake_every, phases.draw()),
             since_state: Duration::ZERO,
@@ -3139,7 +3139,7 @@ fn load_named(
             }
         };
 
-        match ai_buddy_core::character::load(&files) {
+        match fidget_core::character::load(&files) {
             Ok(character) => {
                 if let Some(wanted) = &wanted {
                     if !names_the_package(candidate, &character.name, wanted) {
@@ -3169,10 +3169,10 @@ fn load_named(
     // typo in the name, and every Character failing to load is a broken build.
     Err(match wanted {
         Some(wanted) => format!(
-            "no Character Package named {} loaded. ai-buddy looked in: {looked_in}",
+            "no Character Package named {} loaded. Fidget looked in: {looked_in}",
             wanted.to_string_lossy()
         ),
-        None => format!("no Character Package loaded. ai-buddy looked in: {looked_in}"),
+        None => format!("no Character Package loaded. Fidget looked in: {looked_in}"),
     })
 }
 
@@ -3204,7 +3204,7 @@ fn anchor_position_locked(flags: u32, nomove: u32) -> bool {
 #[cfg(not(target_os = "macos"))]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
-        .title("ai-buddy")
+        .title("Fidget")
         .inner_size(1.0, 1.0)
         .resizable(false)
         .decorations(false)
@@ -3318,7 +3318,7 @@ fn main() {
     // This process *is* the stdio MCP server: never the overlay. The Harness
     // child is a new process, so it does not share the shell's ACP runtime.
     if std::env::args().any(|arg| arg == "--mcp-stdio") {
-        ai_buddy_mcp_server::run();
+        fidget_mcp_server::run();
         return;
     }
 
@@ -3425,7 +3425,7 @@ fn main() {
                     None => eprintln!(
                         "dock: full-width floor; no source reported a bottom Dock — \
                          a side or hidden Dock has nothing to report, and granting \
-                         ai-buddy Accessibility only helps where one exists"
+                         Fidget Accessibility only helps where one exists"
                     ),
                 }
             }
@@ -3627,9 +3627,9 @@ fn main() {
             });
             app.manage(Arc::clone(&rules));
 
-            // Dev/test hook: open settings immediately if AI_BUDDY_OPEN_SETTINGS=1.
+            // Dev/test hook: open settings immediately if FIDGET_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.
-            if model::env_switch("AI_BUDDY_OPEN_SETTINGS").unwrap_or(false) {
+            if model::env_switch("FIDGET_OPEN_SETTINGS").unwrap_or(false) {
                 show_settings(app.handle().clone());
             }
 
@@ -3716,7 +3716,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("ai-buddy failed to start")
+        .expect("Fidget failed to start")
         // Every exit path ends here — window close, `ExitRequested`, the tray
         // Quit's `quit_now` aside — so the Harness child is never orphaned.
         .run(|_, event| {
@@ -3756,7 +3756,7 @@ mod tests {
         let _ = select_harness_returns_a_future as fn(_, _, _);
     }
 
-    use ai_buddy_core::character::{
+    use fidget_core::character::{
         Character, CursorReaction, PackageBytes, CHARACTER_MANIFEST_FILE, DEFAULT_MODEL_BASE,
         DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
     };
@@ -4249,13 +4249,13 @@ mod tests {
     }
 
     /// Settings persist Character.name (`Trump`). The env var and the folder
-    /// are still the package stem (`trump`). Either has to start the same buddy.
+    /// are still the package stem (`trump`). Either has to start the same character.
     #[test]
     fn a_package_answers_to_its_folder_or_its_character_name() {
         let folder = Path::new("/characters/trump");
         assert!(
             names_the_package(folder, "Trump", OsStr::new("trump")),
-            "AI_BUDDY_CHARACTER=trump still names the folder"
+            "FIDGET_CHARACTER=trump still names the folder"
         );
         assert!(
             names_the_package(folder, "Trump", OsStr::new("Trump")),
@@ -4314,7 +4314,7 @@ mod tests {
         }
 
         files.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
-        ai_buddy_core::character::load(&files).expect("the package is valid")
+        fidget_core::character::load(&files).expect("the package is valid")
     }
 
     fn url(bytes: &[u8]) -> String {
@@ -4352,7 +4352,7 @@ mod tests {
     }
 
     /// Every pre-Instances start path asks for no Instances, which
-    /// `load_instances` turns into the one buddy it has always run. One test
+    /// `load_instances` turns into the one character it has always run. One test
     /// rather than three: they share an environment variable and would race.
     #[test]
     fn naming_no_instances_asks_for_none_and_a_list_is_read_in_full() {
@@ -4360,7 +4360,7 @@ mod tests {
         assert_eq!(
             requested_instances(&Settings::default()),
             Ok(Vec::new()),
-            "the default single buddy is not a spec"
+            "the default single character is not a spec"
         );
 
         std::env::set_var(INSTANCES_VAR, "bmo:One,bmo:Two");
@@ -4385,7 +4385,7 @@ mod tests {
         );
     }
 
-    /// The arithmetic that keeps buddies from landing in a stack, and the reason
+    /// The arithmetic that keeps characters from landing in a stack, and the reason
     /// it accumulates: stepping by each Character's own width puts a narrow
     /// sprite on top of the wide one it follows.
     #[test]
@@ -4421,7 +4421,7 @@ mod tests {
         assert_eq!(
             starting_positions(start, &[64.0]),
             vec![start],
-            "one buddy still comes into the world where it always did"
+            "one character still comes into the world where it always did"
         );
     }
 
@@ -4442,7 +4442,7 @@ mod tests {
         assert_eq!(phase_of(interval, 61_234), Duration::from_millis(1_234));
 
         // Never already due: a phase equal to the interval would wake every
-        // buddy on the first tick, which is the thing being avoided.
+        // character on the first tick, which is the thing being avoided.
         for draw in [0, 1, u64::MAX / 2, u64::MAX] {
             assert!(
                 phase_of(interval, draw) < interval,
@@ -4454,7 +4454,7 @@ mod tests {
         assert_eq!(phase_of(Duration::ZERO, u64::MAX), Duration::ZERO);
     }
 
-    /// The property the randomness is for: buddies from one launch start their
+    /// The property the randomness is for: characters from one launch start their
     /// clocks at different, unevenly spaced points.
     #[test]
     fn buddies_from_one_launch_start_their_clocks_apart() {
@@ -4469,7 +4469,7 @@ mod tests {
         assert_eq!(
             distinct.len(),
             4,
-            "no two buddies wake together: {phases:?}"
+            "no two characters wake together: {phases:?}"
         );
 
         // Uneven, which is what a draw buys over a share apiece: an even spread
@@ -4570,7 +4570,7 @@ mod tests {
             asking: true,
             cue: Some(Cue::Poke),
             owner: Some(1),
-            mask: ai_buddy_core::overlay::AlphaMask::from_png(PATCHY, 128)
+            mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
 

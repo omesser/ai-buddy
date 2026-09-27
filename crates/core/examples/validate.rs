@@ -1,7 +1,7 @@
 //! Validate a Character Package directory with `character::load`.
 //!
 //! ```sh
-//! cargo run -p ai-buddy-core --example validate -- characters/cat
+//! cargo run -p fidget-core --example validate -- characters/cat
 //! ```
 //!
 //! `scripts/import-pet.py` runs this before declaring an import a success;
@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
-use ai_buddy_core::character;
+use fidget_core::character;
 
 fn collect(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {

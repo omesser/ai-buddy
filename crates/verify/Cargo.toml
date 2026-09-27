@@ -1,5 +1,5 @@
 [package]
-name = "ai-buddy-verify"
+name = "fidget-verify"
 description = "Agent/CI verify entry: doctor, units, overlay, poke, summon, cleanup (ADR-0027)"
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "ai-buddy-verify"
+name = "fidget-verify"
 path = "src/main.rs"
 
 [dependencies]

@@ -15,15 +15,15 @@ test("Settings env flags and the surface helper are gone", () => {
   const helper = read("src-tauri/src/settings.rs");
   const main = read("src-tauri/src/main.rs");
   const platform = read("src-tauri/src/platform.rs");
-  assert.doesNotMatch(helper, /AI_BUDDY_SETTINGS_NATIVE/);
-  assert.doesNotMatch(helper, /AI_BUDDY_SETTINGS_WEBVIEW/);
+  assert.doesNotMatch(helper, /FIDGET_SETTINGS_NATIVE/);
+  assert.doesNotMatch(helper, /FIDGET_SETTINGS_WEBVIEW/);
   assert.doesNotMatch(helper, /fn settings_is_webview/);
   assert.doesNotMatch(main, /settings_is_webview/);
-  assert.doesNotMatch(main, /AI_BUDDY_SETTINGS_NATIVE/);
-  assert.doesNotMatch(main, /AI_BUDDY_SETTINGS_WEBVIEW/);
+  assert.doesNotMatch(main, /FIDGET_SETTINGS_NATIVE/);
+  assert.doesNotMatch(main, /FIDGET_SETTINGS_WEBVIEW/);
   assert.doesNotMatch(platform, /settings_is_webview/);
-  assert.doesNotMatch(platform, /AI_BUDDY_SETTINGS_NATIVE/);
-  assert.doesNotMatch(platform, /AI_BUDDY_SETTINGS_WEBVIEW/);
+  assert.doesNotMatch(platform, /FIDGET_SETTINGS_NATIVE/);
+  assert.doesNotMatch(platform, /FIDGET_SETTINGS_WEBVIEW/);
 });
 
 test("native Settings renderer files are gone", () => {

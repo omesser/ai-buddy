@@ -1,8 +1,8 @@
 # The Harness's own tools under ACP attach
 
-Research for #668. Question: when ai-buddy attaches a Harness over ACP, does
+Research for #668. Question: when Fidget attaches a Harness over ACP, does
 that Harness keep its *own* full toolbox — desktop control, web, the user's
-existing MCP integrations — with ai-buddy's MCP added on top? Or does attach
+existing MCP integrations — with Fidget's MCP added on top? Or does attach
 demote it to a chat brain that can only call `speak`?
 
 **Answer.** The premise is half wrong, and the half that survives is the
@@ -10,20 +10,20 @@ expensive one. A `claude` attach keeps the whole `claude_code` tool preset —
 `Bash`, `Read`/`Write`/`Edit`, `WebSearch`, `WebFetch`, subagents, skills,
 `CLAUDE.md` — because Zed's adapter hands the Agent SDK
 `tools: { type: "preset", preset: "claude_code" }` and
-`settingSources: ["user", "project", "local"]`, and it *merges* ai-buddy's MCP
+`settingSources: ["user", "project", "local"]`, and it *merges* Fidget's MCP
 server into the user's rather than replacing it. Attach loses exactly three
 things. **Computer use**, which Anthropic gates on an interactive session and
 on an opt-in recorded per project directory. **The user's project- and
 local-scoped MCP servers**, because every one of the five Harnesses keys
-project configuration off `cwd`, and ai-buddy's `cwd` is its own app-data
+project configuration off `cwd`, and Fidget's `cwd` is its own app-data
 folder rather than anywhere the user has ever configured. **`AskUserQuestion`**,
-which the adapter puts in `disallowedTools` because ai-buddy advertises no
+which the adapter puts in `disallowedTools` because Fidget advertises no
 `elicitation` client capability. So "Harness attach loses the main reason to
 prefer it over Model API" does not hold: full coding tools, web, user-scope
 MCP and the claude.ai connectors all survive. What does hold is narrower and
 sharper — the one capability ADR-0003 leaned on when it declined to ship an
 Executor is the one capability this attach shape cannot reach. The cheapest
-lever by far is `cwd`, which ai-buddy already owns and currently picks badly;
+lever by far is `cwd`, which Fidget already owns and currently picks badly;
 the probe below settles whether `cwd` also buys computer use back, or whether
 only a hosted interactive session can.
 
@@ -37,7 +37,7 @@ Following `reasoning-versus-the-final-answer.md` and
 `director-in-flight-and-latency.md`, every load-bearing claim carries a label.
 
 - **[Fact]** — quoted from a primary source: vendor documentation, adapter or
-  SDK source at a named version, ai-buddy's own code, or a string read out of
+  SDK source at a named version, Fidget's own code, or a string read out of
   a shipped binary.
 - **[Inference]** — my reasoning from those facts. Sound or not, it is mine.
 - **[Assumption]** — not verified. Each one names what would verify it.
@@ -60,10 +60,10 @@ turn its own `harness::TURN_TIMEOUT` of 120 seconds (for #690,
 
 | # | Claim | Label | Source |
 |---|---|---|---|
-| 1 | ai-buddy's `claude` row launches Zed's ACP adapter, not the interactive CLI | Fact | `harness.rs:120-123` |
-| 2 | ai-buddy attaches with `cwd` = the app data folder, and the child inherits the environment untouched | Fact | `harness.rs:161-171`, `1492-1501`; `crates/core/src/memory.rs:51-55` |
-| 3 | ai-buddy advertises no `fs`, `terminal`, or `elicitation` client capability | Fact | `acp_wire.rs:393-397`, `421-432` |
-| 4 | ai-buddy passes exactly zero or one MCP server, named `ai-buddy`, and no `_meta` | Fact | `acp_wire.rs:567-585`, `591-610` |
+| 1 | Fidget's `claude` row launches Zed's ACP adapter, not the interactive CLI | Fact | `harness.rs:120-123` |
+| 2 | Fidget attaches with `cwd` = the app data folder, and the child inherits the environment untouched | Fact | `harness.rs:161-171`, `1492-1501`; `crates/core/src/memory.rs:51-55` |
+| 3 | Fidget advertises no `fs`, `terminal`, or `elicitation` client capability | Fact | `acp_wire.rs:393-397`, `421-432` |
+| 4 | Fidget passes exactly zero or one MCP server, named `fidget`, and no `_meta` | Fact | `acp_wire.rs:567-585`, `591-610` |
 | 5 | The adapter defaults to the full `claude_code` built-in tool preset | Fact | `acp-agent.ts:7907-7914` |
 | 6 | The adapter passes `settingSources: ["user","project","local"]` and *merges* client MCP servers over user-configured ones | Fact | `acp-agent.ts:8003-8020` |
 | 7 | The Agent SDK spawns the real `claude` binary in stream-json print mode, with `--permission-prompt-tool stdio` | Fact | `sdk.mjs` 0.3.257 argv assembly; `cli-reference` flag definitions |
@@ -74,10 +74,10 @@ turn its own `harness::TURN_TIMEOUT` of 120 seconds (for #690,
 | 12 | The adapter disables `AskUserQuestion` unless the client advertises form elicitation | Fact | `acp-agent.ts:7901-7905` |
 | 13 | ACP has no computer-use client capability; `fs/*` and `terminal/*` are the *client's* filesystem and terminal | Fact | ACP v1 initialization, file-system, terminals |
 | 14 | An unanswered `session/request_permission` has no timeout of its own; the turn's 20s default budget expires and the ask is cancelled, not denied | Fact | `acp_wire.rs:306-313`, `801-814`; `src-tauri/src/model.rs:28` |
-| 15 | The tool and MCP-server loss under attach is caused by ai-buddy's `cwd` choice, not by ACP or by the adapter | Inference | from 2, 6, 9, 10, 11 |
-| 16 | No Harness of the five brings desktop control to an ACP session ai-buddy opens | Inference | matrix below |
+| 15 | The tool and MCP-server loss under attach is caused by Fidget's `cwd` choice, not by ACP or by the adapter | Inference | from 2, 6, 9, 10, 11 |
+| 16 | No Harness of the five brings desktop control to an ACP session Fidget opens | Inference | matrix below |
 | 17 | Whether the computer-use gate that actually bites is the interactive check or the per-project opt-in | Assumption | settled by the probe below |
-| 18 | Whether `opencode`, `hermes` and `grok` sessions ai-buddy opens really carry the tools their vendors document | Assumption | never read off a live attach; ACP exposes no tool-list method |
+| 18 | Whether `opencode`, `hermes` and `grok` sessions Fidget opens really carry the tools their vendors document | Assumption | never read off a live attach; ACP exposes no tool-list method |
 | 19 | Whether `ALLOW_ANT_COMPUTER_USE_MCP` gates registration of the built-in server | Assumption | name found in the 2.1.270 binary; use site not resolvable from strings |
 
 ## What "full tool stack" has to mean
@@ -93,13 +93,13 @@ cover everything #668 names:
 | User MCP | The servers the user already added — mail, calendar, issue trackers | The user's existing integrations, which is the whole bring-your-own-agent promise |
 | Filesystem / edit | Read, write, edit, glob, grep | Table stakes, and the only class ACP has client-side methods for |
 
-ai-buddy's own seven tools (`speak`, `play_behavior`, `list_windows`,
+Fidget's own seven tools (`speak`, `play_behavior`, `list_windows`,
 `describe_screen`, `recall`, `remember`, `list_instances`) are a sixth class
 and are not at risk: they arrive as an MCP server on `session/new`, and every
 Harness that takes MCP at all takes them. **[Fact]** — `README.md:186-197`,
 `acp_wire.rs:567-585`.
 
-## What ai-buddy actually launches, and in which directory
+## What Fidget actually launches, and in which directory
 
 **[Fact]** The `claude` row launches Zed's adapter, not the interactive CLI —
 `harness.rs:108-123`, with the arm's long comment about `@latest` elided:
@@ -137,15 +137,15 @@ fn open(launch: Option<Launch>, forward: Arc<Forward>) -> Option<Arc<Session>> {
     launch.map(|launch| {
         Arc::new(Session::new(
             launch,
-            ai_buddy_core::memory::data_dir(),
+            fidget_core::memory::data_dir(),
             forward,
         ))
     })
 }
 ```
 
-which resolves to `~/.local/share/ai-buddy`,
-`~/Library/Application Support/ai-buddy`, or `%APPDATA%\ai-buddy`
+which resolves to `~/.local/share/fidget`,
+`~/Library/Application Support/fidget`, or `%APPDATA%\fidget`
 (`crates/core/src/memory.rs:51-55`), and to the same path plus `/probe` under
 `scripts/probe-harness.sh`. **[Inference]** This one choice is the largest
 single determinant of how many tools an attached Harness has, and nothing in
@@ -159,7 +159,7 @@ capabilities we never advertised — the SDK answers with method-not-found on
 its own."
 
 **[Fact]** `session/new` carries `cwd` and zero or one MCP server, always
-named `ai-buddy`, and no `_meta` (`acp_wire.rs:567-585`, `591-610`). We never
+named `fidget`, and no `_meta` (`acp_wire.rs:567-585`, `591-610`). We never
 read, merge, or forward the user's own MCP configuration; ADR-0026 states the
 intent — "The MCP server entry is already the app's own to fill — this sets
 nothing of the user's."
@@ -248,7 +248,7 @@ and the built-in tool set defaults to the full preset. **[Fact]** —
 
 **[Inference]** So by default an ACP Claude session has the same built-in tool
 set as the CLI, reads the same user and project settings the CLI reads, and
-gets ai-buddy's MCP server layered *on top of* whatever the user already
+gets Fidget's MCP server layered *on top of* whatever the user already
 configured — not instead of it. None of the collapse the issue describes is in
 this code.
 
@@ -298,7 +298,7 @@ global `~/.claude.json` config… Always read", relocatable only with
 <https://code.claude.com/docs/en/agent-sdk/claude-code-features>
 
 **[Inference]** Chain those four and the failure is fully explained without
-any bug. ai-buddy attaches with `cwd` = its own data folder, which is a
+any bug. Fidget attaches with `cwd` = its own data folder, which is a
 project entry in `~/.claude.json` that no user has ever opened `/mcp` in, so
 `enabledMcpServers` for that entry is empty and the `computer-use` server is
 never connected — before the interactive gate is even consulted. A user who
@@ -331,7 +331,7 @@ in `src/tests/permission-options.test.ts:532-574`.
 calls in a live ACP session, or they wrote defensively for a client that
 passes the server in itself. Source alone cannot tell which. Settled by the
 probe below: if the session's `init` message lists
-`mcp__computer-use__screenshot` once the opt-in is recorded for ai-buddy's
+`mcp__computer-use__screenshot` once the opt-in is recorded for Fidget's
 `cwd`, the first reading is right and the interactive rule is softer than the
 documentation says; if it does not, the gate is absolute for this path.
 
@@ -343,7 +343,7 @@ products, including agents built on the Claude Agent SDK. Use the API key
 authentication methods described in the Quickstart instead."
 <https://code.claude.com/docs/en/agent-sdk/overview>
 
-**[Inference]** ai-buddy is not caught by that as written, because ADR-0018
+**[Inference]** Fidget is not caught by that as written, because ADR-0018
 already puts authentication on the user's side of the line and ADR-0010 rule 6
 forbids proxying a vendor login — the user runs `claude /login` in their own
 terminal and the subprocess inherits it. But it does mean "ask Anthropic to
@@ -378,7 +378,7 @@ adapter already passes.
 ### The user's existing MCP servers
 
 This is the question with the most interesting answer, because two of three
-scopes are inherited and the third is lost for a reason ai-buddy controls.
+scopes are inherited and the third is lost for a reason Fidget controls.
 
 **[Fact]** Claude Code stores MCP servers in three scopes:
 
@@ -388,7 +388,7 @@ scopes are inherited and the third is lost for a reason ai-buddy controls.
 | `project` | `.mcp.json` in your project root | Everyone who clones the project |
 | `user` | `~/.claude.json`, under the top-level `mcpServers` key | Only you, all projects |
 
-and the troubleshooting section describes exactly ai-buddy's situation: "You
+and the troubleshooting section describes exactly Fidget's situation: "You
 ran `claude mcp add` from a different project. Local-scoped servers are tied
 to the project where you added them… or add it with `--scope user` so it isn't
 tied to a project." <https://code.claude.com/docs/en/mcp-quickstart>
@@ -410,7 +410,7 @@ claude.ai/customize/connectors load automatically in the CLI when you sign in
 with that account." <https://code.claude.com/docs/en/mcp-quickstart>
 
 **[Inference]** So under a `claude` attach the user keeps user-scope MCP
-servers, claude.ai connectors, managed and enterprise servers, and ai-buddy's
+servers, claude.ai connectors, managed and enterprise servers, and Fidget's
 server. The user loses local-scope servers — the default scope, tied to the
 project directory they were added in — and project-scope `.mcp.json`, read
 relative to `cwd`. Both losses are `cwd`: not ACP, not the adapter, not
@@ -432,7 +432,7 @@ which they will have if they use Claude in that repository.
 
 The issue asks whether native tool calls die because Chat never answers
 `session/request_permission`, or because the tools never appear in the agent's
-list. **[Fact]** ai-buddy forwards the request, never answers it, and never
+list. **[Fact]** Fidget forwards the request, never answers it, and never
 auto-approves — `harness.rs:771-781`:
 
 ```rust
@@ -442,7 +442,7 @@ auto-approves — `harness.rs:771-781`:
 
 **[Fact]** An unanswered ask has no timeout of its own. The *turn* times out —
 20s by default from `model::TIMEOUT`, overridable with
-`AI_BUDDY_DIRECTOR_TIMEOUT_SECS` — then `session/cancel` goes out and every
+`FIDGET_DIRECTOR_TIMEOUT_SECS` — then `session/cancel` goes out and every
 open ask is answered `Cancelled` rather than denied (`acp_wire.rs:306-313`,
 `801-814`). **[Fact]** The probe path prints asks and never answers them, so
 they always time out there (`docs/DEVELOPMENT.md:332-371`).
@@ -473,7 +473,7 @@ methods allow Agents to execute shell commands within the Client's
 environment" <https://agentclientprotocol.com/protocol/v1/terminals>.
 
 **[Inference]** Advertising them does not unlock agent-side tools; it moves
-work *to us*. Advertising `terminal` in particular would have ai-buddy running
+work *to us*. Advertising `terminal` in particular would have Fidget running
 shell commands on the agent's behalf, which is an Executor for shell instead
 of for mouse and keyboard — the thing ADR-0003 refuses, one input class over.
 Do not advertise `terminal`.
@@ -497,7 +497,7 @@ the only one of these levers that is spec-level, and therefore portable.
 ## The matrix
 
 Rows are the five named Harnesses. Columns are the tool classes. Each cell is
-what is available **to the agent, inside a session ai-buddy opened**, not what
+what is available **to the agent, inside a session Fidget opened**, not what
 the vendor's CLI can do in general.
 
 | | Computer use (user's desktop) | Shell | Web search / fetch | User's own MCP servers | Filesystem / edit |
@@ -514,7 +514,7 @@ computer-use gates above; its computer-use cell is the one genuinely
 that is both the observed behaviour and the documented rule, not because it is
 proven impossible. The other four rows rest on vendor documentation, which is
 **[Fact]** about what the vendor claims and **[Assumption]** about what an
-ai-buddy attach delivers (claim #18):
+Fidget attach delivers (claim #18):
 
 - `opencode` — "OpenCode works the same via ACP as it does in the terminal.
   All features are supported", listing "Built-in tools (file operations,
@@ -564,7 +564,7 @@ under *no* Harness on this attach shape.
 
 **[Inference]** `pi-acp` not wiring `mcpServers` through is why `pi` "gets
 nothing forwarded today" (`README.md:172`), and it is a third-party adapter
-gap rather than anything about pi or about ai-buddy. It is also the one row
+gap rather than anything about pi or about Fidget. It is also the one row
 where README wording oversells the loss: "Chat-only (no MCP)"
 (`README.md:157`) reads as "pi has no tools", when pi keeps `read`, `write`,
 `edit`, `bash`, `grep`, `find` and `ls`, and loses only *ours*.
@@ -610,7 +610,7 @@ the pinning test, `child_command_sets_no_env_and_passes_no_bare` in
 `harness.rs`, asserts *that* a `cwd` is passed, not which one. **ADR-0023 / ADR-0026** untouched: the MCP entry we hand over
 does not change. **ADR-0008** untouched: one session, one conversation, now
 rooted somewhere useful. **[Inference]** It probably wants a short ADR of its
-own, because "ai-buddy's `cwd` is the Harness's project scope" is exactly the
+own, because "Fidget's `cwd` is the Harness's project scope" is exactly the
 kind of non-obvious, hard-to-reverse consequence ADR gate 2 exists for.
 
 ### 3. Advertise the client capabilities we can honestly serve, `elicitation.form` first
@@ -621,7 +621,7 @@ option here that also helps a Harness nobody has thought about yet; Hermes and
 Grok both document richer dialog and permission flows than a three-button
 prompt can carry.
 
-ADR consequences: **ADR-0018** already gives ai-buddy the chat surface and the
+ADR consequences: **ADR-0018** already gives Fidget the chat surface and the
 permission prompt, and a form dialog is that same surface doing that same job,
 so no supersession. **ADR-0003** unaffected. Explicitly *not* in scope:
 advertising `terminal`, for the Executor-by-another-name reason above.
@@ -676,17 +676,17 @@ forbids." Reversing it means writing a terminal host and giving up the
 `stopReason` the Completer is built on.
 
 A second cost the ADRs do not mention: a hosted interactive session has no
-`session/new`, so ai-buddy's MCP cannot be client-supplied. It would have to
-be a server the *user* installed — `claude mcp add --scope user ai-buddy …`
+`session/new`, so Fidget's MCP cannot be client-supplied. It would have to
+be a server the *user* installed — `claude mcp add --scope user Fidget …`
 pointed at ADR-0026's shim — which inverts ADR-0023's "the client hands the
 session its own tool endpoint".
 
 Rank it last, and reach for it only if the probe shows the interactive gate is
 absolute *and* desktop control is judged worth an ADR-0018 supersession.
 
-### 6. Rejected: an ai-buddy Executor
+### 6. Rejected: a Fidget Executor
 
-ADR-0003, `docs/SPEC.md:591-594` ("An ai-buddy Executor. Desktop control
+ADR-0003, `docs/SPEC.md:591-594` ("A Fidget Executor. Desktop control
 belongs to the Harness."), and out of scope per #668. Listed only so the
 ranking is exhaustive.
 
@@ -697,11 +697,11 @@ ranking is exhaustive.
 what remove computer use from a `claude` attach.
 
 **Falsifier:** on macOS, on a Pro or Max plan, signed in through claude.ai,
-with `enabledMcpServers: ["computer-use"]` recorded for ai-buddy's data folder
+with `enabledMcpServers: ["computer-use"]` recorded for Fidget's data folder
 in `~/.claude.json`, the ACP session's own tool list still contains no
 `mcp__computer-use__*` entry.
 
-**Why this is the smallest probe:** it needs no ai-buddy code and no guessing
+**Why this is the smallest probe:** it needs no Fidget code and no guessing
 from behaviour, because the adapter can be asked for the Agent SDK's `init`
 message directly, and **[Fact]** that message carries the authoritative lists
 `tools: string[]` and `mcp_servers: { name, status }[]` (`sdk.d.ts` 0.3.257,
@@ -717,7 +717,7 @@ shut down on EOF (`index.ts:97-106`):
 
 ```sh
 # macOS. Pro or Max. `claude auth status` must show a claude.ai login.
-DIR="$HOME/Library/Application Support/ai-buddy"
+DIR="$HOME/Library/Application Support/fidget"
 
 # Precondition, done once by hand: in ~/.claude.json, under
 # projects["$DIR"], set "enabledMcpServers": ["computer-use"].
@@ -765,7 +765,7 @@ than routing around it.
 level this changed on 23–24 March 2026: Claude Code and Claude Cowork perform
 computer use natively on macOS… The Harness now genuinely brings its own
 executor, so we do not write one." **[Inference]** That is true of the
-interactive `claude` CLI and false of the ACP attach ai-buddy actually ships,
+interactive `claude` CLI and false of the ACP attach Fidget actually ships,
 which is the Agent SDK behind Zed's adapter. The decision — ship no Executor —
 still stands on its other legs, and nothing here argues for building one. But
 the Consequences section is now incomplete: the reason the Functional Layer is
@@ -777,7 +777,7 @@ that list when #668 is accepted.
 accurate about *our* MCP and misleading about pi's own tools, which are intact
 and local. **[Fact]** per `pi-acp`'s Limitations, quoted above.
 
-**`docs/research/buddy-harness-two-way.md` — still correct, and incomplete.**
+**`docs/research/fidget-harness-two-way.md` — still correct, and incomplete.**
 Its central claim holds: ACP "is the only protocol that carries 'inject a user
 turn into a local agent that keeps its own tools, permissions, and memory'".
 What it did not anticipate is that "its own tools" is scoped by the `cwd` the
@@ -792,7 +792,7 @@ only for the options that survive it.
 - `docs(readme): Say which tool classes survive a Harness attach, per row`
 - `spike(harness): Read the Claude ACP session's own tool and MCP list off the adapter's raw init message`
 - `feat(harness): Attach the Harness in a directory the user's own configuration keys on`
-- `docs(adr): Record that ai-buddy's cwd is the Harness's project scope`
+- `docs(adr): Record that Fidget's cwd is the Harness's project scope`
 - `feat(chat): Advertise ACP form elicitation so the Harness can ask a multiple-choice question`
 - `fix(harness): A turn budget a human can answer a permission prompt inside`
 - `spike(harness): Whether a hosted interactive session is the only route to Harness desktop control (#508)`
@@ -804,9 +804,9 @@ only for the options that survive it.
   is the interactive check or the per-project opt-in. The probe answers it,
   and everything in option #5's ranking depends on which.
 - **[Assumption]** Whether `opencode`, `hermes` and `grok` sessions opened by
-  ai-buddy really carry the tools their vendors document. All four vendor
+  Fidget really carry the tools their vendors document. All four vendor
   claims above are documentation rather than observation; none has been read
-  off a live ai-buddy attach. `scripts/probe-harness.sh` prints the handshake
+  off a live Fidget attach. `scripts/probe-harness.sh` prints the handshake
   but not the agent's tool list, and ACP has no method that returns one — the
   Claude probe above works only because one adapter offers a vendor extension.
 - **[Assumption]** Whether a 20-second default turn budget is survivable for

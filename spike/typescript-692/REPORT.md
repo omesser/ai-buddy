@@ -253,7 +253,7 @@ rm src/vendor/marked.esm.d.ts
 cd spike/typescript-692/ts-rs-proto && cargo test
 
 # The compile-time coupling: set frontendDist to a missing path, then
-cargo check -p ai-buddy      # proc macro panicked, generate_context!
+cargo check -p fidget      # proc macro panicked, generate_context!
 
 # The bug census
 git log --no-merges --pretty='%h|%s' -- 'src/*.js' | grep -iE '\|fix'

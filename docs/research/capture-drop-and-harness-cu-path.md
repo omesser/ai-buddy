@@ -1,6 +1,6 @@
 # Capture drop and the harness computer-use path
 
-Research for ai-buddy Capture architecture, dated 2026-09-22. Anchor: decision
+Research for Fidget Capture architecture, dated 2026-09-22. Anchor: decision
 context provided by Oded (Architect).
 
 **Decision:** DROP pixel Capture (both Ambient and On-Demand); KEEP Free sensing
@@ -9,7 +9,7 @@ the docs-primary multi-harness computer-use path when users need desktop control
 through a harness. Runner-up: minghinmatthewlam/computer-use-mcp (macOS-only).
 
 Capture never shipped. It was deferred in ADR-0005. Free sensing is implemented
-and ships in v1. Computer use for agents belongs outside ai-buddy: in
+and ships in v1. Computer use for agents belongs outside Fidget: in
 harness-native capabilities or multi-harness MCP drivers. Capturable (sprite
 visible in screen shares) is out of scope for this note.
 
@@ -24,7 +24,7 @@ screenshot in response to user act, per-act consent), and Ambient Capture
 (cadence-bounded asking with mandatory local gate, explicit consent). ADR-0005
 deferred Capture entirely, both tiers, while allowing Free sensing to proceed.
 
-**Fact.** ai-buddy ships Free sensing: `list_windows` and `describe_screen`
+**Fact.** Fidget ships Free sensing: `list_windows` and `describe_screen`
 query window metadata from the OS without touching pixels. CONTEXT.md defines
 Free sensing as "OS metadata: frontmost app, window geometry, idle, etc."
 
@@ -34,10 +34,10 @@ Free sensing as "OS metadata: frontmost app, window geometry, idle, etc."
 would have no path to an attached harness unless the user connects a separate
 MCP server for it.
 
-**Inference.** Dropping Capture means ai-buddy never embeds, ships, or owns
+**Inference.** Dropping Capture means Fidget never embeds, ships, or owns
 screenshot capability. It does not mean agents the user runs can never see
 pixels. A user running a CU-capable harness or attaching a computer-use MCP
-server can still grant that agent desktop control, just not through ai-buddy's
+server can still grant that agent desktop control, just not through Fidget's
 own code.
 
 ## Harness computer-use options
@@ -162,7 +162,7 @@ completeness.
 idle detection, list_windows, and describe_screen all remain. The sprite still
 reacts to the desktop and obeys physics.
 
-**No buddy content-awareness of pixels:** ai-buddy never analyzes screen content,
+**No character content-awareness of pixels:** Fidget never analyzes screen content,
 never takes screenshots itself, and never embeds OCR or vision models for desktop
 sensing. The Local Gate (ADR-0005) is unneeded because nothing asks for Capture.
 
@@ -171,16 +171,16 @@ Cursor Cloud Agent, Codex with Computer Use plugin, Hermes with computer_use
 toolset, interactive Claude Code on macOS) or attaches an MCP server like
 cua-driver, that agent has desktop control.
 The control comes from the harness or MCP server the user chose, not from
-ai-buddy.
+Fidget.
 
-**Tradeoff:** The buddy itself never "looks at the screen" in the content sense.
+**Tradeoff:** The character itself never "looks at the screen" in the content sense.
 A future where the pet visually reacts to what is on the desktop (noticing a
 specific app's content, reading notifications) is not this path. That would
 require Capture, which this decision drops.
 
 **Inference.** Users who want agent desktop control attach cua-driver (or
 another MCP) to their harness of choice. Users who want only the animated
-sprite, sensing, and chat attach no MCP. The decision separates ai-buddy's
+sprite, sensing, and chat attach no MCP. The decision separates Fidget's
 role (spatial layer, personality, perch) from the harness's role (functional
 layer, execution).
 
@@ -189,12 +189,12 @@ layer, execution).
 This note documents a decision and the options above. It **does not** claim:
 
 1. **Buddy ships/embeds/owns screenshots.** It does not. Dropping Capture means
-   ai-buddy never takes screenshots, never analyzes pixels, and never bundles
+   Fidget never takes screenshots, never analyzes pixels, and never bundles
    vision/OCR for desktop content.
 
 2. **Dropping Capture means agents never see pixels.** Agents the user attaches
    can still see pixels if the user runs a CU-capable harness or attaches a
-   CU MCP server. The decision is about ai-buddy's own code, not about agent
+   CU MCP server. The decision is about Fidget's own code, not about agent
    capabilities in general.
 
 3. **Security parity across drivers.** This note lists drivers and their
@@ -212,7 +212,7 @@ This note documents a decision and the options above. It **does not** claim:
    supported OSes explicitly. The nut.js dependency suggests cross-platform
    intent, but this is inference, not vendor claim.
 
-7. **ai-buddy recommends one driver for all users.** The note recommends
+7. **Fidget recommends one driver for all users.** The note recommends
    cua-driver as docs-primary for breadth and first-party integrations. Users
    choose their own MCP servers. The note informs; it does not enforce.
 
@@ -237,7 +237,7 @@ The following are **next steps** this note identifies, but does not implement:
    comments, or docs say "Capture coming soon," remove or rephrase them to
    reflect the drop.
 
-3. **Separate issue if user-facing CU guidance is wanted.** If ai-buddy's README
+3. **Separate issue if user-facing CU guidance is wanted.** If Fidget's README
    or docs should point users to cua-driver or explain how to attach a CU MCP,
    file that as a separate docs issue. This PR is research only.
 
@@ -280,9 +280,9 @@ https://agentclientprotocol.com/protocol/v1/initialization lists `fs.*`,
 
 ## Summary
 
-ai-buddy **keeps Free sensing** (window metadata, idle, frontmost app) and
+Fidget **keeps Free sensing** (window metadata, idle, frontmost app) and
 **drops Capture** (pixel analysis, screenshots, OCR/vision). Computer use for
-agents lives **outside ai-buddy** in harness-native capabilities or MCP servers.
+agents lives **outside Fidget** in harness-native capabilities or MCP servers.
 
 **Recommended MCP path:** cua-driver (primary) for multi-OS, multi-harness,
 accessibility-first desktop control with Hermes first-party integration.
@@ -290,7 +290,7 @@ minghinmatthewlam/computer-use-mcp (runner-up) for macOS-only
 accessibility-first alternative.
 
 Users who want agent desktop control attach cua-driver to their harness of
-choice. The buddy keeps perch, fade, sensing, and personality. The harness or
+choice. The character keeps perch, fade, sensing, and personality. The harness or
 MCP owns execution. The roles stay separated per ADR-0003.
 
 ---

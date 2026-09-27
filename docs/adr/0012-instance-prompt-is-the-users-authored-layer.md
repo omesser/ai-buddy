@@ -52,7 +52,7 @@ session — is where anything worth keeping lives.
   invalidation would wipe the conversation mid-sentence.
 - A reply in flight is cancelled, not awaited; the thinking indicator stops.
 - The text takes effect at the *next* wake, not retroactively. Nothing is
-  re-asked to prove the change landed; the buddy's next line is the new one.
+  re-asked to prove the change landed; the character's next line is the new one.
 - The change lands in the Action Log (#16). A prompt layer changing is exactly
   what a user needs to find later.
 
@@ -68,7 +68,7 @@ promise action on the machine, or override the universal voice rules.
 
 None of that relies on the prompt asking nicely. The Engine plays only declared
 Behaviors and `ModelDirector::declared` refuses a name nobody declared, so an
-invented Behavior is a near miss rather than an action; ai-buddy ships no
+invented Behavior is a near miss rather than an action; Fidget ships no
 Executor (ADR-0003), so a promised action has nothing to call. The wording only
 saves a wasted round trip.
 

@@ -26,31 +26,27 @@ pub fn run(repo_root: &Path, report: &mut RunReport) {
     if repo_root.join("Cargo.toml").is_file() && repo_root.join("src-tauri").is_dir() {
         report.check(Outcome::Pass, "workspace layout", "Cargo.toml + src-tauri");
     } else {
-        report.check(
-            Outcome::Fail,
-            "workspace layout",
-            "not an ai-buddy checkout",
-        );
+        report.check(Outcome::Fail, "workspace layout", "not a Fidget checkout");
     }
 
-    match ai_buddy_bin(repo_root) {
+    match fidget_bin(repo_root) {
         Some(bin) => report.check(
             Outcome::Pass,
-            "ai-buddy binary",
+            "Fidget binary",
             &format!("present: {}", bin.display()),
         ),
         None => {
             if command_on_path("cargo") {
                 report.check(
                     Outcome::Pass,
-                    "ai-buddy binary",
+                    "Fidget binary",
                     "not built yet; cargo is available to build",
                 );
             } else {
                 report.check(
                     Outcome::Fail,
-                    "ai-buddy binary",
-                    "no ai-buddy binary and no cargo",
+                    "Fidget binary",
+                    "no Fidget binary and no cargo",
                 );
             }
         }
@@ -174,17 +170,17 @@ fn ayatana_present() -> bool {
     }
 }
 
-/// Relative paths under the repo root for a built `ai-buddy` binary (with EXE_SUFFIX).
-fn ai_buddy_bin_relpaths() -> [String; 2] {
+/// Relative paths under the repo root for a built `fidget` binary (with EXE_SUFFIX).
+fn fidget_bin_relpaths() -> [String; 2] {
     let suffix = env::consts::EXE_SUFFIX;
     [
-        format!("target/release/ai-buddy{suffix}"),
-        format!("target/debug/ai-buddy{suffix}"),
+        format!("target/release/fidget{suffix}"),
+        format!("target/debug/fidget{suffix}"),
     ]
 }
 
-fn ai_buddy_bin(repo_root: &Path) -> Option<PathBuf> {
-    for rel in ai_buddy_bin_relpaths() {
+fn fidget_bin(repo_root: &Path) -> Option<PathBuf> {
+    for rel in fidget_bin_relpaths() {
         let p = repo_root.join(rel);
         if p.is_file() {
             #[cfg(unix)]
@@ -248,15 +244,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ai_buddy_bin_relpaths_include_exe_suffix_on_windows() {
-        let paths = ai_buddy_bin_relpaths();
+    fn fidget_bin_relpaths_include_exe_suffix_on_windows() {
+        let paths = fidget_bin_relpaths();
         assert_eq!(
             paths[0],
-            format!("target/release/ai-buddy{}", env::consts::EXE_SUFFIX)
+            format!("target/release/fidget{}", env::consts::EXE_SUFFIX)
         );
         assert_eq!(
             paths[1],
-            format!("target/debug/ai-buddy{}", env::consts::EXE_SUFFIX)
+            format!("target/debug/fidget{}", env::consts::EXE_SUFFIX)
         );
         #[cfg(windows)]
         {

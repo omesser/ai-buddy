@@ -11,13 +11,13 @@ import { test } from "node:test";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const REPLY =
-  "Run `cargo test -p ai-buddy-core` in the repo root.\n\n```bash\ncargo test -p ai-buddy-core -- --test-threads=1\n```";
-const FENCE = "cargo test -p ai-buddy-core -- --test-threads=1";
-const INLINE = "cargo test -p ai-buddy-core";
+  "Run `cargo test -p fidget-core` in the repo root.\n\n```bash\ncargo test -p fidget-core -- --test-threads=1\n```";
+const FENCE = "cargo test -p fidget-core -- --test-threads=1";
+const INLINE = "cargo test -p fidget-core";
 
 function chromeBin() {
-  if (process.env.AI_BUDDY_CHROME) {
-    return process.env.AI_BUDDY_CHROME;
+  if (process.env.FIDGET_CHROME) {
+    return process.env.FIDGET_CHROME;
   }
   for (const name of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]) {
     const found = spawnSync("bash", ["-lc", `command -v ${name}`], { encoding: "utf8" });
@@ -111,8 +111,8 @@ function paint(theme) {
   const full = ${JSON.stringify(REPLY)};
   const chunks = [
     "Run \`cargo",
-    " test -p ai-buddy-core\` in the repo root.\\n\\n\`\`\`bash\\ncargo test",
-    " -p ai-buddy-core -- --test-threads=1\\n\`\`\`",
+    " test -p fidget-core\` in the repo root.\\n\\n\`\`\`bash\\ncargo test",
+    " -p fidget-core -- --test-threads=1\\n\`\`\`",
   ];
   function paintOf(node) {
     const style = getComputedStyle(node);

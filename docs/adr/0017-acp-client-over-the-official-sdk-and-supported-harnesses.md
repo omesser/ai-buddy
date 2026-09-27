@@ -2,7 +2,7 @@
 
 **Status:** Superseded by [ADR-0022](./0022-acp-client-over-official-sdk-and-named-harnesses.md)
 
-ai-buddy is an Agent Client Protocol client built on `agent-client-protocol`
+Fidget is an Agent Client Protocol client built on `agent-client-protocol`
 2.x, the SDK Zed ships and the protocol's own repository maintains. It lives
 in `src-tauri/src/acp_wire.rs` and nowhere else: one thread per spawned
 Harness runs a current-thread tokio runtime that drives the SDK's connection
@@ -21,12 +21,12 @@ call on a `Slots` worker (ADR-0016) that waits on the wire with the same
 timeout → `session/cancel` semantics the HTTP Completer has. The frame loop
 never sees a future (ADR-0004).
 
-`AI_BUDDY_HARNESS` picks the Harness: `claude`, `hermes`, `opencode`, or a
+`FIDGET_HARNESS` picks the Harness: `claude`, `hermes`, `opencode`, or a
 command line of the user's own. Exported and empty is Off. Unexported falls
 through to the Director tab's Completer source row, which keeps the same four
 values. With the variable unexported and the row Off, the HTTP Completer in
 `model.rs` stays exactly as it was. The Harness is the Completer for every Instance, so
-ADR-0008's one session holds across buddies as well as across wakes.
+ADR-0008's one session holds across characters as well as across wakes.
 
 One session per app lifetime, and across restarts when the Harness allows
 it: `{session_id, harness, agent}` goes to `harness-session.json` in the data
@@ -103,7 +103,7 @@ advertises `sessionCapabilities` (`fork`, `list`, `resume`) and
 they are prose and not a printed field.
 
 What no probe run has verified is the MCP row, step 5 of #434: every run found
-no `ai-buddy-mcp` binary beside the app and had `AI_BUDDY_MCP_BIN` unset, so
+no `fidget-mcp` binary beside the app and had `FIDGET_MCP_BIN` unset, so
 each session got no MCP servers and the `speak` tool was never called by a
 Harness. The stdio server is built and tested on its own; that it is reachable
 *through* a Harness session is still untested.
@@ -148,7 +148,7 @@ A permission request is forwarded to every open Chat surface and answered
 only by a click there. A turn that times out first sends the protocol's
 `cancelled` outcome, which is a withdrawal, not an answer.
 
-`AI_BUDDY_HARNESS` was env-only when this was written: no settings-window row,
+`FIDGET_HARNESS` was env-only when this was written: no settings-window row,
 because the row would cost more than the variable it names until a second
 Harness setting joins it. Superseded by #436, which gives the Director tab a
 Completer source row over the same four values and freezes it while the
@@ -164,6 +164,6 @@ reply parsed as a proposal is not logged anywhere — `crates/core` parses it
 and does no I/O, and the shell's near-miss line is a trace, not a record.
 
 There is no loopback HTTP MCP server yet (#166). The session gets the
-`ai-buddy-mcp` binary over stdio when it can be found beside the app or at
-`AI_BUDDY_MCP_BIN`, and nothing otherwise; `mcpCapabilities.http` is recorded
+`fidget-mcp` binary over stdio when it can be found beside the app or at
+`FIDGET_MCP_BIN`, and nothing otherwise; `mcpCapabilities.http` is recorded
 so #166 can branch on it.

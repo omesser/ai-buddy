@@ -9,8 +9,8 @@
 # Usage: scripts/verify-overlay.sh [--keep]
 #   --keep   leave the app running afterwards, with tracing on
 
-# Unattended: export AI_BUDDY_DIRECTOR_API_KEY to avoid Keychain prompts.
-# Capturable by default (ADR-0024); export AI_BUDDY_CAPTURABLE=0 to test the
+# Unattended: export FIDGET_DIRECTOR_API_KEY to avoid Keychain prompts.
+# Capturable by default (ADR-0024); export FIDGET_CAPTURABLE=0 to test the
 # hide-from-captures setting instead.
 
 set -uo pipefail
@@ -22,7 +22,7 @@ KEEP=0
 # Exact-path match, mirroring crates/verify/src/gesture.rs's stray_pid: this
 # checkout's absolute binary path names only the instance this script starts,
 # never another worktree's. Launching through $BIN_PATH puts that path in argv.
-BIN_PATH="$(pwd)/target/debug/ai-buddy"
+BIN_PATH="$(pwd)/target/debug/fidget"
 stray_pid() { pgrep -f "$BIN_PATH" 2> /dev/null | head -1; }
 
 # An orphaned overlay is always-on-top with no window controls, so an
@@ -54,7 +54,7 @@ diagnose_no_frames() { # $1=log file
 
   if grep -q '^overlay:' "$log" 2> /dev/null; then
     echo "  Likely cause: app is blocked on a Keychain dialog (Director API key prompt)."
-    echo "  For unattended runs, export AI_BUDDY_DIRECTOR_API_KEY before launching."
+    echo "  For unattended runs, export FIDGET_DIRECTOR_API_KEY before launching."
 
     if pgrep -q SecurityAgent 2> /dev/null; then
       echo "  (SecurityAgent process is running, confirming a security prompt is active)"
@@ -143,7 +143,7 @@ if [ -n "$STRAY_PID" ]; then
   echo "FAIL: $BIN_PATH is already running (pid $STRAY_PID); stop it before running verify-overlay.sh"
   exit 1
 fi
-AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_TRACE_FRAMES=1 \
+FIDGET_TRACE_HITTEST=1 FIDGET_TRACE_FRAMES=1 \
   "$BIN_PATH" > "$OUT/app.log" 2>&1 &
 APP_PID=$!
 
@@ -321,10 +321,10 @@ sys.exit(1 if fails else 0)
 PY
 STATUS=$?
 
-lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
+lsappinfo list 2> /dev/null | grep -A 4 '"fidget"' > "$OUT/lsappinfo.txt"
 
 # No crop of the sprite: whether the capture shows it depends on the
-# capturable setting (visible by default; AI_BUDDY_CAPTURABLE=0 hides it).
+# capturable setting (visible by default; FIDGET_CAPTURABLE=0 hides it).
 # Eyeball the art instead.
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
@@ -375,10 +375,10 @@ check(levels == {3}, "every overlay is at floating level", f"levels={sorted(leve
 
 # The screen-share half of the hide rules, and the only part a machine can
 # check. Default is capturable (ADR-0024): NSWindowSharingReadOnly is 1,
-# None is 0. AI_BUDDY_CAPTURABLE's off words (model::switch_from) force 0.
+# None is 0. FIDGET_CAPTURABLE's off words (model::switch_from) force 0.
 sharing = {w["sharing"] for w in windows}
 off_words = {"0", "off", "false", "no"}
-expected = 0 if os.environ.get("AI_BUDDY_CAPTURABLE", "").strip().lower() in off_words else 1
+expected = 0 if os.environ.get("FIDGET_CAPTURABLE", "").strip().lower() in off_words else 1
 label = "excluded from" if expected == 0 else "capturable for"
 check(sharing == {expected}, f"every overlay is {label} screen capture",
       f"sharing={sorted(sharing)}")
@@ -499,7 +499,7 @@ await "$OUT/fling.log" '^\{' 40 || {
 # the Grip run gets a clean log of its own.
 kill "$APP_PID" 2> /dev/null
 wait "$APP_PID" 2> /dev/null
-AI_BUDDY_TRACE_FRAMES=1 "$BIN_PATH" > "$OUT/grip.log" 2>&1 &
+FIDGET_TRACE_FRAMES=1 "$BIN_PATH" > "$OUT/grip.log" 2>&1 &
 APP_PID=$!
 await "$OUT/grip.log" '^frame: [0-9]+ Perched' 60 ||
   echo "  (the sprite never perched - the checks below will say so)"

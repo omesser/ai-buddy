@@ -68,77 +68,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-buddy"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "ai-buddy-core",
- "ai-buddy-mcp-server",
- "ashpd",
- "async-process",
- "base64 0.23.1",
- "bytemuck",
- "ctrlc",
- "file-rotate",
- "getrandom 0.4.3",
- "gtk",
- "image",
- "keyring",
- "libc",
- "objc2",
- "objc2-app-kit",
- "objc2-application-services",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-foundation",
- "raw-window-handle",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-updater",
- "tokio",
- "ureq",
- "url",
- "uuid",
- "windows-sys 0.61.2",
- "x11rb 0.14.0",
- "zip 8.6.0",
-]
-
-[[package]]
-name = "ai-buddy-core"
-version = "0.1.0"
-dependencies = [
- "dirs 7.0.0",
- "libc",
- "png 0.18.1",
- "serde",
- "serde_json",
- "toml_edit 0.25.15+spec-1.1.0",
- "uuid",
-]
-
-[[package]]
-name = "ai-buddy-mcp-server"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ureq",
-]
-
-[[package]]
-name = "ai-buddy-verify"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1344,6 +1273,77 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "fidget"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "ashpd",
+ "async-process",
+ "base64 0.23.1",
+ "bytemuck",
+ "ctrlc",
+ "fidget-core",
+ "fidget-mcp-server",
+ "file-rotate",
+ "getrandom 0.4.3",
+ "gtk",
+ "image",
+ "keyring",
+ "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-application-services",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "raw-window-handle",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-updater",
+ "tokio",
+ "ureq",
+ "url",
+ "uuid",
+ "windows-sys 0.61.2",
+ "x11rb 0.14.0",
+ "zip 8.6.0",
+]
+
+[[package]]
+name = "fidget-core"
+version = "0.1.0"
+dependencies = [
+ "dirs 7.0.0",
+ "libc",
+ "png 0.18.1",
+ "serde",
+ "serde_json",
+ "toml_edit 0.25.15+spec-1.1.0",
+ "uuid",
+]
+
+[[package]]
+name = "fidget-mcp-server"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "fidget-verify"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

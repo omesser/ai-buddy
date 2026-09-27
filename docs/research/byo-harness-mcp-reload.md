@@ -4,15 +4,15 @@ Research on how each Harness handles MCP server **reconfiguration** and **reload
 
 ## Context
 
-Draft PR #599 implements Settings UI that generates MCP registration snippets for BYO (Bring Your Own) harnesses. The ai-buddy MCP endpoint binds a random port and rotates its bearer token every launch, so users need to **reconfigure** their harness each time ai-buddy restarts.
+Draft PR #599 implements Settings UI that generates MCP registration snippets for BYO (Bring Your Own) harnesses. The Fidget MCP endpoint binds a random port and rotates its bearer token every launch, so users need to **reconfigure** their harness each time Fidget restarts.
 
 This research answers:
 1. How to **add** an HTTP MCP server with custom `Authorization` bearer (CLI / config)
 2. How to **reload** after config changes (without full process restart if possible)
 3. Does re-adding an existing server name keep stale URL/token?
-4. What should ai-buddy generate: CLI snippet, config fragment, or both?
+4. What should Fidget generate: CLI snippet, config fragment, or both?
 
-**Product constraint (Oded)**: Prefer MCP **reconfiguration** methods over harness **launch** CLIs. ai-buddy tells users how to point their running Harness at ai-buddy's MCP, not how to launch the Harness itself.
+**Product constraint (Oded)**: Prefer MCP **reconfiguration** methods over harness **launch** CLIs. Fidget tells users how to point their running Harness at Fidget's MCP, not how to launch the Harness itself.
 
 **Correction, 2026-09-22.** The Pi section below is wrong where it matters, and it is labelled **Fact from docs**, so it reads as settled. Pi ships **no MCP client**. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. "Pi uses standard `.mcp.json` immediately if present" holds only once that plugin is in place, and `/reload`, `/mcp reconnect` and `/mcp enable/disable` are the plugin's commands rather than stock ones. The word plugin appears nowhere below, which is what made the claim misleading. The finding is left as the investigation recorded it, per `docs/agents/docs.md`; this line governs it. All six other Harnesses were hand-verified on 2026-09-21 and 2026-09-22 against their installed CLIs, and their shapes held.
 
@@ -40,7 +40,7 @@ This research answers:
 ```bash
 claude mcp add --transport http \
   --header "Authorization: Bearer <token>" \
-  ai-buddy "http://127.0.0.1:<port>/mcp"
+  Fidget "http://127.0.0.1:<port>/mcp"
 ```
 
 Config lives in:
@@ -59,13 +59,13 @@ Config lives in:
 # First add
 claude mcp add --transport http --scope user \
   --header "Authorization: Bearer token1" \
-  ai-buddy "http://127.0.0.1:58819/mcp"
+  Fidget "http://127.0.0.1:58819/mcp"
 
-# ai-buddy restarts, new port and token
+# Fidget restarts, new port and token
 # Re-add with same name
 claude mcp add --transport http --scope user \
   --header "Authorization: Bearer token2" \
-  ai-buddy "http://127.0.0.1:61234/mcp"
+  Fidget "http://127.0.0.1:61234/mcp"
 
 # Result: EXIT 0, prints "Server already exists"
 # Config KEEPS OLD VALUES (port 58819, token1)
@@ -77,8 +77,8 @@ Issue #580 confirmed this trap: Claude Code silently ignores re-add of an existi
 **What to generate**: (**Fact** per #599)
 ```bash
 # Remove stale entry, then add fresh one (omit -s to use local default)
-claude mcp remove ai-buddy 2>/dev/null
-claude mcp add --transport http ai-buddy \
+claude mcp remove fidget 2>/dev/null
+claude mcp add --transport http Fidget \
   "http://127.0.0.1:<port>/mcp" \
   --header "Authorization: Bearer <token>"
 ```
@@ -93,13 +93,13 @@ Instructions: "Exit your Claude session and start a new one (`claude`) to connec
 
 PRIMARY: CLI with environment variable
 ```bash
-export AI_BUDDY_MCP_TOKEN='<token>'
-codex mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var AI_BUDDY_MCP_TOKEN
+export FIDGET_MCP_TOKEN='<token>'
+codex mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var FIDGET_MCP_TOKEN
 ```
 
 ALTERNATIVE: Config `~/.codex/config.toml`
 ```toml
-[mcp_servers.ai-buddy]
+[mcp_servers.fidget]
 url = "http://127.0.0.1:<port>/mcp"
 http_headers = { "Authorization" = "Bearer <token>" }
 ```
@@ -116,11 +116,11 @@ Unknown. Config file editing would naturally overwrite existing values, but beha
 **What to generate**: (**Fact** per #599)
 CLI with environment variable (PRIMARY):
 ```bash
-export AI_BUDDY_MCP_TOKEN='<token>'
-codex mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var AI_BUDDY_MCP_TOKEN
+export FIDGET_MCP_TOKEN='<token>'
+codex mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var FIDGET_MCP_TOKEN
 ```
 
-Instructions: "Run both lines in a terminal where Codex will inherit the environment, then run `mcpServer/refresh` from your Codex session. If `mcpServer/refresh` is unavailable, restart your Codex session. Alternatively, add or update `[mcp_servers.ai-buddy]` in `~/.codex/config.toml` with `http_headers` (not `headers`)."
+Instructions: "Run both lines in a terminal where Codex will inherit the environment, then run `mcpServer/refresh` from your Codex session. If `mcpServer/refresh` is unavailable, restart your Codex session. Alternatively, add or update `[mcp_servers.fidget]` in `~/.codex/config.toml` with `http_headers` (not `headers`)."
 
 **Note**: Codex uses `http_headers`, NOT `headers` (which is silently ignored per #599).
 
@@ -132,13 +132,13 @@ Instructions: "Run both lines in a terminal where Codex will inherit the environ
 
 PRIMARY: CLI with interactive token prompt
 ```bash
-hermes mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --auth header
+hermes mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --auth header
 ```
 
 ALTERNATIVE: Config `~/.hermes/config.yaml`
 ```yaml
 mcp_servers:
-  ai-buddy:
+  fidget:
     url: "http://127.0.0.1:<port>/mcp"
     headers:
       Authorization: "Bearer <token>"
@@ -156,10 +156,10 @@ Unknown. YAML file editing would overwrite existing values. No trap documented s
 **What to generate**: (**Fact** per #599)
 CLI with interactive token prompt (PRIMARY):
 ```bash
-hermes mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --auth header
+hermes mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --auth header
 ```
 
-Instructions: "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the interactive prompt. This stores `MCP_AI_BUDDY_API_KEY` in `~/.hermes/.env` and adds the header `Bearer ${MCP_AI_BUDDY_API_KEY}`. Then run `/reload-mcp` in your Hermes session. Alternatively, add or update `ai-buddy:` under `mcp_servers:` in `~/.hermes/config.yaml` with YAML format above; keep indentation exact."
+Instructions: "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the interactive prompt. This stores `MCP_FIDGET_API_KEY` in `~/.hermes/.env` and adds the header `Bearer ${MCP_FIDGET_API_KEY}`. Then run `/reload-mcp` in your Hermes session. Alternatively, add or update `fidget:` under `mcp_servers:` in `~/.hermes/config.yaml` with YAML format above; keep indentation exact."
 
 ---
 
@@ -169,14 +169,14 @@ Instructions: "Run it in a terminal, then paste the raw token (no `Bearer` prefi
 
 PRIMARY: CLI
 ```bash
-opencode mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
+opencode mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
 ```
 
 ALTERNATIVE: Flat JSON in `opencode.jsonc` (NOT nested `mcp.servers`)
 ```jsonc
 {
   "mcp": {
-    "ai-buddy": {
+    "fidget": {
       "type": "remote",
       "url": "http://127.0.0.1:<port>/mcp",
       "oauth": false,
@@ -200,10 +200,10 @@ Unknown. JSON file editing would overwrite existing values. No documented trap.
 **What to generate**: (**Fact** per #599)
 CLI (PRIMARY):
 ```bash
-opencode mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
+opencode mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
 ```
 
-Instructions: "Run it in a terminal, then restart OpenCode. If OpenCode tries OAuth, set `\"oauth\": false` in the config. Alternatively, merge flat `mcp.ai-buddy` content into `opencode.jsonc` (NOT nested `mcp.servers.<name>` shape); use `type: \"remote\"` and `oauth: false`."
+Instructions: "Run it in a terminal, then restart OpenCode. If OpenCode tries OAuth, set `\"oauth\": false` in the config. Alternatively, merge flat `mcp.fidget` content into `opencode.jsonc` (NOT nested `mcp.servers.<name>` shape); use `type: \"remote\"` and `oauth: false`."
 
 ---
 
@@ -215,12 +215,12 @@ CLI:
 ```bash
 grok mcp add --transport http \
   --header "Authorization: Bearer <token>" \
-  ai-buddy "http://127.0.0.1:<port>/mcp"
+  Fidget "http://127.0.0.1:<port>/mcp"
 ```
 
 Config: `~/.grok/config.toml` or `.grok/config.toml` (project-scoped)
 ```toml
-[mcp_servers.ai-buddy]
+[mcp_servers.fidget]
 url = "http://127.0.0.1:<port>/mcp"
 headers = { "Authorization" = "Bearer <token>" }
 ```
@@ -240,7 +240,7 @@ Unknown. Config editing or `grok mcp add` (if it overwrites) would replace value
 **What to generate**: (**Fact** per #599)
 CLI (overwrites in place, no remove needed):
 ```bash
-grok mcp add ai-buddy "http://127.0.0.1:<port>/mcp" --transport http \
+grok mcp add fidget "http://127.0.0.1:<port>/mcp" --transport http \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -248,7 +248,7 @@ Instructions: "Run it in a terminal; `grok mcp add` overwrites in place, so re-r
 
 Config alternative (if preferred):
 ```toml
-[mcp_servers.ai-buddy]
+[mcp_servers.fidget]
 url = "http://127.0.0.1:<port>/mcp"
 headers = { "Authorization" = "Bearer <token>" }
 ```
@@ -263,7 +263,7 @@ Config: `.mcp.json` (project) or `~/.pi/agent/mcp.json` (agent dir)
 ```json
 {
   "mcpServers": {
-    "ai-buddy": {
+    "fidget": {
       "url": "http://127.0.0.1:<port>/mcp",
       "headers": {
         "Authorization": "Bearer <token>"
@@ -289,7 +289,7 @@ JSON config fragment:
 ```json
 {
   "mcpServers": {
-    "ai-buddy": {
+    "fidget": {
       "url": "http://127.0.0.1:<port>/mcp",
       "headers": {
         "Authorization": "Bearer <token>"
@@ -299,7 +299,7 @@ JSON config fragment:
 }
 ```
 
-Instructions: "Add or update this in `.mcp.json` (project) or `~/.pi/agent/mcp.json`, then run `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
+Instructions: "Add or update this in `.mcp.json` (project) or `~/.pi/agent/mcp.json`, then run `/reload` followed by `/mcp reconnect fidget` in your Pi session."
 
 ---
 
@@ -332,7 +332,7 @@ This confirms #580's finding: the stdio shim is never required for bearer auth.
 - Overwrite via config file edit (Hermes, OpenCode, Grok, Pi, Codex)
 - Or behavior is unknown but no trap documented
 
-**Implication for ai-buddy**: Generated snippet for Claude Code **must** include `claude mcp remove` first.
+**Implication for Fidget**: Generated snippet for Claude Code **must** include `claude mcp remove` first.
 
 ### 4. Config File Locations
 
@@ -386,11 +386,11 @@ Two exceptions are worth knowing, and neither changes the recommendation.
 - **OpenCode has a genuinely dynamic path, and it is an API call rather than a
   prompt.** `POST /mcp` (`mcp.add`) on a running OpenCode server registers a
   server in memory, taking the same headers and environment (read). It does not
-  persist, and it needs that server's address, which ai-buddy does not have in
+  persist, and it needs that server's address, which Fidget does not have in
   the BYO scenario. Not a fallback; recorded so nobody rediscovers it as one.
 
-**Implication for ai-buddy**: the Settings surface generates a snippet the user
-pastes. There is no version of this where ai-buddy talks the harness into
+**Implication for Fidget**: the Settings surface generates a snippet the user
+pastes. There is no version of this where Fidget talks the harness into
 registering itself, so nothing should be designed on the assumption that one
 arrives later.
 
@@ -417,9 +417,9 @@ OpenCode attempted the connection, with no restart and no config write. The
 server list also carries `POST /mcp/{name}/connect` and
 `POST /mcp/{name}/disconnect`, so a registered server can be reconnected in
 place. None of this rescues the BYO case: every route needs the address of the
-user's own OpenCode server, which ai-buddy does not have.
+user's own OpenCode server, which Fidget does not have.
 
-**Implication for ai-buddy**: generate OpenCode's snippet with a restart
+**Implication for Fidget**: generate OpenCode's snippet with a restart
 instruction, alongside Claude Code's. Two of six, not one.
 
 Grok's refresh remains read from its shipped documentation rather than
@@ -454,21 +454,21 @@ exercised, which matches the `~` this research already gives it.
 | Hermes | "Run `/reload-mcp` in your Hermes session." |
 | OpenCode | "Restart OpenCode." |
 | Grok | "Run `/mcps`, then press `r` to reload." |
-| Pi | "Run `/reload`, then `/mcp reconnect ai-buddy`." |
+| Pi | "Run `/reload`, then `/mcp reconnect fidget`." |
 
 ### 3. Tooltip: "Token changes every launch"
 
-**Fact**: ai-buddy's MCP endpoint binds `127.0.0.1:0` (random port) and generates a fresh 32-byte token per run. Decided by @omesser on #577: surface this in a tooltip.
+**Fact**: Fidget's MCP endpoint binds `127.0.0.1:0` (random port) and generates a fresh 32-byte token per run. Decided by @omesser on #577: surface this in a tooltip.
 
-Suggested text: "The URL and token change every time ai-buddy launches. Re-run this command/snippet each time."
+Suggested text: "The URL and token change every time Fidget launches. Re-run this command/snippet each time."
 
 ### 4. Claude Code Snippet Must Remove First (and Omit Scope)
 
 **Critical**: Because `claude mcp add` silently keeps stale values when the name exists, the generated snippet **must** remove first:
 
 ```bash
-claude mcp remove ai-buddy 2>/dev/null
-claude mcp add --transport http ai-buddy \
+claude mcp remove fidget 2>/dev/null
+claude mcp add --transport http Fidget \
   "http://127.0.0.1:<port>/mcp" \
   --header "Authorization: Bearer <token>"
 ```
@@ -498,16 +498,16 @@ Per #599 Spec, most harnesses show **CLI as PRIMARY**, config as **ALTERNATIVE**
 3. Alternative config format noted in instructions
 
 **Config snippets** (Pi only):
-1. The **minimal addition** — just the `ai-buddy` server entry
+1. The **minimal addition** — just the `fidget` server entry
 2. Path where it goes: "`.mcp.json` (project) or `~/.pi/agent/mcp.json`"
-3. Merge instructions: "Add or replace the `ai-buddy` entry."
+3. Merge instructions: "Add or replace the `fidget` entry."
 
 Example CLI-first (Codex):
 ```bash
-export AI_BUDDY_MCP_TOKEN='<token>'
-codex mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var AI_BUDDY_MCP_TOKEN
+export FIDGET_MCP_TOKEN='<token>'
+codex mcp add fidget --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var FIDGET_MCP_TOKEN
 ```
-Instructions: "Run both lines... Alternatively, add `[mcp_servers.ai-buddy]` in `~/.codex/config.toml` with `http_headers`..."
+Instructions: "Run both lines... Alternatively, add `[mcp_servers.fidget]` in `~/.codex/config.toml` with `http_headers`..."
 
 ### 7. Consider "Custom" Fallback
 
@@ -531,7 +531,7 @@ This research answers: "How to **reconfigure** after the URL/token changes?"
 
 Key difference:
 - **Registration** (one-time): Which config file, what syntax, does it work at all?
-- **Reconfiguration** (every ai-buddy launch): Can you reload without restart? Do you need to remove first?
+- **Reconfiguration** (every Fidget launch): Can you reload without restart? Do you need to remove first?
 
 Findings that changed:
 - **Reload is possible** on 5/6 harnesses (only Claude Code requires restart)
@@ -546,7 +546,7 @@ Findings that changed:
 2. **Hermes auto-reload**: What happens if reload fails (issue #14716)? Does manual `/reload-mcp` recover?
 3. **Grok `grok mcp add` re-add**: Does it overwrite or ignore like Claude Code?
 4. **Pi `/mcp reconnect` necessity**: Is `/reload` alone sufficient, or is `/mcp reconnect` required for tool list refresh?
-5. **All harnesses**: If the ai-buddy process dies while the harness is connected, how do they recover? Auto-reconnect vs manual?
+5. **All harnesses**: If the Fidget process dies while the harness is connected, how do they recover? Auto-reconnect vs manual?
 
 These are answerable with execution once harness CLIs are installed.
 
@@ -575,9 +575,9 @@ These are answerable with execution once harness CLIs are installed.
 - **Pi MCP adapter**: https://pi.dev/packages/pi-mcp-adapter
 - **Pi commands docs**: https://mintlify.wiki/nicobailon/pi-mcp-adapter/usage/commands
 
-### Related ai-buddy Issues/PRs
+### Related Fidget Issues/PRs
 
-- **#577**: Surface the MCP endpoint so a Harness you run yourself can reach ai-buddy
+- **#577**: Surface the MCP endpoint so a Harness you run yourself can reach Fidget
 - **#580**: spike(harness): How each Harness registers a BYO MCP server
 - **#599**: feat(settings): Generate the MCP registration for a Harness you run yourself (draft PR)
 - **ADR-0010**: Credential rules, loopback-only MCP, token stays out of logs

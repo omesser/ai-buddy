@@ -495,7 +495,7 @@ pub const BYO_TOKEN_ID: &str = "byo_token";
 pub const BYO_COPY_TOKEN_ID: &str = "byo_copy_token";
 /// The heading the three sit under, spelled once so the tests and the section
 /// cannot disagree about it.
-pub const BYO_HEADING: &str = "Point a Harness you run yourself at ai-buddy";
+pub const BYO_HEADING: &str = "Point a Harness you run yourself at Fidget";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
@@ -539,7 +539,7 @@ impl Reveal {
 /// defers to the command line beside it.
 pub const HARNESS_OFF: &str = "Model API";
 pub const HARNESS_CUSTOM: &str = "Harness · Custom";
-/// What `harness_choice` writes for Custom. Not a value `AI_BUDDY_HARNESS`
+/// What `harness_choice` writes for Custom. Not a value `FIDGET_HARNESS`
 /// can take, so it cannot collide with a Harness of that name.
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0022's order. Antigravity is the one
@@ -675,7 +675,7 @@ pub fn harness_options() -> Vec<String> {
 /// beside it.
 ///
 /// One function because the two rows are one choice spelled two ways:
-/// `AI_BUDDY_HARNESS` puts a custom command line in the value itself, while
+/// `FIDGET_HARNESS` puts a custom command line in the value itself, while
 /// the file keeps `custom` plus a field of its own, so picking a preset and
 /// coming back does not lose what was typed (#436).
 pub fn harness_rows(value: &str, command: &str) -> (String, String) {
@@ -691,7 +691,7 @@ pub fn harness_rows(value: &str, command: &str) -> (String, String) {
 
 /// The command line a source value carries in the value itself, if it does.
 ///
-/// The catch-all of `harness_rows`: `AI_BUDDY_HARNESS` spells a custom Harness
+/// The catch-all of `harness_rows`: `FIDGET_HARNESS` spells a custom Harness
 /// as its command line, and a hand-edit of the file may too. `Settings::apply`
 /// moves it to the row that owns it (#452).
 pub fn harness_command_line(value: &str) -> Option<&str> {
@@ -867,8 +867,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "AI".to_string(),
-            comment: Some("Control whether the buddy improvises, and how often it starts a conversation on its own.".to_string()),
-            disclosure: Some("The buddy can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
+            comment: Some("Control whether the character improvises, and how often it starts a conversation on its own.".to_string()),
+            disclosure: Some("The character can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
             status: None,
             rows: vec![
                 FormRow::Checkbox {
@@ -878,7 +878,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     frozen: director_frozen,
                     help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
-                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
+                    disclosure: Some("With this off, the character runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
                     status: director_status,
                 },
                 FormRow::Checkbox {
@@ -905,7 +905,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "session_actions".to_string(),
                     help: Some("Throws the conversation in flight away and opens a fresh one.".to_string()),
-                    disclosure: Some("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this buddy. The next wake is an opening turn rather than a follow-up. Memory is untouched.".to_string()),
+                    disclosure: Some("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this character. The next wake is an opening turn rather than a follow-up. Memory is untouched.".to_string()),
                     controls: vec![CompositeControl::Button {
                         id: NEW_SESSION_ID.to_string(),
                         label: "Start new session".to_string(),
@@ -1016,19 +1016,19 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 
 /// Which mind answers a wake, and what the current attachment is doing.
 ///
-/// One variable owns both rows because `AI_BUDDY_HARNESS` spells the whole
+/// One variable owns both rows because `FIDGET_HARNESS` spells the whole
 /// choice in one value, a preset name or a command line (ADR-0022), so
 /// freezing them apart would offer an edit the launch throws away (#272).
 ///
 /// No credential row of any kind, now or later. The Harness signs itself in
-/// and ai-buddy holds nothing for it (ADR-0018). The login command the state
+/// and Fidget holds nothing for it (ADR-0018). The login command the state
 /// line names is text, and nothing here runs it.
 ///
 /// The page draws these rows and commits them on Apply, the same batch as
 /// the HTTP endpoint (#663).
 fn pi_mcp_status(dir: &str) -> String {
     format!(
-        "Apply creates {dir}/.mcp.json, or updates only its ai-buddy entry. The entry names AI_BUDDY_MCP_URL and AI_BUDDY_MCP_TOKEN. The port and the token stay out of the file, and a later Apply leaves a correct file alone. Pi still needs pi-mcp-adapter, or the file does nothing."
+        "Apply creates {dir}/.mcp.json, or updates only its Fidget entry. The entry names FIDGET_MCP_URL and FIDGET_MCP_TOKEN. The port and the token stay out of the file, and a later Apply leaves a correct file alone. Pi still needs pi-mcp-adapter, or the file does nothing."
     )
 }
 
@@ -1047,7 +1047,7 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 id: HARNESS_ID.to_string(),
                 label: Some(source_label),
                 writes: TextField::Harness,
-                help: Some("Which \"AI brain\" answers for the buddy.".to_string()),
+                help: Some("Which \"AI brain\" answers for the character.".to_string()),
                 options: harness_options(),
                 frozen,
                 batched: true,
@@ -1072,14 +1072,14 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 frozen,
                 batched: true,
                 help: None,
-                disclosure: Some("The command ai-buddy runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.".to_string()),
+                disclosure: Some("The command Fidget runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.".to_string()),
                 status: None,
             },
             FormRow::InspectBlock {
                 id: HARNESS_STATE_ID.to_string(),
                 label: None,
-                help: Some("Harness signs itself in - ai-buddy never asks for credentials.".to_string()),
-                disclosure: Some("ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
+                help: Some("Harness signs itself in - Fidget never asks for credentials.".to_string()),
+                disclosure: Some("Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
                 status: None,
             },
         ],
@@ -1106,8 +1106,8 @@ fn byo_section() -> FormSection {
         heading: BYO_HEADING.to_string(),
         comment: Some("For a Harness you start in your own terminal.".to_string()),
         disclosure: Some(
-            "Registering ai-buddy as an MCP server there lets it speak, move and \
-             emote the buddy on your screen. Nothing here changes which mind the \
+            "Registering Fidget as an MCP server there lets it speak, move and \
+             emote the character on your screen. Nothing here changes which mind the \
              Director uses."
                 .to_string(),
         ),
@@ -1173,7 +1173,7 @@ fn byo_section() -> FormSection {
                 id: BYO_STEPS_ID.to_string(),
                 label: None,
                 help: Some(
-                    "This token reaches ai-buddy and nothing else. The Harness \
+                    "This token reaches Fidget and nothing else. The Harness \
                      signs itself in."
                         .to_string(),
                 ),
@@ -1195,7 +1195,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 id: CHARACTER_ID.to_string(),
                 label: None,
                 writes: TextField::Character,
-                help: Some("The character your buddy wears.".to_string()),
+                help: Some("The character your character wears.".to_string()),
                 options: live.installed.clone(),
                 frozen: false,
                 batched: false,
@@ -1212,12 +1212,12 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::List {
                     id: INSTANCES_ID.to_string(),
                     dismiss_label: "Dismiss".to_string(),
-                    help: Some("Buddies on screen now.".to_string()),
-                    disclosure: Some("An Instance is one spawned buddy: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
+                    help: Some("Characters on screen now.".to_string()),
+                    disclosure: Some("An Instance is one spawned character: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
                 },
                 FormRow::Composite {
                     id: "new_instance".to_string(),
-                    help: Some("Adds another buddy.".to_string()),
+                    help: Some("Adds another character.".to_string()),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::TextField {
@@ -1257,7 +1257,7 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
                     comment: None,
-                    disclosure: Some("Do Not Disturb leaves the buddy visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
+                    disclosure: Some("Do Not Disturb leaves the character visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
                     status: None,
                 },
                 FormRow::Checkbox {
@@ -1382,7 +1382,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads the Dock's position.".to_string()),
             comment: None,
-            disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.".to_string()),
+            disclosure: Some("Accessibility permission lets Fidget read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]
@@ -1393,7 +1393,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Requires macOS Screen Recording.".to_string()),
             comment: None,
-            disclosure: Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.".to_string()),
+            disclosure: Some("macOS Screen Recording lets Fidget read window titles. The character does not capture the screen. One switch covers titles and application names alike, so with it off the character knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.".to_string()),
             status: None,
         },
         #[cfg(target_os = "windows")]
@@ -1404,7 +1404,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads window titles and application names.".to_string()),
             comment: None,
-            disclosure: Some("This lets ai-buddy read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the buddy knows where the windows are and not what they are.".to_string()),
+            disclosure: Some("This lets Fidget read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the character knows where the windows are and not what they are.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]
@@ -1415,7 +1415,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reacts to the mouse at once, not a second late.".to_string()),
             comment: None,
-            disclosure: Some("Without this grant the buddy asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the buddy the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the buddy goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.".to_string()),
+            disclosure: Some("Without this grant the character asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the character the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the character goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.".to_string()),
             status: None,
         },
     ];
@@ -1429,14 +1429,14 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Requires xdg-desktop-portal ScreenCast.".to_string()),
             comment: None,
-            disclosure: Some("xdg-desktop-portal ScreenCast lets ai-buddy read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.".to_string()),
+            disclosure: Some("xdg-desktop-portal ScreenCast lets Fidget read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.".to_string()),
             status: None,
         },
     ];
 
     vec![
         FormSection {
-            heading: "What the buddy can see".to_string(),
+            heading: "What the character can see".to_string(),
             comment: consent_comment,
             disclosure: None,
             status: None,
@@ -1453,13 +1453,13 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                 writes: TextField::ExcludedApplications,
                 help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
                 editable: true,
-                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
+                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The character can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
             }],
         },
         FormSection {
             heading: "Memory File".to_string(),
-            comment: Some("What your buddy remembers between runs.".to_string()),
-            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every Character Instance. Every recall reads the file, so an edit made outside ai-buddy is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
+            comment: Some("What your character remembers between runs.".to_string()),
+            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every Character Instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
             status: None,
             rows: vec![
                 FormRow::InspectPath {
@@ -1546,8 +1546,8 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Blank AI".to_string(),
-            comment: Some("Also for development and testing. Off is the buddy as shipped.".to_string()),
-            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under ai-buddy's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the buddy says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            comment: Some("Also for development and testing. Off is the character as shipped.".to_string()),
+            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the character says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
             status: None,
             rows: vec![flag_row(
                 DIRECTOR_BLANK_ID,
@@ -1561,7 +1561,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the buddy or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the character or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,
@@ -1785,12 +1785,12 @@ mod tests {
     /// terminal here, a CI runner's shell there — and a fixture cannot hold a
     /// string that changes with who launched the test.
     const FIXTURE_CONSENT_INTRO: &str =
-        "Checking a box asks macOS for the permission. macOS lists this app as ai-buddy, under Privacy & Security.";
+        "Checking a box asks macOS for the permission. macOS lists this app as Fidget, under Privacy & Security.";
 
     /// A path, because `memory::data_dir` answers with this machine's
     /// Application Support and a fixture compared byte for byte cannot hold
     /// one. Shaped like the macOS answer the fixtures otherwise carry.
-    const FIXTURE_ATTACH_CWD: &str = "/Users/buddy/Library/Application Support/ai-buddy";
+    const FIXTURE_ATTACH_CWD: &str = "/Users/buddy/Library/Application Support/fidget";
 
     /// The fixtures hold the macOS form. Linux builds two tabs deliberately
     /// smaller: no capture-exclusion row and no consent rows, because there is
@@ -1934,9 +1934,9 @@ mod tests {
     /// `byo_rows` reads the running executable's path and the loopback port
     /// the MCP server took, neither of which a committed fixture can hold.
     const FIXTURE_BYO_SNIPPET: &str =
-        "claude mcp add ai-buddy -- /Applications/ai-buddy.app/Contents/MacOS/ai-buddy --mcp";
+        "claude mcp add fidget -- /Applications/Fidget.app/Contents/MacOS/fidget --mcp";
     const FIXTURE_BYO_STEPS: &str = "Run the line above in a terminal, then start claude.";
-    const FIXTURE_MEMORY_PATH: &str = "/Users/fixture/Library/Application Support/ai-buddy/memory";
+    const FIXTURE_MEMORY_PATH: &str = "/Users/fixture/Library/Application Support/fidget/memory";
 
     /// The view behind the values fixtures, in the two states the
     /// description fixtures pin.
@@ -2104,7 +2104,7 @@ mod tests {
             "HTTP limits",
             "AI source",
             "AI",
-            "Point a Harness you run yourself at ai-buddy",
+            "Point a Harness you run yourself at Fidget",
             "Do Not Disturb",
             "Excluded applications",
             "Harness attachment",
@@ -2114,7 +2114,7 @@ mod tests {
             "Launch",
             "Memory File",
             "Traces",
-            "What the buddy can see",
+            "What the character can see",
         ];
         expected.sort_unstable();
         assert_eq!(headings, expected);
@@ -2666,7 +2666,7 @@ mod tests {
         let description = describe();
         let consent = description
             .sections()
-            .find(|s| s.heading == "What the buddy can see")
+            .find(|s| s.heading == "What the character can see")
             .expect("Consent section exists");
 
         let ids: Vec<&str> = consent
@@ -2691,7 +2691,7 @@ mod tests {
         let description = describe();
         let consent = description
             .sections()
-            .find(|s| s.heading == "What the buddy can see")
+            .find(|s| s.heading == "What the character can see")
             .expect("Consent section exists");
 
         #[cfg(target_os = "macos")]
@@ -2745,7 +2745,7 @@ mod tests {
                     assert_eq!(help.as_deref(), Some("Requires macOS Screen Recording."));
                     assert_eq!(
                         disclosure.as_deref(),
-                        Some("macOS Screen Recording lets ai-buddy read window titles. The buddy does not capture the screen. One switch covers titles and application names alike, so with it off the buddy knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")
+                        Some("macOS Screen Recording lets Fidget read window titles. The character does not capture the screen. One switch covers titles and application names alike, so with it off the character knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")
                     );
                 }
                 _ => panic!("Window names row must be a checkbox"),
@@ -3466,7 +3466,7 @@ mod tests {
         }
     }
 
-    /// #272's rule, for the one variable that owns two rows: `AI_BUDDY_HARNESS`
+    /// #272's rule, for the one variable that owns two rows: `FIDGET_HARNESS`
     /// spells the preset and the command line in one value, so an edit to
     /// either would be discarded at launch.
     #[test]
@@ -3761,7 +3761,7 @@ mod tests {
     /// whenever this module's tests ran.
     #[test]
     fn describing_the_form_does_not_rewrite_the_user_settings_file() {
-        let path = crate::settings::settings_path(&ai_buddy_core::memory::data_dir());
+        let path = crate::settings::settings_path(&fidget_core::memory::data_dir());
         let before = std::fs::read(&path).ok();
 
         let description = describe_with(&fixture_live(false, false));
@@ -3831,7 +3831,7 @@ mod tests {
     }
 
     /// Off and Custom are the attach popup's grammar, not this one's: this box
-    /// registers ai-buddy with a Harness the user starts themselves, and
+    /// registers Fidget with a Harness the user starts themselves, and
     /// neither of those names one.
     #[test]
     fn the_byo_picker_offers_only_the_named_harnesses() {

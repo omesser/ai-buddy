@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Keyboard-only sitting for the Settings webview (#848, #854, #706 artefact 2).
 # Usage:
-#   AI_BUDDY_SETTINGS_WEBVIEW=1 ./scripts/verify-settings-keyboard-webview.sh
-#   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-keyboard-webview.sh
+#   FIDGET_SETTINGS_WEBVIEW=1 ./scripts/verify-settings-keyboard-webview.sh
+#   FIDGET_VERIFY_BIN=path/to/fidget ./scripts/verify-settings-keyboard-webview.sh
 #
 # Overlay may be up. After the tray open, every control is reached with
 # Tab / Space / Enter / Escape, not AXPress. Needs Accessibility
@@ -10,14 +10,14 @@
 # covered by scripts/test_verify_settings_keyboard.sh on fixtures.
 #
 # Stills land under .verify/; downscale before attaching. Do not commit PNGs.
-# Shares /tmp/ai-buddy-settings-overlay.lock with the #849 sitting.
+# Shares /tmp/fidget-settings-overlay.lock with the #849 sitting.
 
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root" || exit 1
 
-bin="${AI_BUDDY_VERIFY_BIN:-$root/target/debug/ai-buddy}"
+bin="${FIDGET_VERIFY_BIN:-$root/target/debug/fidget}"
 out="$root/.verify/settings-keyboard-webview-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out"
 
@@ -117,17 +117,17 @@ check_select_commit() {
 }
 
 # Inline: shellcheck cannot see that trap calls a function.
-trap '[ -n "$app_pid" ] && kill "$app_pid" 2> /dev/null; [ "${lock_held:-0}" -eq 1 ] && rmdir /tmp/ai-buddy-settings-overlay.lock 2> /dev/null' EXIT
+trap '[ -n "$app_pid" ] && kill "$app_pid" 2> /dev/null; [ "${lock_held:-0}" -eq 1 ] && rmdir /tmp/fidget-settings-overlay.lock 2> /dev/null' EXIT
 
 [ -x "$bin" ] || {
-  fail "no binary at $bin - cargo build -p ai-buddy first, or set AI_BUDDY_VERIFY_BIN"
+  fail "no binary at $bin - cargo build -p fidget first, or set FIDGET_VERIFY_BIN"
   exit 1
 }
 
-if [ "${AI_BUDDY_OVERLAY_LOCK:-1}" = 1 ]; then
+if [ "${FIDGET_OVERLAY_LOCK:-1}" = 1 ]; then
   deadline=$((SECONDS + 1200))
-  while ! mkdir /tmp/ai-buddy-settings-overlay.lock 2> /dev/null; do
-    info "waiting for /tmp/ai-buddy-settings-overlay.lock"
+  while ! mkdir /tmp/fidget-settings-overlay.lock 2> /dev/null; do
+    info "waiting for /tmp/fidget-settings-overlay.lock"
     if [ "$SECONDS" -ge "$deadline" ]; then
       fail "overlay lock not free after 20 minutes"
       exit 1
@@ -154,11 +154,11 @@ done
 # An exported key outranks the Keychain store, so no modal prompt takes key
 # focus mid-sitting. A placeholder spends no tokens when Enter sets the wake.
 log="$out/app.log"
-env AI_BUDDY_DIRECTOR_API_KEY=verify-settings-keyboard \
+env FIDGET_DIRECTOR_API_KEY=verify-settings-keyboard \
   HOME="$home" \
-  AI_BUDDY_CAPTURABLE=1 \
-  AI_BUDDY_CHARACTER=timber-wolf \
-  AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
+  FIDGET_CAPTURABLE=1 \
+  FIDGET_CHARACTER=timber-wolf \
+  FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$root/characters}" \
   "$bin" > "$log" 2>&1 &
 app_pid=$!
 
@@ -170,7 +170,7 @@ while [ "$waited" -lt 40 ]; do
     break
   fi
   if ! kill -0 "$app_pid" 2> /dev/null; then
-    fail "ai-buddy exited before overlay:"
+    fail "Fidget exited before overlay:"
     tail -40 "$log" || true
     exit 1
   fi
@@ -396,7 +396,7 @@ if tab_until "AI"; then
     sleep 0.5
     still "enter-after"
     "$ax" dump "$app_pid" > "$out/enter-dump.txt"
-    settings_json="$home/Library/Application Support/ai-buddy/settings.json"
+    settings_json="$home/Library/Application Support/fidget/settings.json"
     # AX keeps the placeholder 120 on this row. The file is what Apply wrote.
     if grep -Fq '"director_wake_secs": "90"' "$settings_json"; then
       pass "Enter applied First wake = 90 in settings.json"

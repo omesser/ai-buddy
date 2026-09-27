@@ -13,7 +13,7 @@
 //!
 //! The mask carries the six mouse types #183 Stage 1 names and nothing else.
 //! There is no key event in it, and a listen-only tap "receives events but
-//! cannot modify or divert them" — the buddy hears that the mouse moved, never
+//! cannot modify or divert them" — the character hears that the mouse moved, never
 //! what was typed.
 
 use std::ffi::c_void;
@@ -284,7 +284,7 @@ mod tests {
         ] {
             assert!(
                 MOUSE_EVENTS & (1 << kind.0) == 0,
-                "{kind:?} is not the buddy's business"
+                "{kind:?} is not the character's business"
             );
         }
     }
@@ -328,7 +328,7 @@ mod tests {
     /// to.
     ///
     /// ```text
-    /// cargo test -p ai-buddy wakes_the_loop -- --ignored --nocapture
+    /// cargo test -p fidget wakes_the_loop -- --ignored --nocapture
     /// ```
     #[test]
     #[ignore = "needs the Input Monitoring grant; run by hand"]
@@ -359,7 +359,7 @@ mod tests {
     ///
     /// ```text
     /// tccutil reset ListenEvent <bundle id>   # start from a clean grant
-    /// cargo test -p ai-buddy stage_one -- --ignored --nocapture
+    /// cargo test -p fidget stage_one -- --ignored --nocapture
     /// ```
     ///
     /// Report: whether a dialog appeared, whether the tap created, whether it

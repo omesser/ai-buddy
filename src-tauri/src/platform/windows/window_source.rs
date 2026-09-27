@@ -6,7 +6,7 @@
 
 use std::sync::Mutex;
 
-use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+use fidget_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 
 use crate::mcp_resources::WindowTitle;
 use windows_sys::core::BOOL;
@@ -52,7 +52,7 @@ impl WindowSource for WindowsWindowSource {
         let can_read_names = (self.can_read_names)();
         let windows = visible_windows(can_read_names);
 
-        if std::env::var("AI_BUDDY_TRACE_WINDOWS").is_ok() {
+        if std::env::var("FIDGET_TRACE_WINDOWS").is_ok() {
             static LOGGED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {

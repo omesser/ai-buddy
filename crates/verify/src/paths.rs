@@ -1,7 +1,7 @@
 //! Run root / evidence / scratch resolution and repo-root discovery.
 //!
 //! Default layout:
-//!   `$TMPDIR/ai-buddy-verify-$RUN_ID/{evidence,scratch}`
+//!   `$TMPDIR/fidget-verify-$RUN_ID/{evidence,scratch}`
 //!   (falls back to `/tmp/...` when `TMPDIR` is unset)
 //!
 //! `--evidence-dir PATH` overrides only the evidence directory. Scratch is
@@ -54,7 +54,7 @@ impl RunPaths {
             let tmp = env::var_os("TMPDIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("/tmp"));
-            let root = tmp.join(format!("ai-buddy-verify-{run_id}"));
+            let root = tmp.join(format!("fidget-verify-{run_id}"));
             let evidence = root.join("evidence");
             let scratch = root.join("scratch");
             Self {
@@ -139,7 +139,7 @@ pub fn discover_repo_root() -> Result<PathBuf, String> {
         }
     }
     Err(
-        "could not find ai-buddy repo root (need Cargo.toml + src-tauri); \
+        "could not find Fidget repo root (need Cargo.toml + src-tauri); \
          run from a checkout or install beside one"
             .into(),
     )
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn default_paths_use_tmpdir_and_run_id() {
         let paths = RunPaths::resolve(None, Some("testrun".into()));
-        assert!(paths.root.ends_with(Path::new("ai-buddy-verify-testrun")));
+        assert!(paths.root.ends_with(Path::new("fidget-verify-testrun")));
         assert_eq!(paths.evidence, paths.root.join("evidence"));
         assert_eq!(paths.scratch, paths.root.join("scratch"));
         assert_eq!(paths.run_id, "testrun");

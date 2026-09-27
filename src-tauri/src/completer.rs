@@ -12,10 +12,10 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
-use ai_buddy_core::director::{
+use fidget_core::director::{
     self, Claim, Completer, Context, ModelDirector, Reply, Wake, WakeRequest,
 };
-use ai_buddy_core::roster::InstanceId;
+use fidget_core::roster::InstanceId;
 
 use crate::model::{blank, endpoint_from, tracing, DirectorSettings, Endpoint};
 
@@ -259,7 +259,7 @@ impl Slots {
 
     /// Drop whatever `id` has on the wire, and forget the Instance.
     /// Character switch, Completer retarget, and dismissal would apply the
-    /// wrong buddy's answer. Remove the slot so the registry cannot accumulate.
+    /// wrong character's answer. Remove the slot so the registry cannot accumulate.
     pub fn abandon(&mut self, id: &InstanceId) {
         if let Some(slot) = self.slots.remove(id) {
             slot.abandoned.store(true, Ordering::SeqCst);
@@ -311,10 +311,10 @@ pub(crate) mod tests {
     use super::*;
     use crate::model::tests::with_env;
     use crate::model::{config_from, resolve};
-    use ai_buddy_core::director::{
+    use fidget_core::director::{
         Completer, Context, Happened, ModelDirector, Reply, Wake, WakeRequest,
     };
-    use ai_buddy_core::roster::InstanceId;
+    use fidget_core::roster::InstanceId;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::thread;
@@ -323,8 +323,8 @@ pub(crate) mod tests {
     /// A Context to stand in for a wake already on the wire. `pub(crate)` for
     /// the `settings` tests, which retarget through the same call.
     pub(crate) fn wake_context() -> Context {
-        use ai_buddy_core::engine::State;
-        use ai_buddy_core::sensing::Activity;
+        use fidget_core::engine::State;
+        use fidget_core::sensing::Activity;
         use std::time::UNIX_EPOCH;
 
         Context {
@@ -341,7 +341,7 @@ pub(crate) mod tests {
             personality: String::new(),
             instance_prompt: String::new(),
             state: State::Grounded,
-            happened: ai_buddy_core::director::Happened::Proactive,
+            happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
         }
     }
@@ -352,7 +352,7 @@ pub(crate) mod tests {
             let settings = resolve("http://localhost:11434", "gemma4", None);
             let config = config_from(&settings);
             let mut slots = Slots::new();
-            let id = "buddy".to_string();
+            let id = "character".to_string();
             let saw = Arc::new(AtomicBool::new(false));
             slots.wake(
                 &id,
@@ -401,7 +401,7 @@ pub(crate) mod tests {
             let mut model = None;
             retarget_model(
                 &mut slots,
-                &"buddy".to_string(),
+                &"character".to_string(),
                 &mut model,
                 ["stroll"],
                 "cat",
@@ -423,7 +423,7 @@ pub(crate) mod tests {
             let mut model = None;
             retarget_model(
                 &mut slots,
-                &"buddy".to_string(),
+                &"character".to_string(),
                 &mut model,
                 ["stroll"],
                 "cat",
@@ -458,7 +458,7 @@ pub(crate) mod tests {
     #[test]
     fn abandon_drops_a_wake_that_still_arrives() {
         let mut slots = Slots::new();
-        let id = "buddy".to_string();
+        let id = "character".to_string();
         slots.wake(&id, answering("stroll", 40), wake_context());
         assert!(slots.waiting(&id), "the call is in flight");
 
@@ -475,7 +475,7 @@ pub(crate) mod tests {
     }
 
     /// The ellipsis is for a turn the user is waiting on. A proactive wake is
-    /// nobody's question, and showing it would tell the user the buddy is busy
+    /// nobody's question, and showing it would tell the user the character is busy
     /// with them when it is not.
     #[test]
     fn only_a_reactive_call_is_thinking() {
@@ -546,7 +546,7 @@ pub(crate) mod tests {
                 delay: Duration::from_millis(delay_ms),
             },
             ["stroll", "nap"],
-            "buddy",
+            "character",
             "cat",
             false,
         ))
@@ -585,7 +585,7 @@ pub(crate) mod tests {
     #[test]
     fn a_new_wake_supersedes_the_one_the_instance_had_on_the_wire() {
         let mut slots = Slots::new();
-        let id = "buddy".to_string();
+        let id = "character".to_string();
 
         slots.wake(&id, answering("stroll", 120), wake_context());
         slots.wake(
@@ -608,12 +608,12 @@ pub(crate) mod tests {
     }
 
     /// The other direction, which ADR-0033 turns around. A reactive call is an
-    /// answer the user is waiting for and an ambient tick is the buddy musing.
+    /// answer the user is waiting for and an ambient tick is the character musing.
     /// The muse is dropped rather than costing the user their answer.
     #[test]
     fn an_ambient_tick_does_not_supersede_a_reactive_call() {
         let mut slots = Slots::new();
-        let id = "buddy".to_string();
+        let id = "character".to_string();
 
         slots.wake(
             &id,
@@ -639,7 +639,7 @@ pub(crate) mod tests {
     #[test]
     fn take_carries_the_near_miss_the_worker_saw() {
         let mut slots = Slots::new();
-        let id = "buddy".to_string();
+        let id = "character".to_string();
 
         // `answering` declares stroll and nap, so cartwheel is neither.
         slots.wake(&id, answering("cartwheel", 0), wake_context());
@@ -658,7 +658,7 @@ pub(crate) mod tests {
     #[test]
     fn take_hands_back_the_context_the_wake_was_computed_for() {
         let mut slots = Slots::new();
-        let id = "buddy".to_string();
+        let id = "character".to_string();
         let asked = Context {
             happened: Happened::Poke,
             standing: "Finder".to_string(),
@@ -673,7 +673,7 @@ pub(crate) mod tests {
     }
 
     /// One registry, but the newest-wins latch is each Instance's own. Two
-    /// buddies poked at once are two conversations.
+    /// characters poked at once are two conversations.
     #[test]
     fn one_instances_wake_leaves_anothers_slot_alone() {
         let mut slots = Slots::new();
@@ -684,9 +684,9 @@ pub(crate) mod tests {
         // Supersedes `first` only. `second` has said nothing about it.
         slots.wake(&first, answering("nap", 0), wake_context());
 
-        let theirs = polled(&mut slots, &second).expect("the second buddy still answers");
+        let theirs = polled(&mut slots, &second).expect("the second character still answers");
         assert_eq!(behavior_of(&theirs.wake), "nap");
-        let ours = polled(&mut slots, &first).expect("the first buddy answers too");
+        let ours = polled(&mut slots, &first).expect("the first character answers too");
         assert_eq!(behavior_of(&ours.wake), "nap");
     }
 
@@ -697,7 +697,7 @@ pub(crate) mod tests {
     fn superseding_raises_the_flag_the_worker_reads() {
         let saw = Arc::new(AtomicBool::new(false));
         let mut slots = Slots::new();
-        let id = "buddy".to_string();
+        let id = "character".to_string();
 
         slots.wake(
             &id,

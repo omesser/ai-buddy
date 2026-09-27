@@ -1,5 +1,5 @@
 [package]
-name = "ai-buddy"
+name = "fidget"
 description = "A desktop companion that lives on your screen"
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "ai-buddy"
+name = "fidget"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -20,8 +20,8 @@ tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
 tauri-plugin-autostart = "2"
 # Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
 tauri-plugin-updater = "2"
-ai-buddy-core = {path = "../crates/core"}
-ai-buddy-mcp-server = {path = "../crates/mcp-server"}
+fidget-core = {path = "../crates/core"}
+fidget-mcp-server = {path = "../crates/mcp-server"}
 serde = {version = "1", features = ["derive"]}
 # Character Package art reaches the webview as `data:` URLs; `src/cast.rs` says
 # why.

@@ -7,9 +7,9 @@
 # compositor's presented rate needs Instruments (Metal System Trace), and
 # `frame:` lines are engine ticks, so they are reported as ticks_hz instead.
 #
-# Every scenario but env and baseline launches ai-buddy on the live desktop,
+# Every scenario but env and baseline launches Fidget on the live desktop,
 # warps the cursor, or covers the main display, so it refuses to run unless
-# AI_BUDDY_BENCH_GREEN_LIGHT=1 says the operator agreed to lose the screen.
+# FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to lose the screen.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -17,15 +17,15 @@ cd "$(dirname "$0")/.."
 seconds=15
 walk_timeout=180
 out=""
-bin="${AI_BUDDY_VERIFY_BIN:-target/debug/ai-buddy}"
+bin="${FIDGET_VERIFY_BIN:-target/debug/fidget}"
 scenario=""
 
 usage() {
   cat >&2 << EOF
 Usage: $0 <env|baseline|idle|walking|chat|multi|hidden|matrix> [--seconds N] [--walk-timeout N] [--bin PATH] [--out DIR]
 
-env and baseline touch nothing on screen. The rest launch ai-buddy, click the
-sprite, or cover the display, and need AI_BUDDY_BENCH_GREEN_LIGHT=1.
+env and baseline touch nothing on screen. The rest launch Fidget, click the
+sprite, or cover the display, and need FIDGET_BENCH_GREEN_LIGHT=1.
 Watts need sudo for powermetrics; run \`sudo -v\` first for an unattended run.
 EOF
   exit 2
@@ -66,15 +66,15 @@ done
 case "$scenario" in
   env | baseline) ;;
   *)
-    if [ "${AI_BUDDY_BENCH_GREEN_LIGHT:-}" != 1 ]; then
-      echo "$scenario takes over the desktop (launches ai-buddy, moves the cursor, covers the display)." >&2
-      echo "Set AI_BUDDY_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
+    if [ "${FIDGET_BENCH_GREEN_LIGHT:-}" != 1 ]; then
+      echo "$scenario takes over the desktop (launches Fidget, moves the cursor, covers the display)." >&2
+      echo "Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
       exit 2
     fi
     ;;
 esac
 
-out="${out:-$(mktemp -d /tmp/ai-buddy-gpu-bench-XXXXXX)}"
+out="${out:-$(mktemp -d /tmp/fidget-gpu-bench-XXXXXX)}"
 mkdir -p "$out"
 
 APP_PID=""
@@ -109,7 +109,7 @@ stop_app() {
 
 need_bin() {
   [ -x "$bin" ] || {
-    echo "no $bin — run: (cd src-tauri && cargo build --bin ai-buddy)" >&2
+    echo "no $bin — run: (cd src-tauri && cargo build --bin fidget)" >&2
     exit 2
   }
 }
@@ -165,7 +165,7 @@ bin=$bin
 seconds=$seconds
 walk_timeout=$walk_timeout
 frame_rate=N/A (presented frames need Instruments Metal System Trace; ticks_hz counts engine frame: lines)
-green_light=${AI_BUDDY_BENCH_GREEN_LIGHT:-unset}
+green_light=${FIDGET_BENCH_GREEN_LIGHT:-unset}
 EOF
 }
 
@@ -272,12 +272,12 @@ run_baseline() {
   local log="$out/baseline.log"
   : > "$log"
   local stray
-  stray=$(pgrep -x ai-buddy | tr '\n' ' ' || true)
+  stray=$(pgrep -x fidget | tr '\n' ' ' || true)
   if [ -n "$stray" ]; then
-    echo "baseline refused, ai-buddy already running: pid(s) $stray" >&2
+    echo "baseline refused, Fidget already running: pid(s) $stray" >&2
     exit 1
   fi
-  sample_row baseline "$log" "$seconds" "no ai-buddy"
+  sample_row baseline "$log" "$seconds" "no Fidget"
 }
 
 launch_app() {
@@ -286,12 +286,12 @@ launch_app() {
   # Scratch HOME so the bench does not write the user's settings. The API key
   # skips the Keychain read a worktree build would otherwise block on.
   SCRATCH_HOME=$(mktemp -d)
-  AI_BUDDY_DIRECTOR_API_KEY=bench-placeholder \
-    AI_BUDDY_DIRECTOR=0 \
-    AI_BUDDY_TRACE_FRAMES=1 \
-    AI_BUDDY_CAPTURABLE=1 \
-    AI_BUDDY_INSTANCES="${AI_BUDDY_INSTANCES:-BMO}" \
-    AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$PWD/characters}" \
+  FIDGET_DIRECTOR_API_KEY=bench-placeholder \
+    FIDGET_DIRECTOR=0 \
+    FIDGET_TRACE_FRAMES=1 \
+    FIDGET_CAPTURABLE=1 \
+    FIDGET_INSTANCES="${FIDGET_INSTANCES:-BMO}" \
+    FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$PWD/characters}" \
     HOME="$SCRATCH_HOME" \
     "$bin" > "$log" 2>&1 &
   APP_PID=$!

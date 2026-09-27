@@ -9,7 +9,7 @@ seconds=15
 walk_timeout=180
 shot=""
 out=""
-bin="target/debug/ai-buddy"
+bin="target/debug/fidget"
 scenario=""
 
 usage() {
@@ -49,7 +49,7 @@ done
 
 [ -n "$scenario" ] || usage
 
-out="${out:-$(mktemp -d /tmp/ai-buddy-gpu-bench-XXXXXX)}"
+out="${out:-$(mktemp -d /tmp/fidget-gpu-bench-XXXXXX)}"
 mkdir -p "$out"
 
 APP_PID=""
@@ -92,7 +92,7 @@ stop_app() {
 
 need_bin() {
   [ -x "$bin" ] || {
-    echo "no $bin — run: cargo build -p ai-buddy --bin ai-buddy" >&2
+    echo "no $bin — run: cargo build -p fidget --bin fidget" >&2
     exit 2
   }
 }
@@ -412,10 +412,10 @@ launch_app() {
     export XAUTHORITY="${HOME}/.Xauthority"
   fi
   SCRATCH_HOME=$(mktemp -d)
-  AI_BUDDY_TRACE_MASK_REBUILD=1 \
-    AI_BUDDY_TRACE_FRAMES=1 \
-    AI_BUDDY_INSTANCES="${AI_BUDDY_INSTANCES:-BMO}" \
-    AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$PWD/characters}" \
+  FIDGET_TRACE_MASK_REBUILD=1 \
+    FIDGET_TRACE_FRAMES=1 \
+    FIDGET_INSTANCES="${FIDGET_INSTANCES:-BMO}" \
+    FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$PWD/characters}" \
     HOME="$SCRATCH_HOME" \
     "$bin" > "$log" 2>&1 &
   APP_PID=$!
@@ -493,11 +493,11 @@ sleep 600
 EOF
   xfce4-terminal --disable-server --display="$DISPLAY" --geometry=40x16 \
     --hide-menubar --hide-scrollbar --hide-borders \
-    --title=ai-buddy-gpu-probe -e "bash $panel" > /dev/null 2>&1 &
+    --title=fidget-gpu-probe -e "bash $panel" > /dev/null 2>&1 &
   PANEL_PID=$!
   sleep 6
   local geom x y
-  geom=$(xdotool search --onlyvisible --name ai-buddy-gpu-probe getwindowgeometry --shell 2> /dev/null | head -20 || true)
+  geom=$(xdotool search --onlyvisible --name fidget-gpu-probe getwindowgeometry --shell 2> /dev/null | head -20 || true)
   x=$(printf '%s\n' "$geom" | awk -F= '/^X=/ { print $2; exit }')
   y=$(printf '%s\n' "$geom" | awk -F= '/^Y=/ { print $2; exit }')
   if [ -n "$x" ] && [ -n "$y" ]; then
@@ -539,7 +539,7 @@ sample_row() {
 run_baseline() {
   local log="$out/baseline.log"
   : > "$log"
-  sample_row baseline "$log" "$seconds" "no ai-buddy"
+  sample_row baseline "$log" "$seconds" "no Fidget"
 }
 
 run_with_overlay() {
@@ -656,7 +656,7 @@ run_hidden() {
   fi
   run_with_overlay hidden
   xfce4-terminal --disable-server --fullscreen --hide-menubar --hide-scrollbar \
-    --title=ai-buddy-bench-cover -e "sleep $((seconds + 10))" > /dev/null 2>&1 &
+    --title=fidget-bench-cover -e "sleep $((seconds + 10))" > /dev/null 2>&1 &
   COVER_PID=$!
   local _ hidden=0
   for _ in $(seq 1 20); do

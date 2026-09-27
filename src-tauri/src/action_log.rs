@@ -21,7 +21,7 @@
 //! past the limit, keeping lines whole.
 //!
 //! Write failures (including rotation failures) are dropped: the log explains
-//! the buddy after the fact and must never block a Director turn. Rate-limited
+//! the character after the fact and must never block a Director turn. Rate-limited
 //! error reporting (max once per 60s) warns operators without log storms.
 //!
 //! **Thread-safety**: Harness appends from multiple threads (wire events, turn/complete,
@@ -45,7 +45,7 @@ pub const FILE: &str = "action-log.jsonl";
 ///
 /// Rotated siblings get no accessor: the current file is what a user wants after a session.
 pub fn current_path() -> PathBuf {
-    ai_buddy_core::memory::data_dir().join(FILE)
+    fidget_core::memory::data_dir().join(FILE)
 }
 
 /// The size bound per log file, in bytes.
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(opened.file_name().unwrap(), FILE);
         assert_eq!(
             opened.parent().unwrap(),
-            ai_buddy_core::memory::data_dir(),
+            fidget_core::memory::data_dir(),
             "the data folder Memory is in, not a temp copy"
         );
     }

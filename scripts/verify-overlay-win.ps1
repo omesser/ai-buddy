@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # Windows Spatial e2e - twin of verify-overlay-x11.sh
 #
-# Places a Notepad perch on the secondary display, grabs the buddy on the
+# Places a Notepad perch on the secondary display, grabs the character on the
 # primary, drops it 80px above the title bar, and asserts Perched, no focus
 # steal, and WS_EX_NOACTIVATE. WDA_EXCLUDEFROMCAPTURE only appears when
 # capture exclusion is on (off by default per ADR-0024), so its absence warns
@@ -9,8 +9,8 @@
 #
 # Usage:
 #   .\scripts\verify-overlay-win.ps1
-#   $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\verify-overlay-win.ps1
-#   $env:AI_BUDDY_TRACE_HITTEST=1 .\scripts\verify-overlay-win.ps1
+#   $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\verify-overlay-win.ps1
+#   $env:FIDGET_TRACE_HITTEST=1 .\scripts\verify-overlay-win.ps1
 #
 # Expects a built debug binary (does not cargo build - pair with VsDevCmd).
 # Dual-display required. Logs under .verify/win-<stamp>/.
@@ -91,8 +91,8 @@ public class WinVerify {
 }
 "@
 
-$Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root "target\debug\ai-buddy.exe" }
-if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with VsDevCmd first, or set AI_BUDDY_VERIFY_BIN" }
+$Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $Root "target\debug\fidget.exe" }
+if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with VsDevCmd first, or set FIDGET_VERIFY_BIN" }
 Pass "Binary ready"
 
 $sec = [WinVerify]::GetSecondaryWorkArea()
@@ -127,10 +127,10 @@ $rect = New-Object WinVerify+RECT
 [WinVerify]::GetWindowRect($npHwnd, [ref]$rect) | Out-Null
 Pass "Notepad pid=$npPid left=$($rect.Left) top=$($rect.Top)"
 
-$env:AI_BUDDY_TRACE_FRAMES = "1"
-$env:AI_BUDDY_CHARACTER = "buddy-bot"
-if ($env:AI_BUDDY_TRACE_HITTEST -ne "1") {
-  Remove-Item Env:AI_BUDDY_TRACE_HITTEST -ErrorAction SilentlyContinue
+$env:FIDGET_TRACE_FRAMES = "1"
+$env:FIDGET_CHARACTER = "buddy-bot"
+if ($env:FIDGET_TRACE_HITTEST -ne "1") {
+  Remove-Item Env:FIDGET_TRACE_HITTEST -ErrorAction SilentlyContinue
 }
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -243,7 +243,7 @@ if ($m2 -and $m2.Line -match "sprite\((-?\d+),(-?\d+)\)") {
   $fgPid = [uint32]0
   [WinVerify]::GetWindowThreadProcessId($fg, [ref]$fgPid) | Out-Null
   if ($fgPid -eq [uint32]$script:AppProc.Id) {
-    Fail "Focus stolen by ai-buddy (fg pid=$fgPid)"
+    Fail "Focus stolen by Fidget (fg pid=$fgPid)"
   }
   Pass "No focus steal (fg pid=$fgPid)"
 } else {

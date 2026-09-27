@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 scenario="${1:-idle}"
 duration="${2:-10}"
-bin="target/debug/ai-buddy"
+bin="target/debug/fidget"
 
 usage() {
   cat << EOF
@@ -44,11 +44,11 @@ case "$scenario" in
 esac
 
 [ -x "$bin" ] || {
-  echo "no $bin — run: (cd src-tauri && cargo build --bin ai-buddy)" >&2
+  echo "no $bin — run: (cd src-tauri && cargo build --bin fidget)" >&2
   exit 2
 }
 
-log=$(mktemp -t ai-buddy-mask-rebuild-XXXXXX.log)
+log=$(mktemp -t fidget-mask-rebuild-XXXXXX.log)
 trap 'kill -TERM $app_pid 2>/dev/null || true; sleep 1; kill -KILL $app_pid 2>/dev/null || true; rm -f "$log"' EXIT INT TERM
 
 echo "Scenario: $scenario"
@@ -57,16 +57,16 @@ echo "Log: $log"
 echo ""
 
 # Set environment for tracing mask rebuilds
-export AI_BUDDY_TRACE_MASK_REBUILD=1
+export FIDGET_TRACE_MASK_REBUILD=1
 
 # Choose character and setup based on scenario
 case "$scenario" in
   large)
-    export AI_BUDDY_INSTANCES="Black Mage"
+    export FIDGET_INSTANCES="Black Mage"
     echo "Using Black Mage (scale=3, larger rendered sprite)"
     ;;
   *)
-    export AI_BUDDY_INSTANCES="BMO"
+    export FIDGET_INSTANCES="BMO"
     echo "Using BMO (126x128@1x)"
     ;;
 esac

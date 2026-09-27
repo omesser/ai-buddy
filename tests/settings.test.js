@@ -100,8 +100,8 @@ test('"the Director\'s mind" stays out of the state line', () => {
 const HEADINGS = {
   Presence: ["Do Not Disturb", "Hide", "Launch"],
   Character: ["Character", "Instances"],
-  AI: ["AI", "AI source", "Point a Harness you run yourself at ai-buddy", "Model / API", "Last user turn"],
-  Privacy: ["What the buddy can see", "Excluded applications", "Memory File"],
+  AI: ["AI", "AI source", "Point a Harness you run yourself at Fidget", "Model / API", "Last user turn"],
+  Privacy: ["What the character can see", "Excluded applications", "Memory File"],
   Development: ["Traces", "Blank AI", "HTTP limits", "Harness attachment"],
   Chat: ["Appearance"],
 };
@@ -140,7 +140,7 @@ const AI_ROWS = [
   ["checkbox", "pi_project_mcp", "Write .mcp.json in the working directory"],
   ["textfield", "harness_command", "Custom command line"],
   ["statictext", "harness_state", null],
-  ["heading", null, "Point a Harness you run yourself at ai-buddy"],
+  ["heading", null, "Point a Harness you run yourself at Fidget"],
   ["popup", "byo_harness", "Harness"],
   ["statictext", "byo_snippet", null],
   ["button", "byo_copy", "Copy"],
@@ -234,7 +234,7 @@ test("an InspectPath is a path and nothing else", () => {
     role: "statictext",
     id: "memory_path",
     label: null,
-    value: "/Users/fixture/Library/Application Support/ai-buddy/memory",
+    value: "/Users/fixture/Library/Application Support/fidget/memory",
     frozen: true,
   });
 });
@@ -274,7 +274,7 @@ test("a row whose id is not its field name still draws the value the snapshot ca
   assert.equal(byId(tab(MODEL_API, "Development"), "director_timeout_secs").value, "30");
 });
 
-// #888 named the macOS row for what the buddy reads rather than for the grant.
+// #888 named the macOS row for what the character reads rather than for the grant.
 // The id it draws under is the one the value map is keyed by, and deriving that
 // id from the label instead left the lookup empty, so the checkbox drew
 // unchecked whatever the grant said. #975 renamed the label a second time,
@@ -459,7 +459,7 @@ test("New carries the name typed beside it and the Character it shows", () => {
   ]);
 });
 
-// The line is ambiguous between two buddies of one name and Character, and
+// The line is ambiguous between two characters of one name and Character, and
 // `SettingsSession::dismiss` takes an id. #875.
 test("Dismiss names the Instance by id, not by the line it draws", () => {
   const emitted = [];

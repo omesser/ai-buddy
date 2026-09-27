@@ -1,7 +1,7 @@
-# ai-buddy ships no Executor; the Harness owns desktop control
+# Fidget ships no Executor; the Harness owns desktop control
 
-ai-buddy does not post synthetic mouse or keyboard events. It ships an MCP server
-exposing buddy-side tools — speak, play a Behavior, list windows, describe the screen,
+Fidget does not post synthetic mouse or keyboard events. It ships an MCP server
+exposing Fidget-side tools — speak, play a Behavior, list windows, describe the screen,
 read and write Memory — and attaches a Harness the user supplies. Clicking is the
 Harness's job; the character is ours. A future reader will find an app about operating
 your computer that deliberately cannot operate your computer, so the reasoning matters.
@@ -28,11 +28,11 @@ It is not portable across Harnesses. Other vendors follow the API pattern — ac
 client executes — so "BYO Harness" does not imply "any Harness can drive the desktop." A
 Harness without an executor can still chat and sense.
 
-Action permissions belong to the Harness, which runs its own consent dialogs. ai-buddy
+Action permissions belong to the Harness, which runs its own consent dialogs. Fidget
 owns consent for sensing only and must not duplicate them; two dialogs for one click
 teaches users to click through both.
 
-ai-buddy learns what the Harness is doing by observing the screen it already samples,
+Fidget learns what the Harness is doing by observing the screen it already samples,
 not by parsing the Harness's output.
 
 A `CGEvent` executor stays on the shelf as the answer if the subscription gate proves

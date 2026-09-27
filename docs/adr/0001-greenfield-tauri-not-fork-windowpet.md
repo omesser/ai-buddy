@@ -4,7 +4,7 @@
 and React, runs on all three platforms, and already solves click-through,
 pixel-perfect drag, tray, autostart, and auto-update. It has no physics, no window
 awareness, and no model. We start clean on Tauri anyway, because the work that makes
-ai-buddy distinct — window-edge collision, the Director, the Character Package — all
+Fidget distinct — window-edge collision, the Director, the Character Package — all
 replaces WindowPet's central loop, and gutting the centre of a codebase is slower than
 starting from a good reference. Its click-through hit-testing and tray/updater code
 are lifted directly under MIT, with attribution.

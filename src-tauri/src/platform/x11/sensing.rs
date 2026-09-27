@@ -10,7 +10,7 @@ use x11rb::protocol::xproto::{self, AtomEnum};
 
 pub struct X11ActivitySource;
 
-impl ai_buddy_core::sensing::ActivitySource for X11ActivitySource {
+impl fidget_core::sensing::ActivitySource for X11ActivitySource {
     fn frontmost_application(&self) -> Option<String> {
         frontmost_window_class()
     }

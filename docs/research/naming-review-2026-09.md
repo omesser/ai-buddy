@@ -41,7 +41,7 @@ No mechanical renames identified. The codebase accurately uses CONTEXT.md terms:
 
 **User-facing Settings UI copy** (issue #466):
 - Decision (locked): Keep Director as domain role; fix user-facing labels
-- Environment variables remain `AI_BUDDY_DIRECTOR_*` (no breaking change)
+- Environment variables remain `FIDGET_DIRECTOR_*` (no breaking change)
 - Settings section renamed to "AI" (not "Director" or "AI Completer")
 - Toggle label: "AI on" (clear what it means)
 - HTTP field labels: "Model", "API key" (not "Director" or "Completer")
@@ -107,7 +107,7 @@ Terms from `CONTEXT.md` Language section:
 | Functional Layer | invoked, Harness-driven work | ✅ |
 | Harness | `harness.rs`, external agent runtime | ✅ |
 | Completer | `Completer` trait, thing that answers | ✅ |
-| Executor | owned by Harness, not ai-buddy | ✅ |
+| Executor | owned by Harness, not Fidget | ✅ |
 | Action Log | `action_log.rs`, Harness actions | ✅ |
 | Ambient Capture | dropped (ADR-0031) | — |
 | On-Demand Capture | dropped (ADR-0031) | — |
@@ -127,7 +127,7 @@ Terms from `CONTEXT.md` Language section:
 | Pet | Yes (for Character) | No | Only in import tooling for external pets |
 | Mascot | Yes (for Character) | No | Only in docs/comments about product category |
 | Avatar | Yes (for Character) | No | Not found |
-| Buddy | Yes (for Character) | No | "buddy" is the app, not the character |
+| Buddy | Yes (for Character) | No | "character" is the app, not the character |
 | Brain | Yes (for Director) | No | Not found in code names |
 | Agent | Yes (for Director) | No | "agent" correctly names the Harness |
 | Planner | Yes (for Director) | No | Not found |

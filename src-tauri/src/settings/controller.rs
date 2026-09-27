@@ -174,7 +174,7 @@ mod tests {
                 director_model: MODEL.into(),
                 ..Settings::default()
             },
-            Path::new("/tmp/ai-buddy/memory.md"),
+            Path::new("/tmp/fidget/memory.md"),
             None,
             Vec::new(),
             Vec::new(),

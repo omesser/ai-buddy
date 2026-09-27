@@ -4,8 +4,8 @@
 //! `Roster` is — inside the running app, which serves them on loopback HTTP —
 //! and a Harness that advertises `mcpCapabilities.http` is handed that server
 //! directly. Everything else lands here, reached three ways and always the
-//! same code: `AI_BUDDY_MCP_BIN`, an `ai-buddy-mcp` sidecar beside the app, or
-//! the app binary re-executed as `ai-buddy --mcp-stdio`. All three are a
+//! same code: `FIDGET_MCP_BIN`, an `fidget-mcp` sidecar beside the app, or
+//! the app binary re-executed as `fidget --mcp-stdio`. All three are a
 //! process outside the running app, including the third, so all three relay
 //! rather than answer. A Harness that does not advertise
 //! `mcpCapabilities.http` on ACP `initialize` — `hermes` does not, though it
@@ -21,7 +21,7 @@
 //! MCP server entry it hands the Harness — never from a file or a log, so
 //! there is nothing on disk for another user to read and the token still dies
 //! with the app run. The URL is refused unless it names this machine's
-//! loopback: the token is an authorisation to move the buddy, and a variable
+//! loopback: the token is an authorisation to move the character, and a variable
 //! naming some other host would post it there.
 //!
 //! Anything that is not an answer — no variables, no app, a refused token, an
@@ -34,10 +34,10 @@ use std::io::{BufRead, Write};
 use serde_json::{json, Value};
 
 /// Where the app is listening, as `http://127.0.0.1:<port>/mcp`.
-pub const URL_VAR: &str = "AI_BUDDY_MCP_URL";
+pub const URL_VAR: &str = "FIDGET_MCP_URL";
 
 /// The app's per-run bearer token, in the environment rather than a file.
-pub const TOKEN_VAR: &str = "AI_BUDDY_MCP_TOKEN";
+pub const TOKEN_VAR: &str = "FIDGET_MCP_TOKEN";
 
 /// How long the app has to answer before the Harness is told it did not.
 /// Longer than the app's own wait for the frame loop, so its refusal wins the
@@ -105,22 +105,22 @@ impl Endpoint {
             .send(body)
             // `why` names the failure, not the endpoint: the Harness captures
             // this stream, and the port belongs in no log.
-            .map_err(|why| format!("ai-buddy is not answering: {why}"))?;
+            .map_err(|why| format!("Fidget is not answering: {why}"))?;
         let code = response.status().as_u16();
         if !(200..300).contains(&code) {
-            return Err(format!("ai-buddy refused the call: status {code}"));
+            return Err(format!("Fidget refused the call: status {code}"));
         }
         response
             .body_mut()
             .with_config()
             .limit(ANSWER_LIMIT)
             .read_to_string()
-            .map_err(|why| format!("ai-buddy's answer could not be read: {why}"))
+            .map_err(|why| format!("Fidget's answer could not be read: {why}"))
     }
 }
 
 fn no_app(var: &str) -> String {
-    format!("{var} is unset: ai-buddy is not running, or this Harness dropped the environment it was given")
+    format!("{var} is unset: Fidget is not running, or this Harness dropped the environment it was given")
 }
 
 /// One line of stdio in, the line to write back out — `None` only for a
@@ -143,22 +143,22 @@ pub fn relay(line: &str, endpoint: Result<&Endpoint, &str>) -> Option<String> {
         // means. A request answered with no body is a failure of this shim's
         // contract, not a success.
         Ok(_) if id.is_none() => return None,
-        Ok(_) => "ai-buddy answered the request with nothing".to_string(),
+        Ok(_) => "Fidget answered the request with nothing".to_string(),
         Err(why) => why,
     };
-    eprintln!("ai-buddy-mcp: {why}");
+    eprintln!("fidget-mcp: {why}");
     let id = id?;
     Some(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603, "message": why}}).to_string())
 }
 
 /// Relay stdio to the app until the Harness hangs up.
 ///
-/// `run` still lives here so `ai-buddy --mcp-stdio` and the `ai-buddy-mcp`
+/// `run` still lives here so `fidget --mcp-stdio` and the `fidget-mcp`
 /// sidecar are one code path.
 pub fn run() {
     let endpoint = Endpoint::from_env();
     if let Err(why) = &endpoint {
-        eprintln!("ai-buddy-mcp: {why}");
+        eprintln!("fidget-mcp: {why}");
     }
     let stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
@@ -288,7 +288,7 @@ mod tests {
     fn a_shim_with_no_endpoint_in_the_environment_answers_an_error() {
         let answer = relay(
             r#"{"jsonrpc":"2.0","id":"a","method":"tools/call"}"#,
-            Err("AI_BUDDY_MCP_URL is unset"),
+            Err("FIDGET_MCP_URL is unset"),
         )
         .expect("a request is answered");
         error_in(&answer);
@@ -302,7 +302,7 @@ mod tests {
     fn a_failed_notification_is_reported_on_stderr_and_answered_with_nothing() {
         let answer = relay(
             r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
-            Err("AI_BUDDY_MCP_URL is unset"),
+            Err("FIDGET_MCP_URL is unset"),
         );
         assert!(answer.is_none(), "answered a notification: {answer:?}");
     }

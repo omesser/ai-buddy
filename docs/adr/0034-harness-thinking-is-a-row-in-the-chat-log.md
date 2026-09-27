@@ -11,7 +11,7 @@ another door.
 
 In use, the strip lost the one thing a reader wanted from it. The reasoning
 behind an answer vanished as the answer landed, and it sat outside the timeline
-it explained. Every harness ai-buddy's users come from keeps thinking in the
+it explained. Every harness Fidget's users come from keeps thinking in the
 transcript, set apart from the reply. #697 called the single line a regression,
 and ADR-0028 left superseding ADR-0025 as a decision of its own. The owner has
 taken it (#1066).

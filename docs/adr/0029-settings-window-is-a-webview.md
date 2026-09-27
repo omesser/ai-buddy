@@ -86,8 +86,8 @@ operation is checked.
   native controls — but not presence, provided the HTML stays semantic. The
   live check is a condition of deleting the native renderers, not a follow-up.
 - Two implementations are alive until Step 9. The default is the webview on
-  every platform. `AI_BUDDY_SETTINGS_NATIVE=1` opens a native renderer.
-  `AI_BUDDY_SETTINGS_WEBVIEW=1` still selects the webview. Both on: native.
+  every platform. `FIDGET_SETTINGS_NATIVE=1` opens a native renderer.
+  `FIDGET_SETTINGS_WEBVIEW=1` still selects the webview. Both on: native.
   Native stays frozen to bug fixes. Step 9 deletes the three renderers and
   both flags. This ADR is not Accepted until that delete lands.
 - ADR-0010's stance on the stack holds: no build step, no dependency.

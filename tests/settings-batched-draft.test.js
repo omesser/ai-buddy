@@ -125,7 +125,7 @@ test("the Pi file row stays hidden until the staged source is Pi", () => {
   assert.equal(row.hidden, false);
   const status = row.children.find((child) => child.attributes?.class === "set-status");
   assert.match(status.attributes.text ?? status.textContent, /pi-mcp-adapter/);
-  assert.match(status.attributes.text ?? status.textContent, /AI_BUDDY_MCP_TOKEN/);
+  assert.match(status.attributes.text ?? status.textContent, /FIDGET_MCP_TOKEN/);
 });
 
 test("a staged Model survives the redraw a tab switch performs", () => {

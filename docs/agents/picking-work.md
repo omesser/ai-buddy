@@ -1,6 +1,6 @@
 # Picking work
 
-Issues for this repo sit on the **AI Buddy** project board (`omesser/ai-buddy`,
+Issues for this repo sit on the project board (`omesser/ai-buddy`,
 project number `2`). Read four signals before you claim one: board status,
 milestone, priority, and operating system. Read them in that order. A later
 signal never rescues an issue an earlier one ruled out.

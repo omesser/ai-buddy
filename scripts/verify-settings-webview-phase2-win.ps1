@@ -7,7 +7,7 @@
 .DESCRIPTION
   Four checks against the Settings webview: window opens as a webview,
   every Settings tab is present and driven, Presence Sound round-trips to
-  %APPDATA%\ai-buddy\settings.json, z-order is GetTopWindow plus GW_HWNDNEXT
+  %APPDATA%\fidget\settings.json, z-order is GetTopWindow plus GW_HWNDNEXT
   (Settings HWND before each overlay HWND). 04-zorder.png is illustration.
 
 .NOTES
@@ -25,7 +25,7 @@
 
 .USAGE
   .\scripts\verify-settings-webview-phase2-win.ps1
-  $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\verify-settings-webview-phase2-win.ps1
+  $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\verify-settings-webview-phase2-win.ps1
 #>
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -38,7 +38,7 @@ $OutRoot = Join-Path $Root '.verify\715-phase2-win'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $OutDir = Join-Path $OutRoot $Stamp
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-$Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root 'target\debug\ai-buddy.exe' }
+$Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $Root 'target\debug\fidget.exe' }
 $tip = (git -C $Root rev-parse HEAD).Trim()
 $Report = [ordered]@{
   tipSha = $tip
@@ -222,7 +222,7 @@ function Get-OverlayMinSize($monitors) {
 }
 
 function Find-OverlayHwnds([uint32]$TargetProcessId, [IntPtr]$SettingsHwnd, [int]$MinW, [int]$MinH) {
-  # Overlay title is ai-buddy (main.rs). Size drops the 1x1 taskbar anchor.
+  # Overlay title is Fidget (main.rs). Size drops the 1x1 taskbar anchor.
   $script:overlayHwnds = New-Object System.Collections.Generic.List[IntPtr]
   $script:overlayPid = $TargetProcessId
   $script:overlaySettings = $SettingsHwnd
@@ -240,7 +240,7 @@ function Find-OverlayHwnds([uint32]$TargetProcessId, [IntPtr]$SettingsHwnd, [int
     [void][Phase2Win]::GetWindowText($h, $title, 256)
     $c = $cls.ToString(); $t = $title.ToString()
     if ($t -eq 'Settings') { return $true }
-    if ($t -ne 'ai-buddy') { return $true }
+    if ($t -ne 'fidget') { return $true }
     $rect = New-Object Phase2Win+RECT
     if (-not [Phase2Win]::GetWindowRect($h, [ref]$rect)) { return $true }
     $w = $rect.Right - $rect.Left
@@ -435,7 +435,7 @@ function Park-And-Reacquire([IntPtr]$hwnd, [uint32]$TargetProcessId, $monitors) 
 }
 
 if (-not (Test-Path $Bin)) {
-  Log "missing $Bin -- build with VsDevCmd first, or set AI_BUDDY_VERIFY_BIN"
+  Log "missing $Bin -- build with VsDevCmd first, or set FIDGET_VERIFY_BIN"
   $Report.notes += "missing binary $Bin"
   Write-Report
   Write-Host "OUTDIR=$OutDir"
@@ -448,10 +448,10 @@ foreach ($m in $monitors) {
   Log ("Monitor primary=$($m.primary) work=$($m.left),$($m.top) $($m.width)x$($m.height)")
 }
 
-Get-Process ai-buddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process Fidget -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep 1
-$env:AI_BUDDY_OPEN_SETTINGS = '1'
-$env:AI_BUDDY_CAPTURABLE = '1'
+$env:FIDGET_OPEN_SETTINGS = '1'
+$env:FIDGET_CAPTURABLE = '1'
 Log "Launch $Bin tip=$tip"
 $proc = Start-Process -FilePath $Bin -WorkingDirectory $Root -PassThru
 $targetProcessId = [uint32]$proc.Id
@@ -539,11 +539,11 @@ if (-not $win) {
 $Report.checks['2_all_tabs'] = $(if ($tabPass) { 'PASS' } else { 'FAIL' })
 Log ("CHECK2 " + $Report.checks['2_all_tabs'])
 
-$settingsPath = Join-Path $env:APPDATA 'ai-buddy\settings.json'
+$settingsPath = Join-Path $env:APPDATA 'fidget\settings.json'
 $settingsCandidates = @(
   $settingsPath,
-  (Join-Path $env:APPDATA 'ai.buddy\settings.json'),
-  (Join-Path $env:LOCALAPPDATA 'ai-buddy\settings.json')
+  (Join-Path $env:APPDATA 'ai.character\settings.json'),
+  (Join-Path $env:LOCALAPPDATA 'fidget\settings.json')
 )
 $Report.checks['3_roundtrip'] = 'FAIL'
 try {
@@ -571,7 +571,7 @@ try {
   }
   Stop-Target $targetProcessId
   Start-Sleep 2
-  $env:AI_BUDDY_OPEN_SETTINGS = '1'
+  $env:FIDGET_OPEN_SETTINGS = '1'
   $proc = Start-Process -FilePath $Bin -WorkingDirectory $Root -PassThru
   $targetProcessId = [uint32]$proc.Id
   Start-Sleep 6
@@ -614,7 +614,7 @@ for ($i = 0; $i -lt 40; $i++) {
 }
 $si = Get-HwndStackIndex $hwnd $stack
 if ($null -eq $overlays -or $overlays.Count -eq 0) {
-  $Report.notes += 'overlay HWND missing (title ai-buddy, large rect, same process)'
+  $Report.notes += 'overlay HWND missing (title Fidget, large rect, same process)'
 } else {
   foreach ($ov in $overlays) {
     $oi = Get-HwndStackIndex $ov $stack

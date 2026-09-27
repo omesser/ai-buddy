@@ -1,4 +1,4 @@
-# Buddy Bot - An original desktop AI mascot bot for ai-buddy.
+# Buddy Bot - An original desktop AI mascot bot for Fidget.
 
 name = "Buddy Bot"
 render_mode = "smooth"
@@ -6,13 +6,13 @@ scale = 1
 
 [source]
 art = """
-Buddy Bot, a desktop AI mascot drawn from ai-buddy's own logo and generated \
+Buddy Bot, a desktop AI mascot drawn from Fidget's own logo and generated \
 as a character pack."""
 license = """
 MIT for the whole package — prose, manifest and art are all this project's \
 own. The frames were generated for this project."""
 
-# Proactive model calls: a helpful buddy offers before being asked. One and
+# Proactive model calls: a helpful character offers before being asked. One and
 # one keeps every two minutes — same mild pace as BMO and Cat.
 
 [director]
@@ -200,7 +200,7 @@ frames = [
 fps = 8
 loop = "once"
 
-# A helpful buddy's life: say hello while someone is at the keyboard, then
+# A helpful character's life: say hello while someone is at the keyboard, then
 # stroll (greet chains into walk — same pattern as BMO greet→patrol / cat
 # greet→inspect). Offer to help while they are still around, fidget in place,
 # stroll the desk when they pause, patrol when they have plainly gone, and

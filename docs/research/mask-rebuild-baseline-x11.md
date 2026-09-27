@@ -12,7 +12,7 @@ Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-
 - **Display**: X11 on `DISPLAY=:5`, **1280×800**, depth 24
 - **X server**: The X.Org Foundation version 21.1.16
 - **Character**: BMO (126×128 px sprite, ~6231–7888 opaque mask cells depending on frame)
-- **Binary**: `cargo build -p ai-buddy` debug at tip `965e147`
+- **Binary**: `cargo build -p fidget` debug at tip `965e147`
 - **Evidence**: `docs/research/mask-rebuild-baseline-x11/` (slim pack: environment, summaries, sample lines)
 
 This is a real agent desktop with an X11 GUI (not a headless cloud run without pointer/window automation). Walking used a mapped `xmessage` perch and the app's loopback MCP `play_behavior`, with the **stationary** pointer left over the sprite. Shell `xdotool` was not used to drive clicks/drags.
@@ -29,7 +29,7 @@ Timing in `src-tauri/src/platform/x11/overlay.rs`:
 
 - Atomic counters for rebuild count and total nanoseconds
 - Per-rebuild timing from start of `apply_input_mask()` to X11 flush completion
-- Logging of sprite dimensions, scale, opaque pixel count, and rebuild time when `AI_BUDDY_TRACE_MASK_REBUILD=1`
+- Logging of sprite dimensions, scale, opaque pixel count, and rebuild time when `FIDGET_TRACE_MASK_REBUILD=1`
 
 The rebuild happens in `apply_input_mask()`:
 
@@ -49,7 +49,7 @@ Scale multiplies rectangle size and pixmap size. It does not multiply the opaque
 ### Measurement
 
 - Script: `scripts/bench-mask-rebuild-x11.sh` (idle / walk scenarios; walk still needs an interaction source)
-- Box runs: app with `AI_BUDDY_TRACE_MASK_REBUILD=1` (plus `TRACE_ENGINE` / `TRACE_FRAMES` for walk correlation)
+- Box runs: app with `FIDGET_TRACE_MASK_REBUILD=1` (plus `TRACE_ENGINE` / `TRACE_FRAMES` for walk correlation)
 
 ## Results — Grok Bot desktop
 

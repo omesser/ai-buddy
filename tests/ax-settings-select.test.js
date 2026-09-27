@@ -17,7 +17,7 @@ test("ax-settings can leave a <select> menu open for a still", () => {
 });
 
 test("select-over-overlay verify summons a character and uses a mouse pick", () => {
-  assert.doesNotMatch(sh, /AI_BUDDY_SETTINGS_NATIVE=1/);
+  assert.doesNotMatch(sh, /FIDGET_SETTINGS_NATIVE=1/);
   assert.match(sh, /click-cursor\.swift/);
   assert.match(sh, /\^verbs:\.\*Summon/);
   assert.doesNotMatch(sh, /role: "combobox"/);

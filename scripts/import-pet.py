@@ -578,7 +578,7 @@ def manifest_text(name, mode, scale, notes, source, animations):
     lines += [
         f"license = {json.dumps(source['license'], ensure_ascii=False)}",
         "",
-        "# Proactive model calls: after each one with no one addressing the buddy,",
+        "# Proactive model calls: after each one with no one addressing the character,",
         "# the wait becomes wait * model_base ^ model_power. Two and one doubles.",
         "",
         "[director]",
@@ -920,7 +920,7 @@ def emit(pet, out, validate=True, stand=None):
           f"frames on a {canvas[0]}x{canvas[1]} canvas, {mode} at scale {scale}")
     if validate:
         done = subprocess.run(
-            ["cargo", "run", "-q", "-p", "ai-buddy-core", "--example", "validate",
+            ["cargo", "run", "-q", "-p", "fidget-core", "--example", "validate",
              "--", str(out)],
             cwd=REPO,
         )
@@ -1009,9 +1009,9 @@ def main():
         print("review the output before shipping it — walk must head right")
     print("no personality.txt is written: author one to fit the art, the way "
           "the shipped characters' read")
-    print(f"run it: AI_BUDDY_CHARACTER={args.out.name} cargo run — the next "
+    print(f"run it: FIDGET_CHARACTER={args.out.name} cargo run — the next "
           "build refreshes the copy beside the binary; "
-          f"AI_BUDDY_CHARACTERS={args.out.parent.resolve()} skips the rebuild")
+          f"FIDGET_CHARACTERS={args.out.parent.resolve()} skips the rebuild")
 
 
 def self_test():

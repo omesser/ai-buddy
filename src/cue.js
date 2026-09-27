@@ -19,7 +19,7 @@ let audioWarned = false;
 function warnAudio(why) {
   if (audioWarned) return;
   audioWarned = true;
-  console.warn("ai-buddy: cue audio is unavailable (" + why + "). Visuals still play.");
+  console.warn("Fidget: cue audio is unavailable (" + why + "). Visuals still play.");
 }
 
 function audio() {
@@ -273,7 +273,7 @@ export function createCueMachine(io) {
       const stopVisual = io.draw(name);
       // Sound is gated and the visual is not: Do Not Disturb and the Settings
       // mute are folded into this flag, and a cue that cannot be heard still has
-      // to be seen, or a muted buddy stops answering. A throw is the same gate.
+      // to be seen, or a muted character stops answering. A throw is the same gate.
       let cutSound = () => {};
       if (placement.sound) {
         try {

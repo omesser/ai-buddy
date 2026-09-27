@@ -75,9 +75,7 @@ pub fn run(verb: Verb, repo_root: &Path, report: &mut RunReport) {
 
     report.say(&format!("{}: building...", verb.name()));
     let mut build = Command::new("cargo");
-    build
-        .args(["build", "-p", "ai-buddy"])
-        .current_dir(repo_root);
+    build.args(["build", "-p", "fidget"]).current_dir(repo_root);
     match report.exec(&mut build, None) {
         Some(0) => {}
         Some(c) => {
@@ -92,10 +90,10 @@ pub fn run(verb: Verb, repo_root: &Path, report: &mut RunReport) {
 
     // A stray instance of this exact checkout's binary would confuse which
     // app.log and which verbs line belongs to this run. Named as a failure
-    // rather than killed: a broad `pkill -f target/debug/ai-buddy` would also
+    // rather than killed: a broad `pkill -f target/debug/fidget` would also
     // catch another worktree's dogfood instance or another agent's run, and
     // this tool only ever owns the child it spawns below.
-    let bin_path = repo_root.join("target/debug/ai-buddy");
+    let bin_path = repo_root.join("target/debug/fidget");
     if let Some(pid) = stray_pid(&bin_path) {
         report.check(
             Outcome::Fail,
@@ -134,8 +132,8 @@ pub fn run(verb: Verb, repo_root: &Path, report: &mut RunReport) {
     };
 
     let mut child = match Command::new(&bin_path)
-        .env("AI_BUDDY_TRACE_HITTEST", "1")
-        .env("AI_BUDDY_TRACE_FRAMES", "1")
+        .env("FIDGET_TRACE_HITTEST", "1")
+        .env("FIDGET_TRACE_FRAMES", "1")
         .current_dir(repo_root)
         .stdout(log_out)
         .stderr(log_err)
@@ -143,7 +141,7 @@ pub fn run(verb: Verb, repo_root: &Path, report: &mut RunReport) {
     {
         Ok(c) => c,
         Err(e) => {
-            report.check(Outcome::Fail, "ai-buddy launch", &format!("spawn: {e}"));
+            report.check(Outcome::Fail, "Fidget launch", &format!("spawn: {e}"));
             return;
         }
     };

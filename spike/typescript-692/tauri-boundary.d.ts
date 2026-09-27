@@ -1,4 +1,4 @@
-// Spike 692, option 2. Types `window.__TAURI__` for the two ai-buddy webviews
+// Spike 692, option 2. Types `window.__TAURI__` for the two Fidget webviews
 // so that every `listen(name, ({ payload }) => …)` and `invoke(name, args)`
 // in src/ is checked against the Rust payloads — with no edit to src/.
 // Payload shapes come from ts-rs-proto/generated/payloads.d.ts, which

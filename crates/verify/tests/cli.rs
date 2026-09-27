@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 use serde_json::Value;
 use tempfile::TempDir;
 
-const BIN: &str = env!("CARGO_BIN_EXE_ai-buddy-verify");
+const BIN: &str = env!("CARGO_BIN_EXE_fidget-verify");
 
 fn verify(evidence: &Path, args: &[&str]) -> Output {
     let mut cmd = Command::new(BIN);

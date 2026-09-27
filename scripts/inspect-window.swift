@@ -69,7 +69,7 @@ if let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: An
             "x": b["X"] as? Double ?? 0, "y": b["Y"] as? Double ?? 0,
             "w": b["Width"] as? Double ?? 0, "h": b["Height"] as? Double ?? 0,
         ]
-        if owner.lowercased().contains("ai-buddy") {
+        if owner.lowercased().contains("fidget") {
             windows.append(entry)
         } else if layer != 0 {
             elevated.append(entry)
