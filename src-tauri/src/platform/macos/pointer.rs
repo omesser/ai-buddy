@@ -12,8 +12,12 @@
 //! reports the press that landed on it: this query has been seen to stay
 //! false for a click our own window swallowed.
 
+use std::sync::{Mutex, PoisonError};
+
 use objc2_app_kit::NSEvent;
-use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
+use objc2_core_graphics::{CGEventFlags, CGEventSource, CGEventSourceStateID, CGMouseButton};
+
+use crate::platform::ButtonsDown;
 
 /// Whether the primary mouse button is down.
 /// `CombinedSessionState` rather than HID, so a trackpad, mouse, and tablet
@@ -33,6 +37,63 @@ pub fn secondary_button_down() -> bool {
     )
 }
 
+/// Whether Control is held. The same state query as the buttons: no event tap.
+fn control_key_down() -> bool {
+    CGEventSource::flags_state(CGEventSourceStateID::CombinedSessionState)
+        .contains(CGEventFlags::MaskControl)
+}
+
+/// What the primary button's current press means. macOS reads a Control-click
+/// as a secondary click and AppKit decides on the mouse-down, so the first
+/// sighting of a press settles it until the button comes up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrimaryPress {
+    Up,
+    Primary,
+    Secondary,
+}
+
+impl PrimaryPress {
+    fn seen(self, control: bool) -> Self {
+        match self {
+            Self::Up if control => Self::Secondary,
+            Self::Up => Self::Primary,
+            held => held,
+        }
+    }
+}
+
+static PRIMARY_PRESS: Mutex<PrimaryPress> = Mutex::new(PrimaryPress::Up);
+
+/// One tick's buttons, with a Control-press moved from primary to secondary.
+fn fold(press: PrimaryPress, raw: ButtonsDown, control: bool) -> (PrimaryPress, ButtonsDown) {
+    let press = if raw.primary {
+        press.seen(control)
+    } else {
+        PrimaryPress::Up
+    };
+    let buttons = ButtonsDown {
+        primary: press == PrimaryPress::Primary,
+        secondary: raw.secondary || press == PrimaryPress::Secondary,
+    };
+    (press, buttons)
+}
+
+/// The buttons as macOS means them: a Control-click is a secondary click.
+pub fn control_click(raw: ButtonsDown) -> ButtonsDown {
+    let mut press = PRIMARY_PRESS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (next, buttons) = fold(*press, raw, control_key_down());
+    *press = next;
+    buttons
+}
+
+/// The overlay felt a primary press. Settle it now, while Control is still
+/// held: an idle frame loop can tick up to a second later.
+pub fn primary_press_began() {
+    let mut press = PRIMARY_PRESS.lock().unwrap_or_else(PoisonError::into_inner);
+    *press = press.seen(control_key_down());
+}
+
 /// The OS double-click interval, in milliseconds.
 pub fn double_click_interval_ms() -> Option<u32> {
     let seconds = NSEvent::doubleClickInterval();
@@ -47,6 +108,86 @@ pub fn double_click_interval_ms() -> Option<u32> {
 mod tests {
     use super::*;
     use objc2_app_kit::NSEvent;
+
+    use ai_buddy_core::engine::{Point, Verb};
+    use ai_buddy_core::input::Pointer;
+
+    /// Runs ticks of `(primary, secondary, control)` through the fold and the
+    /// gesture classifier over the sprite, moving 50 points a tick so a
+    /// primary press drags, and collects every verb.
+    fn verbs(ticks: &[(bool, bool, bool)]) -> Vec<Verb> {
+        let mut pointer = Pointer::default();
+        let mut press = PrimaryPress::Up;
+        let mut verbs = Vec::new();
+        for (tick, &(primary, secondary, control)) in ticks.iter().enumerate() {
+            let buttons;
+            (press, buttons) = fold(press, ButtonsDown { primary, secondary }, control);
+            let at = Point {
+                x: 100.0 + 50.0 * tick as f64,
+                y: 100.0,
+            };
+            verbs.extend(pointer.update(true, buttons.primary, buttons.secondary, at, 16));
+        }
+        verbs
+    }
+
+    /// The Menu opens on the press, and dragging with it held drags nothing.
+    #[test]
+    fn a_control_click_on_the_sprite_is_a_menu_and_not_a_grab_or_poke() {
+        assert_eq!(
+            verbs(&[
+                (true, false, true),
+                (true, false, true),
+                (false, false, true)
+            ]),
+            vec![Verb::Menu]
+        );
+    }
+
+    /// AppKit settles a Control-click on the mouse-down, so letting go of
+    /// Control mid-press does not turn it back into a Grab.
+    #[test]
+    fn releasing_control_mid_press_keeps_it_a_menu() {
+        assert_eq!(
+            verbs(&[
+                (true, false, true),
+                (true, false, false),
+                (false, false, false)
+            ]),
+            vec![Verb::Menu]
+        );
+    }
+
+    /// Control pressed after the button went down arrives too late to change it.
+    #[test]
+    fn control_pressed_mid_press_keeps_the_grab() {
+        assert_eq!(
+            verbs(&[(true, false, false), (true, false, true)]),
+            vec![Verb::Grab]
+        );
+    }
+
+    #[test]
+    fn a_control_up_with_no_press_does_nothing() {
+        assert_eq!(
+            verbs(&[(false, false, true), (false, false, false)]),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_plain_click_after_a_control_click_is_primary_again() {
+        let (press, _) = fold(PrimaryPress::Secondary, ButtonsDown::default(), false);
+        let (_, buttons) = fold(
+            press,
+            ButtonsDown {
+                primary: true,
+                secondary: false,
+            },
+            false,
+        );
+        assert_eq!((buttons.primary, buttons.secondary), (true, false));
+    }
 
     /// Our AppKit reader must round NSEvent::doubleClickInterval the same way
     /// as production (seconds → ms).

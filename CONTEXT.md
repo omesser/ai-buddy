@@ -275,7 +275,7 @@ Release a Grab with velocity — the sprite travels ballistically until it lands
 A click on the sprite — provokes a reaction and possibly a line of dialogue.
 
 **Menu**:
-Right-click on the sprite — character switching, settings, quit.
+Right-click on the sprite, or Control-click on macOS — character switching, settings, quit.
 
 **Summon**:
 The deliberate act that opens the Functional Layer.

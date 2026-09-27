@@ -17,7 +17,10 @@ mod window_source;
 pub use dock::dock_bounds;
 pub use input_events::{spawn_listener as spawn_event_tap, EventTap};
 pub use overlay_panel::configure_overlay;
-pub use pointer::{double_click_interval_ms, primary_button_down, secondary_button_down};
+pub use pointer::{
+    control_click, double_click_interval_ms, primary_button_down, primary_press_began,
+    secondary_button_down,
+};
 pub use sensing::MacosActivitySource;
 pub use tray::{seed_status_item_position, tune_tray_icon};
 pub(super) use window_source::visible_window_titles;

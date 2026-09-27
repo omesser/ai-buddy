@@ -76,6 +76,10 @@ pub struct ButtonsDown {
 /// The overlay heard the primary button go down or up.
 pub fn set_overlay_primary(down: bool) {
     OVERLAY_PRIMARY.report(down);
+    #[cfg(target_os = "macos")]
+    if down {
+        macos::primary_press_began();
+    }
 }
 
 /// Rectangles one overlay wants clicks over, besides the art: `(label, [x, y,
@@ -616,14 +620,15 @@ fn os_double_click_interval_ms() -> Option<u32> {
 }
 
 /// Which mouse buttons are down, or were pressed since the last call.
-/// Session poll OR overlay witness. Consuming: the frame loop asks once per
-/// tick, which is what makes "since the last call" mean "since the last tick".
+/// Session poll OR overlay witness, with a Control-click as secondary.
+/// Consuming: the frame loop asks once per tick, which is what makes "since
+/// the last call" mean "since the last tick".
 #[cfg(target_os = "macos")]
 pub fn buttons_down() -> ButtonsDown {
-    ButtonsDown {
+    macos::control_click(ButtonsDown {
         primary: overlay_primary_down() || macos::primary_button_down(),
         secondary: overlay_secondary_down() || macos::secondary_button_down(),
-    }
+    })
 }
 
 /// X11 on Linux: one XQueryPointer for both buttons, or the overlay latch.
