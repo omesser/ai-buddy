@@ -1382,7 +1382,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads the Dock's position.".to_string()),
             comment: None,
-            disclosure: Some("Accessibility permission lets Fidget read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.".to_string()),
+            disclosure: Some("Accessibility permission lets fidget read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]
@@ -1404,7 +1404,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads window titles and application names.".to_string()),
             comment: None,
-            disclosure: Some("This lets Fidget read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the character knows where the windows are and not what they are.".to_string()),
+            disclosure: Some("This lets fidget read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the fidget knows where the windows are and not what they are.".to_string()),
             status: None,
         },
         #[cfg(target_os = "macos")]
@@ -1415,7 +1415,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Reacts to the mouse at once, not a second late.".to_string()),
             comment: None,
-            disclosure: Some("Without this grant the character asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the character the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the character goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.".to_string()),
+            disclosure: Some("Without this grant fidget asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the fidget the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the fidget goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.".to_string()),
             status: None,
         },
     ];
@@ -1429,14 +1429,14 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Requires xdg-desktop-portal ScreenCast.".to_string()),
             comment: None,
-            disclosure: Some("xdg-desktop-portal ScreenCast lets Fidget read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.".to_string()),
+            disclosure: Some("xdg-desktop-portal ScreenCast lets fidget read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.".to_string()),
             status: None,
         },
     ];
 
     vec![
         FormSection {
-            heading: "What the character can see".to_string(),
+            heading: "What the fidget can see".to_string(),
             comment: consent_comment,
             disclosure: None,
             status: None,
@@ -1453,13 +1453,13 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                 writes: TextField::ExcludedApplications,
                 help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
                 editable: true,
-                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The character can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
+                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The fidget can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
             }],
         },
         FormSection {
             heading: "Memory File".to_string(),
-            comment: Some("What your character remembers between runs.".to_string()),
-            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every Character Instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
+            comment: Some("What your fidget remembers between runs.".to_string()),
+            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
             status: None,
             rows: vec![
                 FormRow::InspectPath {
@@ -2114,7 +2114,7 @@ mod tests {
             "Launch",
             "Memory File",
             "Traces",
-            "What the character can see",
+            "What the fidget can see",
         ];
         expected.sort_unstable();
         assert_eq!(headings, expected);
@@ -2666,7 +2666,7 @@ mod tests {
         let description = describe();
         let consent = description
             .sections()
-            .find(|s| s.heading == "What the character can see")
+            .find(|s| s.heading == "What the fidget can see")
             .expect("Consent section exists");
 
         let ids: Vec<&str> = consent
@@ -2691,7 +2691,7 @@ mod tests {
         let description = describe();
         let consent = description
             .sections()
-            .find(|s| s.heading == "What the character can see")
+            .find(|s| s.heading == "What the fidget can see")
             .expect("Consent section exists");
 
         #[cfg(target_os = "macos")]
