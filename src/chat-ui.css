@@ -1262,7 +1262,9 @@ body {
 }
 
 .said.md code,
-.row.ask .ask-code {
+.row.ask .ask-code,
+.landing code,
+.mind-text code {
   padding: 0.12em 0.4em;
   border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-badge);
@@ -1322,7 +1324,8 @@ body {
 
 /* Styled as a link and not wired as one: a real href would take this webview
    itself to the page. `data-href` carries the target for `open_link`. */
-.said.md .md-link {
+.said.md .md-link,
+.landing .md-link {
   color: var(--chat-accent);
   cursor: pointer;
   text-decoration: underline;
