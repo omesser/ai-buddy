@@ -63,11 +63,11 @@ There is exactly one call site that starts a request: the `live.pending.start` i
 ```877:887:src-tauri/src/frame_loop.rs
                         if director::session_due(
                             live.addressed,
-                            live.since_ambient,
+                            live.since_proactive,
                             &live.pace,
                             activity.displays_asleep,
                             instance.do_not_disturb(),
-                            config.ambient_allowed,
+                            config.proactive_allowed,
                         ) && config.enabled
                             && live.pending.ready()
                             && !applied
@@ -111,7 +111,7 @@ One real consequence today: a Poke on buddy A and a Poke on buddy B in the same 
 1. The pointer loop marks the verb. `frame_loop.rs:654-679` sets `live.addressed = true` and overwrites `live.happened` with a single value, priority-ordered within the tick: `Throw` > `Grab` (first held tick only) > `Poke`/`Menu` > `Summon`. Becoming Perched does the same through `became_perched` (`frame_loop.rs:860-866`), and the Engine's own `frame.addressed` re-latches just above it.
 2. So `live.addressed` is a **latch bit** and `live.happened` is a **one-slot, last-write-wins register**. A Poke followed by a Throw during the same flight leaves `happened == Throw`; the Poke is gone. Three pokes are one poke. This is coalescing, and for the ambient case it is the right shape.
 3. The session-wake block runs, `session_due` says yes, but `live.pending.ready()` is false, so the whole `if` is skipped. `live.addressed` and `live.happened` are **not** consumed — they are only cleared inside the taken branch (`frame_loop.rs:902-903`). The event therefore survives and fires on the first tick after the reply lands.
-4. The wait is bounded by the Completer timeout, not by anything responsive: `model::TIMEOUT = 20s` for hosted and `model::LOCAL_TIMEOUT = 120s` for a local server, chosen by `timeout_for` and applied as `ureq`'s `timeout_global`. **A Poke arriving one millisecond after an ambient wake starts can wait up to 20 seconds (hosted) or 2 minutes (local) before its prompt is even sent.** That is the responsiveness bug, and it is squarely past Nielsen's 10-second attention limit (§2.7).
+4. The wait is bounded by the Completer timeout, not by anything responsive: `model::TIMEOUT = 20s` for hosted and `model::LOCAL_TIMEOUT = 120s` for a local server, chosen by `timeout_for` and applied as `ureq`'s `timeout_global`. **A Poke arriving one millisecond after a proactive wake starts can wait up to 20 seconds (hosted) or 2 minutes (local) before its prompt is even sent.** That is the responsiveness bug, and it is squarely past Nielsen's 10-second attention limit (§2.7).
 
 **Is the reply applied against a world that has moved on? Yes, and there is no staleness check.**
 
@@ -275,7 +275,7 @@ This is the load question, and the answer is **yes for streaming, no for non-str
 **[inference] Three reasons this repo gets little from caching as designed.**
 
 1. **The prompt is far below every cache floor.** `character_prompt` (`crates/core/src/director/prompt.rs`) is a personality line, a Behavior roster, four instruction lines, one voice-rules paragraph, and a six-line `follow_up`. That is on the order of **200–300 tokens** (my estimate from the template text, not measured) — under OpenAI's strict 1,024 and under even Anthropic's most permissive 512. And `follow_up` alone, which is what every wake after the first sends (`ModelDirector::prompt`), is ~60 tokens. The repo's stated virtue — "the Personality Prompt is not paid for again" (`character_prompt`'s doc comment) — is *why* there is nothing to cache: it optimised the prefix away.
-2. **`Pace` outruns every TTL.** `Pace::FIRST` is 2 minutes and each ambient wake multiplies the wait up to a 2-hour cap (`director::Pace`). Anthropic's default cache dies after 5 minutes of inactivity; OpenAI's after 30. **[inference]** So by the third or fourth ambient wake the cache is guaranteed cold, and on Anthropic you would be paying the 1.25× write surcharge on nearly every call for a read that never comes.
+2. **`Pace` outruns every TTL.** `Pace::FIRST` is 2 minutes and each proactive wake multiplies the wait up to a 2-hour cap (`director::Pace`). Anthropic's default cache dies after 5 minutes of inactivity; OpenAI's after 30. **[inference]** So by the third or fourth proactive wake the cache is guaranteed cold, and on Anthropic you would be paying the 1.25× write surcharge on nearly every call for a read that never comes.
 3. **The one thing that *does* grow is the session.** `Endpoint` accumulates every user and assistant turn and re-sends the whole snapshot each call (`Endpoint::session`, pushed to and cloned at the top of `Endpoint::post`). **[inference]** After enough turns that history crosses 1,024 tokens and becomes a genuinely stable, genuinely cacheable prefix — the accidental beneficiary. This also means the *input* cost per wake grows without bound over a long session, which is a separate concern worth its own issue: nothing trims the conversation.
 
 **[inference] Verdict.** Caching is a poor first move here. If it is pursued, the honest framing is "spend tokens to save latency": pad the opening turn past the floor with something genuinely useful (the full Behavior roster with descriptions, richer personality, memory excerpts), put an explicit breakpoint at its end, and accept that on Anthropic you need ≥1 read within 5 minutes per write to break even. Given `Pace`, that arithmetic only works for reactive bursts — a user poking a buddy repeatedly — not for ambient life.
@@ -360,7 +360,7 @@ The connection pool lives on the `Agent` (`ureq` exposes `max_idle_connections`,
                         || live
                             .in_flight
                             .as_ref()
-                            .is_some_and(|ctx| ctx.happened != Happened::Ambient))
+                            .is_some_and(|ctx| ctx.happened != Happened::Proactive))
                     && !instance.do_not_disturb();
 ```
 

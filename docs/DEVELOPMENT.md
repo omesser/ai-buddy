@@ -398,9 +398,9 @@ The `probe` folder keeps the session file and the Action Log out of a real insta
 
 **Streaming:** The stand-in asks for `stream: true`. A reply's first line is the Behavior name and runs one to three tokens, so almost the whole wait is a dialogue line the buddy does not need before it starts moving. Streaming is also the only shape a dropped call can be *stopped* in: closing a streaming connection ends the generation, where a whole-reply request runs to completion on the server whatever the client does. A server that rejects the field — or accepts it and sends whole-reply JSON anyway — stays one the buddy can run against, because the parser handles both.
 
-### Ambient Wake Behavior
+### Proactive model calls
 
-Session calls stay quiet while the main display is asleep. Settings can turn the Director off, or leave it on and disable ambient wakes.
+Session calls stay quiet while the main display is asleep. Settings can turn the Director off, or leave it on and disable proactive model calls.
 
 A Character that should grow faster or slower than doubling says so:
 

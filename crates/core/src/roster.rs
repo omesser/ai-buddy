@@ -923,7 +923,7 @@ mod tests {
                 personality: wolf.personality.clone(),
                 instance_prompt: instance.prompt().to_string(),
                 state: crate::engine::State::Grounded,
-                happened: crate::director::Happened::Ambient,
+                happened: crate::director::Happened::Proactive,
                 standing: String::new(),
             },
             wolf.behaviors.keys(),

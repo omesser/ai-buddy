@@ -62,16 +62,16 @@ pub enum Happened {
     Perch,
     /// A line the user typed at the Chat surface. Held in the variant rather
     /// than beside it on `Context`, so nothing can claim a chat turn with no
-    /// line, or hang a line off an Ambient wake. Costs `Copy`.
+    /// line, or hang a line off a Proactive wake. Costs `Copy`.
     Chat(String),
-    Ambient,
+    Proactive,
 }
 
 /// The Chat surface's row label. Derived from `happened_cell` so the row and
 /// the bar cell under it cannot disagree.
 pub fn reacting_to(happened: &Happened) -> String {
     match happened {
-        Happened::Ambient => "unprompted".to_string(),
+        Happened::Proactive => "unprompted".to_string(),
         caused => format!("when {}", happened_cell(caused)),
     }
 }
@@ -87,7 +87,7 @@ pub fn happened_cell(happened: &Happened) -> &'static str {
         Happened::Grab => "grabbed",
         Happened::Perch => "perched",
         Happened::Chat(_) => "spoken to",
-        Happened::Ambient => "ambient",
+        Happened::Proactive => "proactive",
     }
 }
 
@@ -155,7 +155,7 @@ pub fn claim(happened: &Happened) -> Claim {
         Happened::Poke | Happened::Throw | Happened::Grab | Happened::Perch => Claim::Interaction,
         Happened::Summon => Claim::Opener,
         Happened::Chat(_) => Claim::Line,
-        Happened::Ambient => Claim::Ambient,
+        Happened::Proactive => Claim::Ambient,
     }
 }
 
@@ -531,15 +531,15 @@ pub fn due(
 }
 
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
-/// Ambient off keeps Poke and Summon on the session path and leaves Static
+/// Proactive off keeps Poke and Summon on the session path and leaves Static
 /// weights to fill the idle life.
 pub fn session_due(
     addressed: bool,
-    since_ambient: Duration,
+    since_proactive: Duration,
     pace: &Pace,
     displays_asleep: bool,
     do_not_disturb: bool,
-    ambient_allowed: bool,
+    proactive_allowed: bool,
 ) -> bool {
     if do_not_disturb {
         // Character stays visible and Poke still works.
@@ -549,7 +549,7 @@ pub fn session_due(
         // Unlike Do Not Disturb, this would drop Poke too.
         return false;
     }
-    addressed || (ambient_allowed && since_ambient >= pace.wait())
+    addressed || (proactive_allowed && since_proactive >= pace.wait())
 }
 
 /// The reply was not a Behavior name. Fall back instead of guessing.
@@ -786,7 +786,7 @@ mod tests {
             Happened::Grab,
             Happened::Perch,
             Happened::Chat("anything at all".into()),
-            Happened::Ambient,
+            Happened::Proactive,
         ] {
             let word = happened_cell(&happened);
             assert!(word.len() <= 9, "{word:?} is {} characters", word.len());
@@ -797,7 +797,7 @@ mod tests {
                 "{marker:?} is {} characters",
                 marker.len()
             );
-            if !matches!(happened, Happened::Ambient) {
+            if !matches!(happened, Happened::Proactive) {
                 assert!(
                     marker.ends_with(word),
                     "{marker:?} stopped being {word:?} with a preposition in front",
@@ -1219,7 +1219,7 @@ mod tests {
         );
         assert!(
             !session_due(false, Pace::FIRST, &pace, true, false, true),
-            "asleep: ambient stays quiet"
+            "asleep: proactive stays quiet"
         );
     }
 
@@ -1362,7 +1362,7 @@ mod tests {
         assert_eq!(asked.prompt, expected, "the prompt still travels whole");
 
         let unprompted = Context {
-            happened: Happened::Ambient,
+            happened: Happened::Proactive,
             ..moment
         };
         director.wake(&unprompted);
@@ -2144,7 +2144,7 @@ mod tests {
     #[test]
     fn an_ambient_wake_says_nothing_was_typed() {
         let ambient = Context {
-            happened: Happened::Ambient,
+            happened: Happened::Proactive,
             ..context(working(), &[])
         };
         assert!(

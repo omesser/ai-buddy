@@ -339,7 +339,7 @@ pub(crate) mod tests {
             personality: String::new(),
             instance_prompt: String::new(),
             state: State::Grounded,
-            happened: ai_buddy_core::director::Happened::Ambient,
+            happened: ai_buddy_core::director::Happened::Proactive,
             standing: String::new(),
         }
     }
@@ -472,7 +472,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// The ellipsis is for a turn the user is waiting on. An ambient wake is
+    /// The ellipsis is for a turn the user is waiting on. A proactive wake is
     /// nobody's question, and showing it would tell the user the buddy is busy
     /// with them when it is not.
     #[test]
@@ -578,7 +578,7 @@ pub(crate) mod tests {
     }
 
     /// The responsiveness this registry exists for: a Poke arriving while an
-    /// ambient wake is still out sends its own prompt at once, and the answer
+    /// proactive wake is still out sends its own prompt at once, and the answer
     /// the user gets is the one to what they just did.
     #[test]
     fn a_new_wake_supersedes_the_one_the_instance_had_on_the_wire() {

@@ -126,7 +126,11 @@ pub fn new_session(app: &tauri::AppHandle, instance: &str, why: &str) {
         "session",
         serde_json::json!({ "instance": instance, "why": why }),
     );
-    let _ = app.emit_to(crate::chat_label(instance), crate::CHAT_SESSION_EVENT, why);
+    let _ = app.emit_to(
+        crate::chat_label(instance),
+        crate::chat_surface::CHAT_SESSION_EVENT,
+        why,
+    );
 }
 
 #[cfg(test)]

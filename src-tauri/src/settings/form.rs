@@ -430,7 +430,7 @@ impl FormDescription {
 
 /// Row ids for the settings form controls.
 pub const DIRECTOR_ID: &str = "director";
-pub const AMBIENT_ID: &str = "ambient";
+pub const PROACTIVE_ID: &str = "proactive";
 pub const DIRECTOR_BASE_URL_ID: &str = "director_base_url";
 pub const DIRECTOR_BASE_URL_PICK_ID: &str = "director_base_url_pick";
 pub const DIRECTOR_MODEL_ID: &str = "director_model";
@@ -882,13 +882,13 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     status: director_status,
                 },
                 FormRow::Checkbox {
-                    id: AMBIENT_ID.to_string(),
-                    label: "Ambient session wakes".to_string(),
-                    writes: BoolField::AmbientWakes,
+                    id: PROACTIVE_ID.to_string(),
+                    label: "Proactive model calls".to_string(),
+                    writes: BoolField::ProactiveWakes,
                     frozen: false,
                     help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
-                    disclosure: Some("Ambient wakes are proactive model calls: the buddy addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.".to_string()),
+                    disclosure: Some("Proactive model calls address you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first one waits.".to_string()),
                     status: None,
                 },
                 FormRow::TextField {
@@ -1925,7 +1925,7 @@ mod tests {
     fn fixture_view(driving: bool) -> crate::settings::SettingsView {
         let settings = crate::settings::Settings {
             director_enabled: true,
-            ambient_wakes: true,
+            proactive_wakes: true,
             sound: true,
             hide_in_fullscreen: true,
             capturable: true,
@@ -2308,9 +2308,9 @@ mod tests {
         ));
         assert!(matches!(
             director.rows[1],
-            FormRow::Checkbox { ref id, .. } if id == AMBIENT_ID
+            FormRow::Checkbox { ref id, .. } if id == PROACTIVE_ID
         ));
-        // Under the switch that turns ambient wakes on, because it is how
+        // Under the switch that turns proactive model calls on, because it is how
         // often those wakes start out (#262).
         assert!(matches!(
             director.rows[2],
@@ -2548,7 +2548,7 @@ mod tests {
         };
 
         assert!(has_help("AI", DIRECTOR_ID));
-        assert!(has_help("AI", AMBIENT_ID));
+        assert!(has_help("AI", PROACTIVE_ID));
         assert!(has_help("AI source", HARNESS_STATE_ID));
         assert!(has_help(BYO_HEADING, BYO_SNIPPET_ID));
         assert!(has_help(BYO_HEADING, BYO_STEPS_ID));

@@ -223,8 +223,8 @@ mod tests {
             let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &blank, &view) else {
                 panic!("a cleared pair of rows is a patch");
             };
-            assert_eq!(patch.director_base_url.as_deref(), Some(""));
-            assert_eq!(patch.director_model.as_deref(), Some(""));
+            assert_eq!(patch.completer.director_base_url.as_deref(), Some(""));
+            assert_eq!(patch.completer.director_model.as_deref(), Some(""));
         });
     }
 
@@ -242,8 +242,11 @@ mod tests {
             let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &typed, &view) else {
                 panic!("a typed URL is a patch");
             };
-            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
-            assert!(patch.director_model.is_none());
+            assert_eq!(
+                patch.completer.director_base_url.as_deref(),
+                Some("https://api.x.ai")
+            );
+            assert!(patch.completer.director_model.is_none());
         });
     }
 
@@ -411,7 +414,7 @@ mod tests {
                 panic!("new session is a patch of its own");
             };
             assert!(patch.new_session);
-            assert!(patch.director_base_url.is_none());
+            assert!(patch.completer.director_base_url.is_none());
         });
     }
 
@@ -437,7 +440,7 @@ mod tests {
             let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &typed, &view) else {
                 panic!("Apply commits the staged source");
             };
-            assert_eq!(patch.harness.as_deref(), Some("opencode"));
+            assert_eq!(patch.completer.harness.as_deref(), Some("opencode"));
             assert_eq!(
                 handle(&press(form::CANCEL_ID), &typed, &view),
                 Outcome::Reset,

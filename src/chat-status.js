@@ -6,7 +6,7 @@
 // `engine:` trace writes. A blank cell reads as a bar that broke.
 const NONE = "—";
 
-// Milliseconds until the next ambient wake, in the largest unit that still
+// Milliseconds until the next proactive wake, in the largest unit that still
 // counts. Rounded up, and `due` past zero: a wake the Engine has not got to
 // yet is due, not late. Three characters is what the bar's width budget fits.
 export function untilWake(ms) {

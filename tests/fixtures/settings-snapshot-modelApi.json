@@ -218,13 +218,13 @@
             },
             {
               "type": "Checkbox",
-              "id": "ambient",
-              "label": "Ambient session wakes",
-              "writes": "AmbientWakes",
+              "id": "proactive",
+              "label": "Proactive model calls",
+              "writes": "ProactiveWakes",
               "frozen": false,
               "help": "Acts on its own, not only when asked.",
               "comment": null,
-              "disclosure": "Ambient wakes are proactive model calls: the buddy addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.",
+              "disclosure": "Proactive model calls address you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first one waits.",
               "status": null
             },
             {

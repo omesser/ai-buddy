@@ -102,7 +102,7 @@ pub fn happened_word(happened: &Happened) -> &'static str {
         Happened::Grab => "picked up",
         Happened::Perch => "placed on a perch",
         Happened::Chat(_) => "spoken to",
-        Happened::Ambient => "time passed",
+        Happened::Proactive => "time passed",
     }
 }
 

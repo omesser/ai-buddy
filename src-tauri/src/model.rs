@@ -109,7 +109,7 @@ const DEFAULT_EFFORT: &str = "low";
 pub struct DirectorInspect {
     pub enabled: bool,
     pub configured: bool,
-    pub ambient_wakes: bool,
+    pub proactive_wakes: bool,
     pub wake_secs: u64,
     pub last_payload: Option<String>,
     /// The attached Harness, when `AI_BUDDY_HARNESS` named one. Its `login`
@@ -138,7 +138,7 @@ pub struct DirectorConfig {
     /// First ambient session wait. `Pace` doubles from here.
     pub ambient_first: Duration,
     /// Proactive session wakes. Off keeps reactive wakes and Static idle life.
-    pub ambient_allowed: bool,
+    pub proactive_allowed: bool,
 }
 
 impl DirectorConfig {
@@ -156,7 +156,7 @@ impl DirectorConfig {
         DirectorInspect {
             enabled: self.enabled,
             configured: self.configured,
-            ambient_wakes: self.ambient_allowed,
+            proactive_wakes: self.proactive_allowed,
             wake_secs: self.ambient_first.as_secs(),
             last_payload: None,
             harness: crate::harness::attached().map(|session| session.inspect()),
@@ -254,7 +254,7 @@ pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
         key_invalid: settings.key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: ambient_first(),
-        ambient_allowed: true,
+        proactive_allowed: true,
     }
 }
 
@@ -3349,7 +3349,7 @@ pub(crate) mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
-            ambient_allowed: true,
+            proactive_allowed: true,
         };
         assert_eq!(startup_lines(&static_only), ["director: StaticDirector"]);
 
@@ -3376,7 +3376,7 @@ pub(crate) mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Duration::from_secs(45),
-            ambient_allowed: true,
+            proactive_allowed: true,
         };
         assert_eq!(
             startup_lines(&model),
@@ -3390,7 +3390,7 @@ pub(crate) mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
-            ambient_allowed: true,
+            proactive_allowed: true,
         };
         assert_eq!(startup_lines(&off), ["director: off; using StaticDirector"]);
     }
@@ -4220,13 +4220,13 @@ pub(crate) mod tests {
             false,
         );
 
-        // Vary the wake so the prompts differ: the reactive verbs plus ambient.
+        // Vary the wake so the prompts differ: the reactive verbs plus a proactive wake.
         let occasions = [
             (Happened::Poke, State::Grounded, "the display floor"),
             (Happened::Throw, State::Falling, "nothing"),
             (Happened::Summon, State::Grounded, "a Terminal window"),
             (Happened::Perch, State::Perched, "a Safari window"),
-            (Happened::Ambient, State::Grounded, "the top of the Dock"),
+            (Happened::Proactive, State::Grounded, "the top of the Dock"),
         ];
 
         let (mut accepted, mut speech, mut failed) = (0usize, 0usize, 0usize);
