@@ -27,7 +27,7 @@ def parse_samples(text, process, pid=None):
     """One dict per '*** Sampled system activity' block.
 
     Matching by process name alone is unsafe: other agents on this machine
-    run their own Fidget builds concurrently (observed directly - a second,
+    run their own fidget builds concurrently (observed directly - a second,
     unrelated `fidget` PID showed up in a real capture during this task).
     Pass --pid for the exact process this script launched; name matching is
     a fallback for ad-hoc use only and prints a warning if more than one PID

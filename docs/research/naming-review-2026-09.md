@@ -107,7 +107,7 @@ Terms from `CONTEXT.md` Language section:
 | Functional Layer | invoked, Harness-driven work | ✅ |
 | Harness | `harness.rs`, external agent runtime | ✅ |
 | Completer | `Completer` trait, thing that answers | ✅ |
-| Executor | owned by Harness, not Fidget | ✅ |
+| Executor | owned by Harness, not fidget | ✅ |
 | Action Log | `action_log.rs`, Harness actions | ✅ |
 | Ambient Capture | dropped (ADR-0031) | — |
 | On-Demand Capture | dropped (ADR-0031) | — |

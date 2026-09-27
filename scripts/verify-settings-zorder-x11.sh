@@ -104,14 +104,14 @@ if [ -z "$BIN" ]; then
   elif [ -x "$WORKSPACE_ROOT/target/debug/fidget" ]; then
     BIN="$WORKSPACE_ROOT/target/debug/fidget"
   else
-    log_info "Building Fidget (release)..."
+    log_info "Building fidget (release)..."
     cargo build -p fidget --release
     BIN="$WORKSPACE_ROOT/target/release/fidget"
   fi
 fi
 [ -x "$BIN" ] || fail "no binary at $BIN"
 
-log_info "Starting Fidget with Settings webview..."
+log_info "Starting fidget with Settings webview..."
 HOME_DIR="$OUT/home"
 mkdir -p "$HOME_DIR"
 export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
@@ -171,7 +171,7 @@ for _ in $(seq 1 60); do
   [ -n "$OVERLAY_ID" ] && break
   sleep 0.25
 done
-[ -n "$OVERLAY_ID" ] || fail "Could not find Fidget overlay window"
+[ -n "$OVERLAY_ID" ] || fail "Could not find fidget overlay window"
 log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for overlay EWMH ABOVE..."

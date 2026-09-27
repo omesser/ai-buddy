@@ -44,7 +44,7 @@ project's choice, not the operating system's. #975 records the judgment.
   application names need this one; nothing else in the tier does.
 - "Screen Recording permission is never requested" is withdrawn, because
   enabling the titles consent requests that grant on macOS. What stands is that
-  Fidget builds no Capture path, so no screenshot, no pixel analysis, and no
+  fidget builds no Capture path, so no screenshot, no pixel analysis, and no
   OCR or vision model for desktop content.
 
 ## Consequences

@@ -68,7 +68,7 @@ promise action on the machine, or override the universal voice rules.
 
 None of that relies on the prompt asking nicely. The Engine plays only declared
 Behaviors and `ModelDirector::declared` refuses a name nobody declared, so an
-invented Behavior is a near miss rather than an action; Fidget ships no
+invented Behavior is a near miss rather than an action; fidget ships no
 Executor (ADR-0003), so a promised action has nothing to call. The wording only
 saves a wasted round trip.
 

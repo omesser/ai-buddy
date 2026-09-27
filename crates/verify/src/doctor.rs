@@ -26,27 +26,27 @@ pub fn run(repo_root: &Path, report: &mut RunReport) {
     if repo_root.join("Cargo.toml").is_file() && repo_root.join("src-tauri").is_dir() {
         report.check(Outcome::Pass, "workspace layout", "Cargo.toml + src-tauri");
     } else {
-        report.check(Outcome::Fail, "workspace layout", "not a Fidget checkout");
+        report.check(Outcome::Fail, "workspace layout", "not a fidget checkout");
     }
 
     match fidget_bin(repo_root) {
         Some(bin) => report.check(
             Outcome::Pass,
-            "Fidget binary",
+            "fidget binary",
             &format!("present: {}", bin.display()),
         ),
         None => {
             if command_on_path("cargo") {
                 report.check(
                     Outcome::Pass,
-                    "Fidget binary",
+                    "fidget binary",
                     "not built yet; cargo is available to build",
                 );
             } else {
                 report.check(
                     Outcome::Fail,
-                    "Fidget binary",
-                    "no Fidget binary and no cargo",
+                    "fidget binary",
+                    "no fidget binary and no cargo",
                 );
             }
         }

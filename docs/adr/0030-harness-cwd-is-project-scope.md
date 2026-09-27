@@ -2,7 +2,7 @@
 
 ## Context
 
-ADR-0018 makes the attached Harness headless, and ADR-0022 makes Fidget
+ADR-0018 makes the attached Harness headless, and ADR-0022 makes fidget
 responsible for launching it. Neither decision says which project the
 Harness belongs to. Both dropped a working-directory sentence when they
 superseded their predecessors, as implementation detail that belongs
@@ -14,14 +14,14 @@ lookup was measured. By their own documentation, Grok, opencode, and Hermes
 do the same kind of project lookup from the directory the process starts in.
 User-scope servers and a vendor's own connectors still load wherever the
 Harness starts, which is why an attach looks configured while the project
-slice is missing. Because Fidget starts the process, Fidget chooses the
+slice is missing. Because fidget starts the process, fidget chooses the
 project scope whose configuration the Harness sees.
 
-Fidget currently uses its application data folder for that directory.
+fidget currently uses its application data folder for that directory.
 Superseded ADR-0010 chose a non-project folder so the character is not flavoured
 by a repository it was never asked about. The same choice is why local and
 project MCP servers and per-project opt-ins miss under attach. ACP does not
-suppress that configuration. The MCP entry Fidget supplies (ADR-0023,
+suppress that configuration. The MCP entry fidget supplies (ADR-0023,
 ADR-0026) merges with what the directory brings in. It does not replace it.
 
 The Harness session file and the Action Log also live in the application
@@ -31,7 +31,7 @@ ownership.
 
 ## Decision
 
-Fidget chooses one working directory whenever it starts an attached
+fidget chooses one working directory whenever it starts an attached
 Harness. That directory is the Harness's project scope for vendor
 configuration. Changing it is a change to Harness behavior, not
 process-launch cleanup.
@@ -41,7 +41,7 @@ is this value, not the meaning of the directory. Its replacement belongs to
 #782. This ADR does not choose it.
 
 The Harness session file and the Action Log are app persistence, not
-project scope. Fidget must choose their paths independently of the
+project scope. fidget must choose their paths independently of the
 Harness working directory. The paths may resolve to the same directory, but
 neither may be derived from the other. Changing project scope must not, by
 itself, move either record.

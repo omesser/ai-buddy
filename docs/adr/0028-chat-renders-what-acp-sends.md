@@ -39,7 +39,7 @@ sent this field and we discarded it". A change that adds a capability the
 protocol does not carry is out, and so is a change that reads a protocol field
 and builds an interface around it rather than drawing it.
 
-Fidget is not rebuilding a vendor's IDE. No agent panel, no diff viewer, no
+fidget is not rebuilding a vendor's IDE. No agent panel, no diff viewer, no
 embedded terminal, no plan editor, no tool-call inspector — not as product
 surfaces, not inside a 420-point window. A proposal that starts to look like a
 coding-agent IDE is refused by this paragraph.
@@ -77,7 +77,7 @@ Simplifying how something is drawn is allowed. Omitting it is not. An image, a
 resource link or an embedded resource may reach the reader as a name and a path
 rather than as the thing itself, but a turn that quietly says nothing is the
 failure this ADR exists to stop. Resource links in particular are a gap to
-close: Fidget is meant for computer use and tool use, so rich media arrives on
+close: fidget is meant for computer use and tool use, so rich media arrives on
 this wire as a matter of course.
 
 The thought trace is contested, and this ADR does not settle it. ADR-0025

@@ -61,7 +61,7 @@ for i in 0..<count {
     let window = NSWindow(
         contentRect: NSRect(x: x, y: y, width: size.width, height: size.height),
         styleMask: [.titled], backing: .buffered, defer: false)
-    window.title = "Fidget flood \(i)"
+    window.title = "fidget flood \(i)"
     window.alphaValue = 0.3
     window.ignoresMouseEvents = true
     window.level = .normal

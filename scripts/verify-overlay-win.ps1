@@ -243,7 +243,7 @@ if ($m2 -and $m2.Line -match "sprite\((-?\d+),(-?\d+)\)") {
   $fgPid = [uint32]0
   [WinVerify]::GetWindowThreadProcessId($fg, [ref]$fgPid) | Out-Null
   if ($fgPid -eq [uint32]$script:AppProc.Id) {
-    Fail "Focus stolen by Fidget (fg pid=$fgPid)"
+    Fail "Focus stolen by fidget (fg pid=$fgPid)"
   }
   Pass "No focus steal (fg pid=$fgPid)"
 } else {

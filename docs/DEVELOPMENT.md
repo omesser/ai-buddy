@@ -6,14 +6,14 @@ This document covers toolchains, verification, trace variables, Character Packag
 
 ```sh
 # Clone and run
-git clone https://github.com/omesser/ai-buddy.git
-cd Fidget
+git clone https://github.com/omesser/ai-buddy.git fidget
+cd fidget
 cargo run -p fidget
 ```
 
 ## Local Data Management
 
-Fidget writes two files to the data directory:
+fidget writes two files to the data directory:
 - macOS: `~/Library/Application Support/fidget`
 - Linux: `~/.local/share/fidget`
 - Windows: `%APPDATA%\fidget` (e.g. `C:\Users\<user>\AppData\Roaming\fidget`)
@@ -149,7 +149,7 @@ A human is still needed for the last step, because only the window server can an
 5. **Motion is continuous, not stepped.** Watch it fall. It slides down the screen rather than jumping between positions, and it does not judder when it crosses a window's edge.
 6. **The art is crisp.** On a Retina display the pixels are hard squares with no blur or soft edges, and every pixel of the sprite is the same size as every other. A blurred sprite means the integer scale or the nearest-neighbour filtering was lost.
 7. **It rests on the Dock, not behind it.** Let the sprite settle at the bottom of the screen. Its feet stand on the Dock's top edge and the whole sprite is visible. Then turn on Dock auto-hiding in System Settings: within a poll the sprite falls the rest of the way to the bottom of the screen, because the Dock gave the space back. Turn it off and the sprite is lifted again.
-8. **Declared cadence is honoured.** Point Fidget at a copy of Black Mage whose idle declares a faster `fps`, and the idle is visibly faster than it was at the declared 1.
+8. **Declared cadence is honoured.** Point fidget at a copy of Black Mage whose idle declares a faster `fps`, and the idle is visibly faster than it was at the declared 1.
 9. **A click makes it react.** Click the sprite once without moving the mouse. It plays its `react` animation for about half a second, then goes back to what it was doing.
 10. **Press and drag picks it up.** Press on the sprite and move. It follows the cursor. Release over a window and it lands on that window's top edge.
 11. **A flick throws it.** Drag and release while still moving and it leaves your hand on an arc. Hold still for a moment before releasing and it drops straight down instead.
@@ -268,7 +268,7 @@ cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
 
 A key saved before the first signed run keeps the old list — clear it in Settings and save it once more. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those again, once. Released builds are ad-hoc signed too, so an update prompts the same way until there is a Developer ID to sign with (#283).
 
-**Accessibility, Screen Recording, and Input Monitoring:** Settings → What the character can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as Fidget. Check the box, then turn that named app on in Privacy & Security. Input Monitoring is the one that changes what the frame loop does: granted, an idle sprite is woken by the mouse rather than by its own timer, so a poke lands at once instead of up to a second later; ungranted, the loop keeps the back-off #718 shipped (#721). The tap starts within about a second of the grant landing — no relaunch — and the loop stops using it the moment you uncheck the box.
+**Accessibility, Screen Recording, and Input Monitoring:** Settings → What the character can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as fidget. Check the box, then turn that named app on in Privacy & Security. Input Monitoring is the one that changes what the frame loop does: granted, an idle sprite is woken by the mouse rather than by its own timer, so a poke lands at once instead of up to a second later; ungranted, the loop keeps the back-off #718 shipped (#721). The tap starts within about a second of the grant landing — no relaunch — and the loop stops using it the moment you uncheck the box.
 
 ### Local Model Servers
 
@@ -342,7 +342,7 @@ director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:l
 
 Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a character that went quiet is not a mystery.
 
-`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it serves Fidget's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, says whether the reply parsed as a Behavior proposal, and says whether the Harness fetched the tool list. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
+`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it serves fidget's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, says whether the reply parsed as a Behavior proposal, and says whether the Harness fetched the tool list. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
 
 ```sh
 FIDGET_HARNESS=hermes scripts/probe-harness.sh
@@ -531,8 +531,8 @@ On Windows, the ACP Harness child and its descendants (e.g. `npx` spawning Node)
 
 Two transport axes (do not conflate):
 
-1. **ACP** (Fidget ↔ Harness): always stdio. Fidget spawns the Harness and prompts it over newline-delimited JSON-RPC on stdio.
-2. **MCP** (Harness → Fidget tools): The Harness calls back so `speak`, sensing, and Memory tools reach the character.
+1. **ACP** (fidget ↔ Harness): always stdio. fidget spawns the Harness and prompts it over newline-delimited JSON-RPC on stdio.
+2. **MCP** (Harness → fidget tools): The Harness calls back so `speak`, sensing, and Memory tools reach the character.
 
 ### How it works
 
@@ -558,7 +558,7 @@ The URL and the token are both new every app run, so this is a rewrite and a re-
 
 Cursor records approvals as a hash of the directory and the entry, appended to `~/.cursor/projects/<slug>/mcp-approvals.json`. A new app run means a new id, and nothing prunes the old ones: measured, four runs left four ids, about 31 bytes each. `cursor-agent mcp disable` does **not** prune them — it marks the server never to load again, which would break the next attach, so detach does not call it.
 
-Detach removes our entry, and the file and directory when attach created them. While a session is attached the token is on disk in the Working directory's `.cursor/mcp.json`. It is owner-only, it dies with the app run, and Fidget does nothing about the user's VCS — what the project does with an untracked `.cursor/` is the project's business.
+Detach removes our entry, and the file and directory when attach created them. While a session is attached the token is on disk in the Working directory's `.cursor/mcp.json`. It is owner-only, it dies with the app run, and fidget does nothing about the user's VCS — what the project does with an untracked `.cursor/` is the project's business.
 
 **Seven tools** (`crates/core/src/dispatch.rs`):
 
@@ -576,8 +576,8 @@ All requests are synchronous; no streaming, no push. The loopback server (`mcp_h
 
 The attached case above needs no setup: the app hands its Harness the endpoint on `session/new`. A Harness you launch yourself in a terminal gets nothing forwarded, so you register the endpoint with it by hand — once per app launch.
 
-1. Start Fidget and open Settings.
-2. Under **Point a Harness you run yourself at Fidget**, pick the Harness.
+1. Start fidget and open Settings.
+2. Under **Point a Harness you run yourself at fidget**, pick the Harness.
 3. Copy the generated command (or JSON fragment, for the Harnesses with no `mcp add`) and run it, or paste it where the instructions beside it say. Hermes prompts for the token interactively, so its row carries a separate Copy for the token.
 4. Reload or restart the Harness session as the instructions say. Claude Code and OpenCode read MCP config at session start only.
 
@@ -606,7 +606,7 @@ That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP
 
 All seven were read out of the Settings box by accessibility dump and run as the box gave them, and all seven drew their own line in the bubble on a real Mac, each naming itself, checked by OCR across consecutive frames against a control frame taken before the turn. `claude` was verified on 2026-09-21 and the rest on 2026-09-22. The `copilot` row was checked against `copilot mcp add`, `get` and `remove` on 1.0.88, which is why the remove comes first: a second `add` of a name it holds fails rather than overwriting. No `speak` through that registration has been recorded (#1016).
 
-‡ `pi` ships no MCP client of its own. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. With that plugin present the box's fragment works unchanged, verified on pi 0.85.1 with pi-mcp-adapter 2.36.0. Two things differ from every other row. The adapter connects lazily, so a headless `pi -p` run has to call `mcp({"connect": "fidget"})` before the tool exists at all, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. And the tool is reached through Pi's `mcp` proxy under its prefixed name, `fidget_speak`, not as `speak`. The README's Pi tools row is about the attached path. `pi-acp` advertises no HTTP MCP on `initialize`, and whether that session lists Fidget's tools is unmeasured (#984).
+‡ `pi` ships no MCP client of its own. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. With that plugin present the box's fragment works unchanged, verified on pi 0.85.1 with pi-mcp-adapter 2.36.0. Two things differ from every other row. The adapter connects lazily, so a headless `pi -p` run has to call `mcp({"connect": "fidget"})` before the tool exists at all, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. And the tool is reached through Pi's `mcp` proxy under its prefixed name, `fidget_speak`, not as `speak`. The README's Pi tools row is about the attached path. `pi-acp` advertises no HTTP MCP on `initialize`, and whether that session lists fidget's tools is unmeasured (#984).
 
 A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself.
 
@@ -629,16 +629,16 @@ A Harness the popup does not list (a hand-edited command, `custom`) gets the bar
 
 ### What it can but doesn't
 
-- **Richer sensing (Capture)** — *dropped* ([ADR-0031](./adr/0031-drop-capture-tiers.md)). `describe_screen` is window metadata only; Fidget never takes screenshots, never analyzes pixels, and never embeds OCR/vision. Agents needing pixel access use harness-native computer use or attach an MCP server like cua-driver.
-- **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; Fidget ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
+- **Richer sensing (Capture)** — *dropped* ([ADR-0031](./adr/0031-drop-capture-tiers.md)). `describe_screen` is window metadata only; fidget never takes screenshots, never analyzes pixels, and never embeds OCR/vision. Agents needing pixel access use harness-native computer use or attach an MCP server like cua-driver.
+- **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; fidget ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
 - **MCP sampling, progress, SSE push** — *out of scope today*. The server is sync request/response; no `notifications/progress`, no server-initiated push. Sampling requires long-lived connections the current thread-per-request model doesn't hold.
 - **Prompts** — *not served*. MCP prompt templates are not exposed. Resources are: Memory, the Action Log, and window titles.
 - **Non-loopback MCP** — *by design no* (ADR-0010). The bearer token authorizes moving the character; an off-host endpoint would post it there. The bind is `127.0.0.1` only; LAN/WAN addresses are refused.
-- **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; Fidget branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit Fidget gates on. A future Hermes setting the bit would take the loopback path with no change here.
+- **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; fidget branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit fidget gates on. A future Hermes setting the bit would take the loopback path with no change here.
 
 ### Related decisions
 
-- ADR-0003 — no Executor tools (mouse/keyboard events) in Fidget
+- ADR-0003 — no Executor tools (mouse/keyboard events) in fidget
 - ADR-0010 — credential rules, loopback-only MCP, token stays out of logs
 - ADR-0023 — dispatch inside the running app, loopback HTTP MCP
 - ADR-0026 — stdio MCP binary is a relay shim

@@ -1,12 +1,12 @@
 # Fidget–Harness two-way session
 
-Research for #16 (and #166). Question: what protocol lets Fidget *initiate* a
+Research for #16 (and #166). Question: what protocol lets fidget *initiate* a
 turn in a user-supplied Harness — replacing the `Completer` seam in
-`crates/core/src/director.rs` — while that same turn can still call Fidget's
+`crates/core/src/director.rs` — while that same turn can still call fidget's
 MCP tools?
 
 **Answer.** Use the **Agent Client Protocol** (ACP) for Buddy → Harness and keep
-**MCP** for Harness → Buddy, in one ACP session. Fidget becomes the ACP
+**MCP** for Harness → Buddy, in one ACP session. fidget becomes the ACP
 *client*: it spawns the harness, calls `session/new` once with its own MCP server
 listed in `mcpServers`, and every Director wake or chat turn is a
 `session/prompt` whose result arrives with a `stopReason` when the agent's whole
@@ -30,16 +30,16 @@ which is exactly what OpenPets ships.
 ## What ACP is
 
 [ACP](https://agentclientprotocol.com/) is JSON-RPC between a **client** (an
-editor, or here Fidget) and an **agent** (the user's Harness). The client
+editor, or here fidget) and an **agent** (the user's Harness). The client
 starts a session and sends user turns with `session/prompt`. The agent thinks,
 may call tools, and answers that prompt only when the turn is finished. Same
 split as an IDE driving a coding agent. MCP is a different axis: how that agent
-reaches tools. Fidget is the ACP client and, separately, the MCP server the
+reaches tools. fidget is the ACP client and, separately, the MCP server the
 agent is handed at `session/new`.
 
 ```mermaid
 sequenceDiagram
-  participant Fidget as Fidget
+  participant fidget as fidget
   participant Agent as Harness
   Buddy->>Agent: ACP session/prompt
   Agent->>Buddy: MCP speak / play_behavior
@@ -81,8 +81,8 @@ a `subscriptions/listen` stream and opt in to a fixed set of types
 sessions, `Mcp-Session-Id`, the `initialize` handshake, and `ping`.
 <https://modelcontextprotocol.io/specification/2026-07-28/changelog>
 
-So a Fidget MCP server cannot poke the harness. Everything it says is a reply
-to something the harness asked for. #166's framing — Fidget is the server, the
+So a fidget MCP server cannot poke the harness. Everything it says is a reply
+to something the harness asked for. #166's framing — fidget is the server, the
 harness is the client — is right, and it is precisely why #16 needs a second
 protocol rather than a cleverer use of the first.
 
@@ -97,7 +97,7 @@ The contract is small: declare `capabilities.experimental['claude/channel']`
 event reaches the model as a `<channel source="…">` tag, and a reply is an
 ordinary MCP tool the server exposes.
 <https://code.claude.com/docs/en/channels-reference>
-That shape maps onto Fidget almost exactly: push "the user poked me", let
+That shape maps onto fidget almost exactly: push "the user poked me", let
 Claude answer through `speak`. The caveats are what disqualify it as the primary
 path.
 
@@ -139,7 +139,7 @@ but the *server* owns it: "Servers can request that the client's LLM use tools
 during sampling by providing a `tools` array … The tool definitions in the
 `tools` array are scoped to the sampling request — they don't need to correspond
 to registered tools." After a `stopReason: "toolUse"` the server "Executes the
-requested tool uses" and re-sends the whole message list. So Fidget would be
+requested tool uses" and re-sends the whole message list. So fidget would be
 supplying the tools, running the loop, and paying for the orchestration — the
 harness contributes a raw model call and nothing else. Its own tools, permission
 prompts, project instructions, skills and memory are not in play. The
@@ -199,7 +199,7 @@ supports `mcpCapabilities.http`, Clients can specify MCP servers configurations
 using the HTTP transport", and "new Agents **SHOULD** support the HTTP transport
 to ensure compatibility with modern MCP servers."
 <https://agentclientprotocol.com/protocol/v1/session-setup>
-This is the whole two-way story in one call: Fidget hands the harness its own
+This is the whole two-way story in one call: fidget hands the harness its own
 tool surface at session creation, then drives turns into it.
 
 **Session continuity across restarts** is capability-gated: `session/load`
@@ -221,7 +221,7 @@ transport, which causes fragmentation".
 <https://agentclientprotocol.com/rfds/streamable-http-websocket-transport>
 
 **Rust, which matters for a Tauri app.** The `agent-client-protocol` crate
-"provides implementations of both sides of the Agent Client Protocol"; Fidget
+"provides implementations of both sides of the Agent Client Protocol"; fidget
 implements the `Client` trait. It "powers the integration with external agents in
 the Zed editor."
 <https://agentclientprotocol.com/libraries/rust>
@@ -232,7 +232,7 @@ ready for a new prompt, with a stop reason when foreground work ends". Build the
 adapter against v1 and keep the completion signal behind one function.
 <https://agentclientprotocol.com/protocol/v2/overview>
 
-**Client-side prior art in the same shape as Fidget**: Jockey, an "open-source
+**Client-side prior art in the same shape as fidget**: Jockey, an "open-source
 multi-agent orchestrator (Tauri + Rust + SolidJS) that coordinates Claude Code,
 Gemini CLI, and Codex CLI via ACP", and Zed itself.
 <https://agentclientprotocol.com/get-started/clients>
@@ -261,7 +261,7 @@ multiple messages that process sequentially, with ability to interrupt" and
 "Natural multi-turn conversations".
 <https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode>
 
-**Reach Fidget's MCP tools in that turn:** yes. `mcpServers` accepts stdio
+**Reach fidget's MCP tools in that turn:** yes. `mcpServers` accepts stdio
 ("Local processes that communicate via stdin/stdout"), `type: "http"` /
 `"sse"` with a URL and headers, and in-process SDK servers.
 <https://code.claude.com/docs/en/agent-sdk/mcp>
@@ -317,11 +317,11 @@ for hosts that own MCP themselves: `HERMES_ACP_SKIP_CONFIGURED_MCP=1` skips
 starting `config.yaml`'s servers, and "Only the global `config.yaml` discovery is
 skipped. MCP servers supplied by the ACP session through `session/new` are still
 registered, so a host loses no capability it asked for." That page is written for
-exactly Fidget's case — a non-editor host owning the conversation.
+exactly fidget's case — a non-editor host owning the conversation.
 
 One warning worth carrying into #16: Hermes' ACP toolset includes `terminal` and
 `execute_code`, and Nous documents a host (Buzz) that auto-answers permission
-requests, producing unattended shell execution. Fidget must forward
+requests, producing unattended shell execution. fidget must forward
 `session/request_permission` rather than answer it, which is also what DESIGN.md
 decision 11 requires.
 
@@ -352,7 +352,7 @@ not the command response.
 the Pi maintainers.
 <https://agentclientprotocol.com/get-started/agents>
 
-**Consequence for Fidget:** Pi is the harness that needs a bespoke adapter
+**Consequence for fidget:** Pi is the harness that needs a bespoke adapter
 either way. Buddy → Pi is `--mode rpc`. Pi → Buddy cannot be MCP; it has to be a
 Pi extension exposing the character tools, which is the route OpenPets took
 (`packages/pi` — "@open-pets/pi (Pi CLI extension integration)").
@@ -377,7 +377,7 @@ Grok also reads `~/.claude.json`, `.cursor/mcp.json`, and project `.mcp.json`.
 **There is no first-party xAI page describing a TCP MCP transport.** `docs.x.ai`
 documents stdio and `--transport http` only; `https://docs.x.ai/build/features/acp`
 returns 404, so the ACP claim rests on the announcement page above. #166's "Grok
-harness over TCP MCP" is a Fidget plan, not a documented Grok feature — and it
+harness over TCP MCP" is a fidget plan, not a documented Grok feature — and it
 does not need to be one, because loopback Streamable HTTP is already supported.
 
 ## Transports (stdio vs Streamable HTTP vs TCP)
@@ -431,7 +431,7 @@ unreachable across WSL2 NAT.
 <https://github.com/alvinunreal/openpets/issues/3>
 
 For ACP itself, stdio is the only stable transport, and the direction is the one
-Fidget wants: the client launches the agent. #166 objects that "a long-lived
+fidget wants: the client launches the agent. #166 objects that "a long-lived
 companion must not be a child of one agent session" — ACP resolves that by
 inverting it. The character is the parent.
 
@@ -451,7 +451,7 @@ advertises an A2A server endpoint. Don't stretch it.
 
 ## Recommendation
 
-1. **Implement Fidget as an ACP client in Rust.** Add
+1. **Implement fidget as an ACP client in Rust.** Add
    `agent-client-protocol` and implement the `Client` trait. `initialize`,
    then one `session/new` per app lifetime; hold the `sessionId`.
 2. **Fill the `Completer` seam with one `session/prompt` per wake.** The adapter
@@ -459,7 +459,7 @@ advertises an A2A server endpoint. Don't stretch it.
    returns when the `session/prompt` response arrives; `stopReason != "end_turn"`
    maps to `Wake::Failed` so Static Director takes over, per ADR-0008. Reactive
    and backed-off proactive wakes are the same call with different triggers.
-3. **Hand the harness Fidget's tools in `session/new`.** Prefer
+3. **Hand the harness fidget's tools in `session/new`.** Prefer
    `{"type": "http", "name": "fidget", "url": "http://127.0.0.1:<port>/mcp"}`
    when `initialize` reports `mcpCapabilities.http`; fall back to the stdio shim
    otherwise, since stdio support is mandatory for every agent. This is the
@@ -497,7 +497,7 @@ advertises an A2A server endpoint. Don't stretch it.
   "The list of messages in a sampling request **SHOULD NOT** be retained between
   separate requests." That is ADR-0008's split brain with extra steps.
 - **MCP as the Buddy → Harness direction, in any form.** "No other message
-  direction exists." A Fidget tool call cannot start a turn.
+  direction exists." A fidget tool call cannot start a turn.
 - **A custom TCP MCP transport as the #166 answer.** Allowed by the spec, dialled
   by no harness. Loopback Streamable HTTP plus a stdio shim covers all five.
 - **Spawning the Claude Agent SDK behind a private JSON protocol.** Same
@@ -506,7 +506,7 @@ advertises an A2A server endpoint. Don't stretch it.
 - **A2A.** Cross-organisation, opaque-execution, Agent-Card-discovered remote
   peers. Wrong unit, wrong visibility, and unimplemented by the five harnesses.
 - **MCP elicitation as a chat surface.** It is client-input-to-server inside a
-  tool call (Claude Code renders form and URL modes), not a way for Fidget to
+  tool call (Claude Code renders form and URL modes), not a way for fidget to
   ask the model anything.
 
 ## Open, not resolved here

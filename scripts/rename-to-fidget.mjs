@@ -75,8 +75,8 @@ const EXACT = [
   ["a ai-buddy window", "a fidget window", "product-slug"],
   // GDK capitalizes the binary name: ai-buddy's WM_CLASS is Ai-buddy.
   ["Ai-buddy", "Fidget", "product-display"],
-  ["buddy-vs-no-buddy", "Fidget-vs-no-Fidget", "product-display"],
-  ["buddy-side", "Fidget-side", "product-display"],
+  ["buddy-vs-no-buddy", "fidget-vs-no-fidget", "product-slug"],
+  ["buddy-side", "fidget-side", "product-slug"],
   ["multi-buddy", "multi-character", "character-generic"],
   ["Buddy Cues", "Fidget Cues", "product-display"],
   ["Buddy Bubble", "Fidget Bubble", "product-display"],
@@ -164,6 +164,11 @@ function productToken(whole, offset) {
   // A YAML key whose value is the MCP server id: a line that is only `ai-buddy:`.
   if (after === ":" && /^[ \t]*$/.test(linePrefix(whole, offset))) return "fidget";
   if (SLUG_PREV.has(previousWord(whole, offset))) return "fidget";
+  // `claude mcp add --transport http ai-buddy` — the server id is not the word after `add`.
+  const start = whole.lastIndexOf("\n", offset - 1) + 1;
+  const end = whole.indexOf("\n", offset);
+  const line = whole.slice(start, end === -1 ? whole.length : end);
+  if (/\bmcp (add|remove)\b/.test(line)) return "fidget";
   return slugOrDisplay(before, after, next);
 }
 
@@ -206,6 +211,113 @@ export function transform(text) {
   out = fixArticles(out);
   out = replaceCompanion(out);
   return unshield(out, slots);
+}
+
+// Title case only in user-facing docs, UX copy, and headings. A lowercase
+// `ai-buddy` in technical prose, paths, and identifiers stays a lowercase slug.
+const DISPLAY_FILES = new Set([
+  "README.md",
+  "DESIGN.md",
+  "CONTEXT.md",
+  "docs/SPEC.md",
+  "branding/README.md",
+  "src-tauri/tauri.conf.json",
+  "src-tauri/src/tray.rs",
+  "tests/product-identity.test.js",
+]);
+const DISPLAY_PREFIXES = [
+  "docs/design/",
+  "src-tauri/src/settings",
+  "tests/fixtures/settings-",
+  "spike/settings-webview/",
+  "characters/",
+];
+const UX_FILES = new Set([
+  "src-tauri/src/main.rs",
+  "src-tauri/src/consent.rs",
+  "src-tauri/src/harness.rs",
+  "src-tauri/src/chat_surface.rs",
+  "tests/ax-settings-win-finder.test.js",
+  "tests/verify-anchor-offscreen-win.test.js",
+  "tests/settings.test.js",
+  "tests/settings-clipboard.test.js",
+  "tests/chat-status.test.js",
+]);
+
+function fileKind(rel) {
+  if (DISPLAY_FILES.has(rel) || DISPLAY_PREFIXES.some((prefix) => rel.startsWith(prefix))) return "display";
+  if (rel.startsWith("src/") || UX_FILES.has(rel)) return "ux";
+  return "technical";
+}
+
+function isHeading(line, rel) {
+  const trimmed = line.trim();
+  if (rel.endsWith(".md") && /^#{1,6}\s/.test(trimmed)) return true;
+  return /<title>/.test(line) || /<h[1-6][\s>]/.test(line);
+}
+
+function isComment(line, rel) {
+  const trimmed = line.trim();
+  if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("<!--")) return true;
+  return /\.(sh|py|toml|yaml|yml)$/.test(rel) && trimmed.startsWith("#");
+}
+
+function isLog(line) {
+  return /console\.(warn|error|log|info|debug)\s*\(/.test(line) || /eprintln!/.test(line) || /println!/.test(line);
+}
+
+// Spans that are the product as people see it, or the GDK class of the binary.
+const KEEP_CASE = [
+  /Fidget\.app\b/g,
+  /"Fidget"\.into\(\)/g,
+  /\.tooltip\("Fidget"\)/g,
+  /\.title\("Fidget"\)/g,
+  /"productName": "Fidget"/g,
+  /Title: "Fidget"/g,
+  /title: "Fidget"/g,
+  /title !== "Fidget"/g,
+  /--class 'Fidget'/g,
+  /WM_CLASS `Fidget`/g,
+  /`Fidget` class/g,
+  /`Fidget` window/g,
+  /is_toolchain\("Fidget"\)/g,
+  /Fidget ·/g,
+];
+
+function lowercaseProduct(line) {
+  const slots = [];
+  const shielded = shield(line, KEEP_CASE, "keep", slots);
+  return unshield(shielded.replace(/\bFidget\b/g, "fidget"), slots);
+}
+
+function lowercaseMcpName(line) {
+  const command = /\bmcp (add|remove)\b/.test(line) || /^\s*Fidget\s+"/.test(line);
+  if (!command) return line;
+  return line.replace(/\bFidget\b/g, (match, offset, whole) => (
+    whole.slice(offset + match.length).startsWith(".app") ? match : "fidget"
+  ));
+}
+
+export function recase(text, rel) {
+  const kind = fileKind(rel);
+  // The GitHub path stays omesser/ai-buddy. The local directory is the product slug.
+  const rewritten = text.replace(
+    /git clone https:\/\/github\.com\/omesser\/ai-buddy\.git\ncd (?:Fidget|ai-buddy)\b/g,
+    "git clone https://github.com/omesser/ai-buddy.git fidget\ncd fidget",
+  );
+  let fence = false;
+  return rewritten.split("\n").map((line) => {
+    if (rel.endsWith(".md") && /^```/.test(line.trim())) fence = !fence;
+    let next = line.replace(/\bcd Fidget\b/g, "cd fidget");
+    next = next.replace(/\bFidget-/g, "fidget-");
+    next = lowercaseMcpName(next);
+    // A `#` line inside a fence is a shell comment, not a document heading.
+    if (fence) return lowercaseProduct(next);
+    if (isHeading(next, rel)) return next;
+    if (isComment(next, rel) || isLog(next)) return lowercaseProduct(next);
+    if (kind === "technical") return lowercaseProduct(next);
+    return next;
+  }).join("\n");
 }
 
 export function transformPath(rel) {
@@ -320,6 +432,19 @@ export function inventory(root = ROOT) {
   return rows;
 }
 
+function casingHits(rel, text) {
+  if (ALLOWLIST.has(rel)) return [];
+  const next = recase(text, rel);
+  if (next === text) return [];
+  const hits = [];
+  const before = text.split("\n");
+  const after = next.split("\n");
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] !== after[i]) hits.push({ path: rel, line: i + 1, role: "product-case", text: before[i].trim() });
+  }
+  return hits;
+}
+
 export function verify(root = ROOT) {
   const hits = [];
   for (const abs of walk(root)) {
@@ -328,6 +453,7 @@ export function verify(root = ROOT) {
     if (text === false) continue;
     const lines = text.split("\n");
     for (let i = 0; i < lines.length; i++) hits.push(...failingHits(rel, lines[i], i + 1));
+    hits.push(...casingHits(rel, text));
   }
   return hits;
 }
@@ -344,7 +470,7 @@ function apply(root = ROOT) {
       if (nextRel !== rel) throw new Error(`refusing to rename binary ${rel}`);
       continue;
     }
-    const next = ALLOWLIST.has(rel) ? raw : transform(raw);
+    const next = ALLOWLIST.has(rel) ? raw : recase(transform(raw), rel);
     const dest = path.join(root, nextRel);
     if (next !== raw || nextRel !== rel) {
       mkdirSync(path.dirname(dest), { recursive: true });

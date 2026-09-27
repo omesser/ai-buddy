@@ -483,5 +483,5 @@ async function start() {
 start().catch((err) => {
   // No art or no frames means nothing to draw and nothing to hit-test, so say
   // so loudly rather than showing an empty overlay that looks like a hung app.
-  console.error("Fidget could not draw the Character:", err);
+  console.error("fidget could not draw the Character:", err);
 });

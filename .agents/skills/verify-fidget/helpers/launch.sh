@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build if needed and start a traced Fidget owned by this RUN_ID.
+# Build if needed and start a traced fidget owned by this RUN_ID.
 # Prefer drive-overlay-* when proving overlay features — those scripts own lifecycle.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -18,7 +18,7 @@
 //! its rejections are the author's list of things to fix.
 //!
 //! A Character Package is untrusted input, so the reader is bounded before it
-//! is convenient: a package cannot make Fidget read an unbounded number of
+//! is convenient: a package cannot make fidget read an unbounded number of
 //! files, allocate an unbounded number of bytes, or walk an unbounded depth.
 
 use std::collections::BTreeMap;
@@ -113,7 +113,7 @@ pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
     Ok(files)
 }
 
-/// Where Fidget looks for Character Packages, in the order it looks.
+/// Where fidget looks for Character Packages, in the order it looks.
 ///
 /// A package the user added wins over a shipped one of the same name, because the user's copy is the one they can edit.
 pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {

@@ -39,7 +39,7 @@ runs in the frame loop and never drives animation directly. See
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Fidget (Tauri)                                           │
+│  fidget (Tauri)                                           │
 │                                                             │
 │  ┌───────────────────────┐   ┌───────────────────────────┐  │
 │  │ Spatial Layer (Rust)  │   │ Webview (sprite render)   │  │
@@ -408,7 +408,7 @@ or attach an MCP server like cua-driver.
 ### 10. No Executor
 
 Fidget does not post synthetic mouse or keyboard events. It ships an **MCP
-server** exposing Fidget-side tools — speak, play a Behavior, list windows,
+server** exposing fidget-side tools — speak, play a Behavior, list windows,
 describe the screen, read and write Memory — and attaches a user-configured
 Harness. Clicking is the Harness's job. The character is Fidget's.
 

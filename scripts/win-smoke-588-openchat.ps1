@@ -36,9 +36,9 @@ function Cleanup {
   if ($script:StubProc -and -not $script:StubProc.HasExited) {
     Stop-Process -Id $script:StubProc.Id -Force -ErrorAction SilentlyContinue
   }
-  # Leftover Fidget processes from a crashed prior run would hold overlays on
+  # Leftover fidget processes from a crashed prior run would hold overlays on
   # screen and steal this run's window enumeration.
-  Get-Process Fidget -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Get-Process fidget -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 function Fail($m) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive a real CGDisplayReconfiguration against a running Fidget and prove the
+# Drive a real CGDisplayReconfiguration against a running fidget and prove the
 # overlay that loses its display does not take the process down with it (#868).
 #
 # Mirroring collapses two logical displays into one, so `available_monitors()`

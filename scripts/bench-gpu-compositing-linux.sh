@@ -539,7 +539,7 @@ sample_row() {
 run_baseline() {
   local log="$out/baseline.log"
   : > "$log"
-  sample_row baseline "$log" "$seconds" "no Fidget"
+  sample_row baseline "$log" "$seconds" "no fidget"
 }
 
 run_with_overlay() {

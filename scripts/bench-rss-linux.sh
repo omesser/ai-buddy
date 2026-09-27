@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running Fidget, Linux only. WebKitGTK helpers,
+# Sample the resident set of a running fidget, Linux only. WebKitGTK helpers,
 # if any, are children of the main process, so the process tree at launch is
 # the app.
 # Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]

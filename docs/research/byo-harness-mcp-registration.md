@@ -5,12 +5,12 @@
 > `DEVELOPMENT.md` for setup instructions, and
 > `docs/research/byo-harness-mcp-reload.md` for reconfiguration/reload guidance.
 
-Research for story 66 — "point any MCP-capable harness at Fidget directly" —
+Research for story 66 — "point any MCP-capable harness at fidget directly" —
 and for the Advanced section on the Director settings tab that is meant to serve
 it: a harness picker, a generated snippet in a copyable box, and per-harness
 instructions under it. Question: for each of the five Harnesses, what exactly
 does that box have to contain, and can the user get there by *telling* their
-running agent about Fidget instead of restarting it with the details?
+running agent about fidget instead of restarting it with the details?
 
 **Answer.** Every one of the five takes the loopback HTTP endpoint with
 `Authorization: Bearer <token>` as an ordinary configured header, so the stdio
@@ -21,7 +21,7 @@ Registration is a config file or a CLI that writes one, read when the harness
 process starts; **no harness has a register-an-MCP-server tool the model can
 call, so prompting is not a route on any of them**. Only hermes picks up a
 change without a restart, and it does that by polling its own config file, not
-by being told. The blocking problem is not any harness: it is that Fidget has
+by being told. The blocking problem is not any harness: it is that fidget has
 no surface that reveals the token, so **not one of the procedures below can be
 completed by a user today**, and every fix for that trades against the property
 `mcp_http.rs` and ADR-0026 both name — 32 fresh bytes a run that never reach
@@ -32,7 +32,7 @@ config directory; everything marked *read* is source or shipped documentation.
 The two are never mixed in one claim.
 
 The probes were run at `d55beb74`. Every claim this document makes about
-Fidget's own source was re-checked against `772026cf` before it was
+fidget's own source was re-checked against `772026cf` before it was
 published: `Endpoint` still derives `Clone` alone, and `authorization()` and
 `stdio_env()` are still its only two ways out.
 
@@ -69,7 +69,7 @@ model can call, because the server list is assembled from configuration at
 process start and the model's tools are fixed for the turn. hermes and opencode
 are the two exceptions worth knowing, and neither is a prompt — hermes polls its
 own config file, and opencode's `POST /mcp` is an API call needing an address
-Fidget does not have. Read §6 for the evidence.
+fidget does not have. Read §6 for the evidence.
 
 The mid-session column of the table above is the same finding per harness.
 ## What the Settings box has to contain
@@ -82,12 +82,12 @@ the two that do not.
 **Claude Code** — one box, two lines, and the first line is not optional:
 
 ```
-claude mcp remove -s user Fidget 2>/dev/null
-claude mcp add -s user --transport http Fidget "<URL>" --header "Authorization: Bearer <TOKEN>"
+claude mcp remove -s user fidget 2>/dev/null
+claude mcp add -s user --transport http fidget "<URL>" --header "Authorization: Bearer <TOKEN>"
 ```
 
 Re-adding an existing name is silently ignored — the second `claude mcp add`
-printed "MCP server Fidget already exists in user config", exited 0, and left
+printed "MCP server fidget already exists in user config", exited 0, and left
 the stale URL and token in place (ran). Since both values change every app run,
 the remove is what makes the snippet re-runnable. Do not offer `-s project`: it
 writes a checked-in `.mcp.json` and would commit the token.
@@ -171,19 +171,19 @@ Three cases, and they are all instructions rather than second snippets:
    connected/failed line and a tool count without starting a session.
 
 And one line every harness needs: the snippet is valid for **this app run only**.
-Both halves of it change when Fidget restarts, so the box is something the user
+Both halves of it change when fidget restarts, so the box is something the user
 comes back to, not a one-time setup step. For four of the five that also means a
 harness restart each time. Only hermes makes it a paste.
 
 ## The token problem
 
-None of the above is reachable today, because Fidget does not tell anyone the
+None of the above is reachable today, because fidget does not tell anyone the
 token.
 
 `Endpoint` in `src-tauri/src/mcp_http.rs` implements neither `Debug` nor
 `Serialize`, and the token leaves it through exactly two methods — `authorization()`
 and `stdio_env()` — both called only from `harness.rs`, and only to compose the
-`mcpServers` entry for a Harness Fidget spawned itself. There is no Tauri
+`mcpServers` entry for a Harness fidget spawned itself. There is no Tauri
 command, no settings row, and no CLI flag that prints it. The startup line does
 print the endpoint *URL*, and only when a Harness is attached; in the BYO case
 nothing is attached, so the user has neither half of the pair. That is the design
@@ -201,10 +201,10 @@ The options, and what each costs:
    the Advanced section already assumes. The token then lives in the clipboard,
    and for four of five harnesses in a config file the user owns. ADR-0010's
    rule 7 — do not log, print, or fingerprint a credential — governs a *Harness's*
-   credential; this is Fidget's own, and 0010's extension to it in ADR-0026 is
+   credential; this is fidget's own, and 0010's extension to it in ADR-0026 is
    by analogy, so this is a decision available without amending 0010. What it
    does retire is ADR-0026's consequence "The token remains absent from disk",
-   for the BYO path only. Say it in the UI in one line: Fidget keeps the token
+   for the BYO path only. Say it in the UI in one line: fidget keeps the token
    out of its own files, and this procedure puts it in yours.
 2. **Reveal it, and steer away from the shared-file scopes.** The same as 1 plus
    refusing to generate `claude mcp add -s project` or grok's `--scope project`,

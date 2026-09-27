@@ -80,7 +80,7 @@ WKWebView runs its content out of process, and those processes are children of
 `launchd`, not of the app — no process-tree walk finds them.
 
 ```
-Fidget                       the Rust binary: Engine, frame loop, art, Tauri
+fidget                       the Rust binary: Engine, frame loop, art, Tauri
 com.apple.WebKit.WebContent    one per overlay, so one per display
 com.apple.WebKit.WebContent
 com.apple.WebKit.GPU           one, shared
@@ -284,14 +284,14 @@ One successful unattended run on Grok Bot box after the stderr-file fix
 | Sample interval | 2s |
 | Samples | 15 |
 | **Total RSS** | **min 821 MB / median 823 MB / max 933 MB** |
-| Process count | 4 (Fidget + WebKitNetworkProcess + 2× WebKitWebProcess) |
+| Process count | 4 (fidget + WebKitNetworkProcess + 2× WebKitWebProcess) |
 | Exit code | 0 |
 
-Per-process medians and peak RSS (VmHWM): Fidget 237/250 MB,
+Per-process medians and peak RSS (VmHWM): fidget 237/250 MB,
 WebKitNetworkProcess 61/60.5 MB, WebKitWebProcess 238/238 MB,
 WebKitWebProcess 287/396 MB.
 
-Total RSS includes the main Fidget process plus all WebKitGTK helper processes.
+Total RSS includes the main fidget process plus all WebKitGTK helper processes.
 
 ### How to run (on a machine with a display)
 
@@ -326,7 +326,7 @@ WebKitGTK's process model depends on version and build configuration:
 - **Older or sandboxing-disabled builds** may run everything in-process.
 
 The Linux script uses `pgrep -P <pid>` to find all child processes of the main
-Fidget process. WebKitGTK helpers on Linux are children of the main process
+fidget process. WebKitGTK helpers on Linux are children of the main process
 (unlike macOS where they are children of `launchd`), so the process tree walk
 discovers them automatically.
 
@@ -486,7 +486,7 @@ or the Visual Studio profiler:
 ```powershell
 # Using Windows Performance Recorder (WPR)
 wpr -start GeneralProfile -filemode
-# ... run Fidget ...
+# ... run fidget ...
 wpr -stop profile.etl
 # Analyze with Windows Performance Analyzer (wpa.exe profile.etl)
 ```

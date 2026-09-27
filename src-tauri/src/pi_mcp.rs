@@ -35,13 +35,13 @@ pub fn sync_project_file(dir: &Path) -> Result<(), String> {
     };
     let mut root: Value = serde_json::from_str(&text).map_err(|_| {
         format!(
-            "{} is not JSON, so the Fidget entry was left alone",
+            "{} is not JSON, so the fidget entry was left alone",
             path.display()
         )
     })?;
     let Some(object) = root.as_object_mut() else {
         return Err(format!(
-            "{} is not an object, so the Fidget entry was left alone",
+            "{} is not an object, so the fidget entry was left alone",
             path.display()
         ));
     };

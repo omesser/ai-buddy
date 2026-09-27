@@ -4,7 +4,7 @@ Comparison against six widely used software desktop pet projects (animated
 overlay characters, not chat apps or hardware robots): Desktop Mate,
 VPet-Simulator, Shimeji-ee ecosystem, Desktop Pet (desktoppet.app), OpenPets,
 MateEngine. Matrix rows are capabilities that matter for this product, using
-CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
+CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 
 **Legend:** ✅ present, ~ documented not shipped OR partial, ❌ absent
 
@@ -12,7 +12,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ### Spatial capabilities
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Overlay (always-on-top) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Click-through (per-pixel) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -25,7 +25,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ### Character & art
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Character Packages (first-class) | ✅ | ✅ (DLC) | ✅ (Workshop) | ✅ (community) | ✅ (beta, +2 soon) | ✅ (catalog) | ✅ (VRM + Workshop) |
 | Art ecosystem / gallery | ✅ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
@@ -34,7 +34,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ### Behavior & personality
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | AI-powered behavior | ✅ (Director + personality.txt + spoken lines) | ❌ | ❌ | ❌ (deterministic XML) | ✅ (OpenAI chat window) | ✅ (plugin SDK + MCP say) | ✅ (QWEN 2.5 1.5b) |
 | Personality-driven idle AI (unprompted) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -46,16 +46,16 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ### Agent integrations
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Harness integrations (ACP Completer) | ✅ (claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| MCP server (Fidget-side tools) | ✅ (loopback HTTP + stdio fallback) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| MCP server (fidget-side tools) | ✅ (loopback HTTP + stdio fallback) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | AI chat integration | ✅ (Summon chat surface shipped; #17 tracks polish/bugs) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
 | BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
 
 ### Memory & privacy
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Memory (shared, user-editable) | ✅ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✅ (plugin storage) | ❌ |
 | Ambient Capture | ❌ (dropped, ADR-0031) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -66,7 +66,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ### Platforms
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | macOS | ✅ | ✅ (beta, June 2026) | ❌ | ✅ (patched forks) | ✅ (10.15+) | ✅ (arm64/x64) | ~ (PR #551 open) |
 | Windows | ✅ (NSIS; some platform cells stub/degraded) | ✅ | ✅ | ✅ | ✅ (10/11) | ✅ (signed) | ✅ (11) |
@@ -74,7 +74,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ### Pricing & distribution
 
-| Capability | Fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+| Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) | free (GitHub) / $5.49 (Steam) |
 | Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) | free (VRM + Workshop) |
@@ -85,7 +85,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| Fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
+| fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
@@ -95,7 +95,7 @@ CONTEXT.md vocabulary. Fidget column is honest about what is and is not built.
 
 ## How others use AI
 
-Desktop pets use AI differently than Fidget's personality-driven idle Director:
+Desktop pets use AI differently than fidget's personality-driven idle Director:
 
 - **Desktop Mate / VPet / Shimeji-ee**: No generative model for character behavior. MateEngine's comparison table: Desktop Mate AI Chat ❌. Shimeji-ee is deterministic XML behavior graphs. VPet is care-sim + Workshop animations, no personality prompt. Community mods (OpenVPet Active Chat, ShimejiEE-AI) are chat plugins, not idle Directors.
 
@@ -105,9 +105,9 @@ Desktop pets use AI differently than Fidget's personality-driven idle Director:
 
 - **MateEngine**: Built-in QWEN 2.5 1.5b LLM. Steam page ([3625270](https://store.steampowered.com/app/3625270/MateEngine/)) CHATTING section: "You can chat with your pet anytime! Just note that it's a small, local AI with simple messages." README comparison table: AI Chat ✅. Steam-exclusive event-based "cute messages" on drag/dance/sit = interaction-triggered responses, not idle personality Director (unknown if those messages are LLM-generated or canned, vendor does not specify).
 
-**Related projects** (not in the six-alternative comparison): **AI Desktop Pet** ([Steam 4227700](https://store.steampowered.com/app/4227700/AI_Desktop_Pet/)) is a **different product** targeting long-term RP/VN companion use case (wholly out of scope for Fidget). It has many capabilities Fidget does not: persona cards, world books, VN mode, voice clone, screen vision, idle-started conversations, Workshop cards. Built-in local LLM, GGUF import, plus optional ~30 cloud provider accounts. Phase Pal ([Steam 3655450](https://store.steampowered.com/app/3655450/Phase_Pal/)) AIGC disclosure = "real-time chatbot within a floating interface… guided by customizable prompts"; Pal Engine ([Steam 3868880](https://store.steampowered.com/app/3868880/Pal_Engine/)) = "The AI model is an agentic assistant" with personality+memory for chat, plus separate ambient animation behavior layer. Same pattern: chat assistant wearing a mascot overlay.
+**Related projects** (not in the six-alternative comparison): **AI Desktop Pet** ([Steam 4227700](https://store.steampowered.com/app/4227700/AI_Desktop_Pet/)) is a **different product** targeting long-term RP/VN companion use case (wholly out of scope for fidget). It has many capabilities fidget does not: persona cards, world books, VN mode, voice clone, screen vision, idle-started conversations, Workshop cards. Built-in local LLM, GGUF import, plus optional ~30 cloud provider accounts. Phase Pal ([Steam 3655450](https://store.steampowered.com/app/3655450/Phase_Pal/)) AIGC disclosure = "real-time chatbot within a floating interface… guided by customizable prompts"; Pal Engine ([Steam 3868880](https://store.steampowered.com/app/3868880/Pal_Engine/)) = "The AI model is an agentic assistant" with personality+memory for chat, plus separate ambient animation behavior layer. Same pattern: chat assistant wearing a mascot overlay.
 
-**Fidget's difference**: Authored `personality.txt` (who they are, fixations, sample lines) drives Director that picks idle Behaviors + spoken lines non-deterministically, in-character. The Character talks while living on your windows (idle personality-driven speech is the primary differentiator), plus a Summon chat surface for direct interaction. Not a chat-first app — the idle AI is the product center.
+**fidget's difference**: Authored `personality.txt` (who they are, fixations, sample lines) drives Director that picks idle Behaviors + spoken lines non-deterministically, in-character. The Character talks while living on your windows (idle personality-driven speech is the primary differentiator), plus a Summon chat surface for direct interaction. Not a chat-first app — the idle AI is the product center.
 
 ## Per-project notes
 
@@ -119,7 +119,7 @@ mascots that sit on windows, react to mouse, include voice lines.
 ([Steam](https://store.steampowered.com/app/3301060/Desktop_Mate/))
 
 **Verified present.** Overlay with click-through. Character sits on window top
-edges (same as Fidget Perches). Licensed characters (Hatsune Miku, Hello
+edges (same as fidget Perches). Licensed characters (Hatsune Miku, Hello
 Kitty, Sanrio, VTuber personas, Touhou Project). Multi-Character Mode officially
 released (display up to two characters simultaneously, with special combo actions
 for certain pairs). Built-in alarm feature; some DLC include mascot characters
@@ -147,11 +147,11 @@ cash grab," "removed mod support to make you purchase the overpriced DLC,"
 this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
-packs at $7.49–$14.99 each); Fidget has eight Character Packages, internal
+packs at $7.49–$14.99 each); fidget has eight Character Packages, internal
 package format (undocumented until v2), and import adapters for petdex / Pets
 Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
 Desktop Mate has no ballistic physics, no agent integrations, no BYO character
-creation after mod removal. Fidget's Spatial Layer includes ballistic physics
+creation after mod removal. fidget's Spatial Layer includes ballistic physics
 and Perch riding/dropping under a gate, and its shipped agent integrations
 (Harness ACP Completer per #433 2026-09-07, MCP server loopback HTTP + stdio
 fallback per #117/#491/#497 2026-09-08) target capabilities Desktop Mate does not
@@ -188,14 +188,14 @@ black background (ValveSoftware/Proton#8471).
 DPI/monitor changes (issue #546).
 
 **Differences.** VPet's Workshop ecosystem is live and massive (98% of 51,678
-reviews), while Fidget's Character Package format is internal and undocumented
+reviews), while fidget's Character Package format is internal and undocumented
 until v2. VPet has no window awareness or Perches, no ballistic physics, and no
-agent integrations or MCP layer. Fidget ships Director + authored
+agent integrations or MCP layer. fidget ships Director + authored
 personality-driven idle speech (VPet has no personality file or non-deterministic
 speech; its behavior is Workshop-defined animations). Harness ACP Completer
 shipped (#433 2026-09-07); MCP server shipped (#117/#491/#497 2026-09-08,
 loopback HTTP + stdio fallback). User need: care-sim + Workshop-open vs
-Fidget's personality-driven idle life + physics.
+fidget's personality-driven idle life + physics.
 
 ### Shimeji-ee ecosystem
 
@@ -208,7 +208,7 @@ port has 500K+ downloads. Character packs are community-created and shared on
 DeviantArt, Tumblr, dedicated archives.
 
 **Verified present.** Overlay (always-on-top sprite). Click-through. Window
-edge awareness (sprites sit on window tops, similar to Fidget Perches).
+edge awareness (sprites sit on window tops, similar to fidget Perches).
 Multi-instance (many Shimeji at once; Image Set Chooser lets users select which
 character types to spawn). Multi-monitor support with toggle ("Move Between
 Screens" setting). Character packages via community (1000s of free fan-made
@@ -217,10 +217,10 @@ image sets). Idle life (wander, fall, climb). Reacts to user (throw, interact).
 all Shimeji). Standard sprite set required (shime1.png - shime46.png). **Physics
 (kind matters).** Required Fall/Thrown actions; gravity integrator in the Java
 lineage (sprite kinematics + throw/climb; see DalekCraft2 Fall.java, kilkakon
-required actions). Not the same as Fidget's ballistic integrator with
+required actions). Not the same as fidget's ballistic integrator with
 window-top Perches and acceleration gate.
 
-**Absent.** No ballistic Perch riding model (Fidget's gravity/throw arcs with
+**Absent.** No ballistic Perch riding model (fidget's gravity/throw arcs with
 Perch acceleration gate). No capture exclusion. No hide rules in base version
 (no auto-hide on fullscreen); Boss mode is manual toggle. No agent integrations,
 MCP, or chat. No Memory. Behavior system is XML graphs, not TOML declarative
@@ -229,15 +229,15 @@ Behaviors.
 **Onboarding reality.** Folklore (Java, img/ folders, not in Downloads).
 
 **Differences.** Shimeji-ee's community character ecosystem (1000s of free
-packs) offers direct distribution; Fidget imports from Shimeji-ee via
+packs) offers direct distribution; fidget imports from Shimeji-ee via
 `scripts/import-pet.py` adapter plus petdex / Pets Codex, translating into
 Character Packages once (authoring-time, not live bridge). Shimeji-ee has
-Fall/gravity (sprite kinematics) but not Fidget's ballistic Perch model; no
+Fall/gravity (sprite kinematics) but not fidget's ballistic Perch model; no
 window awareness beyond edges; no agent integrations or AI capabilities.
-Fidget adds ballistic physics (gravity arcs, throw, Perches under acceleration
+fidget adds ballistic physics (gravity arcs, throw, Perches under acceleration
 gate), window app name tracking, shipped Harness ACP Completer (#433 2026-09-07)
 + MCP server (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08), Memory,
-and BYO model. Shimeji-ee's XML graph behavior system versus Fidget's Director
+and BYO model. Shimeji-ee's XML graph behavior system versus fidget's Director
 + declarative Behaviors is a design difference in how liveliness is authored.
 
 ### Desktop Pet
@@ -274,14 +274,14 @@ GitHub community, no public user feedback). Vendor-only homepage and feature
 list.
 
 **Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
-chat via user's OpenAI key, while Fidget ships Director + authored
+chat via user's OpenAI key, while fidget ships Director + authored
 personality-driven idle speech (Character talks in-character while living on
 windows, not a chat window). Desktop Pet is beta with limited character selection
-(1 shipped, +2 soon) and no public validation; Fidget has eight Character Packages,
+(1 shipped, +2 soon) and no public validation; fidget has eight Character Packages,
 internal package format, and import adapters for petdex / Pets Codex
 and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
-awareness. Desktop Pet's AI is an OpenAI chat window; Fidget's Director drives
-idle speech from personality, plus a Summon chat surface shipped. Fidget's Harness ACP Completer (#433 2026-09-07)
+awareness. Desktop Pet's AI is an OpenAI chat window; fidget's Director drives
+idle speech from personality, plus a Summon chat surface shipped. fidget's Harness ACP Completer (#433 2026-09-07)
 + MCP server (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are
 shipped; #17 tracks polish/bugs.
 
@@ -317,7 +317,7 @@ user (click, drag). Spritesheet.webp animation format. Declarative via plugins
 overlay + Walkabout roam (motion-engine in desktop.md / docs/desktop.md); not
 window-edge Perch riding.
 
-**Absent.** No ballistic Perch riding model (Fidget's throw arcs + window-top
+**Absent.** No ballistic Perch riding model (fidget's throw arcs + window-top
 Perches with acceleration gate). No hide rules (fullscreen auto-hide, hotkey).
 No capture exclusion verified. No window awareness (pets don't track app names
 or geometry). No Capture. No Denylist (excluded apps).
@@ -329,16 +329,16 @@ steal #32, invisible pet / tray-only #108/#141).
 (vendor docs: `xattr -dr com.apple.quarantine /Applications/OpenPets.app`).
 
 **Differences.** OpenPets is the closest shipped agent-pet alternative to
-Fidget on architecture: overlay pet + plugin/agent extensibility + MCP +
+fidget on architecture: overlay pet + plugin/agent extensibility + MCP +
 local-first + BYO model. OpenPets ships MCP (`openpets_status`, `openpets_react`,
-`openpets_say`) and plugin SDK v3 today; Fidget ships Harness ACP Completer
+`openpets_say`) and plugin SDK v3 today; fidget ships Harness ACP Completer
 (#433 2026-09-07) + MCP server (loopback HTTP + stdio fallback, #117/#491/#497
 2026-09-08). OpenPets has mature catalog (openpets.dev) and 9 official plugins;
-Fidget has eight Character Packages and no plugin system. Fidget adds
+fidget has eight Character Packages and no plugin system. fidget adds
 ballistic physics (gravity arcs, throw, Perches with acceleration gate) and
 window awareness; OpenPets has gravity overlay but no Perch riding or window app
 name tracking. OpenPets plugin runtime is sandboxed Electron BrowserWindows with
-permissions; Fidget's Harness model is external (user attaches their own
+permissions; fidget's Harness model is external (user attaches their own
 MCP-compatible agent). Both MIT licensed, local-first, no accounts.
 
 ### MateEngine
@@ -352,7 +352,7 @@ reviews, 97% positive, Overwhelmingly Positive (Steambase July 2026).
 [GitHub](https://github.com/shinyflvre/Mate-Engine))
 
 **Verified present.** Overlay (always-on-top). Click-through. Window sitting
-(sits on window top edges, similar to Fidget Perches). Taskbar sitting. Idle
+(sits on window top edges, similar to fidget Perches). Taskbar sitting. Idle
 animations. Drag animations. Dance to music. Custom VRM avatar support (user's
 own 3D VRM models). Steam Workshop support for mods, custom models, dances. Mod
 support (.ME file format). Multi-instance (inferred from VRM support +
@@ -384,37 +384,37 @@ buy mate engine" in Desktop Mate negative cluster.
 Linux unofficial port requires X11, has Wayland issues.
 
 **Differences.** MateEngine is the user-owned VRM/Workshop answer to Desktop
-Mate's SKU lock. Fidget ships authored personality + Director-driven idle
+Mate's SKU lock. fidget ships authored personality + Director-driven idle
 speech (Character talks from personality while living on windows); MateEngine has
 built-in local LLM (QWEN 2.5 1.5b) but no authored personality file or
 Director-driven idle speech. Both sit on windows (Perches), but MateEngine is
-VRM-driven (user's 3D rigged models) and Fidget is 2D sprite + ballistic
+VRM-driven (user's 3D rigged models) and fidget is 2D sprite + ballistic
 physics. MateEngine has Steam Workshop + mods (the capability Desktop Mate
-removed); Fidget has import adapters for petdex + Shimeji-ee (authoring-time,
+removed); fidget has import adapters for petdex + Shimeji-ee (authoring-time,
 not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
-no hide rules, no capture exclusion, no MCP, no agent Harness. Fidget's Spatial
+no hide rules, no capture exclusion, no MCP, no agent Harness. fidget's Spatial
 Layer ships ballistic Perch riding + acceleration gate + hide rules + capture
-exclusion; Fidget's Functional Layer (Harness ACP Completer #433 2026-09-07 +
+exclusion; fidget's Functional Layer (Harness ACP Completer #433 2026-09-07 +
 MCP server loopback HTTP + stdio fallback #117/#491/#497 2026-09-08) is shipped.
-User need: MateEngine is *my VRM* after Desktop Mate's mod removal; Fidget is
+User need: MateEngine is *my VRM* after Desktop Mate's mod removal; fidget is
 authored personality + idle speech + physics.
 
 ## Physics note (kind matters)
 
-Fidget ships a ballistic integrator: gravity, throw arcs, and window-top
+fidget ships a ballistic integrator: gravity, throw arcs, and window-top
 Perches that the sprite rides until an acceleration gate drops it. That is not
 the same as (a) Shimeji-ee's required Fall/Thrown and gravity in Fall.java
 (sprite kinematics + throw/climb), or (b) OpenPets' gravity overlay / Walkabout
 roam (motion-engine). Desktop Mate and MateEngine sit on windows (Perch-like)
 without a documented ballistic throw-physics model. Do not mark Shimeji-ee or
 OpenPets as "no physics" — mark them ~ (partial) because they have gravity but
-not Fidget's ballistic Perch gate. Desktop Mate / VPet / Desktop Pet /
+not fidget's ballistic Perch gate. Desktop Mate / VPet / Desktop Pet /
 MateEngine: ❌ (no ballistic throw / no gravity integrator found in cited
 sources).
 
 ## Unique-combo reality check
 
-**What Fidget ships differently:**
+**What fidget ships differently:**
 
 The mascot has an authored personality file (`personality.txt`) and a Director
 that picks Behaviors and spoken lines non-deterministically. The Character talks
@@ -462,7 +462,7 @@ package-authored.
    2026-09-14; cursor-agent #762 2026-09-16; goose #971 2026-09-24 (#989);
    copilot #1017 2026-09-26, smoked fresh and resumed on copilot 1.0.88 (#1016).
    Pi's `initialize` advertises no HTTP MCP, and whether that attached session
-   lists Fidget's tools is unmeasured (#984, #1007, #1009). Settings can
+   lists fidget's tools is unmeasured (#984, #1007, #1009). Settings can
    write a stable project `.mcp.json` that names the loopback variables for Pi
    (#1019); that file is not a measurement of the attached session's tool list.
    `cursor-agent` ignores `mcpServers` on the handshake, so attach writes the
@@ -473,29 +473,29 @@ package-authored.
    shipped; #17 tracks polish/bugs. OpenPets
    *already ships* overlay pet + MCP (`openpets_status` / `openpets_react` /
    `openpets_say`) + plugin SDK. Closest *shipped* agent-pet is OpenPets;
-   Fidget's shipped differentiators are personality-driven Director speech +
+   fidget's shipped differentiators are personality-driven Director speech +
    Spatial (capture exclusion, fullscreen fade, hotkey hide, Perch
    acceleration-gate) + Harness ACP + MCP loopback HTTP + Summon chat.
 
-**What other projects have that Fidget doesn't (yet):**
+**What other projects have that fidget doesn't (yet):**
 
 1. **Character ecosystems (who controls the pack).** Desktop Mate: official SKUs
    vs *my* character; Mixed reviews + DLC/mod removal through 2026. VPet
    Workshop-open is the actual ecosystem strength (98% of 51,678 reviews).
    MateEngine: VRM + Workshop-open, free, the switching target after Desktop
    Mate disabled mods (3,532 stars + 974 Steam reviews 97%). Shimeji-ee: 1000s
-   free packs, community folklore. OpenPets: openpets.dev catalog. Fidget: eight
+   free packs, community folklore. OpenPets: openpets.dev catalog. fidget: eight
    Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
    authoring-time import, not a live gallery or first-party store.
 
 2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
    evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,130 stars,
    verifiable). MateEngine has built-in AI (QWEN 2.5 1.5b LLM), not BYO agent
-   attach. Fidget's Harness ACP Completer (#433 2026-09-07) + MCP server
+   attach. fidget's Harness ACP Completer (#433 2026-09-07) + MCP server
    (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are shipped; #17 tracks polish/bugs.
 
 3. **Distribution reach.** Desktop Mate, VPet, and MateEngine are on Steam;
-   OpenPets has signed Windows builds and catalog. Fidget is GitHub releases
+   OpenPets has signed Windows builds and catalog. fidget is GitHub releases
    with no store presence.
 
 ## Evidence footer
@@ -504,10 +504,10 @@ package-authored.
   review/issue citation, vendor homepage).
 - **~** = documented not shipped (MateEngine
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
-  not ballistic Perch riding) OR unverified (no named Fidget Harness row
+  not ballistic Perch riding) OR unverified (no named fidget Harness row
   is in that state today; codex verified #623, pi verified ACP #628, grok verified
   #587, cursor-agent verified #762, goose verified #971, copilot verified #1017).
-- **❌** = not found in cited sources. The Fidget column was checked against
+- **❌** = not found in cited sources. The fidget column was checked against
   main on 2026-09-26; the other columns were not re-checked on this pass.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
@@ -515,7 +515,7 @@ package-authored.
 
 ## Sources
 
-Capabilities marked ✅, ~, or ❌ for Fidget are verified against docs/SPEC.md,
+Capabilities marked ✅, ~, or ❌ for fidget are verified against docs/SPEC.md,
 DESIGN.md, README.md, ADR-0008, ADR-0026, the Director prompt
 (`app_instructions` in `crates/core/src/director/prompt.rs`), and `git log` on
 main at `7fee5fa1` as of September 26, 2026 (Director tool invitation #987;

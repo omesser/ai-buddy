@@ -22,7 +22,7 @@ let bounds = CGDisplayBounds(CGMainDisplayID())
 let window = NSWindow(
     contentRect: NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height),
     styleMask: [.borderless], backing: .buffered, defer: false)
-window.title = "Fidget fullscreen prop"
+window.title = "fidget fullscreen prop"
 window.backgroundColor = .black
 window.alphaValue = 0.02
 window.ignoresMouseEvents = true

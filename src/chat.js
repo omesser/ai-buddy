@@ -1,5 +1,5 @@
 // The Chat surface: one window per Summoned Character Instance, drawn by
-// Fidget rather than by whatever answers (ADR-0018). Like the overlay it
+// fidget rather than by whatever answers (ADR-0018). Like the overlay it
 // holds no authoritative state; the Shell owns the session behind it.
 
 import { elicitSays } from "./chat-ask.js";
@@ -482,7 +482,7 @@ function attached(opening) {
 // Connect button: make that Harness the Completer source. The landing
 // and header paint from the opening `ReloadChat` pushes. The click never
 // starts the sign-in: the Harness authenticates itself in the user's own
-// terminal, and Fidget holds no credential.
+// terminal, and fidget holds no credential.
 for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
@@ -905,6 +905,6 @@ start().catch((why) => {
   // Not knowing who this window belongs to or whether anything can answer
   // makes it a field that takes lines nobody reads, so say so rather than
   // showing an empty log.
-  console.error("Fidget could not open the Chat surface:", why);
+  console.error("fidget could not open the Chat surface:", why);
   note("This window could not reach Fidget.");
 });

@@ -345,7 +345,7 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 ///
 /// Not attached, attached but not signed in, or attached and answering.
 /// Not signed in names the login command for the user's own terminal.
-/// Fidget holds no credential (ADR-0018), asks for none, and runs no login.
+/// fidget holds no credential (ADR-0018), asks for none, and runs no login.
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
         None => "Not attached. The HTTP endpoint below is the AI brain.".to_string(),
@@ -437,7 +437,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         "claude" => (
             format!(
                 "claude mcp remove fidget 2>/dev/null\n\
-                 claude mcp add --transport http Fidget \"{url}\" \
+                 claude mcp add --transport http fidget \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run both lines in a terminal, then exit your Claude session and start a \
@@ -470,7 +470,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         "copilot" => (
             format!(
                 "copilot mcp remove fidget 2>/dev/null\n\
-                 copilot mcp add --transport http Fidget \"{url}\" \
+                 copilot mcp add --transport http fidget \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run both lines in a terminal, then start a new `copilot` session. The \
@@ -5165,7 +5165,7 @@ mod tests {
     /// #659: the machine has not got the CLI, which is not the same state as a
     /// child that stopped answering. The line has to say so in words a user can
     /// act on - an errno is not one of them - and name the binary that was
-    /// looked for, since Fidget bundles no Harness (ADR-0018).
+    /// looked for, since fidget bundles no Harness (ADR-0018).
     #[test]
     fn a_harness_this_machine_has_not_got_names_the_command_not_an_errno() {
         let missing = crate::harness::HarnessInspect {

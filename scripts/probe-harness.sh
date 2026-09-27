@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Attach the configured Harness and run one ACP turn, with no sprite: serve
-# Fidget's MCP endpoint, spawn the Harness, print what `initialize`
+# fidget's MCP endpoint, spawn the Harness, print what `initialize`
 # advertised, report whether the reply parsed as a Behavior proposal, and
 # whether the Harness fetched the tool list. Never prints a credential.
 # Usage: FIDGET_HARNESS=hermes scripts/probe-harness.sh

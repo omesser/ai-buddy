@@ -30,7 +30,7 @@ parse-log counts mask_rebuild lines in --log and divides by --seconds.
 aim-check prints the walking-over cursor target for --log. It does not move the cursor.
 GPU% is dwm.exe engtype_3D when that counter exists, else nvidia-smi for the whole adapter.
 Checkout and a debug build on DESKTOP-UQIE144 are authorized.
-idle, walking, chat, hidden, and matrix launch Fidget and move the cursor. Wait for an explicit green light before those scenarios.
+idle, walking, chat, hidden, and matrix launch fidget and move the cursor. Wait for an explicit green light before those scenarios.
 "@)
     exit 2
 }
@@ -767,7 +767,7 @@ function Write-Env {
 function Run-Baseline {
     $log = Join-Path $script:Out "baseline.log"
     Set-Content -Path $log -Value "" -Encoding ascii
-    Sample-Row "baseline" $log $script:Seconds "no Fidget"
+    Sample-Row "baseline" $log $script:Seconds "no fidget"
 }
 
 function Run-Idle {

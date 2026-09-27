@@ -2,7 +2,7 @@
 
 **Status:** Superseded by [ADR-0022](./0022-acp-client-over-official-sdk-and-named-harnesses.md)
 
-Fidget is an Agent Client Protocol client built on `agent-client-protocol`
+fidget is an Agent Client Protocol client built on `agent-client-protocol`
 2.x, the SDK Zed ships and the protocol's own repository maintains. It lives
 in `src-tauri/src/acp_wire.rs` and nowhere else: one thread per spawned
 Harness runs a current-thread tokio runtime that drives the SDK's connection

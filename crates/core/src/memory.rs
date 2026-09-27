@@ -62,7 +62,7 @@ pub struct MemoryManifest {
     ///
     /// ponytail: one lock per manifest, which covers the several-Instances-one-
     /// process case the spec describes. Cross-process file locking if a second
-    /// Fidget ever writes the same Memory.
+    /// fidget ever writes the same Memory.
     writing: Mutex<()>,
 }
 
@@ -337,7 +337,7 @@ mod tests {
         );
     }
 
-    /// The user edits Memory in their own editor while Fidget is running. The
+    /// The user edits Memory in their own editor while fidget is running. The
     /// same manifest, never re-created, has to see it.
     #[test]
     fn an_external_edit_is_picked_up_without_restarting() {
@@ -361,13 +361,13 @@ mod tests {
         );
     }
 
-    /// Nothing about the file may require Fidget to have created it.
+    /// Nothing about the file may require fidget to have created it.
     #[test]
     fn a_hand_written_file_loads_and_is_appended_to_in_place() {
         let hand_written = "\
 # What the characters know
 
-Typed by me, before Fidget ever ran.
+Typed by me, before fidget ever ran.
 
 ## Facts
 
@@ -397,7 +397,7 @@ Typed by me, before Fidget ever ran.
             "\
 # What the characters know
 
-Typed by me, before Fidget ever ran.
+Typed by me, before fidget ever ran.
 
 ## Facts
 
@@ -537,7 +537,7 @@ Some notes I typed at the top, under no heading at all.
         assert_eq!(
             memory.lines().filter(|line| line.starts_with('#')).count(),
             1,
-            "and Memory still has only the heading Fidget wrote: {memory}"
+            "and Memory still has only the heading fidget wrote: {memory}"
         );
     }
 

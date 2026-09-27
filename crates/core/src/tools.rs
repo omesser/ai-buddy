@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn no_tool_posts_mouse_or_keyboard_events() {
-        // ADR-0003: Fidget ships no Executor. The assertion is structural: this
+        // ADR-0003: fidget ships no Executor. The assertion is structural: this
         // module depends on nothing that could post events, and every tool returns
         // a value rather than mutating the desktop.
     }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { classifyLine, failingHits, transform, transformPath } from "../scripts/rename-to-fidget.mjs";
+import { classifyLine, failingHits, recase, transform, transformPath } from "../scripts/rename-to-fidget.mjs";
 
 test("forge coordinates stay the repo slug", () => {
   const url = "https://github.com/omesser/ai-buddy/releases/latest/download/latest.json";
@@ -32,7 +32,8 @@ test("product identifiers split display and slug", () => {
   assert.equal(transform('.title("ai-buddy")'), '.title("Fidget")');
   assert.equal(transform("[behaviors.fidget]"), "[behaviors.fidget]");
   assert.equal(transform("xdotool search --class 'Ai-buddy'"), "xdotool search --class 'Fidget'");
-  assert.equal(transform("exposing buddy-side tools"), "exposing Fidget-side tools");
+  assert.equal(transform("exposing buddy-side tools"), "exposing fidget-side tools");
+  assert.equal(transform("claude mcp add --transport http ai-buddy \"{url}\""), "claude mcp add --transport http fidget \"{url}\"");
   assert.equal(transform("multi-buddy in one process"), "multi-character in one process");
   assert.equal(transform('asking_as("buddy-1", "bmo")'), 'asking_as("buddy-1", "bmo")');
   assert.equal(transform('("fidget", 2, None)'), '("fidget", 2, None)');
@@ -107,6 +108,29 @@ test("a forge URL is not also counted as the companion word", () => {
   const hits = classifyLine("https://github.com/omesser/ai-buddy/issues/133");
   assert.ok(hits.length > 0);
   assert.ok(hits.every((hit) => hit.role === "forge-slug"));
+});
+
+test("title case is only the product people see", () => {
+  assert.equal(
+    recase("git clone https://github.com/omesser/ai-buddy.git\ncd Fidget", "README.md"),
+    "git clone https://github.com/omesser/ai-buddy.git fidget\ncd fidget",
+  );
+  assert.equal(recase("# Fidget\n\nFidget never reads pixels.", "README.md"), "# Fidget\n\nFidget never reads pixels.");
+  assert.equal(recase("# Fidget\n\nFidget never reads pixels.", "docs/adr/0001-example.md"), "# Fidget\n\nFidget never reads pixels.".replace("Fidget never", "fidget never"));
+  assert.equal(recase("//! Fidget's overlay shell.", "src-tauri/src/main.rs"), "//! fidget's overlay shell.");
+  assert.equal(recase('        .title("Fidget")', "src-tauri/src/main.rs"), '        .title("Fidget")');
+  assert.equal(
+    recase('claude mcp add --transport http Fidget \\"{url}\\"', "src-tauri/src/settings.rs"),
+    'claude mcp add --transport http fidget \\"{url}\\"',
+  );
+  assert.equal(recase("exposing Fidget-side tools", "DESIGN.md"), "exposing fidget-side tools");
+  assert.equal(
+    recase("# Real heading\n```\n# Fidget restarts\n```\n", "docs/research/notes.md"),
+    "# Real heading\n```\n# fidget restarts\n```\n",
+  );
+  assert.equal(recase('fail "not a Fidget checkout"', ".agents/skills/verify-fidget/helpers/doctor.sh"), 'fail "not a fidget checkout"');
+  assert.equal(recase('console.warn("Fidget: cue audio")', "src/cue.js"), 'console.warn("fidget: cue audio")');
+  assert.equal(recase('note("This window could not reach Fidget.");', "src/chat.js"), 'note("This window could not reach Fidget.");');
 });
 
 test("the project board sentence does not keep the old title", () => {

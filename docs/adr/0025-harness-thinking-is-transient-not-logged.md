@@ -5,8 +5,8 @@
 ## Context
 
 Harnesses stream their reasoning over ACP as `agent_thought_chunk`, and every
-TUI Fidget's users come from — Claude Code, Hermes, opencode — draws it while
-the agent works. Fidget dropped it on the floor: the wire's update match ended
+TUI fidget's users come from — Claude Code, Hermes, opencode — draws it while
+the agent works. fidget dropped it on the floor: the wire's update match ended
 in a catch-all and nothing downstream was ever offered a thought. No decision
 put it there. It was never wired (#483).
 

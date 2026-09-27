@@ -222,7 +222,7 @@ function Get-OverlayMinSize($monitors) {
 }
 
 function Find-OverlayHwnds([uint32]$TargetProcessId, [IntPtr]$SettingsHwnd, [int]$MinW, [int]$MinH) {
-  # Overlay title is Fidget (main.rs). Size drops the 1x1 taskbar anchor.
+  # Overlay title is fidget (main.rs). Size drops the 1x1 taskbar anchor.
   $script:overlayHwnds = New-Object System.Collections.Generic.List[IntPtr]
   $script:overlayPid = $TargetProcessId
   $script:overlaySettings = $SettingsHwnd
@@ -448,7 +448,7 @@ foreach ($m in $monitors) {
   Log ("Monitor primary=$($m.primary) work=$($m.left),$($m.top) $($m.width)x$($m.height)")
 }
 
-Get-Process Fidget -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process fidget -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep 1
 $env:FIDGET_OPEN_SETTINGS = '1'
 $env:FIDGET_CAPTURABLE = '1'
@@ -614,7 +614,7 @@ for ($i = 0; $i -lt 40; $i++) {
 }
 $si = Get-HwndStackIndex $hwnd $stack
 if ($null -eq $overlays -or $overlays.Count -eq 0) {
-  $Report.notes += 'overlay HWND missing (title Fidget, large rect, same process)'
+  $Report.notes += 'overlay HWND missing (title fidget, large rect, same process)'
 } else {
   foreach ($ov in $overlays) {
     $oi = Get-HwndStackIndex $ov $stack

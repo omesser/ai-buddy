@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running Fidget, macOS only. RSS lives in more
+# Sample the resident set of a running fidget, macOS only. RSS lives in more
 # than one process: WKWebView's XPC helpers are children of launchd, not of the
 # app, so this diffs the set of WebKit helpers before and after launch.
 # Usage: scripts/bench-rss-macos.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]

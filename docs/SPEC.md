@@ -45,7 +45,7 @@ weights fill the role when no Harness is attached. An attached Harness fills it
 from the same conversation as chat. See [ADR-0008](./adr/0008-one-harness-session.md).
 
 The **Functional Layer** is invoked deliberately. Fidget exposes an MCP server of
-Fidget-side tools and attaches a **Harness** the user supplies. The Harness reasons and
+fidget-side tools and attaches a **Harness** the user supplies. The Harness reasons and
 acts; Fidget never posts synthetic mouse or keyboard events itself. Summoning the character
 opens a chat surface that reaches the attached Harness.
 

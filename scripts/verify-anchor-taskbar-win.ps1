@@ -69,11 +69,11 @@ $Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $
 if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with cargo first, or set FIDGET_VERIFY_BIN" }
 Pass "Binary ready: $Bin"
 
-# Kill any existing Fidget processes
+# Kill any existing fidget processes
 Get-Process -Name "fidget" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-# Launch Fidget without FIDGET_OPEN_SETTINGS (should not auto-open Settings)
+# Launch fidget without FIDGET_OPEN_SETTINGS (should not auto-open Settings)
 $env:FIDGET_CHARACTER = "buddy-bot"
 Remove-Item Env:FIDGET_OPEN_SETTINGS -ErrorAction SilentlyContinue
 
@@ -86,7 +86,7 @@ $script:AppProc = New-Object System.Diagnostics.Process
 $script:AppProc.StartInfo = $psi
 $null = $script:AppProc.Start()
 $appPid = [uint32]$script:AppProc.Id
-Info "Launched Fidget (PID=$appPid)"
+Info "Launched fidget (PID=$appPid)"
 
 # Wait ~8s for startup to settle
 Start-Sleep -Milliseconds 8000

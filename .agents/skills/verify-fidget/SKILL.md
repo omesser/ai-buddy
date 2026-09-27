@@ -1,11 +1,11 @@
 ---
 name: verify-fidget
-description: "Drive the Fidget desktop mascot (Tauri overlay) the way a user does — launch, doctor, poke/perch/summon via existing verify-overlay* scripts, capture evidence. Use when proving overlay, gesture, or chat behavior for this repo."
+description: "Drive the fidget desktop mascot (Tauri overlay) the way a user does — launch, doctor, poke/perch/summon via existing verify-overlay* scripts, capture evidence. Use when proving overlay, gesture, or chat behavior for this repo."
 ---
 
 # Verify Fidget
 
-Project-local control skill for **Fidget**, a Tauri desktop mascot whose primary surface is a full-display overlay sprite (perch, poke, summon/chat). Agents read this cold mid-task: every command below is literal.
+Project-local control skill for **fidget**, a Tauri desktop mascot whose primary surface is a full-display overlay sprite (perch, poke, summon/chat). Agents read this cold mid-task: every command below is literal.
 
 ## Interview summary (do not re-derive)
 
@@ -68,7 +68,7 @@ Read-only health check. Run before Drive whenever anything looks off:
 
 Doctor answers:
 
-1. Repo root looks like Fidget (`Cargo.toml` workspace + `src-tauri/`).
+1. Repo root looks like fidget (`Cargo.toml` workspace + `src-tauri/`).
 2. Binary exists (`target/release/fidget` or `target/debug/fidget`) or `cargo` can build.
 3. Platform tools for the active lane are on `PATH` (macOS: `swift`; Linux X11: `xdotool` `xprop` `xwininfo` `xterm` + `DISPLAY` + supporting WM / `openbox`; Windows: PowerShell + dual display for overlay-win).
 4. If `$APP_PID` is set, that process is alive and its log (if any) contains `^overlay:`.

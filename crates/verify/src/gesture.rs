@@ -141,7 +141,7 @@ pub fn run(verb: Verb, repo_root: &Path, report: &mut RunReport) {
     {
         Ok(c) => c,
         Err(e) => {
-            report.check(Outcome::Fail, "Fidget launch", &format!("spawn: {e}"));
+            report.check(Outcome::Fail, "fidget launch", &format!("spawn: {e}"));
             return;
         }
     };

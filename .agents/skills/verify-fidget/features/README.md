@@ -1,6 +1,6 @@
 # Fidget verification map
 
-This directory is the maintained source for verifying user-facing behavior of the Fidget desktop mascot. Read the index before driving the app, then use the matching feature file as the recipe.
+This directory is the maintained source for verifying user-facing behavior of the fidget desktop mascot. Read the index before driving the app, then use the matching feature file as the recipe.
 
 ## Baseline preconditions
 

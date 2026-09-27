@@ -32,7 +32,7 @@ the user thinks they gave. #250.
 **The ask is a Character act, not a system dialog.** Wanting to look is a
 Behavior the Character plays: it asks, in the chat surface when one is open
 (#17) and in a small request window when none is, and it waits. Only after the
-user says yes does Fidget ask the attached Harness for the screenshot, and
+user says yes does fidget ask the attached Harness for the screenshot, and
 only then can the Character react to what is on screen. A refusal is an answer;
 the Character takes it and carries on.
 
@@ -43,7 +43,7 @@ for the Capture it asks for: "what is on my screen?" does not need a second
 prompt, and the answer says a Capture was taken.
 
 This is not the second confirmation ADR-0003 refuses. That rule is about
-*acting*, and it forbids Fidget stacking a dialog on top of the Harness's own.
+*acting*, and it forbids fidget stacking a dialog on top of the Harness's own.
 Consent for sensing is ours alone, there is exactly one prompt, and the Harness
 is not asked to capture anything until the prompt is answered.
 

@@ -80,7 +80,7 @@ while [ "$waited" -lt 40 ]; do
     break
   fi
   if ! kill -0 "$app_pid" 2> /dev/null; then
-    fail "Fidget exited before overlay:"
+    fail "fidget exited before overlay:"
     tail -40 "$log" || true
     exit 1
   fi

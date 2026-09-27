@@ -105,22 +105,22 @@ impl Endpoint {
             .send(body)
             // `why` names the failure, not the endpoint: the Harness captures
             // this stream, and the port belongs in no log.
-            .map_err(|why| format!("Fidget is not answering: {why}"))?;
+            .map_err(|why| format!("fidget is not answering: {why}"))?;
         let code = response.status().as_u16();
         if !(200..300).contains(&code) {
-            return Err(format!("Fidget refused the call: status {code}"));
+            return Err(format!("fidget refused the call: status {code}"));
         }
         response
             .body_mut()
             .with_config()
             .limit(ANSWER_LIMIT)
             .read_to_string()
-            .map_err(|why| format!("Fidget's answer could not be read: {why}"))
+            .map_err(|why| format!("fidget's answer could not be read: {why}"))
     }
 }
 
 fn no_app(var: &str) -> String {
-    format!("{var} is unset: Fidget is not running, or this Harness dropped the environment it was given")
+    format!("{var} is unset: fidget is not running, or this Harness dropped the environment it was given")
 }
 
 /// One line of stdio in, the line to write back out — `None` only for a
@@ -143,7 +143,7 @@ pub fn relay(line: &str, endpoint: Result<&Endpoint, &str>) -> Option<String> {
         // means. A request answered with no body is a failure of this shim's
         // contract, not a success.
         Ok(_) if id.is_none() => return None,
-        Ok(_) => "Fidget answered the request with nothing".to_string(),
+        Ok(_) => "fidget answered the request with nothing".to_string(),
         Err(why) => why,
     };
     eprintln!("fidget-mcp: {why}");

@@ -22,7 +22,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
   exit 0
 fi
 
-IDENTITY="Fidget dev signing"
+IDENTITY="fidget dev signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 TARGET="${1:-target/debug/fidget}"
 

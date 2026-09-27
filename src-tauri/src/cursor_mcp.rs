@@ -17,7 +17,7 @@
 //! not ours.
 //!
 //! The entry is the same loopback URL and bearer token every other Harness
-//! gets (ADR-0023), which is what keeps this working on every platform Fidget
+//! gets (ADR-0023), which is what keeps this working on every platform fidget
 //! ships. Both are new every app run, so the entry is rewritten and re-approved
 //! on each attach rather than set up once. Rewriting is skipped when the entry
 //! is already what we would write, but `enable` runs every attach regardless,

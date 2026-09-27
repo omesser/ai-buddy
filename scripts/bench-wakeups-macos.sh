@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Baseline: wakeups/sec, package idle residency, and CPU time for a release
-# Fidget binary, per scenario. A reviewer reruns this directly rather than
+# fidget binary, per scenario. A reviewer reruns this directly rather than
 # trusting a number in a doc.
 
 # Needs: sudo (powermetrics), swift (the chat and hidden props), and the env
@@ -15,7 +15,7 @@
 #   with crates/verify; do not fork it), confirm Summon, sample with chat open.
 # hidden: launch, cover the main display with scripts/fullscreen-window.swift
 #   so the fullscreen-frontmost rule fires, confirm `presence: hidden`, sample.
-# baseline: launch nothing; refuses to sample while any Fidget is running.
+# baseline: launch nothing; refuses to sample while any fidget is running.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -69,11 +69,11 @@ APP_PID=""
 PROP_PID=""
 trap 'kill "$APP_PID" "$PROP_PID" 2> /dev/null; wait "$APP_PID" "$PROP_PID" 2> /dev/null' EXIT INT TERM
 
-# Other agents build and run Fidget on this machine. A baseline with one of
+# Other agents build and run fidget on this machine. A baseline with one of
 # theirs alive is not a baseline, and powermetrics cannot tell whose it is.
 STRAY_BEFORE=$(pgrep -x fidget | tr '\n' ' ')
 if [ "$SCENARIO" = "baseline" ] && [ -n "$STRAY_BEFORE" ]; then
-  echo "bench-wakeups-macos: baseline refused, Fidget already running: pid(s) $STRAY_BEFORE" >&2
+  echo "bench-wakeups-macos: baseline refused, fidget already running: pid(s) $STRAY_BEFORE" >&2
   exit 1
 fi
 
@@ -192,7 +192,7 @@ fi
   echo "start: $START_ISO"
   echo "end: $END_ISO"
   echo "pid: ${APP_PID:-none}"
-  echo "note: powermetrics is system-wide - another agent's Fidget build"
+  echo "note: powermetrics is system-wide - another agent's fidget build"
   echo "  can be running at the same time. Always parse with --pid ${APP_PID:-none},"
   echo "  never bare --process name matching."
   echo "fidget_pids_before: ${STRAY_BEFORE:-none}"

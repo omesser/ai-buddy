@@ -75,7 +75,7 @@ fn a_tool_error_outranks_a_failed_check_and_exits_three() {
     let paths = run_paths(&dir);
     let mut report = RunReport::new("overlay", &paths, false);
     report.check(Outcome::Fail, "overlay script", "exit 1");
-    report.check(Outcome::Error, "repo root", "not a Fidget checkout");
+    report.check(Outcome::Error, "repo root", "not a fidget checkout");
 
     assert_eq!(report.outcome(), Outcome::Error);
     assert_eq!(report.outcome().exit_code(), 3);

@@ -2,7 +2,7 @@
 
 ## Context
 
-A Harness reaches Fidget's tools over MCP. Making one speak or play a
+A Harness reaches fidget's tools over MCP. Making one speak or play a
 Behavior means resolving a target against the live Instances and enqueueing a
 proposal on the layer that owns them. That layer is owned by the frame loop and
 has no representation outside the process.

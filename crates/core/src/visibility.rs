@@ -1,4 +1,4 @@
-//! When the Character gets out of the way. DESIGN.md decision 8 gives Fidget
+//! When the Character gets out of the way. DESIGN.md decision 8 gives fidget
 //! one window level and no restacking, so staying out of the user's way means
 //! disappearing. A rule (fullscreen frontmost) fades; the hotkey answers at once.
 //!

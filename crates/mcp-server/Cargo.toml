@@ -1,6 +1,6 @@
 [package]
 name = "fidget-mcp-server"
-description = "Stdio MCP shim forwarding to the running Fidget app"
+description = "Stdio MCP shim forwarding to the running fidget app"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

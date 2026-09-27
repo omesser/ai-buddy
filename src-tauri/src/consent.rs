@@ -371,7 +371,7 @@ mod linux {
         let runtime = match tokio::runtime::Builder::new_current_thread().build() {
             Ok(r) => r,
             Err(why) => {
-                eprintln!("Fidget: portal screencast runtime failed: {why}");
+                eprintln!("fidget: portal screencast runtime failed: {why}");
                 return;
             }
         };
@@ -382,7 +382,7 @@ mod linux {
                     GRANTED_WINDOW_NAMES.store(true, Ordering::Relaxed);
                 }
                 Err(why) => {
-                    eprintln!("Fidget: portal screencast request failed: {why}");
+                    eprintln!("fidget: portal screencast request failed: {why}");
                 }
             }
         });
@@ -636,7 +636,7 @@ pub fn listed_under_hint(name: &str) -> String {
 }
 
 /// The pane copy. The listed name is live: a `cargo run` from Cursor is
-/// Cursor, a packaged build is Fidget.
+/// Cursor, a packaged build is fidget.
 #[cfg(target_os = "macos")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
@@ -950,7 +950,7 @@ mod tests {
         }
     }
 
-    /// A `cargo run` from Cursor is listed as Cursor, not Fidget. The
+    /// A `cargo run` from Cursor is listed as Cursor, not fidget. The
     /// hint has to carry that name or the Accessibility list is a guessing game.
     #[test]
     #[cfg(target_os = "macos")]

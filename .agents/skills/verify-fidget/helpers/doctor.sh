@@ -23,7 +23,7 @@ echo "doctor: evidence=$FIDGET_VERIFY_EVIDENCE"
 if [ -f Cargo.toml ] && [ -d src-tauri ]; then
   pass "workspace layout (Cargo.toml + src-tauri)"
 else
-  fail "not a Fidget checkout"
+  fail "not a fidget checkout"
 fi
 
 if BIN=$(fidget_bin); then
@@ -32,7 +32,7 @@ else
   if command -v cargo > /dev/null; then
     pass "no binary yet; cargo is available to build"
   else
-    fail "no Fidget binary and no cargo"
+    fail "no fidget binary and no cargo"
   fi
 fi
 

@@ -1,6 +1,6 @@
 # Performance Baseline v1
 
-Measured baselines for Fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/ai-buddy/issues/423) for context and child benchmarks.
+Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/ai-buddy/issues/423) for context and child benchmarks.
 
 ## Linux (issue #432)
 
@@ -29,7 +29,7 @@ Measured baselines for Fidget performance before optimization work. See parent i
 
 | Scenario | Wakeups/sec (voluntary ctx switches) | CPU% | Notes |
 |----------|--------------------------------------|------|-------|
-| Baseline (no Fidget) | 3.6 | - | X server (Xtigervnc) idle |
+| Baseline (no fidget) | 3.6 | - | X server (Xtigervnc) idle |
 | Idle perched | ~271 | ~3% | Sprite visible, no interaction |
 | Walking | N/A | N/A | Wakeups not measured; mask rebuild while walking measured on Grok Bot desktop (see #428 doc) |
 | Chat open | N/A | N/A | Not measured (requires GUI interaction) |
@@ -51,7 +51,7 @@ Baseline X server (60s sample, PID 1594):
 
 **Findings:**
 
-1. **High idle wakeup rate.** Fidget idle shows ~271 wakeups/sec vs baseline 3.6/sec (75x increase). Hypothesis: unconditional frame loop sleep (~16ms = ~60Hz) plus additional subsystem polling.
+1. **High idle wakeup rate.** fidget idle shows ~271 wakeups/sec vs baseline 3.6/sec (75x increase). Hypothesis: unconditional frame loop sleep (~16ms = ~60Hz) plus additional subsystem polling.
 
 2. **VM measurement constraints.** C-state residency and system-wide wakeup counting unavailable. Context switches are a coarse proxy. Bare-metal measurements would provide more accurate power impact data.
 
@@ -85,7 +85,7 @@ _Pending._
 
 ### macOS Metal (issue #429)
 
-Re-run with `sudo -v && FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing-macos.sh matrix --seconds 15`. The script refuses every scenario but `env` and `baseline` without that variable, because the rest launch Fidget on the live desktop, warp the cursor, or cover the main display. Written against `79cd3061`.
+Re-run with `sudo -v && FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing-macos.sh matrix --seconds 15`. The script refuses every scenario but `env` and `baseline` without that variable, because the rest launch fidget on the live desktop, warp the cursor, or cover the main display. Written against `79cd3061`.
 
 **Tools:**
 
@@ -105,7 +105,7 @@ Re-run with `sudo -v && FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing
 
 | Scenario | GPU% (ioreg) | GPU active% (powermetrics) | Power W | VRAM MB | ticks/s | Notes |
 |----------|--------------|----------------------------|---------|---------|---------|-------|
-| Baseline (no Fidget) | 0.3 | 5.50 | 0.06 | 565 | N/A | No Fidget running |
+| Baseline (no fidget) | 0.3 | 5.50 | 0.06 | 565 | N/A | No fidget running |
 | Idle perched | 0.6 | 6.13 | 0.06 | 708 | 52.73 | Pointer left alone, 791 ticks |
 | Walking | 0.8 | 7.33 | 0.04 | 672 | 52.40 | 209 walk frames during the sample |
 | Chat open | 0.3 | 5.68 | 0.03 | 678 | 53.00 | Summon logged at 960 923 |
@@ -114,13 +114,13 @@ Re-run with `sudo -v && FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-gpu-compositing
 
 **What this refutes.**
 
-The issue predicted idle perched would hold 5-15% GPU and cost 0.5 to 2 W. It holds 0.6% and 0.06 W, the same wattage as an idle desktop with no Fidget on it. Fullscreen transparent compositing is not a measurable GPU cost on this machine.
+The issue predicted idle perched would hold 5-15% GPU and cost 0.5 to 2 W. It holds 0.6% and 0.06 W, the same wattage as an idle desktop with no fidget on it. Fullscreen transparent compositing is not a measurable GPU cost on this machine.
 
 It also predicted multi-monitor would roughly double, two overlays being two compositing passes. Two displays measured 0.5% against one display's 0.6%. There is no doubling to find.
 
 Walking against idle was predicted to be similar, and is: 0.8% against 0.6%.
 
-**The noise floor is the result.** Every Fidget scenario falls between 0.3% and 0.8%. A 10 s baseline taken minutes earlier on the same idle desktop read 1.2%, above every one of them. The overlay's GPU compositing cost is smaller than this instrument's run-to-run spread, so these deltas rank nothing. Anyone optimizing against them is fitting noise.
+**The noise floor is the result.** Every fidget scenario falls between 0.3% and 0.8%. A 10 s baseline taken minutes earlier on the same idle desktop read 1.2%, above every one of them. The overlay's GPU compositing cost is smaller than this instrument's run-to-run spread, so these deltas rank nothing. Anyone optimizing against them is fitting noise.
 
 **What the hide rule actually saves.** GPU% does drop to 0.0 when a fullscreen app hides the sprite, which is what the issue asked to confirm. But the saving that shows up clearly is on the other axis: engine ticks collapse from roughly 53/s to 1.07/s. The hide rule earns its keep by stopping the rAF loop, not by sparing the compositor. That points the remaining #423 work at CPU wakeups (#431), not at compositing.
 
@@ -132,7 +132,7 @@ Re-run on the workstation in [mask-rebuild-baseline-windows.md](./mask-rebuild-b
 
 `powershell -NoProfile -File scripts\bench-gpu-compositing-windows.ps1 matrix --seconds 15`
 
-The script waits for an explicit green light before it launches Fidget or moves the cursor.
+The script waits for an explicit green light before it launches fidget or moves the cursor.
 
 A Linux cloud VM has no DWM, so it cannot measure GPU%, power, xperf frame time, or mask rate. The Windows desktop numbers are below.
 
@@ -153,7 +153,7 @@ Crop Task Manager's Performance GPU page during idle perched to about 280px wide
 
 | Scenario | GPU% | Power W | Mask calls | Mask Hz | Notes |
 |----------|------|---------|------------|---------|-------|
-| Baseline (no Fidget) | 5.5 | 14.2 | N/A | N/A | |
+| Baseline (no fidget) | 5.5 | 14.2 | N/A | N/A | |
 | Idle perched, pointer at (2,2) | 3.8 | 16.8 | 0 | 0.00 | |
 | Walking, pointer away | 12.0 | 15.5 | 0 | 0.00 | walk_frames=742 |
 | Walking-over, 5 s | 8.0 | 14.1 | 0 | 0.00 | Cursor landed at 3438,1328. scale 1.00. actual 3438,1328. walk_frames=0, walk aborted on hover. |
@@ -201,7 +201,7 @@ Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `-
 
 | Scenario | GPU% | Mask calls | Mask Hz | xfwm4 CPU% | Xtigervnc CPU% | Notes |
 |----------|------|------------|---------|------------|----------------|-------|
-| Baseline (no Fidget) | N/A | N/A | N/A | 0.0 | 0.0 | No client, so no mask caller |
+| Baseline (no fidget) | N/A | N/A | N/A | 0.0 | 0.0 | No client, so no mask caller |
 | Idle perched | N/A | 0 | 0.00 | 0.9 | 35.0 | Pointer at (2,2) |
 | Walking | N/A | 0 | 0.00 | 1.1 | 46.7 | Pointer away. 457 `walk` frames |
 | Pointer on sprite, walk aborted | N/A | 22 | 4.40 | 0.2 | 5.6 | 5s only. 8 `walk` frames, then react and talk. Not a sustained walk rate. That rate is [#428](https://github.com/omesser/ai-buddy/issues/428) |
@@ -239,14 +239,14 @@ overlay: 1 display(s); sprite 126x128; BMO as BMO
 
 ## WindowSource (issue #427)
 
-Re-run the ungated half with `scripts/bench-window-list-macos.sh micro`. The gated half is `sudo -v && FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-window-list-macos.sh matrix --seconds 15 --windows 100`; the script refuses `idle`, `riding`, and `matrix` without that variable because they launch Fidget on the live desktop and flood it with windows. Written against `8588715e`.
+Re-run the ungated half with `scripts/bench-window-list-macos.sh micro`. The gated half is `sudo -v && FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-window-list-macos.sh matrix --seconds 15 --windows 100`; the script refuses `idle`, `riding`, and `matrix` without that variable because they launch fidget on the live desktop and flood it with windows. Written against `8588715e`.
 
 **What the app does.** One poll is `CGWindowListCopyWindowInfo(OptionOnScreenOnly | ExcludeDesktopElements, 0)` plus a decode of every entry's bounds, number, layer, and (with Screen Recording consent) owner name, in `walk_visible` at `src-tauri/src/platform/macos/window_source.rs:78-80`. `SnapshotAssembler::assemble` reads it once per `POLL_INTERVAL` (100 ms, `crates/core/src/window_source.rs:10`) and once per `RIDE_POLL_INTERVAL` (16 ms, `crates/core/src/window_source.rs:15`) while any Instance reports `riding` (`src-tauri/src/frame_loop.rs:1317`, switched at `src-tauri/src/frame_loop.rs:1692`). The read is synchronous on the frame loop thread (`crates/core/src/snapshot.rs:84-87`), so a poll's cost lands inside the tick that makes it.
 
 **Tools:**
 
 - `scripts/bench-window-list-macos.swift` times the same call and decode from its own process against whatever is on the desktop. It opens nothing.
-- `scripts/bench-window-list-macos.sh` wraps it (`micro`) and, gated, samples a running Fidget with dtrace (`idle`, `riding`, `matrix`). The added windows come from `scripts/window-flood-macos.swift`, under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043); when that file is absent the added-window rows skip and say so. The ride comes from `scripts/perch-window.swift --glide`, which slides the perch every frame so `riding` stays on for the whole sample.
+- `scripts/bench-window-list-macos.sh` wraps it (`micro`) and, gated, samples a running fidget with dtrace (`idle`, `riding`, `matrix`). The added windows come from `scripts/window-flood-macos.swift`, under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043); when that file is absent the added-window rows skip and say so. The ride comes from `scripts/perch-window.swift --glide`, which slides the perch every frame so `riding` stays on for the whole sample.
 - The issue's dtrace one-liner matches no probe on this machine: `dtrace: probe description pid<n>::CGWindowListCopyWindowInfo:entry does not match any probes`. On macOS 26 CoreGraphics forwards to SkyLight, and the pid provider lists `SLWindowListCopyWindowInfo` there. Probing that on the microbench counted 8439 calls in 4 s at 460 µs average, against the microbench's own 455 µs median, so the two instruments agree. `sudo` is required; System Integrity Protection prints a warning but lets the pid provider attach to an unsigned binary.
 - `xctrace record --template 'Time Profiler' --attach <pid> --time-limit 5s` records headless and its export names `SLWindowListCopyWindowInfo` in the sampled frames, so the issue's Instruments route works without opening Instruments. The script uses dtrace instead because it yields a call count and a per-call duration directly.
 
@@ -269,7 +269,7 @@ The `all` row is a range on purpose. Three runs, minutes to hours apart, put its
 
 **Metrics (the app under dtrace, measured, one run each, `target/debug` build):**
 
-The operator approved one `matrix --seconds 15 --windows 100` run. Every number below is from that run, on a debug build of Fidget, and the +100 rows used the flood script under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043). Windows is the on-screen count under the app's options, read by the microbench beside the sample. Hz is dtrace's call count divided by 15 s.
+The operator approved one `matrix --seconds 15 --windows 100` run. Every number below is from that run, on a debug build of fidget, and the +100 rows used the flood script under review in [#1043](https://github.com/omesser/ai-buddy/pull/1043). Windows is the on-screen count under the app's options, read by the microbench beside the sample. Hz is dtrace's call count divided by 15 s.
 
 | Scenario | Windows | Poll Hz (target) | Median µs | p95 µs | Max µs | dtrace calls | Notes |
 |----------|---------|------------------|-----------|--------|--------|--------------|-------|
@@ -279,7 +279,7 @@ The operator approved one `matrix --seconds 15 --windows 100` run. Every number 
 | Riding a gliding perch, desktop as found | 56 | 45.40 (60) | 1500 | 4750 | 15165 | 681 | 378 distinct perched positions over the sample |
 | Riding a gliding perch, +100 flood windows | 156 | 40.20 (60) | 2785 | 10834 | 12796 | 603 | 296 distinct perched positions |
 
-**The in-app call is slower than the same call timed alone.** Measured: at 55 to 56 windows the app's median poll is 2169 µs idle and 1500 µs riding, against 404 µs for the microbench's `app` row at 52 windows in the same matrix run. That is 3.7 to 5.4 times the in-process figure. The worst riding sample at 56 windows took 15165 µs, against a 16667 µs frame at 60 Hz; two of 682 riding samples passed 8 ms. At 156 windows the riding p95 is 10834 µs, 65% of the frame, and the max 12796 µs. Whether a tick that contains one of those polls overran the frame is not measured: dtrace timed the call, not the tick. Why the app's call is slower than the microbench's is not measured either. A guess is that the debug build and the window server's per-process state both add to it. The microbench numbers say what the call costs at best, not what it costs Fidget.
+**The in-app call is slower than the same call timed alone.** Measured: at 55 to 56 windows the app's median poll is 2169 µs idle and 1500 µs riding, against 404 µs for the microbench's `app` row at 52 windows in the same matrix run. That is 3.7 to 5.4 times the in-process figure. The worst riding sample at 56 windows took 15165 µs, against a 16667 µs frame at 60 Hz; two of 682 riding samples passed 8 ms. At 156 windows the riding p95 is 10834 µs, 65% of the frame, and the max 12796 µs. Whether a tick that contains one of those polls overran the frame is not measured: dtrace timed the call, not the tick. Why the app's call is slower than the microbench's is not measured either. A guess is that the debug build and the window server's per-process state both add to it. The microbench numbers say what the call costs at best, not what it costs fidget.
 
 **Poll rate.** Measured: idle polls at 9.80 Hz against the 10 Hz target. Riding polls at 45.4 Hz on the desktop as found and 40.2 Hz with 100 windows added, against a 60 Hz target. What sits behind the shortfall is a guess: the debug build's frame loop not holding 60 Hz, rather than the poll. The poll's median at 56 windows is 1.5 ms, so by itself it cannot stretch a 16.7 ms frame to the 22 ms the 45.4 Hz rate implies. A release build measured with the same script would settle it.
 
@@ -287,7 +287,7 @@ The operator approved one `matrix --seconds 15 --windows 100` run. Every number 
 
 **What the CPU share is, computed from the rows above.** Idle at 55 windows, 9.8 Hz times 2.17 ms is 21 ms of one core a second. Riding at 56 windows, 45.4 Hz times 1.5 ms is 68 ms a second, 6.8% of one core. Riding at 156 windows, 40.2 Hz times 2.79 ms is 112 ms a second, 11% of one core. The issue's Activity Monitor CPU% for the whole process was not taken.
 
-**What this refutes.** The issue's hypothesis was about 50 µs per window. The measured figure is 7 to 11 µs per window in-process and 13 to 18 µs per added window in the app, and over 90% of a microbench poll is the call itself: the decode Fidget adds costs 30 to 50 µs at 53 windows, and reading the owner name adds another 20 to 50 µs. At 156 windows the app's median riding poll is 2.8 ms, not the 10 to 50 ms the issue predicted for 200 windows. The tail is another matter: a p95 of 10.8 ms and a max of 12.8 ms at 156 windows, and a 15.2 ms worst sample at 56, are within one frame each but leave little of it.
+**What this refutes.** The issue's hypothesis was about 50 µs per window. The measured figure is 7 to 11 µs per window in-process and 13 to 18 µs per added window in the app, and over 90% of a microbench poll is the call itself: the decode fidget adds costs 30 to 50 µs at 53 windows, and reading the owner name adds another 20 to 50 µs. At 156 windows the app's median riding poll is 2.8 ms, not the 10 to 50 ms the issue predicted for 200 windows. The tail is another matter: a p95 of 10.8 ms and a max of 12.8 ms at 156 windows, and a 15.2 ms worst sample at 56, are within one frame each but leave little of it.
 
 **Limits.** One machine, one desktop, one run of the gated matrix, on a debug build. The microbench times a separate process and the app's calls are 3.7 to 5.4 times slower, so the microbench alone understates the cost. The `all` row's spread across nine runs is wider than the `app` row's, so window-count scaling on a busy desktop needs more than one run per count. Not produced: the Instruments Time Profiler screenshot the issue asks for (the headless `xctrace` recording exists, but a screenshot needs Instruments on the screen) and a plotted curve.
 

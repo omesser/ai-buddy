@@ -110,10 +110,10 @@ done
 log_info "Perch window ID: $TEST_WINDOW_ID"
 xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
 
-log_info "Building Fidget..."
+log_info "Building fidget..."
 cargo build --release
 
-log_info "Starting Fidget with frame tracing..."
+log_info "Starting fidget with frame tracing..."
 export FIDGET_TRACE_FRAMES=1
 export FIDGET_TRACE_HITTEST=1
 export RUST_LOG=debug
@@ -146,7 +146,7 @@ for _ in $(seq 1 60); do
   [ -n "$WINDOW_ID" ] && break
   sleep 0.25
 done
-[ -n "$WINDOW_ID" ] || fail "Could not find Fidget overlay window"
+[ -n "$WINDOW_ID" ] || fail "Could not find fidget overlay window"
 log_info "Found overlay window ID: $WINDOW_ID"
 
 log_info "Waiting for EWMH window states..."

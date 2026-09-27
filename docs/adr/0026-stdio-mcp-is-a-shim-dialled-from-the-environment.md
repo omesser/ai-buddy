@@ -93,7 +93,7 @@ outlives the app authorises nothing. Cleanup: detach removes the entry, and the
 file and directory when attach created them.
 
 What it buys is that `cursor-agent` uses the same transport as every other
-Harness, on every platform Fidget ships. A unix socket with no token was built
+Harness, on every platform fidget ships. A unix socket with no token was built
 and measured first and would have kept the credential off disk entirely, but it
 is `cfg(unix)`, and leaving Windows without tools to avoid a 0600 file in a
 directory the user already controls is the worse trade.

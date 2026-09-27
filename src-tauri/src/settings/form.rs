@@ -1021,7 +1021,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 /// freezing them apart would offer an edit the launch throws away (#272).
 ///
 /// No credential row of any kind, now or later. The Harness signs itself in
-/// and Fidget holds nothing for it (ADR-0018). The login command the state
+/// and fidget holds nothing for it (ADR-0018). The login command the state
 /// line names is text, and nothing here runs it.
 ///
 /// The page draws these rows and commits them on Apply, the same batch as
@@ -3831,7 +3831,7 @@ mod tests {
     }
 
     /// Off and Custom are the attach popup's grammar, not this one's: this box
-    /// registers Fidget with a Harness the user starts themselves, and
+    /// registers fidget with a Harness the user starts themselves, and
     /// neither of those names one.
     #[test]
     fn the_byo_picker_offers_only_the_named_harnesses() {

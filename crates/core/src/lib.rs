@@ -1,4 +1,4 @@
-//! The pure core: everything Fidget knows how to do without a window server.
+//! The pure core: everything fidget knows how to do without a window server.
 //! Nothing here depends on Tauri or a platform binding (docs/SPEC.md); adapters
 //! to the outside world are declared here as traits and implemented in the shell.
 

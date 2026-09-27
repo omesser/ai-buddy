@@ -1,4 +1,4 @@
-# Sample the resident set of a running Fidget, Windows only. WebView2 is
+# Sample the resident set of a running fidget, Windows only. WebView2 is
 # Chromium, so it spawns GPU, Network and Renderer processes; every
 # msedgewebview2.exe that appears after launch is attributed to the app.
 # Usage: scripts\bench-rss-windows.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]

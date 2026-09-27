@@ -139,7 +139,7 @@ pub fn discover_repo_root() -> Result<PathBuf, String> {
         }
     }
     Err(
-        "could not find Fidget repo root (need Cargo.toml + src-tauri); \
+        "could not find fidget repo root (need Cargo.toml + src-tauri); \
          run from a checkout or install beside one"
             .into(),
     )

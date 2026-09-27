@@ -368,7 +368,7 @@ confound a second time, more directly.
   launches the release binary with the env a worktree build needs
   (`FIDGET_DIRECTOR_API_KEY` skips the Keychain prompt, #283), waits for the
   overlay to report ready, optionally drives Summon (see below) or the
-  fullscreen hide (see "Baseline (no Fidget) and hidden, interleaved"), then runs
+  fullscreen hide (see "Baseline (no fidget) and hidden, interleaved"), then runs
   `sudo powermetrics -i 1000 -n DURATION --samplers tasks,cpu_power` for the
   window and writes `powermetrics.txt` + `app.log` + `meta.txt` to `--out`.
   `--scenario baseline` launches nothing and refuses to sample while any
@@ -518,9 +518,9 @@ hidden, baseline, idle, hidden, ...** so a load drift lands on all three arms
 of the same round:
 
 - **baseline** — `scripts/bench-wakeups-macos.sh --scenario baseline`. No
-  Fidget process alive; the script refuses to sample if one is, and
+  fidget process alive; the script refuses to sample if one is, and
   `meta.txt` records the `pgrep -x fidget` result before and after.
-- **idle** — the idle-perched scenario, rerun here so the Fidget-vs-no-Fidget
+- **idle** — the idle-perched scenario, rerun here so the fidget-vs-no-fidget
   comparison #431's last acceptance box asks for is a same-round pair rather
   than a comparison against a capture from a week earlier.
 - **hidden** — `--scenario hidden`. The app launches, waits for a
@@ -558,7 +558,7 @@ end of its capture; the 1-minute load average is in the last column.
 
 Per-process columns are the exact PID the script launched. Cluster idle and
 package power are system-wide. Round 3's baseline arm (59.2% P-Cluster idle,
-2007 mW, with no Fidget alive) is the machine doing something else for
+2007 mW, with no fidget alive) is the machine doing something else for
 those 45 seconds, and it is kept: dropping the inconvenient no-app round
 would be the single-sample mistake this document already withdrew once.
 
@@ -582,7 +582,7 @@ magnitude. What stays while hidden is what #761 named: the host and WebKit
 processes keep their own cadence whether or not the sprite is drawn, and the
 hide rule does not reach it.
 
-**Does per-cluster idle residency drop with Fidget running? This data cannot
+**Does per-cluster idle residency drop with fidget running? This data cannot
 say.** Same-round differences, idle minus baseline: E-Cluster idle residency
 +2.0, +2.7, +10.3, −0.6 points; P-Cluster +26.9, −13.3, −1.5, −4.3 points;
 package power +582, −196, −1501, +71 mW. In three of four rounds the machine
@@ -624,18 +624,18 @@ $ pmset -g assertions            # before launch
    PreventUserIdleSystemSleep     1
    pid 80906(caffeinate) ...  pid 559(powerd) ...
 
-$ pmset -g assertions            # Fidget running
+$ pmset -g assertions            # fidget running
    PreventUserIdleDisplaySleep    0
    PreventSystemSleep             0
    PreventUserIdleSystemSleep     1
-   (no assertion names Fidget)
+   (no assertion names fidget)
 ```
 
 The count does not move and nothing names the character. The single assertion
 present belongs to `caffeinate` and `powerd` and predates the launch, so take
 the baseline in the same session rather than reading a lone count as ownership.
 
-So the display and the system sleep on their normal idle timers with Fidget
+So the display and the system sleep on their normal idle timers with fidget
 running. What the character does cost is package idle, about 2.32 wakeups a second
 while perched, which is a different and much smaller claim. #741 owns reducing
 that.
@@ -668,12 +668,12 @@ package-power numbers are included for completeness and are not a second
 confirmation of anything.
 
 The comparison this section could not make when it was written, character against
-no character, is now in "Baseline (no Fidget) and hidden, interleaved" above,
+no character, is now in "Baseline (no fidget) and hidden, interleaved" above,
 and reaches the same verdict for the same reason: the no-app arm's residency
 moved by more between rounds than one process could move it at all.
 
 If what you want to know is whether the character stops the machine sleeping, this
-section is the wrong one. See "Does Fidget keep the machine awake?" above.
+section is the wrong one. See "Does fidget keep the machine awake?" above.
 
 ## Gotchas
 
@@ -714,8 +714,8 @@ section is the wrong one. See "Does Fidget keep the machine awake?" above.
 ## Completing the residency confirmation on a quiet machine
 
 The last acceptance criterion in #431 asks whether per-cluster idle residency
-drops with Fidget running, to confirm deep sleep prevention. The baseline and
-idle measurements exist (see "Baseline (no Fidget) and hidden, interleaved"
+drops with fidget running, to confirm deep sleep prevention. The baseline and
+idle measurements exist (see "Baseline (no fidget) and hidden, interleaved"
 above), but were taken on a shared development machine where background activity
 produces larger residency swings than one 7.9%-CPU process can cause.
 
@@ -747,7 +747,7 @@ attempt the measurement; #931 saw 33.
 ### Protocol
 
 Run four interleaved rounds of baseline and idle-perched, following the same
-A/B pattern used in "Baseline (no Fidget) and hidden, interleaved".
+A/B pattern used in "Baseline (no fidget) and hidden, interleaved".
 
 **Build in a separate step and wait for the load average to come back down.**
 The build is not part of the capture loop, and it is not enough to put it at the
@@ -779,7 +779,7 @@ for i in 1 2 3 4; do
   echo "=== Round $i === $(date) load=$(sysctl -n vm.loadavg)" \
     | tee -a "$OUT_BASE/summary.txt"
 
-  # Baseline: no Fidget running. The script refuses if one is.
+  # Baseline: no fidget running. The script refuses if one is.
   scripts/bench-wakeups-macos.sh --scenario baseline --duration 45 \
     --out "$OUT_BASE/round${i}-baseline"
 
@@ -951,7 +951,7 @@ quiet machine is not a repeat of the first.** It says the effect is below what
 system-wide cluster residency can resolve for a process this size, which is a
 result about the instrument rather than about the room.
 
-Either way the `pkg-idle` wakeup count (about 2/sec for Fidget) is the direct
+Either way the `pkg-idle` wakeup count (about 2/sec for fidget) is the direct
 per-process measurement that does resolve, and it does not answer the
 cluster-level residency question the acceptance box asks.
 
@@ -982,8 +982,8 @@ things only a run could find.
 Scoped out per this task's instructions, not fabricated:
 
 - **Multi-monitor** — #424's scope, not this issue's.
-- **Baseline (no Fidget running)** and **hidden/fullscreen** — measured
-  since, see "Baseline (no Fidget) and hidden, interleaved" above, and
+- **Baseline (no fidget running)** and **hidden/fullscreen** — measured
+  since, see "Baseline (no fidget) and hidden, interleaved" above, and
   rerun on a quiet machine in "The quiet-machine result". A clean per-cluster
   idle-residency comparison is the one thing neither run produced, and the
   second run says why: the effect is below what a system-wide residency

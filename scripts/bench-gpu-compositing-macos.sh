@@ -7,7 +7,7 @@
 # compositor's presented rate needs Instruments (Metal System Trace), and
 # `frame:` lines are engine ticks, so they are reported as ticks_hz instead.
 #
-# Every scenario but env and baseline launches Fidget on the live desktop,
+# Every scenario but env and baseline launches fidget on the live desktop,
 # warps the cursor, or covers the main display, so it refuses to run unless
 # FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to lose the screen.
 
@@ -24,7 +24,7 @@ usage() {
   cat >&2 << EOF
 Usage: $0 <env|baseline|idle|walking|chat|multi|hidden|matrix> [--seconds N] [--walk-timeout N] [--bin PATH] [--out DIR]
 
-env and baseline touch nothing on screen. The rest launch Fidget, click the
+env and baseline touch nothing on screen. The rest launch fidget, click the
 sprite, or cover the display, and need FIDGET_BENCH_GREEN_LIGHT=1.
 Watts need sudo for powermetrics; run \`sudo -v\` first for an unattended run.
 EOF
@@ -67,7 +67,7 @@ case "$scenario" in
   env | baseline) ;;
   *)
     if [ "${FIDGET_BENCH_GREEN_LIGHT:-}" != 1 ]; then
-      echo "$scenario takes over the desktop (launches Fidget, moves the cursor, covers the display)." >&2
+      echo "$scenario takes over the desktop (launches fidget, moves the cursor, covers the display)." >&2
       echo "Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
       exit 2
     fi
@@ -274,10 +274,10 @@ run_baseline() {
   local stray
   stray=$(pgrep -x fidget | tr '\n' ' ' || true)
   if [ -n "$stray" ]; then
-    echo "baseline refused, Fidget already running: pid(s) $stray" >&2
+    echo "baseline refused, fidget already running: pid(s) $stray" >&2
     exit 1
   fi
-  sample_row baseline "$log" "$seconds" "no Fidget"
+  sample_row baseline "$log" "$seconds" "no fidget"
 }
 
 launch_app() {

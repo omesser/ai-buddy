@@ -19,7 +19,7 @@ let audioWarned = false;
 function warnAudio(why) {
   if (audioWarned) return;
   audioWarned = true;
-  console.warn("Fidget: cue audio is unavailable (" + why + "). Visuals still play.");
+  console.warn("fidget: cue audio is unavailable (" + why + "). Visuals still play.");
 }
 
 function audio() {

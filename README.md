@@ -85,8 +85,8 @@ Download a build from [GitHub Releases](https://github.com/omesser/ai-buddy/rele
 Or clone and run from the repo root (macOS, Linux, Windows):
 
 ```sh
-git clone https://github.com/omesser/ai-buddy.git
-cd Fidget
+git clone https://github.com/omesser/ai-buddy.git fidget
+cd fidget
 cargo run -p fidget
 ```
 

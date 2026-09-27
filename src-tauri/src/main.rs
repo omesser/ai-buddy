@@ -1,4 +1,4 @@
-//! Fidget's overlay shell.
+//! fidget's overlay shell.
 //!
 //! One transparent, always-on-top window per display renders the Character.
 //! Click-through on macOS is per-window rather than per-pixel, so a screen-sized
@@ -1561,7 +1561,7 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
 }
 
 /// Draw one forwarded permission request on every Chat surface, visible and
-/// unminimized. Fidget never answers it (ADR-0018). Only a Chat surface draws
+/// unminimized. fidget never answers it (ADR-0018). Only a Chat surface draws
 /// the options. A bubble can only point at a window that is not open.
 fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
@@ -1597,7 +1597,7 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
         ask.title.as_deref().unwrap_or("—")
     );
     // Do Not Disturb wins even over a question with a deadline: opening this
-    // window activates Fidget. The turn then times out, and never an
+    // window activates fidget. The turn then times out, and never an
     // answer of ours (ADR-0018).
     if do_not_disturb(app) {
         return;
@@ -2847,7 +2847,7 @@ fn describe_menu(
 }
 
 /// The environment variable naming the Instances to run. An env var rather
-/// than a flag because that is how Fidget is already configured, and a
+/// than a flag because that is how fidget is already configured, and a
 /// second mechanism for the same kind of answer is a second place to look it up.
 const INSTANCES_VAR: &str = "FIDGET_INSTANCES";
 

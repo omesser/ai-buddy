@@ -1014,7 +1014,7 @@ impl Session {
         crate::acp_wire::sign_in_button(state.login.is_some(), &state.handshake.auth_methods)
     }
 
-    /// An answer is the proof the login happened, in a terminal Fidget never
+    /// An answer is the proof the login happened, in a terminal fidget never
     /// sees. The composer it disabled comes back the same way it went.
     fn signed_in(&self, state: &mut State) {
         if state.login.take().is_none() {
@@ -2019,7 +2019,7 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 
 /// The documented sign-in line for a named Harness, before any handshake.
 /// Chat's Connect reads it at the pick, Settings after `-32000` (ADR-0022).
-/// Fidget never runs it (ADR-0018).
+/// fidget never runs it (ADR-0018).
 pub(crate) fn login_hint(name: &str) -> String {
     named_login(name)
         .map(str::to_string)

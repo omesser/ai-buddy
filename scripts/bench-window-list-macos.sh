@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# What Fidget's window-list poll costs on macOS (#427): how often the frame
+# What fidget's window-list poll costs on macOS (#427): how often the frame
 # loop calls CGWindowListCopyWindowInfo idle (10 Hz) and riding (60 Hz), what
 # each call takes, and how that grows with the window count. One TSV row per
 # scenario, the same shape as bench-gpu-compositing-macos.sh.
 #
 # micro times the call from its own process against whatever is on the desktop
 # (scripts/bench-window-list-macos.swift) and needs no green light. idle and
-# riding launch Fidget on the live desktop and flood it with windows, so they
+# riding launch fidget on the live desktop and flood it with windows, so they
 # refuse to run unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed.
 # The flood comes from scripts/window-flood-macos.swift (PR #1043); without
 # that file the added-window rows skip and say so.
 #
-# The per-call numbers for a running Fidget come from dtrace on SkyLight's
+# The per-call numbers for a running fidget come from dtrace on SkyLight's
 # SLWindowListCopyWindowInfo: on macOS 26 CoreGraphics forwards to it and the
 # pid provider has no CGWindowListCopyWindowInfo probe to offer. That needs
 # sudo; run `sudo -v` first for an unattended run.
@@ -29,7 +29,7 @@ usage() {
   cat >&2 << EOF
 Usage: $0 <env|micro|idle|riding|matrix> [--seconds N] [--windows N] [--bin PATH] [--out DIR]
 
-env and micro touch nothing on screen. idle and riding launch Fidget and open
+env and micro touch nothing on screen. idle and riding launch fidget and open
 windows, and need FIDGET_BENCH_GREEN_LIGHT=1. matrix runs idle and riding
 twice each: on the desktop as found, and with --windows flood windows added by
 scripts/window-flood-macos.swift, skipped when that file is absent. Per-call
@@ -74,7 +74,7 @@ case "$scenario" in
   env | micro) ;;
   *)
     if [ "${FIDGET_BENCH_GREEN_LIGHT:-}" != 1 ]; then
-      echo "$scenario takes over the desktop (launches Fidget, opens windows)." >&2
+      echo "$scenario takes over the desktop (launches fidget, opens windows)." >&2
       echo "Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
       exit 2
     fi

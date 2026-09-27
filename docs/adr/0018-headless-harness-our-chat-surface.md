@@ -19,7 +19,7 @@ presence the spatial layer establishes.
 ## Decision
 
 The attached Harness runs headless via ACP (`opencode acp`, `hermes acp`, etc.)
-and Fidget draws the chat surface in its own Tauri webview window. We never
+and fidget draws the chat surface in its own Tauri webview window. We never
 launch, embed, or wrap the Harness's TUI.
 
 ACP mode and interactive mode are mutually exclusive in one process. Running
@@ -31,14 +31,14 @@ product shape.
 
 We own the chat surface and the permission prompt. Forwarding the Harness's
 `session/request_permission` is not a second confirmation — ADR-0003's rule is
-that Fidget never *answers* it, and never adds one of its own.
+that fidget never *answers* it, and never adds one of its own.
 
-The Harness authenticates itself and Fidget holds no credential for it.
+The Harness authenticates itself and fidget holds no credential for it.
 Harnesses keep their credential in a home-relative file or the OS keychain.
 A CLI the user has already logged in to hands its login to a subprocess we
 spawn as the same user.
 
-Attachment is opt-in. Fidget spawns and holds a full agent process for as
+Attachment is opt-in. fidget spawns and holds a full agent process for as
 long as the app runs. Static weights and the HTTP Completer stay the path for
 everyone who declines.
 
