@@ -1,5 +1,11 @@
 # The Shell owns one cancellable slot per Instance, and a superseded reply is never applied
 
+**Status:** Accepted.
+[ADR-0033](./0033-a-call-waiting-on-the-user-is-not-superseded.md) supersedes
+one clause. `wake` can now drop a wake instead of starting a call, so the
+sentence "`wake` is infallible" below no longer holds. A dropped wake is not an
+error, so a caller still has no check to forget. Newest-wins holds otherwise.
+
 One `Slots` registry holds at most one session call per Character Instance, and
 starting a call *is* the cancellation of that Instance's previous one. `wake` is
 infallible: there is no busy to report, so there is no check a caller can

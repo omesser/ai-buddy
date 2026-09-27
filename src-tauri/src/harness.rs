@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -496,6 +496,11 @@ pub struct Session {
     /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
     /// name lands on whichever buddy is mid-reply.
     serving_instance: Mutex<Option<String>>,
+    /// Questions the Harness has put to the user that nothing has settled.
+    /// Raised and lowered by the wire's own events, which `end_turn` balances
+    /// by settling everything it still holds, so a turn that dies with an ask
+    /// out still leaves this at zero. Shared with the wire's reader thread.
+    asked: Arc<AtomicUsize>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
     withdrawing: Mutex<Option<String>>,
@@ -592,6 +597,7 @@ impl Session {
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
             serving_instance: Mutex::new(None),
+            asked: Arc::new(AtomicUsize::new(0)),
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
@@ -1103,10 +1109,11 @@ impl Session {
         }
         let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
+        let asked = Arc::clone(&self.asked);
         let spawned = Wire::spawn(
             self.launch.command(cwd),
             self.attach_timeout(),
-            Box::new(move |event| note_event(&data, &forward, event)),
+            Box::new(move |event| note_event(&data, &forward, &asked, event)),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -1324,6 +1331,17 @@ impl Completer for Session {
         }
         reply
     }
+
+    /// One child serves every Instance (ADR-0008) and one turn holds the wire
+    /// at a time, so an outstanding ask belongs to whichever Instance that
+    /// turn is for. Another buddy's wake is not held by this one's question.
+    fn awaiting_user(&self, instance: &str) -> bool {
+        self.asked.load(Ordering::SeqCst) > 0
+            && self
+                .serving_instance
+                .lock()
+                .is_ok_and(|serving| serving.as_deref() == Some(instance))
+    }
 }
 
 /// The one prompt the probe sends. Shaped like the last line of a Character
@@ -1534,7 +1552,7 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
 
 /// What the session stream said, into the Action Log, and a permission
 /// request on to the Chat surface. Runs on the wire thread.
-fn note_event(dir: &Path, forward: &Forward, event: Event) {
+fn note_event(dir: &Path, forward: &Forward, asked: &AtomicUsize, event: Event) {
     match event {
         // A tool call and a usage tick are logged and never forwarded, so a
         // turn shows the surface no phases. ADR-0028 bounds what a later
@@ -1566,6 +1584,7 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
+            asked.fetch_add(1, Ordering::SeqCst);
             forward(Forwarded::Ask(ask));
         }
         Event::Elicitation(form) => {
@@ -1574,9 +1593,13 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "elicitation_create",
                 json!({"request": form.request, "field": form.field}),
             );
+            asked.fetch_add(1, Ordering::SeqCst);
             forward(Forwarded::Form(form));
         }
         Event::PermissionSettled { request, option } => {
+            let _ = asked.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |out| {
+                Some(out.saturating_sub(1))
+            });
             forward(Forwarded::Settled { request, option })
         }
         // Forwarded and not logged. The Action Log points at the Harness's own
@@ -1977,6 +2000,7 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_buddy_core::director::{Context, Happened};
     use ai_buddy_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
@@ -2233,6 +2257,14 @@ mod tests {
                             );
                         }
                         "slow" | "load-slow" if prompts == 1 => pending_prompt = Some(id),
+                        // Works for a while and then answers, asking nothing.
+                        // A turn long enough for another wake to land inside
+                        // it, with no ask to confuse the two.
+                        "working" => {
+                            thread::sleep(ASK_WORK);
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -2557,6 +2589,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
+            &AtomicUsize::new(0),
             Event::Thought("Reading the roster".to_string()),
         );
 
@@ -2583,6 +2616,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
+            &AtomicUsize::new(0),
             Event::Plan(vec![PlanStep {
                 content: "read the roster".to_string(),
                 priority: "high".to_string(),
@@ -2612,7 +2646,12 @@ mod tests {
             let _ = tx.send(what);
         }) as Forward;
 
-        note_event(&dir, &forward, Event::Plan(Vec::new()));
+        note_event(
+            &dir,
+            &forward,
+            &AtomicUsize::new(0),
+            Event::Plan(Vec::new()),
+        );
 
         assert!(matches!(
             forwarded.try_recv(),
@@ -3798,6 +3837,253 @@ mod tests {
         session.answer_permission(&again.request, "allow");
         assert_eq!(second.join().unwrap(), Ok(Reply::whole("ok:allow")));
         assert_eq!(fx.settled(), (again.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    /// The Instance every slot test wakes. One buddy is enough: the rule
+    /// under test is per-Instance.
+    const WOKEN: &str = "buddy-1";
+
+    /// A session Director over this Harness, as the frame loop builds one.
+    fn harness_director(
+        session: &Arc<Session>,
+    ) -> Arc<ai_buddy_core::director::ModelDirector<crate::completer::AnyCompleter>> {
+        Arc::new(ai_buddy_core::director::ModelDirector::new(
+            crate::completer::AnyCompleter::Harness(Arc::clone(session)),
+            ["stroll", "nap"],
+            WOKEN,
+            "bmo",
+            false,
+        ))
+    }
+
+    fn woken(happened: Happened) -> Context {
+        Context {
+            happened,
+            ..crate::completer::tests::wake_context()
+        }
+    }
+
+    /// Poll the slot the way the frame loop does, until an answer lands.
+    fn polled(slots: &mut crate::completer::Slots) -> Option<crate::completer::Answered> {
+        let id = WOKEN.to_string();
+        for _ in 0..300 {
+            if let Some(answered) = slots.take(&id) {
+                return Some(answered);
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        None
+    }
+
+    /// The line the Shell would remember, or `None` for a wake that failed.
+    fn said(answered: &crate::completer::Answered) -> Option<&str> {
+        match &answered.wake {
+            Wake::Proposed(parsed) => parsed.dialogue.as_deref(),
+            Wake::Failed => None,
+        }
+    }
+
+    /// #1037. `Session::supersede` refuses to give a reactive turn up for an
+    /// ambient tick, so the Harness answers the chat turn. The slot must not
+    /// have thrown its claim on that answer away in the meantime, or the
+    /// reply the user is waiting on reaches nobody.
+    #[test]
+    fn an_ambient_tick_does_not_take_a_chat_turn_the_harness_keeps() {
+        let (fx, session) = Fixture::new("working");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        assert!(fx.wait_for("prompt", 1));
+        slots.wake(&id, harness_director(&session), woken(Happened::Ambient));
+
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("Hello"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the ambient tick was dropped");
+        session.shutdown();
+    }
+
+    /// #1038. The buddy has a question out to the user and the user touches
+    /// the sprite. Newest-wins is about the world moving past a moment; the
+    /// user mid-answer is not that, so the Poke is dropped instead.
+    #[test]
+    fn a_poke_does_not_take_a_turn_blocked_on_the_users_answer() {
+        let (fx, session) = Fixture::new("permission");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        let ask = fx.ask();
+        slots.wake(&id, harness_director(&session), woken(Happened::Poke));
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            fx.count("perm:cancelled"),
+            0,
+            "the ask was taken from under the user"
+        );
+
+        session.answer_permission(&ask.request, "allow");
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("ok:allow"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the Poke was dropped, not queued");
+        session.shutdown();
+    }
+
+    /// The same hold as a Poke. The user is mid-answer, so a Summon does not
+    /// take the turn either. The two differ only while a reply is still
+    /// generating.
+    #[test]
+    fn a_summon_does_not_take_a_turn_blocked_on_the_users_answer() {
+        let (fx, session) = Fixture::new("permission");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        let ask = fx.ask();
+        assert_eq!(
+            slots.wake(&id, harness_director(&session), woken(Happened::Summon),),
+            crate::completer::Woke::Dropped,
+            "opening Chat took the turn the user is answering"
+        );
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            fx.count("perm:cancelled"),
+            0,
+            "the ask was taken from under the user"
+        );
+
+        session.answer_permission(&ask.request, "allow");
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("ok:allow"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the Summon was dropped, not queued");
+        session.shutdown();
+    }
+
+    /// Mid-answer, a Throw and a Grab are the same hold as a Poke. The user
+    /// answers in Chat, and that turn continues. Neither gesture cancels it.
+    #[test]
+    fn a_throw_or_a_grab_does_not_take_a_turn_blocked_on_the_users_answer() {
+        for happened in [Happened::Throw, Happened::Grab] {
+            let (fx, session) = Fixture::new("permission");
+            let session = Arc::new(session);
+            let id = WOKEN.to_string();
+            let mut slots = crate::completer::Slots::new();
+            slots.wake(
+                &id,
+                harness_director(&session),
+                woken(Happened::Chat("hi".into())),
+            );
+            let ask = fx.ask();
+            assert_eq!(
+                slots.wake(&id, harness_director(&session), woken(happened.clone())),
+                crate::completer::Woke::Dropped,
+                "{happened:?} took the turn the user is answering"
+            );
+            thread::sleep(Duration::from_millis(300));
+            assert_eq!(
+                fx.count("perm:cancelled"),
+                0,
+                "{happened:?} took the ask from under the user"
+            );
+
+            session.answer_permission(&ask.request, "allow");
+            let answered = polled(&mut slots).expect("the chat turn's answer");
+            assert!(
+                matches!(answered.context.happened, Happened::Chat(_)),
+                "{happened:?} replaced the typed line with {:?}",
+                answered.context.happened
+            );
+            assert_eq!(said(&answered), Some("ok:allow"));
+            assert_eq!(fx.count("cancel"), 0, "{happened:?} cancelled the turn");
+            assert_eq!(fx.count("prompt"), 1, "{happened:?} was sent, not dropped");
+            session.shutdown();
+        }
+    }
+
+    /// A Poke is a touch of the sprite, so a turn that is only thinking still
+    /// gives way to it. Opening Chat does not. ADR-0016 stands for the touch.
+    #[test]
+    fn a_poke_still_takes_a_chat_turn_that_is_only_thinking() {
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        assert!(fx.wait_for("prompt", 1));
+        slots.wake(&id, harness_director(&session), woken(Happened::Poke));
+
+        let answered = polled(&mut slots).expect("the Poke's own answer");
+        assert_eq!(answered.context.happened, Happened::Poke);
+        assert_eq!(said(&answered), Some("Hello"));
+        assert!(fx.wait_for("cancel", 1));
+        session.shutdown();
+    }
+
+    /// Opening Chat is not a touch of the sprite. A reply already generating
+    /// is the one the user is about to read, so the Summon is dropped and
+    /// the turn on the wire is not cancelled.
+    #[test]
+    fn a_summon_does_not_take_a_chat_turn_that_is_only_thinking() {
+        let (fx, session) = Fixture::new("working");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        assert!(fx.wait_for("prompt", 1));
+        assert_eq!(
+            slots.wake(&id, harness_director(&session), woken(Happened::Summon),),
+            crate::completer::Woke::Dropped,
+            "opening Chat cancelled the reply already on its way"
+        );
+
+        let answered = polled(&mut slots).expect("the chat turn's answer");
+        assert!(
+            matches!(answered.context.happened, Happened::Chat(_)),
+            "the answer belongs to the typed line, not {:?}",
+            answered.context.happened
+        );
+        assert_eq!(said(&answered), Some("Hello"));
+        assert_eq!(fx.count("cancel"), 0);
+        assert_eq!(fx.count("prompt"), 1, "the Summon was dropped, not queued");
         session.shutdown();
     }
 

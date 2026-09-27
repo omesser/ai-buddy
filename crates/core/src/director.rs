@@ -134,11 +134,36 @@ pub struct WakeRequest {
     pub blank: bool,
 }
 
+/// What kind of moment a wake is, which is what decides whether it may take
+/// the call its Instance already has on the wire (ADR-0033). A property of
+/// the event, so a new `Happened` cannot compile until someone classes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Claim {
+    /// The user did something to the sprite. It takes a call that is only thinking.
+    Interaction,
+    /// The user opened a surface to read what the buddy says. It must not
+    /// cancel the response it was opened for.
+    Opener,
+    /// The user typed a line. It takes a call that is only thinking.
+    Line,
+    /// The buddy musing on its own account. It never takes a reactive call.
+    Ambient,
+}
+
+pub fn claim(happened: &Happened) -> Claim {
+    match happened {
+        Happened::Poke | Happened::Throw | Happened::Grab | Happened::Perch => Claim::Interaction,
+        Happened::Summon => Claim::Opener,
+        Happened::Chat(_) => Claim::Line,
+        Happened::Ambient => Claim::Ambient,
+    }
+}
+
 /// Whether this wake answers something the user did.
 /// One definition, because the Shell's slot bookkeeping and the Completer
 /// request must not disagree about the same wake.
 pub fn reactive(happened: &Happened) -> bool {
-    *happened != Happened::Ambient
+    claim(happened) != Claim::Ambient
 }
 
 /// Completes a Character Prompt.
@@ -146,6 +171,13 @@ pub fn reactive(happened: &Happened) -> bool {
 /// attached. Tests put a double here.
 pub trait Completer {
     fn complete(&self, request: &WakeRequest) -> Result<Reply, String>;
+
+    /// Whether this Completer has a question out to the user on `instance`'s
+    /// turn, so that turn is waiting on a person rather than on a model
+    /// (ADR-0033). An HTTP endpoint has no way to ask, hence the default.
+    fn awaiting_user(&self, _instance: &str) -> bool {
+        false
+    }
 }
 
 /// What a reply the token cap ended is marked with, in the one place it is
@@ -265,6 +297,13 @@ impl<C> ModelDirector<C> {
 }
 
 impl<C: Completer> ModelDirector<C> {
+    /// Whether this Instance's call is blocked on the user's own answer.
+    /// Asked of the Completer, which is the only layer that can see a
+    /// permission request or an elicitation form.
+    pub fn awaiting_user(&self) -> bool {
+        self.completer.awaiting_user(&self.instance)
+    }
+
     /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
         if self.opened.load(Ordering::SeqCst) {
