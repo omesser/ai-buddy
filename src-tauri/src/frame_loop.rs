@@ -1401,6 +1401,9 @@ pub(crate) fn run_frame_loop(
                             superseded_by: None,
                         },
                     );
+                } else if applied {
+                    // A wake with no line still thought what its window showed.
+                    session_log::remember_thinking(&app, &live.id);
                 }
 
                 let became_perched = live.last_state.is_some()

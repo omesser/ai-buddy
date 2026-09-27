@@ -1237,10 +1237,9 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
 
 /// The thought so far, once it holds something other than whitespace.
 ///
-/// The strip scrolls inside a fixed box (`.thought-text` in `chat-ui.css`),
-/// so older lines stay on the wire instead of being cut here. Blank lines
-/// stay too: a paragraph break is something the harness wrote. `None` while
-/// an adapter has streamed only empty thinking blocks.
+/// Every line stays, blank ones too: the Thinking row draws the whole thought,
+/// and a paragraph break is something the harness wrote. `None` while an
+/// adapter has streamed only empty thinking blocks.
 pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
     if thought.trim().is_empty() {
         None
@@ -1532,8 +1531,8 @@ mod tests {
         );
     }
 
-    /// The strip scrolls inside five lines (#994). The wire sends the whole
-    /// thought, so a sixth line and a blank in the middle both survive.
+    /// The wire sends the whole thought (#994), so a sixth line and a blank in
+    /// the middle both survive.
     #[test]
     fn a_thought_keeps_every_line_including_a_blank() {
         let (_, events) = drive(vec![
@@ -1553,9 +1552,8 @@ mod tests {
         );
     }
 
-    /// The strip lives exactly as long as the turn that fills it. Nothing on
-    /// the Chat surface knows when a Harness stopped thinking. A turn that
-    /// ends without an answer would otherwise leave its last thought on screen.
+    /// Nothing on the Chat surface knows when a Harness stopped thinking. A turn
+    /// that ends without an answer would otherwise leave its row streaming.
     #[test]
     fn the_thinking_goes_dark_when_the_turn_ends() {
         let (seen, on_event) = collector();
@@ -1567,8 +1565,7 @@ mod tests {
                 if line.is_empty() && steps.is_empty()
         ));
 
-        // A turn that thought nothing has nothing to take away, and a strip
-        // that was never shown should not be told to hide. The plan clear is
+        // A turn that thought nothing has no row to close. The plan clear is
         // unconditional, so it is all that is left.
         let (seen, on_event) = collector();
         end_turn(
@@ -1584,8 +1581,8 @@ mod tests {
     }
 
     /// Nothing to show is not a thought. Adapters stream signature-only
-    /// thinking blocks whose text is empty, and a blank strip that opens and
-    /// shuts is worse than one that never opened.
+    /// thinking blocks whose text is empty, and a blank Thinking row is worse
+    /// than none.
     #[test]
     fn a_thought_with_no_words_raises_nothing() {
         let (_, events) = drive(vec![thinking("   \n")]);

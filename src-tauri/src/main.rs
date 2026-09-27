@@ -1633,10 +1633,9 @@ fn forward_form(app: &tauri::AppHandle, form: harness::ElicitationForm) {
     }
 }
 
-/// Show the latest thought in every open Chat surface, from whichever
-/// Completer is on the wire — Harness, or HTTP marked reasoning (#611).
-/// Every one: the session is shared and the wire does not say whose turn is on it.
-/// Held too, for the Instance whose turn is remembered next (ADR-0034).
+/// Show the thought so far in every open Chat surface, from either Completer
+/// lane (#611): the wire does not say whose turn is on it. The session log
+/// holds it until a wake files it under an Instance (ADR-0034).
 fn show_thought(app: &tauri::AppHandle, line: String) {
     session_log::think(app, &line, SystemTime::now());
     for label in app.webview_windows().into_keys() {

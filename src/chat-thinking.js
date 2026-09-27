@@ -1,7 +1,6 @@
-// A Harness's thinking as entries in the Chat log, as a rule rather than as
-// DOM, so node can drive the orderings a window does not reproduce on demand
-// (ADR-0034). A thought arrives as the whole text so far; an empty one says the
-// turn stopped thinking. One entry per turn, whose state is how it draws.
+// A Harness's thinking as Chat log entries, as a rule rather than DOM, so node
+// can drive the orderings a window cannot reproduce (ADR-0034). A thought is
+// the whole text so far; an empty one says the turn stopped thinking.
 
 // streaming: open and filling. collapsed: the title and a handle. expanded:
 // opened again by the user. A user may collapse a block that is still filling.

@@ -1,5 +1,7 @@
 # A Harness's thinking is a row in the Chat log, kept like a reply
 
+**Supersedes:** [ADR-0025](./0025-harness-thinking-is-transient-not-logged.md).
+
 ## Context
 
 ADR-0025 made a thought transient status: a strip above the composer, replaced
@@ -41,17 +43,15 @@ amendment. ADR-0028's rule still bounds the row: it draws what the wire sent,
 and it is not a reasoning pane or a trace inspector.
 
 The wire does not say whose turn a thought belongs to. The live row reaches
-every open Chat surface, as ADR-0025 had it. The session log holds the thought
-until a turn is remembered for an Instance and files it there. A thought from
-a turn that keeps nothing, such as a Behavior-only wake, is dropped when the
-next one starts. On the HTTP lane two Instances can think at once, and one's
-thinking can be kept above the other's reply. Naming the Instance on the event
-fixes both.
+every open Chat surface, as ADR-0025 had it, and now stays in each of them. The
+session log holds the thought until a wake arrives for an Instance, spoken or
+not, and files it there. So a reopened window replays only its own Instance's
+thinking, while a window that was open during another Instance's turn keeps
+that row until it closes. A cancelled turn's thinking, which no wake files, is
+dropped by the next thought or typed line. On the HTTP lane two Instances can
+think at once, and one's thinking can be filed above the other's reply. Naming
+the Instance on the thought event fixes all three.
 
-A Harness that thinks on every proactive wake adds a collapsed row per wake that
-speaks. The common case adds none, because adapters and servers omit reasoning
-unless configured to send it.
-
-## Supersedes
-
-This decision supersedes [ADR-0025](./0025-harness-thinking-is-transient-not-logged.md).
+A Harness that thinks on every proactive wake adds a collapsed row per wake.
+The common case adds none, because adapters and servers omit reasoning unless
+configured to send it.

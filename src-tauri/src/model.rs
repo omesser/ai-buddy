@@ -1437,7 +1437,7 @@ enum Truncation {
     /// Answer started but will not parse. #302: do not speak or half-parse.
     MidSentence(String),
     /// Bytes in `content` with no reasoning mark. Not Speech. No v1
-    /// heuristic onto the thought strip.
+    /// heuristic onto the Thinking row.
     Unmarked(String),
 }
 
@@ -2444,7 +2444,7 @@ pub(crate) mod tests {
         streamed_with_thoughts(sse).0
     }
 
-    /// How a whole stream ended, and every line the thought strip was told to draw.
+    /// How a whole stream ended, and every thought the Chat surface was told to draw.
     fn streamed_with_thoughts(sse: &str) -> (Streamed, Vec<String>) {
         let drawn = std::cell::RefCell::new(Vec::new());
         let (ended, _) = read_stream(

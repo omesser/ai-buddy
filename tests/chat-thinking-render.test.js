@@ -83,7 +83,7 @@ function drive() {
   async function run() {
     while (!heard["chat-opening"] || !heard["chat-thought"]) await tick();
     while (document.getElementById("line").disabled) await tick();
-    const report = { strip: Boolean(document.getElementById("thought")) };
+    const report = {};
     document.getElementById("line").value = "what are you standing on?";
     document.getElementById("composer").requestSubmit();
     while (!document.querySelector("#log > .row.them")) await tick();
@@ -145,7 +145,6 @@ test(
   () => {
     const report = drive();
     assert.equal(report.error, undefined, report.error);
-    assert.equal(report.strip, false, "the strip above the composer is gone");
 
     const thinking = (text, open, expanded) => ({
       kind: "thinking",

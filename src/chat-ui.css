@@ -1131,8 +1131,8 @@ body {
 }
 
 /* A Thinking row is the turn's working, not its answer (ADR-0034): the title
-   is the handle, and the text is muted behind a rule. A design block may
-   restyle it; the tokens alone already carry it through all three. */
+   is the handle, and the text is muted behind a rule. Tokens only, so the
+   minimal, terminal and glass blocks recolour it without a rule of their own. */
 .thinking-toggle {
   justify-self: start;
   padding: 0;
