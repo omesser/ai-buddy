@@ -466,7 +466,11 @@ pub enum Forwarded {
     },
     /// The Harness's thinking so far, blank lines included: the whole
     /// thought, which the Chat surface's Thinking row redraws. ADR-0034.
-    Thought(String),
+    /// `instance` is whose session thought it.
+    Thought {
+        instance: String,
+        line: String,
+    },
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
     /// The attachment moved: preflight finished, or a login went missing or
@@ -504,6 +508,10 @@ pub struct Session {
     /// by settling everything it still holds, so a turn that dies with an ask
     /// out still leaves this at zero. Shared with the wire's reader thread.
     asked: Arc<AtomicUsize>,
+    /// Instance behind each session id a prompt went out on, so the wire's
+    /// reader thread can name whose turn a thought is. Beside `state`, which
+    /// an attach holds across a round trip to that same thread.
+    owners: Arc<Mutex<HashMap<String, String>>>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
     withdrawing: Mutex<Option<String>>,
@@ -613,6 +621,7 @@ impl Session {
             serving_reactive: AtomicBool::new(false),
             serving_instance: Mutex::new(None),
             asked: Arc::new(AtomicUsize::new(0)),
+            owners: Arc::default(),
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
@@ -890,6 +899,9 @@ impl Session {
                 "chars": request.prompt.len(),
             }),
         );
+        if let Ok(mut owners) = self.owners.lock() {
+            owners.insert(session_id.clone(), request.instance.clone());
+        }
         let outcome = wire.prompt(&session_id, &request.prompt, self.timeout);
         // Charge the loss before the outcome is dressed for the caller. A
         // death under every turn must pay the same backoff a failed spawn
@@ -1215,10 +1227,11 @@ impl Session {
         let data = self.data.as_path().to_path_buf();
         let forward = Arc::clone(&self.forward);
         let asked = Arc::clone(&self.asked);
+        let owners = Arc::clone(&self.owners);
         let spawned = Wire::spawn(
             self.launch.command(cwd),
             self.attach_timeout(),
-            Box::new(move |event| note_event(&data, &forward, &asked, event)),
+            Box::new(move |event| note_event(&data, &forward, &asked, &owners, event)),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -1663,7 +1676,13 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
 
 /// What the session stream said, into the Action Log, and a permission
 /// request on to the Chat surface. Runs on the wire thread.
-fn note_event(dir: &Path, forward: &Forward, asked: &AtomicUsize, event: Event) {
+fn note_event(
+    dir: &Path,
+    forward: &Forward,
+    asked: &AtomicUsize,
+    owners: &Mutex<HashMap<String, String>>,
+    event: Event,
+) {
     match event {
         // A tool call and a usage tick are logged and never forwarded, so a
         // turn shows the surface no phases. ADR-0028 bounds what a later
@@ -1716,7 +1735,18 @@ fn note_event(dir: &Path, forward: &Forward, asked: &AtomicUsize, event: Event) 
         // Forwarded and not logged. The Action Log points at the Harness's own
         // session dump rather than copying it (CONTEXT.md), and a reply is not
         // copied there either (ADR-0034).
-        Event::Thought(line) => forward(Forwarded::Thought(line)),
+        Event::Thought { session, text } => {
+            let instance = owners
+                .lock()
+                .ok()
+                .and_then(|owners| owners.get(&session).cloned());
+            if let Some(instance) = instance {
+                forward(Forwarded::Thought {
+                    instance,
+                    line: text,
+                });
+            }
+        }
     }
 }
 
@@ -2474,6 +2504,18 @@ mod tests {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                         }
+                        // Thinks before it answers, so each turn's thought
+                        // names the session it came from.
+                        "thinking" => {
+                            say(
+                                json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                                    "sessionId": session,
+                                    "update": {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": format!("thinking in {session}")}},
+                                }}),
+                            );
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -2617,7 +2659,7 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Ask(ask)) => return ask,
-                    Ok(Forwarded::Plan(_) | Forwarded::Thought(_)) => {}
+                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. }) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
                 }
             }
@@ -2657,7 +2699,7 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::AttachSettled) => return,
-                    Ok(Forwarded::Plan(_) | Forwarded::Thought(_)) => {}
+                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. }) => {}
                     other => panic!("expected AttachSettled, got {other:?}"),
                 }
             }
@@ -2783,11 +2825,12 @@ mod tests {
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
     }
 
-    /// A thought is forwarded to the Chat surface and written nowhere. The
-    /// Action Log points at the Harness's own session dump rather than copying
-    /// it (CONTEXT.md). Replies are not in it either (ADR-0034).
+    /// A thought is forwarded to the Chat surface of the Instance whose session
+    /// thought it, and written nowhere. The Action Log points at the Harness's
+    /// own session dump rather than copying it (CONTEXT.md). Replies are not in
+    /// it either (ADR-0034).
     #[test]
-    fn a_thought_reaches_the_surface_and_not_the_action_log() {
+    fn a_thought_reaches_its_instances_surface_and_not_the_action_log() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-thought-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, forwarded) = mpsc::channel();
@@ -2795,16 +2838,26 @@ mod tests {
             let _ = tx.send(what);
         }) as Forward;
 
+        let owners = Mutex::new(HashMap::from([
+            ("session-a".to_string(), "buddy-a".to_string()),
+            ("session-b".to_string(), "buddy-b".to_string()),
+        ]));
+
         note_event(
             &dir,
             &forward,
             &AtomicUsize::new(0),
-            Event::Thought("Reading the roster".to_string()),
+            &owners,
+            Event::Thought {
+                session: "session-b".to_string(),
+                text: "Reading the roster".to_string(),
+            },
         );
 
         assert!(matches!(
             forwarded.try_recv(),
-            Ok(Forwarded::Thought(line)) if line == "Reading the roster"
+            Ok(Forwarded::Thought { instance, line })
+                if instance == "buddy-b" && line == "Reading the roster"
         ));
         assert!(!dir.join(action_log::FILE).exists());
         let _ = std::fs::remove_dir_all(&dir);
@@ -2826,6 +2879,7 @@ mod tests {
             &dir,
             &forward,
             &AtomicUsize::new(0),
+            &Mutex::default(),
             Event::Plan(vec![PlanStep {
                 content: "read the roster".to_string(),
                 priority: "high".to_string(),
@@ -2859,6 +2913,7 @@ mod tests {
             &dir,
             &forward,
             &AtomicUsize::new(0),
+            &Mutex::default(),
             Event::Plan(Vec::new()),
         );
 
@@ -3419,6 +3474,37 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
         assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
+    }
+
+    /// One child serves every Instance (ADR-0008), so the wire alone does not
+    /// say whose turn a thought is. Production change that would fail this: a
+    /// thought forwarded without the Instance whose session thought it, which
+    /// draws one buddy's thinking in another buddy's Chat window.
+    #[test]
+    fn each_thought_names_the_instance_whose_session_thought_it() {
+        let (fx, session) = Fixture::new("thinking");
+        assert!(session.complete(&asking_as("buddy-a", "rex", "hi")).is_ok());
+        assert!(session.complete(&asking_as("buddy-b", "rex", "hi")).is_ok());
+        session.shutdown();
+
+        let thoughts: Vec<(String, String)> = fx
+            .forwarded
+            .try_iter()
+            .filter_map(|forwarded| match forwarded {
+                Forwarded::Thought { instance, line } => Some((instance, line)),
+                _ => None,
+            })
+            .collect();
+        let pair = |instance: &str, line: &str| (instance.to_string(), line.to_string());
+        assert_eq!(
+            thoughts,
+            [
+                pair("buddy-a", "thinking in fresh-id"),
+                pair("buddy-a", ""),
+                pair("buddy-b", "thinking in fresh-id-2"),
+                pair("buddy-b", ""),
+            ]
+        );
     }
 
     /// An Instance Prompt change cannot retrofit the opening turn (ADR-0012),

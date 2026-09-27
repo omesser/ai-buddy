@@ -630,7 +630,8 @@ impl Endpoint {
     /// Send `prompt` as the next session turn and read the reply.
     /// Takes `url` so the probe can show both xAI paths and `complete` can retry.
     /// A fallback retries the same session snapshot; a succeeded drop latches.
-    pub fn post(&self, url: &str, prompt: &str) -> Result<Reply, String> {
+    /// `instance` is whose Chat surface a streamed thought is drawn in.
+    pub fn post(&self, url: &str, prompt: &str, instance: &str) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
         let mut wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
@@ -639,7 +640,7 @@ impl Endpoint {
         };
         let mut effort = self.takes_effort.load(Ordering::SeqCst);
         let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
-        let mut reply = self.send(url, &snapshot, wire, effort, cap);
+        let mut reply = self.send(url, &snapshot, wire, effort, cap, instance);
         // A loop rather than one retry: three guarded fields, and a validator
         // strict enough to refuse two would otherwise lose the wake. Bounded
         // by the field count so a body that keeps naming one cannot post forever.
@@ -680,7 +681,7 @@ impl Endpoint {
                 Field::Effort => effort = false,
                 Field::Cap => cap = false,
             }
-            reply = self.send(url, &snapshot, wire, effort, cap);
+            reply = self.send(url, &snapshot, wire, effort, cap, instance);
             // Evidence, not a guess: the server rejected the field and the
             // request without it worked. A misread 400 fails twice and settles
             // nothing, and neither does a stream that merely broke.
@@ -750,6 +751,7 @@ impl Endpoint {
         wire: Wire,
         effort: bool,
         cap: bool,
+        instance: &str,
     ) -> Result<Reply, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
@@ -822,7 +824,9 @@ impl Endpoint {
                     .into_with_config()
                     .limit(STREAM_LIMIT)
                     .reader();
-                match read_stream(reader, crate::completer::abandoned, think) {
+                match read_stream(reader, crate::completer::abandoned, |line| {
+                    think(instance, line)
+                }) {
                     Ok((streamed, marked)) => {
                         // Evidence, like the three dropped fields above it:
                         // this host marked its reasoning, so the next turn
@@ -965,7 +969,7 @@ impl Completer for Endpoint {
             trace_block("prompt", prompt);
             eprintln!("director: waiting for model");
         }
-        let result = match self.post(&self.url, prompt) {
+        let result = match self.post(&self.url, prompt, &request.instance) {
             Ok(reply) => {
                 if tracing() {
                     trace_block("model", &reply.text);
@@ -980,7 +984,7 @@ impl Completer for Endpoint {
                     if tracing() {
                         eprintln!("director: trying {alt}");
                     }
-                    match self.post(&alt, prompt) {
+                    match self.post(&alt, prompt, &request.instance) {
                         Ok(reply) => {
                             if tracing() {
                                 trace_block("model", &reply.text);
@@ -1236,7 +1240,7 @@ fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     println!("POST {url}");
-    match endpoint.post(url, PING) {
+    match endpoint.post(url, PING, "probe") {
         Ok(reply) => {
             println!("  ok {}", clip_body(&reply.text));
             println!();
@@ -1759,28 +1763,25 @@ fn classify_truncation(content: &str, marked_thought: bool) -> Truncation {
 ///
 /// Unset in the probe and the tests, which have no Chat surface to draw on.
 ///
-/// ponytail: one door for every Instance, so two Instances thinking at once
-/// overwrite each other's row, and the log may keep one's thinking above the
-/// other's reply. The wire names no Instance on either lane (ADR-0034). The
-/// overlap is this lane's alone — `Session::turn` holds a lock, so one Harness
-/// child serves one turn at a time (ADR-0008), while `Slots` gives every
-/// Instance its own thread and its own endpoint. The upgrade, if two buddies on
-/// the wire at once ever becomes the common case, is to name the Instance on
-/// the event and let the surface and the log pick.
-static THOUGHT: std::sync::OnceLock<Box<dyn Fn(String) + Send + Sync>> = std::sync::OnceLock::new();
+/// One door for every Instance, so each thought names its Instance: `Slots`
+/// gives every Instance its own thread and endpoint, so two can think at once.
+static THOUGHT: std::sync::OnceLock<ThoughtDoor> = std::sync::OnceLock::new();
+
+/// The Instance whose turn thought, and the whole thought so far.
+pub type ThoughtDoor = Box<dyn Fn(&str, String) + Send + Sync>;
 
 /// Hand the Completer lane the door to every open Chat surface. The first
 /// door wins and a later one is dropped: the Shell opens exactly one, and a
 /// second caller would be a test racing the app it is testing.
-pub fn on_thought(door: Box<dyn Fn(String) + Send + Sync>) {
+pub fn on_thought(door: ThoughtDoor) {
     let _ = THOUGHT.set(door);
 }
 
-/// Draw `line` as what the Completer has thought so far, or end the turn's
-/// thinking when it is empty (ADR-0034).
-fn think(line: &str) {
+/// Draw `line` as what `instance`'s turn has thought so far, or end that
+/// turn's thinking when it is empty (ADR-0034).
+fn think(instance: &str, line: &str) {
     if let Some(door) = THOUGHT.get() {
-        door(line.to_string());
+        door(instance, line.to_string());
     }
 }
 
@@ -2228,7 +2229,7 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
-            endpoint.post(&url, "hello").unwrap().text,
+            endpoint.post(&url, "hello", "buddy-1").unwrap().text,
             "stroll\nhey",
             "the refusal costs a second POST, not the wake"
         );
@@ -2240,7 +2241,9 @@ pub(crate) mod tests {
             "the retry drops the field the server just named"
         );
 
-        endpoint.post(&url, "what just happened: poked").unwrap();
+        endpoint
+            .post(&url, "what just happened: poked", "buddy-1")
+            .unwrap();
         let next_wake = seen.recv().expect("the next wake");
         assert!(
             !next_wake.contains("reasoning_effort"),
@@ -2266,7 +2269,9 @@ pub(crate) mod tests {
         };
         endpoint.streams.store(false, Ordering::SeqCst);
 
-        endpoint.post(&url, "hello").expect("the stub answers");
+        endpoint
+            .post(&url, "hello", "buddy-1")
+            .expect("the stub answers");
         let asked: serde_json::Value =
             serde_json::from_str(&seen.recv().expect("the request")).expect("the request is JSON");
         assert_eq!(
@@ -2286,7 +2291,7 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
-            endpoint.post(&url, "hello").unwrap().text,
+            endpoint.post(&url, "hello", "buddy-1").unwrap().text,
             "stroll\nhey",
             "the refusal costs a second POST, not the wake"
         );
@@ -2298,7 +2303,9 @@ pub(crate) mod tests {
             "the retry renames the cap rather than dropping it"
         );
 
-        endpoint.post(&url, "what just happened: poked").unwrap();
+        endpoint
+            .post(&url, "what just happened: poked", "buddy-1")
+            .unwrap();
         let next_wake = seen.recv().expect("the next wake");
         assert!(
             next_wake.contains(r#""max_completion_tokens""#),
