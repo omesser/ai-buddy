@@ -521,6 +521,9 @@ pub struct Session {
     /// Bookkeeping only. Chat and the frame loop take this while a handshake
     /// is in flight, so the blocking hop lives on `attach_gate` instead.
     state: Mutex<State>,
+    /// The session file. Not `state`: a save must not stall Chat or the frame
+    /// loop, and those two locks are never held together.
+    session_file: Mutex<()>,
     /// One spawn or session open at a time. Not taken by Chat or the frame
     /// loop: those wait on `state`, and this one is held across the wire.
     attach_gate: Mutex<()>,
@@ -634,6 +637,7 @@ impl Session {
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
+            session_file: Mutex::new(()),
             attach_gate: Mutex::new(()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
@@ -981,18 +985,15 @@ impl Session {
             return Err("sign-in already in progress".to_string());
         }
         let _flight = SignInFlight(&self.signing_in);
-        // Across `authenticate` and the open after it, so a wake cannot
-        // start a second session in the middle. Chat does not take this.
+        // The device flow can sit for minutes. The gate stays free so another
+        // Instance can attach; it is taken again only for the open after.
+        wire.authenticate(method_id)?;
         let _gate = self.attach_gate.lock().map_err(|_| LOST.to_string())?;
         {
-            let state = self.state.lock().map_err(|_| LOST.to_string())?;
+            let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
             if state.login.is_none() {
                 return Ok(());
             }
-        }
-        wire.authenticate(method_id)?;
-        {
-            let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
             // The retry gate would swallow the session/new this click just earned.
             state.auth_tried = None;
         }
@@ -1038,6 +1039,7 @@ impl Session {
         }
         let dropped = opened.id.clone();
         state.sessions.remove(key);
+        drop(state);
         self.drop_saved(key);
         self.update_inspect(|inspect| {
             if inspect.session_id.as_deref() == Some(dropped.as_str()) {
@@ -1357,23 +1359,35 @@ impl Session {
             }
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
-        let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
-        // `drop_conversation` does not wait on this open. Storing the id
-        // puts back the conversation it throws away. Its cancel has no
-        // prompt, so the withdrawal note is not a turn.
-        if state.conversation_generation(&key.instance) != generation {
-            self.note_withdrawal(None);
+        let replaced = {
+            let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+            // `drop_conversation` does not wait on this open. Storing the id
+            // puts back the conversation it throws away. Its cancel has no
+            // prompt, so the withdrawal note is not a turn.
+            if state.conversation_generation(&key.instance) != generation {
+                self.note_withdrawal(None);
+                true
+            } else {
+                state.sessions.insert(
+                    key.clone(),
+                    OpenedSession {
+                        id: id.clone(),
+                        loaded: saved.as_deref() == Some(id.as_str()),
+                    },
+                );
+                self.signed_in(&mut state);
+                self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
+                false
+            }
+        };
+        if replaced {
+            // The agent already opened this id. Leaving it untracked keeps a
+            // session alive that no wake will load.
+            if let Err(why) = wire.close(&id) {
+                eprintln!("harness: session/close {id}: {why}");
+            }
             return Err("session replaced".to_string());
         }
-        state.sessions.insert(
-            key.clone(),
-            OpenedSession {
-                id: id.clone(),
-                loaded: saved.as_deref() == Some(id.as_str()),
-            },
-        );
-        self.signed_in(&mut state);
-        self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
         self.save_session(key, &id);
         action_log::append(
             self.data.as_path(),
@@ -1386,6 +1400,16 @@ impl Session {
                 "mcp": mcp.as_ref().map(McpChoice::label),
             }),
         );
+        // A drop during the write puts the id back on disk. Remove that id
+        // only, so a newer open for this Instance is left where it is.
+        let stale = self
+            .state
+            .lock()
+            .map(|state| state.conversation_generation(&key.instance) != generation)
+            .unwrap_or(false);
+        if stale {
+            self.forget_saved_id(key, &id);
+        }
         Ok(id)
     }
 
@@ -1445,6 +1469,7 @@ impl Session {
             .iter()
             .filter_map(|key| state.sessions.remove(key).map(|opened| opened.id))
             .collect();
+        drop(state);
         self.forget_saved(instance);
         self.update_inspect(|inspect| {
             if inspect
@@ -1458,6 +1483,10 @@ impl Session {
     }
 
     fn forget_saved(&self, instance: &str) {
+        let _file = self
+            .session_file
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(mut record) = self.read_saved() else {
             return;
         };
@@ -1468,6 +1497,10 @@ impl Session {
     }
 
     fn drop_saved(&self, key: &SessionKey) {
+        let _file = self
+            .session_file
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(mut record) = self.read_saved() else {
             return;
         };
@@ -1477,7 +1510,33 @@ impl Session {
         }
     }
 
+    fn forget_saved_id(&self, key: &SessionKey, id: &str) {
+        let _file = self
+            .session_file
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(mut record) = self.read_saved() else {
+            return;
+        };
+        record
+            .sessions
+            .retain(|slot| !(slot.key() == *key && slot.session_id == id));
+        if let Ok(text) = serde_json::to_string(&record) {
+            let _ = std::fs::write(self.data.join(SESSION_FILE), format!("{text}\n"));
+        }
+    }
+
     fn save_session(&self, key: &SessionKey, id: &str) {
+        let _file = self
+            .session_file
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        #[cfg(test)]
+        if SESSION_SAVE_STALL.swap(false, Ordering::SeqCst) {
+            SESSION_SAVE_STALLING.store(true, Ordering::SeqCst);
+            thread::sleep(SESSION_SAVE_STALL_FOR);
+            SESSION_SAVE_STALLING.store(false, Ordering::SeqCst);
+        }
         let mut record = self.read_saved().unwrap_or(SavedSession {
             harness: self.launch.name.clone(),
             agent: None,
@@ -1540,6 +1599,15 @@ const PROBE_PROMPT: &str =
 
 /// How long shutdown waits for the child to be reaped before saying so.
 const REAP: Duration = Duration::from_secs(2);
+
+#[cfg(test)]
+static SESSION_SAVE_STALL: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static SESSION_SAVE_STALLING: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+const SESSION_SAVE_STALL_FOR: Duration = Duration::from_secs(2);
+#[cfg(test)]
+static FAIL_SWITCH_SPAWN: AtomicBool = AtomicBool::new(false);
 
 /// Attach the configured Harness and run one turn, with no overlay.
 /// Exit 2 means never asked, 1 means asked and unanswered, 0 is `end_turn`.
@@ -2165,15 +2233,24 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
         }
         return;
     };
-    let fallback = spawn_after.clone();
+    // A thread that does not start still has to reap. `Wire`'s drop only posts
+    // shutdown, and the child would outlive the switch.
+    #[cfg(test)]
+    let refuse_thread = FAIL_SWITCH_SPAWN.swap(false, Ordering::SeqCst);
+    #[cfg(not(test))]
+    let refuse_thread = false;
+    if refuse_thread {
+        finish_switch(old, spawn_after, switch_gen);
+        return;
+    }
+    let old_bg = Arc::clone(&old);
+    let spawn_bg = spawn_after.clone();
     let switched = thread::Builder::new()
         .name("harness-switch".into())
-        .spawn(move || finish_switch(old, spawn_after, switch_gen));
+        .spawn(move || finish_switch(old_bg, spawn_bg, switch_gen));
     if let Err(why) = switched {
         eprintln!("harness: could not switch off the caller: {why}");
-        if let Some(session) = fallback {
-            session.spawn_preflight();
-        }
+        finish_switch(old, spawn_after, switch_gen);
     }
 }
 
@@ -2434,6 +2511,10 @@ mod tests {
     }
 
     fn say(value: Value) {
+        // Authenticate can answer from another thread while this loop writes
+        // the next reply. One line at a time, or the two JSON objects join.
+        static OUT: Mutex<()> = Mutex::new(());
+        let _line = OUT.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         println!("{value}");
     }
 
@@ -2539,12 +2620,21 @@ mod tests {
                 }
                 Some("authenticate") => {
                     record(count, "authenticate");
-                    // The long hop of login. `session/new` after it stays quick,
-                    // so a tick during this sleep is the authenticate wait.
+                    // The long hop of login. The reply is another thread so
+                    // `session/new` for a second Instance is read during it.
                     if script == "stall-authenticate" {
                         record(count, "auth-stall");
-                        thread::sleep(SURFACE_STALL);
+                        let id = id.clone();
+                        thread::spawn(move || {
+                            thread::sleep(SURFACE_STALL);
+                            say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+                        });
+                    } else {
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                     }
+                }
+                Some("session/close") => {
+                    record(count, "close");
                     say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                 }
                 Some("session/load") => {
@@ -4928,6 +5018,12 @@ mod tests {
     }
 
     fn surface_tick(session: &Arc<Session>) -> (Duration, Vec<SignIn>) {
+        use ai_buddy_core::character::{
+            Character, CursorReaction, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+        };
+        use ai_buddy_core::engine::{Point, WorldSnapshot};
+        use ai_buddy_core::roster::Roster;
+
         struct Clear;
         impl Drop for Clear {
             fn drop(&mut self) {
@@ -4935,10 +5031,52 @@ mod tests {
             }
         }
         let started = Instant::now();
-        let _ = session.inspect();
+        let inspect = session.inspect();
+        let mut roster = Roster::new();
+        let character = Character {
+            name: "bmo".to_string(),
+            personality: String::new(),
+            animations: std::collections::BTreeMap::new(),
+            behaviors: std::collections::BTreeMap::new(),
+            art: std::collections::BTreeMap::new(),
+            smooth: false,
+            scale: 1,
+            model_base: DEFAULT_MODEL_BASE,
+            model_power: DEFAULT_MODEL_POWER,
+            near_reaction: CursorReaction::default(),
+            rush_reaction: CursorReaction::default(),
+            source: None,
+        };
+        let id = roster.spawn(&character, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
+        let frame = roster.get_mut(&id).expect("spawned").tick(&WorldSnapshot {
+            elapsed_ms: 16,
+            ..WorldSnapshot::default()
+        });
+        assert!(!frame.animation.is_empty());
+        // Chat reads sign-in off this session. Set before the opening is built,
+        // which asks for the buttons itself.
         SIGN_IN_SESSION.with(|slot| *slot.borrow_mut() = Some(Arc::clone(session)));
         let _clear = Clear;
+        let opening = crate::chat_opening_layers(
+            roster.get(&id).expect("still there"),
+            &crate::model::DirectorInspect {
+                enabled: true,
+                configured: true,
+                proactive_wakes: true,
+                wake_secs: 60,
+                last_payload: None,
+                harness: Some(inspect),
+                model: String::new(),
+                host: String::new(),
+            },
+            "",
+            std::iter::empty::<&str>(),
+            "minimal",
+            crate::settings::ChatAppearance::System,
+        );
+        assert_eq!(opening.character, "bmo");
         let actions = sign_in_actions();
+        assert_eq!(opening.sign_in.len(), actions.len());
         session.drop_conversation("surface");
         (started.elapsed(), actions)
     }
@@ -5026,6 +5164,34 @@ mod tests {
     }
 
     #[test]
+    fn a_sign_in_does_not_block_another_instances_attach() {
+        let (fx, session) = Fixture::new("stall-authenticate");
+        let session = Arc::new(session.with_auth_retry(Duration::ZERO));
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_authenticated("fake --login"))
+        );
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.sign_in("fake", "buddy-1", "bmo", false))
+        };
+        assert!(
+            fx.wait_for("auth-stall", 1),
+            "sign-in never reached authenticate"
+        );
+        let started = Instant::now();
+        let peer = session.complete(&asking_as("buddy-2", "bmo", "hi"));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "another instance waited {elapsed:?} on sign-in"
+        );
+        assert_eq!(peer, Ok(Reply::whole("Hello")));
+        assert_eq!(worker.join().unwrap(), Ok(()));
+        session.shutdown();
+    }
+
+    #[test]
     fn a_drop_during_session_open_is_not_put_back() {
         let (fx, session) = Fixture::new("stall-open");
         let session = Arc::new(session);
@@ -5052,6 +5218,11 @@ mod tests {
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(fx.count("new"), 2, "the dropped id was reused");
+        assert_eq!(
+            fx.count("close"),
+            1,
+            "the dropped session stayed open on the agent"
+        );
         session.shutdown();
     }
 
@@ -5352,6 +5523,74 @@ mod tests {
             worker.join().unwrap().is_err(),
             "the open finished on the harness retarget dropped"
         );
+    }
+
+    #[test]
+    fn a_failed_switch_thread_still_reaps_the_old_child() {
+        let (fx, session) = Fixture::new("stall-open");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        assert!(fx.wait_for("open-stall", 1), "the open never stalled");
+        {
+            let mut slot = attachment();
+            slot.forward = Some(silent());
+            slot.session = Some(Arc::clone(&session));
+        }
+        struct Clear;
+        impl Drop for Clear {
+            fn drop(&mut self) {
+                FAIL_SWITCH_SPAWN.store(false, Ordering::SeqCst);
+            }
+        }
+        let _clear = Clear;
+        FAIL_SWITCH_SPAWN.store(true, Ordering::SeqCst);
+        let start = Instant::now();
+        retarget(None, false);
+        let waited = start.elapsed();
+        {
+            let mut slot = attachment();
+            slot.session = None;
+            slot.forward = None;
+        }
+        assert!(
+            waited >= Duration::from_millis(1000),
+            "the failed switch returned in {waited:?} without waiting out the reap"
+        );
+        assert!(
+            !session.wanted.load(Ordering::SeqCst),
+            "the old child was dropped without shutdown"
+        );
+        assert!(session.current_wire().is_none());
+        let _ = worker.join();
+    }
+
+    #[test]
+    fn saving_a_session_does_not_hold_chat_state() {
+        let (_fx, session) = Fixture::new("plain");
+        let session = Arc::new(session);
+        SESSION_SAVE_STALL.store(true, Ordering::SeqCst);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let until = Instant::now() + Duration::from_secs(5);
+        while !SESSION_SAVE_STALLING.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the session save never stalled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let started = Instant::now();
+        let _state = session.state.lock().expect("state");
+        let elapsed = started.elapsed();
+        drop(_state);
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "chat state waited {elapsed:?} on the session file"
+        );
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("Hello")));
+        session.shutdown();
     }
 
     /// One child serves every Instance (ADR-0008), so buddy B's wake takes

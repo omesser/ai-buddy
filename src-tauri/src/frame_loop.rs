@@ -1134,7 +1134,12 @@ pub(crate) fn run_frame_loop(
 
                             if let Ok(mut settings_guard) = settings.lock() {
                                 settings_guard.first_run_tour_shown = true;
-                                let _ = settings_guard.save(&settings_path);
+                                drop(settings_guard);
+                                if let Err(why) =
+                                    super::settings::flush_settings(&settings, &settings_path)
+                                {
+                                    eprintln!("settings: {why}");
+                                }
                             }
                             eprintln!("tour: first-run gesture tour shown as Speech bubble");
                         }

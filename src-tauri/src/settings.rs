@@ -13,8 +13,14 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+#[cfg(test)]
+use std::thread;
+#[cfg(test)]
+use std::time::{Duration, Instant};
 
 use ai_buddy_core::memory::MemoryManifest;
 use ai_buddy_core::roster::InstanceSpec;
@@ -936,6 +942,87 @@ fn apply_and_seed(settings: &mut Settings, patch: SettingsPatch) {
     dev_flags::seed(settings);
 }
 
+#[cfg(test)]
+static SAVE_STALL: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static SAVE_STALLING: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static KEY_STALL: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static KEY_STALLING: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static RETARGET_STALL: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static RETARGET_STALLING: AtomicBool = AtomicBool::new(false);
+
+/// One writer of `settings.json`. Not the settings mutex: the frame loop takes
+/// that every tick, and two flushes must not overwrite a newer edit with an
+/// older snapshot.
+fn settings_file() -> &'static Mutex<()> {
+    static FILE: Mutex<()> = Mutex::new(());
+    &FILE
+}
+
+/// Clone the live settings and write them. The caller must not hold `settings`.
+pub(crate) fn flush_settings(settings: &Mutex<Settings>, path: &Path) -> io::Result<()> {
+    let _file = settings_file()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let snapshot = settings
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    snapshot.save(path)
+}
+
+/// Write an owned snapshot. Startup uses this before the settings mutex exists.
+pub(crate) fn write_settings_file(settings: &Settings, path: &Path) -> io::Result<()> {
+    let _file = settings_file()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    settings.save(path)
+}
+
+/// Clone under the file lock, after the settings guard is gone. The frame loop
+/// takes `settings` every tick, so the write cannot sit inside that guard.
+fn save_after_release(settings: &Arc<Mutex<Settings>>, path: &Path) -> Result<(), String> {
+    flush_settings(settings, path).map_err(|error| error.to_string())
+}
+
+/// Keychain write, after a settings lock that is not held across the store.
+/// A dialog or a slow store must not stall the frame loop.
+fn write_key_off_the_settings_lock(
+    settings: &Arc<Mutex<Settings>>,
+    store: &dyn SecretStore,
+    patch: &SettingsPatch,
+) -> Result<(), String> {
+    drop(settings.lock().map_err(|error| error.to_string())?);
+    #[cfg(test)]
+    if KEY_STALL.swap(false, Ordering::SeqCst) {
+        KEY_STALLING.store(true, Ordering::SeqCst);
+        thread::sleep(Duration::from_secs(2));
+        KEY_STALLING.store(false, Ordering::SeqCst);
+    }
+    write_director_key(store, patch)
+}
+
+/// Keychain read for Retarget, same rule as the write: look, then let go,
+/// then ask the store.
+fn retarget_off_the_settings_lock(
+    settings: &Arc<Mutex<Settings>>,
+    snapshot: &Settings,
+    store: &dyn SecretStore,
+) -> Result<SettingsOp, String> {
+    drop(settings.lock().map_err(|error| error.to_string())?);
+    #[cfg(test)]
+    if RETARGET_STALL.swap(false, Ordering::SeqCst) {
+        RETARGET_STALLING.store(true, Ordering::SeqCst);
+        thread::sleep(Duration::from_secs(2));
+        RETARGET_STALLING.store(false, Ordering::SeqCst);
+    }
+    retarget_payload(snapshot, store)
+}
+
 /// Write the key first so a store error cannot leave a URL in memory that
 /// was never saved or sent as Retarget.
 ///
@@ -1332,7 +1419,7 @@ impl SettingsSession {
         let switching = patch.roster.character.clone();
         let rebind = patch.presence.hide_hotkey.clone();
         let new_session = patch.new_session;
-        write_director_key(self.secrets.as_ref(), &patch)?;
+        write_key_off_the_settings_lock(&self.settings, self.secrets.as_ref(), &patch)?;
         if let Some(raw) = patch.completer.director_api_key.as_deref() {
             self.remember_written_key(raw);
         }
@@ -1341,12 +1428,14 @@ impl SettingsSession {
         let prompt_wt = patch.use_window_names == Some(true);
         #[cfg(target_os = "macos")]
         let prompt_im = patch.use_input_monitoring == Some(true);
-        {
+        let next = {
             let settings = self.settings.lock().map_err(|error| error.to_string())?;
             let mut next = settings.clone();
             next.apply(patch.clone());
-            sync_pi_project_mcp(&next)?;
-        }
+            next
+        };
+        // Pi's project file is disk, and the frame loop takes `settings` every tick.
+        sync_pi_project_mcp(&next)?;
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
         let move_harness = harness_retargets(&settings, &patch);
@@ -1368,10 +1457,10 @@ impl SettingsSession {
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
         }
         let snapshot = settings.clone();
-        settings
-            .save(&self.path)
-            .map_err(|error| error.to_string())?;
         drop(settings);
+        // The frame loop takes `settings` every tick. The file write stays
+        // off that lock; `flush_settings` is what serializes the writers.
+        save_after_release(&self.settings, &self.path)?;
 
         if let Some(name) = switching {
             let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
@@ -1390,7 +1479,7 @@ impl SettingsSession {
             dropped_harness = crate::harness::attached().is_none();
         }
         if retarget {
-            match retarget_payload(&snapshot, self.secrets.as_ref()) {
+            match retarget_off_the_settings_lock(&self.settings, &snapshot, self.secrets.as_ref()) {
                 Ok(op) => {
                     let _ = self.ops.send(op);
                 }
@@ -2151,6 +2240,12 @@ impl Settings {
 
     /// First launch may write under an app-data dir that does not exist yet.
     pub fn save(&self, path: &Path) -> io::Result<()> {
+        #[cfg(test)]
+        if SAVE_STALL.swap(false, Ordering::SeqCst) {
+            SAVE_STALLING.store(true, Ordering::SeqCst);
+            thread::sleep(Duration::from_secs(2));
+            SAVE_STALLING.store(false, Ordering::SeqCst);
+        }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -3318,6 +3413,131 @@ mod tests {
             director_model: "gpt-4o-mini".into(),
             ..Settings::default()
         }
+    }
+
+    /// The two save stalls share one flag. Running them together would let one
+    /// consume the stall the other is waiting on.
+    fn settings_save_tests() -> std::sync::MutexGuard<'static, ()> {
+        static ORDER: Mutex<()> = Mutex::new(());
+        ORDER
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn a_slow_settings_save_does_not_block_the_frame_lock() {
+        let _order = settings_save_tests();
+        let settings = Arc::new(Mutex::new(Settings::default()));
+        let path = temp_path();
+        SAVE_STALL.store(true, Ordering::SeqCst);
+        let (tx, rx) = mpsc::channel();
+        let shared = Arc::clone(&settings);
+        let file = path.clone();
+        thread::spawn(move || {
+            let _ = tx.send(save_after_release(&shared, &file));
+        });
+        let until = Instant::now() + Duration::from_secs(5);
+        while !SAVE_STALLING.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the settings save never stalled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let started = Instant::now();
+        let guard = settings.lock().expect("settings");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "the frame loop waited {:?} on the settings file",
+            started.elapsed()
+        );
+        assert!(rx.recv_timeout(Duration::from_secs(4)).unwrap().is_ok());
+        drop(guard);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_later_settings_edit_is_what_the_file_keeps() {
+        let _order = settings_save_tests();
+        let settings = Arc::new(Mutex::new(Settings::default()));
+        let path = temp_path();
+        SAVE_STALL.store(true, Ordering::SeqCst);
+        let first = {
+            let settings = Arc::clone(&settings);
+            let path = path.clone();
+            thread::spawn(move || flush_settings(&settings, &path))
+        };
+        let until = Instant::now() + Duration::from_secs(5);
+        while !SAVE_STALLING.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the settings save never stalled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        settings.lock().expect("settings").hidden = true;
+        let second = {
+            let settings = Arc::clone(&settings);
+            let path = path.clone();
+            thread::spawn(move || flush_settings(&settings, &path))
+        };
+        assert!(first.join().expect("first flush").is_ok());
+        assert!(second.join().expect("second flush").is_ok());
+        assert!(
+            Settings::load(&path).hidden,
+            "the stalled snapshot overwrote the later edit"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_slow_keychain_write_does_not_block_the_frame_lock() {
+        let settings = Arc::new(Mutex::new(Settings::default()));
+        let store = MemoryStore::new();
+        let mut patch = SettingsPatch::default();
+        patch.completer.director_api_key = Some("sk-from-settings".into());
+        KEY_STALL.store(true, Ordering::SeqCst);
+        let (tx, rx) = mpsc::channel();
+        let shared = Arc::clone(&settings);
+        thread::spawn(move || {
+            let _ = tx.send(write_key_off_the_settings_lock(&shared, &store, &patch));
+        });
+        let until = Instant::now() + Duration::from_secs(5);
+        while !KEY_STALLING.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the key write never stalled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let started = Instant::now();
+        let guard = settings.lock().expect("settings");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "the frame loop waited {:?} on the keychain write",
+            started.elapsed()
+        );
+        assert!(rx.recv_timeout(Duration::from_secs(4)).unwrap().is_ok());
+        drop(guard);
+    }
+
+    #[test]
+    fn a_slow_retarget_keychain_read_does_not_block_the_frame_lock() {
+        let settings = Arc::new(Mutex::new(endpoint_settings()));
+        let snapshot = settings.lock().expect("settings").clone();
+        let store = MemoryStore::new();
+        RETARGET_STALL.store(true, Ordering::SeqCst);
+        let (tx, rx) = mpsc::channel();
+        let shared = Arc::clone(&settings);
+        thread::spawn(move || {
+            let result = retarget_off_the_settings_lock(&shared, &snapshot, &store).map(|_| ());
+            let _ = tx.send(result);
+        });
+        let until = Instant::now() + Duration::from_secs(5);
+        while !RETARGET_STALLING.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the retarget read never stalled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let started = Instant::now();
+        let guard = settings.lock().expect("settings");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "the frame loop waited {:?} on the retarget keychain read",
+            started.elapsed()
+        );
+        assert!(rx.recv_timeout(Duration::from_secs(4)).unwrap().is_ok());
+        drop(guard);
     }
 
     /// The Director tab's live state, with or without a stored key.

@@ -1015,7 +1015,18 @@ enum SettingsEventResponse {
 }
 
 #[tauri::command]
-fn settings_event(
+async fn settings_event(
+    app: tauri::AppHandle,
+    payload: SettingsEventPayload,
+) -> Result<SettingsEventResponse, String> {
+    // Sync commands run on the main thread. A settings save or a keychain
+    // prompt there freezes Chat and the character the way a wire wait did.
+    tauri::async_runtime::spawn_blocking(move || settings_event_blocking(app, payload))
+        .await
+        .map_err(|why| format!("settings: {why}"))?
+}
+
+fn settings_event_blocking(
     app: tauri::AppHandle,
     payload: SettingsEventPayload,
 ) -> Result<SettingsEventResponse, String> {
@@ -1309,8 +1320,8 @@ fn show_settings(app: tauri::AppHandle) {
     }
 }
 
-fn persist_settings(settings: &Settings, path: &std::path::Path) {
-    if let Err(why) = settings.save(path) {
+fn persist_settings(settings: &std::sync::Mutex<settings::Settings>, path: &std::path::Path) {
+    if let Err(why) = settings::flush_settings(settings, path) {
         eprintln!("settings: {why}");
     }
 }
@@ -1319,9 +1330,11 @@ fn persist_settings(settings: &Settings, path: &std::path::Path) {
 /// off it, and without it the next launch mints a fresh uuid and loses the
 /// user's words (ADR-0012).
 fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &std::path::Path) {
-    if let Ok(mut settings) = settings.lock() {
-        settings.instances = roster_specs(roster);
-        persist_settings(&settings, path);
+    if settings.lock().is_ok_and(|mut guard| {
+        guard.instances = roster_specs(roster);
+        true
+    }) {
+        persist_settings(settings, path);
     }
 }
 
@@ -1997,10 +2010,26 @@ fn open_link(url: String) -> Result<(), String> {
 /// the attachment moves now and `ReloadChat` carries state back. The answer
 /// is a line to read, not a process to spawn; `harness::login_hint` owns why.
 #[tauri::command]
-fn select_harness(
+async fn select_harness(
     harness: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, SettingsState>,
+) -> Result<String, String> {
+    // Same as `settings_event`: the save and the keychain read must not run
+    // on the main thread. The state handle is cloned into the worker.
+    let settings = std::sync::Arc::clone(&state.settings);
+    let session = settings_session(&app, &state);
+    tauri::async_runtime::spawn_blocking(move || {
+        select_harness_blocking(harness, session, settings)
+    })
+    .await
+    .map_err(|why| format!("settings: {why}"))?
+}
+
+fn select_harness_blocking(
+    harness: String,
+    session: settings::SettingsSession,
+    settings: std::sync::Arc<std::sync::Mutex<settings::Settings>>,
 ) -> Result<String, String> {
     // The picker's own list, not a second copy of it: a name added to one and
     // not the other is a row the user can pick and this command then refuses.
@@ -2009,15 +2038,14 @@ fn select_harness(
     }
     let mut patch = settings::SettingsPatch::default();
     patch.set_text(settings::TextField::Harness, &harness);
-    settings_session(&app, &state).apply(patch)?;
+    session.apply(patch)?;
     // Apply only retargets a changed row. The same Harness picked again after
     // its launch failed is the user asking for another try.
-    let spawning = state
-        .settings
+    let spawning = settings
         .lock()
         .is_ok_and(|settings| model::director_in_force(settings.director_enabled));
-    if let Some(session) = harness::attached().filter(|_| spawning) {
-        session.repick();
+    if let Some(attached) = harness::attached().filter(|_| spawning) {
+        attached.repick();
     }
     Ok(harness::login_hint(&harness))
 }
@@ -2379,8 +2407,10 @@ fn install_hide_hotkey(
             // toggle that ran twice would hand the Character back before the
             // user had let go of the key.
             if event.state() == ShortcutState::Pressed {
-                if let (Ok(mut rules), Ok(mut settings)) = (rules.lock(), settings.lock()) {
-                    settings::toggle_away(&mut rules, &mut settings);
+                if let (Ok(mut rules), Ok(mut guard)) = (rules.lock(), settings.lock()) {
+                    settings::toggle_away(&mut rules, &mut guard);
+                    drop(guard);
+                    drop(rules);
                     persist_settings(&settings, &settings_path);
                 }
             }
@@ -2489,9 +2519,10 @@ fn apply_menu_action(
                         chat_appearance,
                     );
                 }
-                if let Ok(mut settings) = settings.lock() {
-                    settings.character = name.clone();
-                    persist_settings(&settings, settings_path);
+                if let Ok(mut guard) = settings.lock() {
+                    guard.character = name.clone();
+                    drop(guard);
+                    persist_settings(settings, settings_path);
                 }
                 eprintln!("menu: switching to {name}");
             } else {
@@ -2518,11 +2549,11 @@ fn apply_menu_action(
             }
         }
         menu::MenuAction::ToggleDirector => {
-            if let Ok(mut settings) = settings.lock() {
-                settings.director_enabled = !settings.director_enabled;
-                let chat_ui = settings.chat_ui.clone();
-                let chat_appearance = settings.chat_appearance;
-                config.apply_switch(settings.director_enabled);
+            let enabled = if let Ok(mut guard) = settings.lock() {
+                guard.director_enabled = !guard.director_enabled;
+                let chat_ui = guard.chat_ui.clone();
+                let chat_appearance = guard.chat_appearance;
+                config.apply_switch(guard.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
                     push_chat_openings(
@@ -2534,44 +2565,56 @@ fn apply_menu_action(
                         chat_appearance,
                     );
                 }
-                persist_settings(&settings, settings_path);
-                eprintln!(
-                    "menu: Director {}",
-                    if settings.director_enabled {
-                        "on"
-                    } else {
-                        "off"
-                    }
-                );
+                Some(guard.director_enabled)
+            } else {
+                None
+            };
+            if let Some(enabled) = enabled {
+                persist_settings(settings, settings_path);
+                eprintln!("menu: Director {}", if enabled { "on" } else { "off" });
             }
         }
         menu::MenuAction::ToggleDnd => {
             if let Some(instance) = roster.get_mut(instance_id) {
                 let new_state = !instance.do_not_disturb();
                 instance.set_do_not_disturb(new_state);
-                if let Ok(mut settings) = settings.lock() {
-                    settings.do_not_disturb = new_state;
-                    persist_settings(&settings, settings_path);
+                if let Ok(mut guard) = settings.lock() {
+                    guard.do_not_disturb = new_state;
+                    drop(guard);
+                    persist_settings(settings, settings_path);
                 }
                 eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
             }
         }
         menu::MenuAction::Hide => {
             if let Ok(mut r) = rules.lock() {
-                if let Ok(mut settings) = settings.lock() {
-                    settings::toggle_away(&mut r, &mut settings);
-                    persist_settings(&settings, settings_path);
+                let saved = if let Ok(mut guard) = settings.lock() {
+                    settings::toggle_away(&mut r, &mut guard);
+                    true
+                } else {
+                    false
+                };
+                let away = r.is_away();
+                drop(r);
+                if saved {
+                    persist_settings(settings, settings_path);
                 }
-                eprintln!("menu: {}", if r.is_away() { "away" } else { "back" });
+                eprintln!("menu: {}", if away { "away" } else { "back" });
             }
         }
         menu::MenuAction::ToggleFullscreenHide => {
             if let Ok(mut r) = rules.lock() {
                 let next = !r.hide_in_fullscreen();
                 r.set_hide_in_fullscreen(next);
-                if let Ok(mut settings) = settings.lock() {
-                    settings.hide_in_fullscreen = r.hide_in_fullscreen();
-                    persist_settings(&settings, settings_path);
+                let saved = if let Ok(mut guard) = settings.lock() {
+                    guard.hide_in_fullscreen = r.hide_in_fullscreen();
+                    true
+                } else {
+                    false
+                };
+                drop(r);
+                if saved {
+                    persist_settings(settings, settings_path);
                 }
             }
         }
@@ -3530,7 +3573,9 @@ fn main() {
             if !settings.instances.is_empty() {
                 settings.instances = roster_specs(&roster);
             }
-            persist_settings(&settings, &settings_file);
+            if let Err(why) = settings::write_settings_file(&settings, &settings_file) {
+                eprintln!("settings: {why}");
+            }
 
             let settings = Arc::new(Mutex::new(settings));
             if install_hide_hotkey(
@@ -3680,6 +3725,33 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sync commands run on the main thread. These two must stay async so a
+    /// settings save or a keychain prompt cannot freeze Chat and the character.
+    fn settings_event_returns_a_future(app: tauri::AppHandle, payload: SettingsEventPayload) {
+        let fut = settings_event(app, payload);
+        fn assert_send<T: Send>(_: &T) {}
+        assert_send(&fut);
+        let _: &dyn std::future::Future<Output = Result<SettingsEventResponse, String>> = &fut;
+    }
+
+    fn select_harness_returns_a_future(
+        harness: String,
+        app: tauri::AppHandle,
+        state: tauri::State<'_, SettingsState>,
+    ) {
+        let fut = select_harness(harness, app, state);
+        fn assert_send<T: Send>(_: &T) {}
+        assert_send(&fut);
+        let _: &dyn std::future::Future<Output = Result<String, String>> = &fut;
+    }
+
+    #[test]
+    fn settings_and_harness_commands_leave_the_main_thread() {
+        let _ = settings_event_returns_a_future as fn(_, _);
+        let _ = select_harness_returns_a_future as fn(_, _, _);
+    }
+
     use ai_buddy_core::character::{
         Character, CursorReaction, PackageBytes, CHARACTER_MANIFEST_FILE, DEFAULT_MODEL_BASE,
         DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
