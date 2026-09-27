@@ -2291,7 +2291,16 @@ mod tests {
                     if script == "die-opening" {
                         std::process::exit(3);
                     }
-                    if script == "auth" && recorded(count, "new") == 1 {
+                    // `auth-sign-in` opens once `authenticate` has run.
+                    // `auth-sign-in-noop` never does, like an adapter whose
+                    // `authenticate` is Ok and changes nothing.
+                    let refuse = match script {
+                        "auth" => recorded(count, "new") == 1,
+                        "auth-sign-in" => recorded(count, "authenticate") == 0,
+                        "auth-sign-in-noop" => true,
+                        _ => false,
+                    };
+                    if refuse {
                         say(
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "auth required"}}),
                         );
@@ -2307,6 +2316,10 @@ mod tests {
                         };
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
                     }
+                }
+                Some("authenticate") => {
+                    record(count, "authenticate");
+                    say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                 }
                 Some("session/load") => {
                     record(count, "load");
@@ -4339,6 +4352,35 @@ mod tests {
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
+        session.shutdown();
+    }
+
+    /// The Chat button's path (#1000): `authenticate`, then a fresh
+    /// `session/new`. Ok from `authenticate` is not signed-in, so the landing
+    /// clears only when that session opens, and stays up when it is refused.
+    #[test]
+    fn a_sign_in_clears_the_landing_only_when_the_next_session_opens() {
+        let (fx, session) = Fixture::new("auth-sign-in");
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_authenticated("fake --login"))
+        );
+        assert_eq!(session.sign_in("fake", "buddy-1", "bmo", false), Ok(()));
+        assert_eq!(fx.count("authenticate"), 1);
+        assert_eq!(fx.count("new"), 2);
+        assert_eq!(session.inspect().login, None);
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        session.shutdown();
+
+        let (fx, session) = Fixture::new("auth-sign-in-noop");
+        assert!(session.complete(&asking("hi")).is_err());
+        assert_eq!(
+            session.sign_in("fake", "buddy-1", "bmo", false),
+            Err(not_authenticated("fake --login"))
+        );
+        assert_eq!(fx.count("authenticate"), 1);
+        assert_eq!(fx.count("new"), 2);
+        assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         session.shutdown();
     }
 
