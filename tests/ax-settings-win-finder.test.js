@@ -229,7 +229,7 @@ test("phase2 CHECK2 waits for TabItem names then finds TabItem AND Name", () => 
 
 test("phase2 reports the four #715 checks and crops evidence to HWND", () => {
   assert.match(phase2Src, /1_window_opens/);
-  assert.match(phase2Src, /2_five_tabs/);
+  assert.match(phase2Src, /2_all_tabs/);
   assert.match(phase2Src, /3_roundtrip/);
   assert.match(phase2Src, /4_zorder/);
   assert.match(phase2Src, /ai-buddy\\settings\.json/);

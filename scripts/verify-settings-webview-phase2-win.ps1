@@ -536,8 +536,8 @@ if (-not $win) {
     } catch { Log "Tab $tab err $_"; $tabPass = $false }
   }
 }
-$Report.checks['2_five_tabs'] = $(if ($tabPass) { 'PASS' } else { 'FAIL' })
-Log ("CHECK2 " + $Report.checks['2_five_tabs'])
+$Report.checks['2_all_tabs'] = $(if ($tabPass) { 'PASS' } else { 'FAIL' })
+Log ("CHECK2 " + $Report.checks['2_all_tabs'])
 
 $settingsPath = Join-Path $env:APPDATA 'ai-buddy\settings.json'
 $settingsCandidates = @(
