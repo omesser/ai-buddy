@@ -148,7 +148,8 @@ function check(theme, report) {
   for (const at of report.widths) {
     const where = `${theme} at ${at.width}px ${JSON.stringify({ mindMin, nameMin, ...at })}`;
     assert.equal(at.oneRow, true, `${where}: the header left one row`);
-    assert.equal(at.clipped, false, `${where}: the mind line is cut off`);
+    // build_chat's minimum. Below it every part can reach its floor and the row overflows.
+    if (at.width >= 320) assert.equal(at.clipped, false, `${where}: the mind line is cut off`);
     if (at.name > 1) {
       assert.ok(at.mindWidth <= mindMin + 0.5, `${where}: the name wrapped while the mind line could still give`);
     }
@@ -183,8 +184,7 @@ test(
       const at = report.widths.find((w) => w.width === 320);
       assert.ok(at.name > 1, `${theme} at 320px ${JSON.stringify(at)}: the name did not wrap`);
       assert.equal(at.chip, 1, `${theme} at 320px ${JSON.stringify(at)}: the chip wrapped`);
-      // Below build_chat's 320 minimum every part is at its floor and the row overflows.
-      check(theme, { ...report, widths: report.widths.filter((w) => w.width >= 320) });
+      check(theme, report);
     }
   },
 );
