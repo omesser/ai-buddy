@@ -296,6 +296,9 @@ pub enum Event {
         /// is dropped here, so the others still draw the decision that won.
         option: Option<String>,
     },
+    /// One line the child wrote to stderr, already copied to ours. A device
+    /// flow prints its code here, because stdout is the ACP stream.
+    Printed(String),
 }
 
 /// The stdio MCP server handed to `session/new` and `session/load`.
@@ -642,7 +645,7 @@ fn run(
             async_command
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::inherit());
+                .stderr(std::process::Stdio::piped());
             async_command.spawn()
         };
         // Both platforms hand back the spawn's own `io::Error`, so the missing
@@ -654,10 +657,16 @@ fn run(
                 return;
             }
         };
-        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        let (Some(stdin), Some(stdout), Some(stderr)) =
+            (child.stdin.take(), child.stdout.take(), child.stderr.take())
+        else {
             let _ = ready.send(Err(SpawnError::Failed("no pipes to the child".to_string())));
             return;
         };
+        let on_event = std::sync::Arc::new(on_event);
+        // Spawned, not joined: a grandchild holding stderr open must not keep
+        // this thread alive. The runtime drops the task when `run` returns.
+        tokio::spawn(tee_stderr(stderr, std::sync::Arc::clone(&on_event)));
         // What the Harness sends us, routed into `serve`, which is the one
         // place that knows whether a turn is open to receive it. Anything
         // else (fs, terminal) the SDK answers with method-not-found.
@@ -733,6 +742,28 @@ fn run(
         let _ = child.kill();
         let _ = child.status().await;
     });
+}
+
+/// Copy the child's stderr to ours byte for byte, so a terminal sees what it
+/// did when the pipe was inherited, and hand each line on as `Printed`.
+async fn tee_stderr(stderr: async_process::ChildStderr, on_event: std::sync::Arc<OnEvent>) {
+    use futures_lite::io::{AsyncBufReadExt, BufReader};
+    use std::io::Write;
+
+    let mut stderr = BufReader::new(stderr);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match stderr.read_until(b'\n', &mut line).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {
+                let _ = std::io::stderr().write_all(&line);
+                on_event(Event::Printed(
+                    String::from_utf8_lossy(&line).trim_end().to_string(),
+                ));
+            }
+        }
+    }
 }
 
 /// Whether `pgid` is a group we may SIGKILL. A real group, and not our own.
@@ -1846,7 +1877,7 @@ mod windows_job {
         async_command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit());
+            .stderr(std::process::Stdio::piped());
 
         let mut child = match async_command.spawn() {
             Ok(child) => child,
@@ -1981,7 +2012,7 @@ mod windows_job {
         async_command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit());
+            .stderr(std::process::Stdio::piped());
         async_command.spawn()
     }
 

@@ -55,6 +55,23 @@ export function loginPresentation(opening) {
   return { command: opening.login, actions };
 }
 
+// The device code a clicked sign-in printed, drawn under that method's
+// button. A code for a method no longer offered has no button to sit under.
+function signInCode(prompt, actions) {
+  if (typeof prompt?.code !== "string" || prompt.code === "") {
+    return null;
+  }
+  if (!actions.some((action) => action.id === prompt.method)) {
+    return null;
+  }
+  return {
+    method: prompt.method,
+    label: "Your code:",
+    code: prompt.code,
+    url: typeof prompt.url === "string" ? `If no browser opened, go to ${prompt.url}` : null,
+  };
+}
+
 // Configured is not ready. A named Harness whose child never came up, or
 // whose launcher is missing, must not enable Ask {name} the way a live
 // session does. HTTP Completer mode has no harness object.
@@ -101,6 +118,7 @@ export function landingCopy(opening) {
       signInLabel: buttons ? "Login using:" : null,
       hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
       signIn,
+      signInCode: signInCode(opening.sign_in_prompt, signIn),
     };
   }
 
@@ -112,6 +130,7 @@ export function landingCopy(opening) {
       signInLabel: null,
       hint: null,
       signIn: [],
+      signInCode: null,
     };
   }
 
@@ -123,6 +142,7 @@ export function landingCopy(opening) {
       signInLabel: null,
       hint: null,
       signIn: [],
+      signInCode: null,
     };
   }
 
@@ -136,6 +156,7 @@ export function landingCopy(opening) {
       signInLabel: null,
       hint: null,
       signIn: [],
+      signInCode: null,
     };
   }
 
@@ -147,6 +168,7 @@ export function landingCopy(opening) {
       signInLabel: null,
       hint: null,
       signIn: [],
+      signInCode: null,
     };
   }
 
@@ -158,6 +180,7 @@ export function landingCopy(opening) {
       signInLabel: null,
       hint: null,
       signIn: [],
+      signInCode: null,
     };
   }
 
@@ -168,5 +191,6 @@ export function landingCopy(opening) {
     signInLabel: null,
     hint: null,
     signIn: [],
+    signInCode: null,
   };
 }
