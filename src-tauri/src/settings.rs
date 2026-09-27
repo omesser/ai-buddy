@@ -381,6 +381,12 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                      weights meanwhile.",
                     attached.name
                 ),
+                None if attached.failed.is_some() => format!(
+                    "{} failed to start: {} The AI runs on static weights until it answers; \
+                     Model API above hands the HTTP endpoint back.",
+                    attached.name,
+                    attached.failed.as_deref().unwrap_or_default()
+                ),
                 None => format!(
                     "{} is set but not running, so the AI runs on static weights until it \
                      answers. It stays the AI brain while it is set; Model API above hands the \
@@ -4964,6 +4970,21 @@ mod tests {
         assert!(
             line.contains("Model API above"),
             "the line has to name the way back, got {line:?}"
+        );
+    }
+
+    /// A launcher that ran and died says how, not only that nothing runs.
+    #[test]
+    fn a_launcher_that_died_at_startup_says_why() {
+        let died = crate::harness::HarnessInspect {
+            name: "codex".to_string(),
+            failed: Some("`npx` exited before initialize, signal: 6 (SIGABRT).".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            harness_state(Some(&died)),
+            "codex failed to start: `npx` exited before initialize, signal: 6 (SIGABRT). The AI \
+             runs on static weights until it answers; Model API above hands the HTTP endpoint back."
         );
     }
 

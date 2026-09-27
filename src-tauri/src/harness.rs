@@ -249,7 +249,7 @@ pub(crate) fn attach_dir(raw: &str) -> Result<std::path::PathBuf, String> {
     }
     cwd.checked().map_err(|error| match error {
         SpawnError::Failed(why) => why,
-        SpawnError::Missing => "missing".to_string(),
+        _ => "missing".to_string(),
     })?;
     Ok(cwd.as_path().to_path_buf())
 }
@@ -382,6 +382,9 @@ pub struct HarnessInspect {
     pub missing: Option<String>,
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     pub initializing: bool,
+    /// Why the last spawn gave no wire, when the launcher was there to run.
+    /// The sentence Chat, Settings and the wake all show.
+    pub failed: Option<String>,
     /// What the last turn came back with, when it came back with an error, and
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive, and authenticated, so nothing else here tells it apart.
@@ -682,13 +685,22 @@ impl Session {
     /// Where the Harness should be by the time the first wake arrives. Spawned
     /// so startup does not wait on `npx`; the outcome is one stderr line.
     pub fn spawn_preflight(self: &Arc<Self>) {
-        self.update_inspect(|inspect| inspect.initializing = true);
+        self.update_inspect(|inspect| {
+            inspect.initializing = true;
+            inspect.failed = None;
+        });
         let session = Arc::clone(self);
         thread::spawn(move || {
+            // A preflight is someone asking now: startup, a new row, or a
+            // re-pick. The backoff is for wakes, which nobody asked for.
+            if let Ok(mut state) = session.state.lock() {
+                state.spawn_wait_until = None;
+            }
             let attached = session.attach(None);
             match &attached {
                 Ok(_) => eprintln!("harness: {} attached", session.launch.name),
                 Err(why) => {
+                    let why = why.trim_end_matches('.');
                     eprintln!("harness: {why}; StaticDirector is in force until it answers")
                 }
             }
@@ -699,6 +711,15 @@ impl Session {
             // opening is how `inspect.missing` reaches the landing (#726).
             (session.forward)(Forwarded::AttachSettled);
         });
+    }
+
+    /// Connect on the Harness already attached. One that is down, after a
+    /// failed launch or a dead child, is asked again; one that answers stands.
+    pub(crate) fn repick(self: &Arc<Self>) {
+        let inspect = self.inspect();
+        if !inspect.alive && !inspect.initializing {
+            self.spawn_preflight();
+        }
     }
 
     /// Take the turn lock from the wake in flight by cancelling it, or `None`
@@ -1033,8 +1054,22 @@ impl Session {
             inspect.alive = false;
             inspect.missing = Some(command.clone());
             inspect.initializing = false;
+            inspect.failed = None;
         });
         not_installed(&command)
+    }
+
+    /// Record why a launcher that was there gave no wire, and charge the loss.
+    /// Kept as a sentence, because Chat and Settings put their own after it.
+    fn note_failed(&self, state: &mut State, why: String) -> String {
+        let why = if why.ends_with('.') {
+            why
+        } else {
+            format!("{why}.")
+        };
+        self.charge_loss(state);
+        self.update_inspect(|inspect| inspect.failed = Some(why.clone()));
+        why
     }
 
     /// The user's answer to a forwarded permission request. Never chosen here.
@@ -1140,10 +1175,10 @@ impl Session {
                     // back. Backoff would only refuse the next wake for up to
                     // five minutes after the user installs the CLI.
                     Err(SpawnError::Missing) => return Err(self.note_missing()),
-                    Err(SpawnError::Failed(why)) => {
-                        self.charge_loss(&mut state);
-                        return Err(why);
+                    Err(SpawnError::Exited(status)) => {
+                        return Err(self.note_failed(&mut state, exited(&self.launch, status)))
                     }
+                    Err(SpawnError::Failed(why)) => return Err(self.note_failed(&mut state, why)),
                 }
             }
         };
@@ -1192,10 +1227,10 @@ impl Session {
             self.update_inspect(|inspect| inspect.missing = None);
         }
         let wire = spawned.map_err(|why| match why {
-            SpawnError::Missing => SpawnError::Missing,
             SpawnError::Failed(why) => {
                 SpawnError::Failed(format!("`{}` {why}", self.launch.line()))
             }
+            other => other,
         })?;
         state.handshake = wire.handshake().clone();
         // A fresh process is a fresh chance to sign in. The gate belonged to
@@ -1207,6 +1242,7 @@ impl Session {
             inspect.mcp_http = state.handshake.mcp_http;
             inspect.alive = true;
             inspect.initializing = false;
+            inspect.failed = None;
         });
         let wire = Arc::new(wire);
         if !self.wanted.load(Ordering::SeqCst) {
@@ -1760,6 +1796,24 @@ fn wake_kind(reactive: bool) -> &'static str {
     }
 }
 
+/// A launcher that ran and was gone before `initialize`. `npx` is Node.js, and
+/// a Node.js that cannot start (a broken Homebrew link) dies exactly here.
+fn exited(launch: &Launch, status: Option<std::process::ExitStatus>) -> String {
+    let status = status
+        .map(|status| format!(", {status}"))
+        .unwrap_or_default();
+    let hint = match launch.argv[0].as_str() {
+        "npx" => {
+            " `npx` runs on Node.js: run `node --version` in a terminal to check that it starts."
+        }
+        _ => "",
+    };
+    format!(
+        "`{}` exited before initialize{status}.{hint}",
+        launch.line()
+    )
+}
+
 fn not_authenticated(command: &str) -> String {
     format!("harness not authenticated: run `{command}`")
 }
@@ -2257,6 +2311,14 @@ mod tests {
         println!();
         record(count, "spawn");
         let spawns = recorded(count, "spawn");
+        // A launcher that dies before it reads a byte, the way `npx` does when
+        // dyld cannot load `node`. `abort-first` is that Node fixed afterwards.
+        if script == "abort-at-start" || (script == "abort-first" && spawns == 1) {
+            eprintln!(
+                "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib"
+            );
+            std::process::abort();
+        }
         let mut session = "fresh-id".to_string();
         let mut pending_prompt: Option<Value> = None;
         let stdin = std::io::stdin();
@@ -4591,6 +4653,60 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// A launcher that is on `PATH` and dies before `initialize` is not
+    /// missing, so only `failed` can tell Chat and Settings why nothing runs.
+    #[test]
+    fn spawn_preflight_names_a_launcher_that_dies_at_startup() {
+        let (fx, session) = Fixture::new("abort-at-start");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
+            Ok(Forwarded::AttachSettled) => {}
+            other => panic!("expected AttachSettled, got {other:?}"),
+        }
+        let inspect = session.inspect();
+        assert!(!inspect.alive && !inspect.initializing && inspect.missing.is_none());
+        let failed = inspect.failed.expect("the landing has no reason to show");
+        let exited = format!("`{}` exited before initialize", session.launch.line());
+        assert!(failed.starts_with(&exited), "{failed}");
+        #[cfg(unix)]
+        assert!(failed.contains("SIGABRT"), "no exit status in {failed}");
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    /// Picking the same Harness again after fixing what killed it attaches
+    /// now, not after the backoff the dead launch earned.
+    #[test]
+    fn a_repick_after_a_startup_death_attaches_at_once() {
+        let (fx, session) = Fixture::new("abort-first");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        fx.attach_settled();
+        assert!(session.inspect().failed.is_some());
+        session.repick();
+        fx.attach_settled();
+        let inspect = session.inspect();
+        assert!(inspect.alive, "the re-pick stood behind the backoff");
+        assert_eq!(inspect.failed, None);
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    /// A re-pick never restarts a Harness that is answering.
+    #[test]
+    fn a_repick_of_a_live_harness_stands() {
+        let (fx, session) = Fixture::new("plain");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        fx.attach_settled();
+        session.repick();
+        assert!(session.inspect().alive);
+        assert_eq!(fx.count("spawn"), 1, "the re-pick restarted a live Harness");
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
     /// Initializing gates chat during ACP handshake. Set true at spawn_preflight,
     /// false on success or failure.
     #[test]
@@ -4749,6 +4865,20 @@ mod tests {
                 "missing {command} should mention {url_part}, got: {message}"
             );
         }
+    }
+
+    /// An `npx` preset that dies at startup points at Node.js, not the preset.
+    #[test]
+    fn an_npx_launcher_that_exits_says_to_check_node() {
+        assert_eq!(
+            exited(&launch(Some("codex")).unwrap(), None),
+            "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize. \
+             `npx` runs on Node.js: run `node --version` in a terminal to check that it starts."
+        );
+        assert_eq!(
+            exited(&launch(Some("hermes")).unwrap(), None),
+            "`hermes acp` exited before initialize."
+        );
     }
 
     /// ADR-0016's newest-wins, at the Harness seam. The Poke that arrives
