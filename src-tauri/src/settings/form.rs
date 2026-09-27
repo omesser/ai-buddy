@@ -1213,11 +1213,11 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                     id: INSTANCES_ID.to_string(),
                     dismiss_label: "Dismiss".to_string(),
                     help: Some("Fidgets on screen now.".to_string()),
-                    disclosure: Some("An Instance is one spawned character: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
+                    disclosure: Some("An Instance is one spawned fidget: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
                 },
                 FormRow::Composite {
                     id: "new_instance".to_string(),
-                    help: Some("Adds another character.".to_string()),
+                    help: Some("Adds another fidget.".to_string()),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::TextField {
@@ -1257,7 +1257,7 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
                     comment: None,
-                    disclosure: Some("Do Not Disturb leaves the character visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
+                    disclosure: Some("Do Not Disturb leaves the fidget visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
                     status: None,
                 },
                 FormRow::Checkbox {
@@ -1393,7 +1393,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             frozen: false,
             help: Some("Requires macOS Screen Recording.".to_string()),
             comment: None,
-            disclosure: Some("macOS Screen Recording lets Fidget read window titles. The character does not capture the screen. One switch covers titles and application names alike, so with it off the character knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.".to_string()),
+            disclosure: Some("macOS Screen Recording lets your fidget read window titles. Fidget does not capture the screen. One switch covers titles and application names alike, so with it off fidget knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.".to_string()),
             status: None,
         },
         #[cfg(target_os = "windows")]
@@ -2745,7 +2745,7 @@ mod tests {
                     assert_eq!(help.as_deref(), Some("Requires macOS Screen Recording."));
                     assert_eq!(
                         disclosure.as_deref(),
-                        Some("macOS Screen Recording lets Fidget read window titles. The character does not capture the screen. One switch covers titles and application names alike, so with it off the character knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")
+                        Some("macOS Screen Recording lets your fidget read window titles. Fidget does not capture the screen. One switch covers titles and application names alike, so with it off fidget knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")
                     );
                 }
                 _ => panic!("Window names row must be a checkbox"),
