@@ -24,7 +24,7 @@ const STATES = [
   ["a Harness drives", HARNESS],
 ];
 
-const TABS = ["Presence", "Character", "AI", "Privacy", "Development"];
+const TABS = ["Presence", "Character", "AI", "Privacy", "Development", "Chat"];
 
 function tab(state, title) {
   const found = state.form.tabs.find((candidate) => candidate.title === title);
@@ -98,11 +98,12 @@ test('"the Director\'s mind" stays out of the state line', () => {
 });
 
 const HEADINGS = {
-  Presence: ["Do Not Disturb", "Hide", "Launch", "Appearance"],
+  Presence: ["Do Not Disturb", "Hide", "Launch"],
   Character: ["Character", "Instances"],
   AI: ["AI", "AI source", "Point a Harness you run yourself at ai-buddy", "Model / API", "Last user turn"],
   Privacy: ["What the buddy can see", "Excluded applications", "Memory File"],
   Development: ["Traces", "Blank AI", "HTTP limits", "Harness attachment"],
+  Chat: ["Appearance"],
 };
 
 test("every tab draws its sections, whichever source drives", () => {
@@ -365,10 +366,8 @@ test("the Character popups offer every installed package, the worn one selected"
   }
 });
 
-// chat_ui is an application setting (ADR-0019), so the picker sits on
-// Presence. Minimal is the design a fresh settings file starts on.
-test("the Chat UI and Chat appearance popups live on Presence", () => {
-  const selects = drawn("Presence").filter((node) => node.tagName === "select");
+test("the Chat UI and Chat appearance popups live on Chat", () => {
+  const selects = drawn("Chat").filter((node) => node.tagName === "select");
   const offered = Object.fromEntries(
     selects.map((select) => [select.dataset.id, select.children.map((option) => option.attributes.value)]),
   );
@@ -378,8 +377,11 @@ test("the Chat UI and Chat appearance popups live on Presence", () => {
   });
   assert.equal(selects.find((select) => select.dataset.id === "chat_ui").value, "Minimal");
   assert.equal(selects.find((select) => select.dataset.id === "chat_appearance").value, "System");
-  assert.equal(drawn("Character").some((node) => node.dataset.id === "chat_ui"), false);
-  assert.equal(drawn("Character").some((node) => node.dataset.id === "chat_appearance"), false);
+  for (const title of TABS) {
+    if (title === "Chat") continue;
+    assert.equal(drawn(title).some((node) => node.dataset.id === "chat_ui"), false, title);
+    assert.equal(drawn(title).some((node) => node.dataset.id === "chat_appearance"), false, title);
+  }
 });
 
 // A redraw is render() again, and replaceChildren() takes the focused control
@@ -730,7 +732,7 @@ test("non-AI tabs hide footer when it has no content (Bug 1)", async () => {
     },
   };
 
-  const NON_AI_TABS = ["Presence", "Character", "Privacy", "Development"];
+  const NON_AI_TABS = ["Presence", "Character", "Privacy", "Development", "Chat"];
 
   for (const tabTitle of NON_AI_TABS) {
     mockFooter.children = [];

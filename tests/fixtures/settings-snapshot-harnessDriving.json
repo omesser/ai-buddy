@@ -100,46 +100,6 @@
           "comment": null,
           "disclosure": null,
           "status": null
-        },
-        {
-          "heading": "Appearance",
-          "rows": [
-            {
-              "type": "Popup",
-              "id": "chat_ui",
-              "label": "Chat UI",
-              "writes": "ChatUI",
-              "help": "Visual design for the chat surface.",
-              "options": [
-                "Minimal",
-                "Terminal",
-                "Glass"
-              ],
-              "frozen": false,
-              "batched": false,
-              "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
-              "status": null
-            },
-            {
-              "type": "Popup",
-              "id": "chat_appearance",
-              "label": "Chat appearance",
-              "writes": "ChatAppearance",
-              "help": "Light or dark for the Chat surface. System follows this computer.",
-              "options": [
-                "System",
-                "Light",
-                "Dark"
-              ],
-              "frozen": false,
-              "batched": false,
-              "disclosure": "The overlay and speech bubble are unchanged.",
-              "status": null
-            }
-          ],
-          "comment": null,
-          "disclosure": null,
-          "status": null
         }
       ]
     },
@@ -827,6 +787,51 @@
           ],
           "comment": "Also for development and testing. Leave empty for the default.",
           "disclosure": "Turn timeout: how long a session/prompt may run before session/cancel, not counting the time it waits on you to answer an ask, and started over once you answer. Leave empty for 120 seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
+          "status": null
+        }
+      ]
+    },
+    {
+      "title": "Chat",
+      "sections": [
+        {
+          "heading": "Appearance",
+          "rows": [
+            {
+              "type": "Popup",
+              "id": "chat_ui",
+              "label": "Chat UI",
+              "writes": "ChatUI",
+              "help": "Visual design for the chat surface.",
+              "options": [
+                "Minimal",
+                "Terminal",
+                "Glass"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.",
+              "status": null
+            },
+            {
+              "type": "Popup",
+              "id": "chat_appearance",
+              "label": "Chat appearance",
+              "writes": "ChatAppearance",
+              "help": "Light or dark for the Chat surface. System follows this computer.",
+              "options": [
+                "System",
+                "Light",
+                "Dark"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "The overlay and speech bubble are unchanged.",
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
           "status": null
         }
       ]

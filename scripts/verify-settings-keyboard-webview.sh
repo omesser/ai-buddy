@@ -25,7 +25,7 @@ failures=0
 lock_held=0
 app_pid=""
 
-TABS="Presence Character AI Privacy Development"
+TABS="Presence Character AI Privacy Development Chat"
 
 info() { printf '\033[36m[INFO]\033[0m %s\n' "$*"; }
 pass() { printf '\033[32m[PASS]\033[0m %s\n' "$*"; }
@@ -245,7 +245,7 @@ is_tab_title() {
   return 1
 }
 
-info "Tab order on all five tabs"
+info "Tab order on every Settings tab"
 for tab in $TABS; do
   if tab_until "$tab"; then
     key space
@@ -293,12 +293,12 @@ for tab in $TABS; do
   fi
 done
 if [ "$tab_order" = PASS ]; then
-  pass "Tab reaches every control in DOM order on all five tabs"
+  pass "Tab reaches every control in DOM order on every Settings tab"
 else
   fail "Tab order sitting failed"
 fi
 if [ "$focus_ring" = PASS ]; then
-  pass "Focus ring still taken on all five tabs"
+  pass "Focus ring still taken on every Settings tab"
 else
   fail "Focus ring stills incomplete"
 fi
@@ -440,7 +440,7 @@ table="$out/TABLE.md"
 {
   echo '| Behaviour | Result | Still |'
   echo '| --- | --- | --- |'
-  echo "| Tab reaches every control in DOM order on all five tabs | $tab_order |${five_stills} |"
+  echo "| Tab reaches every control in DOM order on every Settings tab | $tab_order |${five_stills} |"
   echo "| Focus ring visible on each | $focus_ring |${five_stills} |"
   echo "| Escape closes | $escape_ok | ![escape](./03-escape.png) |"
   echo "| Enter applies | $enter_ok | ![enter-applies](./04-enter-applies.png) |"

@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   Four checks against the Settings webview: window opens as a webview,
-  all five tabs are present and driven, Presence Sound round-trips to
+  every Settings tab is present and driven, Presence Sound round-trips to
   %APPDATA%\ai-buddy\settings.json, z-order is GetTopWindow plus GW_HWNDNEXT
   (Settings HWND before each overlay HWND). 04-zorder.png is illustration.
 
@@ -17,7 +17,7 @@
   Evidence PNGs are cropped to the Settings HWND (privacy) and scaled ~1/3;
   do not commit them. Runners attach with gh issue comment --attach.
 
-  CHECK2: wait until all five ControlType.TabItem names exist (WebView2 UIA
+  CHECK2: wait until every Settings tab name exists (WebView2 UIA
   tree is empty on the first tick), then find each tab with TabItem AND Name
   -- Name-only hits the Pane also named Presence (ESTHER 2026-09-18). Activate
   is Invoke, SelectionItem.Select, LegacyIAccessible DoDefaultAction, then
@@ -506,7 +506,7 @@ if ($Report.webviewConfirmed) {
   Log 'CHECK1 PASS (Tauri Window; WebView2 process not listed)'
 }
 
-$tabs = @('Presence', 'Character', 'AI', 'Privacy', 'Development')
+$tabs = @('Presence', 'Character', 'AI', 'Privacy', 'Development', 'Chat')
 $tabPass = $true
 if (-not $win) {
   $tabPass = $false

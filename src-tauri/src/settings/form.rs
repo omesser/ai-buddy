@@ -1334,39 +1334,40 @@ fn presence_sections() -> Vec<FormSection> {
                 status: None,
             }],
         },
-        // chat_ui is one design for every chat surface (ADR-0019), so it
-        // sits with the rest of the on-screen chrome.
-        FormSection {
-            heading: "Appearance".to_string(),
-            comment: None,
-            disclosure: None,
-            status: None,
-            rows: vec![
-                FormRow::Popup {
-                    id: "chat_ui".to_string(),
-                    label: Some("Chat UI".to_string()),
-                    writes: TextField::ChatUI,
-                    help: Some("Visual design for the chat surface.".to_string()),
-                    options: vec!["Minimal".to_string(), "Terminal".to_string(), "Glass".to_string()],
-                    frozen: false,
-                    batched: false,
-                    disclosure: Some("The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.".to_string()),
-                    status: None,
-                },
-                FormRow::Popup {
-                    id: "chat_appearance".to_string(),
-                    label: Some("Chat appearance".to_string()),
-                    writes: TextField::ChatAppearance,
-                    help: Some("Light or dark for the Chat surface. System follows this computer.".to_string()),
-                    options: vec!["System".to_string(), "Light".to_string(), "Dark".to_string()],
-                    frozen: false,
-                    batched: false,
-                    disclosure: Some("The overlay and speech bubble are unchanged.".to_string()),
-                    status: None,
-                },
-            ],
-        },
     ]
+}
+
+fn chat_sections() -> Vec<FormSection> {
+    vec![FormSection {
+        heading: "Appearance".to_string(),
+        comment: None,
+        disclosure: None,
+        status: None,
+        rows: vec![
+            FormRow::Popup {
+                id: "chat_ui".to_string(),
+                label: Some("Chat UI".to_string()),
+                writes: TextField::ChatUI,
+                help: Some("Visual design for the chat surface.".to_string()),
+                options: vec!["Minimal".to_string(), "Terminal".to_string(), "Glass".to_string()],
+                frozen: false,
+                batched: false,
+                disclosure: Some("The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.".to_string()),
+                status: None,
+            },
+            FormRow::Popup {
+                id: "chat_appearance".to_string(),
+                label: Some("Chat appearance".to_string()),
+                writes: TextField::ChatAppearance,
+                help: Some("Light or dark for the Chat surface. System follows this computer.".to_string()),
+                options: vec!["System".to_string(), "Light".to_string(), "Dark".to_string()],
+                frozen: false,
+                batched: false,
+                disclosure: Some("The overlay and speech bubble are unchanged.".to_string()),
+                status: None,
+            },
+        ],
+    }]
 }
 
 fn privacy_sections(live: &Live) -> Vec<FormSection> {
@@ -1754,6 +1755,10 @@ pub fn describe_with(live: &Live) -> FormDescription {
             title: "Development".to_string(),
             sections: development_sections(live),
         },
+        FormTab {
+            title: "Chat".to_string(),
+            sections: chat_sections(),
+        },
     ];
     // Only the buttons: every writing row carries the field it writes.
     let operations = HashMap::from([
@@ -2125,7 +2130,14 @@ mod tests {
             .collect();
         assert_eq!(
             titles,
-            vec!["Presence", "Character", "AI", "Privacy", "Development"]
+            vec![
+                "Presence",
+                "Character",
+                "AI",
+                "Privacy",
+                "Development",
+                "Chat"
+            ]
         );
         for tab in &description.tabs {
             assert!(!tab.sections.is_empty(), "{} has no section", tab.title);
