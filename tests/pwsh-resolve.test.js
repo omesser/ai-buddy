@@ -8,9 +8,10 @@ const REAL = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
 const PACKAGE = "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe\\pwsh.exe";
 
 function spawnReturning(map) {
-  return (command) => {
-    if (Object.hasOwn(map, command)) {
-      return map[command];
+  return (command, args) => {
+    const key = args ? command : command;
+    if (Object.hasOwn(map, key)) {
+      return map[key];
     }
     return { status: 1, stdout: "", stderr: "" };
   };
@@ -79,10 +80,63 @@ test("non-win32 still resolves pwsh through command -v", () => {
       platform,
       spawn: spawnReturning({
         bash: { status: 0, stdout: "/usr/bin/pwsh\n", stderr: "" },
+        "/usr/bin/pwsh": { status: 0, stdout: "2\n", stderr: "" },
       }),
     });
     assert.deepEqual(resolved, { kind: "ready", command: "/usr/bin/pwsh", args: [] });
   }
+});
+
+test("non-win32 detects pwsh with FileLoadException as unusable", () => {
+  const resolved = resolvePwsh({
+    platform: "darwin",
+    spawn: spawnReturning({
+      bash: { status: 0, stdout: "/usr/local/bin/pwsh\n", stderr: "" },
+      "/usr/local/bin/pwsh": {
+        status: 1,
+        stdout: "",
+        stderr: "Unhandled exception. System.IO.FileLoadException: The given assembly name was invalid.",
+      },
+    }),
+  });
+  assert.equal(resolved.kind, "unusable");
+  assert(resolved.reason.includes("FileLoadException"));
+});
+
+test("non-win32 detects pwsh with Abort trap as unusable", () => {
+  const resolved = resolvePwsh({
+    platform: "linux",
+    spawn: spawnReturning({
+      bash: { status: 0, stdout: "/usr/bin/pwsh\n", stderr: "" },
+      "/usr/bin/pwsh": { status: 134, stdout: "", stderr: "Abort trap: 6" },
+    }),
+  });
+  assert.equal(resolved.kind, "unusable");
+  assert(resolved.reason.includes("Abort trap"));
+});
+
+test("non-win32 detects pwsh with null exit code as unusable", () => {
+  const resolved = resolvePwsh({
+    platform: "darwin",
+    spawn: spawnReturning({
+      bash: { status: 0, stdout: "/usr/local/bin/pwsh\n", stderr: "" },
+      "/usr/local/bin/pwsh": { status: null, stdout: "", stderr: "" },
+    }),
+  });
+  assert.equal(resolved.kind, "unusable");
+  assert(resolved.reason.includes("null exit code"));
+});
+
+test("non-win32 detects pwsh probe failure as unusable", () => {
+  const resolved = resolvePwsh({
+    platform: "linux",
+    spawn: spawnReturning({
+      bash: { status: 0, stdout: "/usr/bin/pwsh\n", stderr: "" },
+      "/usr/bin/pwsh": { status: 127, stdout: "", stderr: "Command not found" },
+    }),
+  });
+  assert.equal(resolved.kind, "unusable");
+  assert(resolved.reason.includes("exit code 127"));
 });
 
 test("non-win32 skips with an explicit reason when pwsh is missing", () => {

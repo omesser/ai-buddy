@@ -37,10 +37,37 @@ function resolveOnWindows(spawn) {
 function resolveOnPosix(spawn) {
   const found = spawn("bash", ["-lc", "command -v pwsh"], { encoding: "utf8" });
   const command = String(found?.stdout || "").trim();
-  if (found && found.status === 0 && command) {
-    return { kind: "ready", command, args: [] };
+  if (!found || found.status !== 0 || !command) {
+    return { kind: "missing", reason: MISSING };
   }
-  return { kind: "missing", reason: MISSING };
+
+  const probe = spawn(command, ["-NoProfile", "-NonInteractive", "-Command", "1 + 1"], {
+    encoding: "utf8",
+  });
+
+  if (!probe || probe.status === null) {
+    return {
+      kind: "unusable",
+      reason: "pwsh crashed (null exit code); Ubuntu CI still runs the real check",
+    };
+  }
+
+  const output = String(probe.stdout || "") + String(probe.stderr || "");
+  if (output.includes("FileLoadException") || output.includes("Abort trap")) {
+    return {
+      kind: "unusable",
+      reason: "pwsh crashed (FileLoadException or Abort trap); Ubuntu CI still runs the real check",
+    };
+  }
+
+  if (probe.status !== 0) {
+    return {
+      kind: "unusable",
+      reason: `pwsh probe failed with exit code ${probe.status}; Ubuntu CI still runs the real check`,
+    };
+  }
+
+  return { kind: "ready", command, args: [] };
 }
 
 export function resolvePwsh({ platform = process.platform, spawn = spawnSync } = {}) {
