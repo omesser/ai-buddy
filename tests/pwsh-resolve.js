@@ -41,9 +41,18 @@ function resolveOnPosix(spawn) {
     return { kind: "missing", reason: MISSING };
   }
 
-  const probe = spawn(command, ["-NoProfile", "-NonInteractive", "-Command", "1 + 1"], {
-    encoding: "utf8",
-  });
+  const probe = spawn(
+    command,
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$t=$null;$e=$null;[void][System.Management.Automation.Language.Parser]::ParseInput('1',[ref]$t,[ref]$e); if ($e.Count) { exit 1 }; exit 0",
+    ],
+    {
+      encoding: "utf8",
+    },
+  );
 
   if (!probe || probe.status === null) {
     return {
