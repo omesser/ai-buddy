@@ -1,7 +1,7 @@
 //! Current-session Chat turns, held because `emit_to` only reaches windows that
 //! exist. Permission asks already wait on `PendingAsks`; Speech of this
 //! Completer session belongs in the same log (ADR-0018) even when Chat was
-//! never opened.
+//! never opened, and so does the thinking that led to it (ADR-0034).
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -9,18 +9,35 @@ use std::time::SystemTime;
 
 use tauri::{Emitter, Manager};
 
+/// Whose row a remembered turn is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Who {
+    You,
+    Them,
+    Thinking,
+}
+
 #[derive(Clone)]
 pub struct Turn {
-    pub you: bool,
+    pub who: Who,
     pub said: Option<String>,
     pub reacting_to: Option<String>,
     /// When the line was said, not when Chat later opened. Replay stamps from this.
     pub at: SystemTime,
 }
 
+/// The thinking of the turn on the wire. The wire does not say whose turn
+/// that is, so it waits here until a turn is remembered for an Instance.
+struct Thinking {
+    text: String,
+    at: SystemTime,
+    over: bool,
+}
+
 #[derive(Default)]
 pub struct Log {
     turns: BTreeMap<String, Vec<Turn>>,
+    thinking: Option<Thinking>,
 }
 
 impl Log {
@@ -33,14 +50,32 @@ impl Log {
             .entry(instance.to_string())
             .or_default()
             .push(Turn {
-                you: true,
+                who: Who::You,
                 said: Some(text.into()),
                 reacting_to: None,
                 at,
             });
     }
 
+    /// The whole thought so far, or an empty one when the turn stops thinking.
+    /// A thought after that is the next turn's, so the unkept one is dropped.
+    pub fn think(&mut self, text: &str, at: SystemTime) {
+        match &mut self.thinking {
+            Some(thinking) if text.is_empty() => thinking.over = true,
+            _ if text.is_empty() => {}
+            Some(thinking) if !thinking.over => thinking.text = text.to_string(),
+            _ => {
+                self.thinking = Some(Thinking {
+                    text: text.to_string(),
+                    at,
+                    over: false,
+                })
+            }
+        }
+    }
+
     /// Behavior-only wakes have no words; ADR-0018 holds nothing for those.
+    /// Thinking waiting on the wire is this turn's, and goes in above it.
     pub fn remember_them(
         &mut self,
         instance: &str,
@@ -48,6 +83,17 @@ impl Log {
         reacting_to: Option<String>,
         at: SystemTime,
     ) {
+        if let Some(thinking) = self.thinking.take() {
+            self.turns
+                .entry(instance.to_string())
+                .or_default()
+                .push(Turn {
+                    who: Who::Thinking,
+                    said: Some(thinking.text),
+                    reacting_to: None,
+                    at: thinking.at,
+                });
+        }
         let Some(said) = said else {
             return;
         };
@@ -55,7 +101,7 @@ impl Log {
             .entry(instance.to_string())
             .or_default()
             .push(Turn {
-                you: false,
+                who: Who::Them,
                 said: Some(said),
                 reacting_to,
                 at,
@@ -89,6 +135,10 @@ pub fn remember_you(
     at: SystemTime,
 ) {
     with_log(app, |log| log.remember_you(instance, text, at));
+}
+
+pub fn think(app: &tauri::AppHandle, text: &str, at: SystemTime) {
+    with_log(app, |log| log.think(text, at));
 }
 
 pub fn remember_them(
@@ -152,7 +202,7 @@ mod tests {
 
         let turns = log.replay("buddy-1");
         assert_eq!(turns.len(), 1);
-        assert!(!turns[0].you);
+        assert_eq!(turns[0].who, Who::Them);
         assert_eq!(turns[0].said.as_deref(), Some("hello from the bubble"));
         assert_eq!(turns[0].reacting_to.as_deref(), Some("when poked"));
     }
@@ -212,9 +262,9 @@ mod tests {
         let turns = log.replay("buddy-1");
         assert_eq!(turns.len(), 3);
         assert!(turns[0].reacting_to.is_some());
-        assert!(turns[1].you);
+        assert_eq!(turns[1].who, Who::You);
         assert_eq!(turns[1].said.as_deref(), Some("what are you standing on?"));
-        assert!(!turns[2].you);
+        assert_eq!(turns[2].who, Who::Them);
         assert_eq!(turns[2].said.as_deref(), Some("the desktop floor"));
     }
 
@@ -275,5 +325,73 @@ mod tests {
         assert_ne!(turns[0].at, turns[1].at);
         assert_ne!(turns[0].at, SystemTime::now());
         assert_ne!(turns[1].at, SystemTime::now());
+    }
+
+    /// Production change that would fail this: a reopened Chat showing the
+    /// answer without the thinking that led to it (ADR-0034), or a thought
+    /// kept as each partial text the wire sent rather than the whole one.
+    #[test]
+    fn thinking_is_kept_above_the_reply_it_led_to() {
+        let mut log = Log::new();
+        let first = UNIX_EPOCH + Duration::from_secs(1_000);
+        log.remember_you("buddy-1", "what are you standing on?", first);
+        log.think("Reading", first);
+        log.think("Reading the roster", first + Duration::from_secs(2));
+        log.think("", first + Duration::from_secs(3));
+        log.remember_them(
+            "buddy-1",
+            Some("the desktop floor".into()),
+            None,
+            first + Duration::from_secs(4),
+        );
+
+        let turns = log.replay("buddy-1");
+        let kept: Vec<_> = turns
+            .iter()
+            .map(|t| (t.who, t.said.as_deref(), t.at))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                (Who::You, Some("what are you standing on?"), first),
+                (Who::Thinking, Some("Reading the roster"), first),
+                (
+                    Who::Them,
+                    Some("the desktop floor"),
+                    first + Duration::from_secs(4)
+                ),
+            ]
+        );
+    }
+
+    /// Production change that would fail this: a Behavior-only wake's thinking,
+    /// which nothing held, surfacing above the next turn's reply instead.
+    #[test]
+    fn thinking_from_a_turn_nothing_kept_is_not_carried_into_the_next() {
+        let mut log = Log::new();
+        let later = UNIX_EPOCH + Duration::from_secs(60);
+        log.think("Should I nap?", UNIX_EPOCH);
+        log.think("", UNIX_EPOCH);
+        log.think("Checking the desk", later);
+        log.remember_them("buddy-1", Some("on it".into()), None, later);
+
+        let turns = log.replay("buddy-1");
+        assert_eq!(turns[0].who, Who::Thinking);
+        assert_eq!(turns[0].said.as_deref(), Some("Checking the desk"));
+        assert_eq!(turns[0].at, later);
+        assert_eq!(turns.len(), 2);
+    }
+
+    /// Production change that would fail this: a turn with thinking and no
+    /// line losing the thinking too, which is the only trace that turn left.
+    #[test]
+    fn thinking_is_kept_when_the_turn_said_nothing() {
+        let mut log = Log::new();
+        log.think("Weighing a nap", UNIX_EPOCH);
+        log.remember_them("buddy-1", None, None, UNIX_EPOCH);
+
+        let turns = log.replay("buddy-1");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].who, Who::Thinking);
     }
 }

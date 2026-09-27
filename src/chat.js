@@ -10,7 +10,7 @@ import { createNamesNotice } from "./chat-names-hint.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
-import { mountThoughtStrip } from "./chat-strip.js";
+import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
 import { appendReply, drawReply } from "./markdown.js";
@@ -26,7 +26,6 @@ const chat = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
-const thought = document.getElementById("thought");
 const plan = document.getElementById("plan");
 const namesHintEl = document.getElementById("names-hint");
 const empty = document.getElementById("empty");
@@ -173,10 +172,35 @@ function settled(row) {
   row.querySelector(".caret")?.remove();
 }
 
-// What the Harness is thinking, while the turn runs (ADR-0025). Not a row, so
-// it never joins the log. The Shell sends the line to draw, and an empty one
-// when the turn ends, so this never decides whether a Harness is still thinking.
-const strip = mountThoughtStrip(thought, window.localStorage);
+// The Harness's thinking, one row per turn in the log (ADR-0034). The Shell
+// sends the whole thought so far, so a row is redrawn rather than appended to.
+const thinkingRows = new Map();
+
+function drawThinking(view) {
+  let row = thinkingRows.get(view.id);
+  if (!row) {
+    row = el("row thinking");
+    const toggle = el("who thinking-toggle", "button");
+    toggle.type = "button";
+    const label = el("who-label");
+    label.textContent = "Thinking";
+    toggle.append(label, when(view.at));
+    toggle.addEventListener("click", () => thinking.toggle(view.id));
+    row.append(toggle, el("said"));
+    thinkingRows.set(view.id, row);
+    add(row);
+    // Under the question it belongs to, above the answer still on its way.
+    lowerCaret();
+  }
+  const body = row.querySelector(".said");
+  body.textContent = view.text;
+  body.hidden = view.state === "collapsed";
+  row.dataset.state = view.state;
+  row.querySelector(".thinking-toggle").setAttribute("aria-expanded", String(!body.hidden));
+  if (view.state === "streaming") log.scrollTop = log.scrollHeight;
+}
+
+const thinking = createThinking(drawThinking);
 
 // The agent's steps, replaced whole on every update because that is how ACP
 // sends them (#697). The current step is scrolled to, or a plan longer than
@@ -648,8 +672,7 @@ composer.addEventListener("submit", (event) => {
         return;
       }
       line.value = "";
-      // The last turn's mark has been read; this is the next question.
-      strip.asked();
+      thinking.landed();
       const turn = turns.typed();
       turn.you = said("You", text, "you");
       turn.them = opening_answer();
@@ -680,7 +703,8 @@ function newSession(why) {
   // log, and `attached()` reaches into it by id on every opening. Sweeping it
   // out with the rows leaves that lookup dereferencing null.
   log.replaceChildren(empty);
-  strip.asked();
+  thinking.clear();
+  thinkingRows.clear();
   // Not a child of the log, so replacing the rows above does not clear it.
   showPlan([]);
   turns.clear();
@@ -702,7 +726,10 @@ async function start() {
         said("You", payload.said ?? "", "you", payload.at);
         return;
       }
-      // A refusal is a note, not the strip: the strip is for thinking only (ADR-0025).
+      if (payload.thought) {
+        thinking.kept(payload.said ?? "", payload.at);
+        return;
+      }
       if (payload.busy) {
         const refused = turns.popNewest();
         if (refused) {
@@ -711,6 +738,8 @@ async function start() {
         note("Still answering the last one — ask again when it lands.");
         return;
       }
+      // Whatever the turn said, its thinking is over.
+      thinking.landed();
       if (payload.reacting_to) {
         // A line the user did not type, in the log as well as the bubble so the
         // conversation has one place to be read (ADR-0018). Labelled with what
@@ -756,7 +785,7 @@ async function start() {
   await listen(
     "chat-thought",
     ({ payload }) => {
-      strip.thinking(payload);
+      thinking.thought(payload);
     },
     { target: chat.label },
   );

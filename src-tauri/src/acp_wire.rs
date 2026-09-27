@@ -283,9 +283,8 @@ pub enum Event {
     /// One `elicitation/create` form. Separate from `Permission` because the
     /// answer is accept-content or decline, not a permission `optionId`.
     Elicitation(ElicitationForm),
-    /// The thinking so far, for the Chat surface. Transient (ADR-0025):
-    /// each one replaces the last, the strip scrolls inside a fixed box,
-    /// and nothing keeps them. No log line is made from one.
+    /// The whole thinking so far, for the Chat surface's Thinking row
+    /// (ADR-0034). Each one replaces the last; the Action Log gets none.
     Thought(String),
     /// A forwarded ask that can no longer be answered. Every open Chat
     /// surface was given the ask, so every one of them has to hear this.
@@ -1223,7 +1222,7 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
         }),
         // Never into `said`. That is the Director's reply, whose first line
         // has to parse as a Behavior name and whose rest the buddy says out
-        // loud. Reasoning is neither, so it leaves by its own door (ADR-0025).
+        // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
                 thought.push_str(&text.text);
@@ -1251,8 +1250,8 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
 }
 
 /// Close out what this side was holding for a turn that is over.
-/// Open questions get the protocol-mandated `cancelled` reply. Thought and
-/// plan go dark because the Chat surface keeps neither of its own (ADR-0025).
+/// Open questions get the protocol-mandated `cancelled` reply. The empty
+/// thought says the turn stopped thinking; the plan goes dark.
 fn end_turn(
     asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
     forms: &mut Vec<PendingElicit>,
@@ -1505,7 +1504,7 @@ mod tests {
 
     /// A thought reaches the Shell and never the answer. `said` is the
     /// Director's reply, whose first line has to parse as a Behavior name
-    /// and whose rest is spoken out loud. A thought is neither (ADR-0025).
+    /// and whose rest is spoken out loud. A thought is neither (ADR-0034).
     #[test]
     fn a_thought_is_an_event_and_never_part_of_the_answer() {
         let (said, events) = drive(vec![

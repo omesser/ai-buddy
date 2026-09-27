@@ -1482,9 +1482,9 @@ fn read_stream(
 ) -> Result<(Streamed, bool), String> {
     let mut thinking = String::new();
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
-    // The Chat surface keeps no thought of its own, so what this turn
-    // thought stays until the turn ends (ADR-0025). Same path as the
-    // draw, so all-whitespace thinking takes away nothing.
+    // The empty thought tells the Chat surface this turn stopped thinking
+    // (ADR-0034). Same path as the draw, so all-whitespace thinking, which
+    // opened no row, closes none.
     if crate::acp_wire::thought_to_show(&thinking).is_some() {
         thought("");
     }
@@ -1578,7 +1578,7 @@ struct Event {
     delta: Option<String>,
     /// Thinking it adds, if the server marked any as thinking. Never `delta`:
     /// that is the reply, whose first line has to parse as a Behavior name and
-    /// whose rest the buddy says out loud (ADR-0025).
+    /// whose rest the buddy says out loud (ADR-0034).
     thought: Option<String>,
     /// It says the server is done, so an end of body after it is a whole
     /// reply rather than a connection cut.
@@ -1676,9 +1676,8 @@ fn content_from_body(body: &str) -> Result<String, String> {
         }
     }
     // Anthropic `/v1/messages`. `thinking` blocks are marked reasoning, not
-    // the answer. They are not drawn: a whole body arrives after the turn is
-    // over, and the strip holds only the line a running turn is writing, which
-    // the end of that turn takes away (ADR-0025). Text blocks are the reply.
+    // the answer. Not yet drawn: a whole body arrives after the turn is over,
+    // and the Thinking row is fed by streamed deltas. Text blocks are the reply.
     if let Some(blocks) = value["content"].as_array() {
         let mut text = String::new();
         for block in blocks {
@@ -1761,15 +1760,13 @@ fn classify_truncation(content: &str, marked_thought: bool) -> Truncation {
 /// Unset in the probe and the tests, which have no Chat surface to draw on.
 ///
 /// ponytail: one door for every Instance, so two Instances thinking at once
-/// overwrite each other's line and the first to finish takes the strip away.
-/// The unattributed half is ADR-0025's own decision and holds on both lanes:
-/// the strip has no Instance to address. The overlap is this lane's alone —
-/// `Session::turn` holds a lock, so one Harness child serves one turn at a
-/// time (ADR-0008), while `Slots` gives every Instance its own thread and its
-/// own endpoint. A thought is worth reading only while it is being thought,
-/// which is why this is left. The upgrade, if two buddies on the wire at once
-/// ever becomes the common case, is to name the Instance on the event and let
-/// the surface pick.
+/// overwrite each other's row, and the log may keep one's thinking above the
+/// other's reply. The wire names no Instance on either lane (ADR-0034). The
+/// overlap is this lane's alone — `Session::turn` holds a lock, so one Harness
+/// child serves one turn at a time (ADR-0008), while `Slots` gives every
+/// Instance its own thread and its own endpoint. The upgrade, if two buddies on
+/// the wire at once ever becomes the common case, is to name the Instance on
+/// the event and let the surface and the log pick.
 static THOUGHT: std::sync::OnceLock<Box<dyn Fn(String) + Send + Sync>> = std::sync::OnceLock::new();
 
 /// Hand the Completer lane the door to every open Chat surface. The first
@@ -1779,8 +1776,8 @@ pub fn on_thought(door: Box<dyn Fn(String) + Send + Sync>) {
     let _ = THOUGHT.set(door);
 }
 
-/// Draw `line` as what the Completer is thinking right now, or take the strip
-/// away when it is empty. Nothing keeps it (ADR-0025).
+/// Draw `line` as what the Completer has thought so far, or end the turn's
+/// thinking when it is empty (ADR-0034).
 fn think(line: &str) {
     if let Some(door) = THOUGHT.get() {
         door(line.to_string());
@@ -2611,10 +2608,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Thinking reaches the strip and never the reply, so nothing the buddy
-    /// says out loud was thought at it (ADR-0025). The strip is handed the
-    /// whole thought, blank lines included, and the end of the turn takes
-    /// it away.
+    /// Thinking reaches the Chat surface and never the reply, so nothing the
+    /// buddy says out loud was thought at it (ADR-0034). It is handed the whole
+    /// thought, blank lines included, and an empty one when the turn ends.
     #[test]
     fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
         let sse = concat!(

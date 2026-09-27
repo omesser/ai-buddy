@@ -1636,7 +1636,9 @@ fn forward_form(app: &tauri::AppHandle, form: harness::ElicitationForm) {
 /// Show the latest thought in every open Chat surface, from whichever
 /// Completer is on the wire — Harness, or HTTP marked reasoning (#611).
 /// Every one: the session is shared and the wire does not say whose turn is on it.
+/// Held too, for the Instance whose turn is remembered next (ADR-0034).
 fn show_thought(app: &tauri::AppHandle, line: String) {
+    session_log::think(app, &line, SystemTime::now());
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
             let _ = app.emit_to(label, CHAT_THOUGHT_EVENT, &line);
@@ -2156,6 +2158,9 @@ struct ChatReply {
     /// the webview itself, so a true here on that path would duplicate it.
     #[serde(default)]
     you: bool,
+    /// A replayed Thinking row, with the thought in `said` (ADR-0034). Live
+    /// thinking arrives on `CHAT_THOUGHT_EVENT` instead.
+    thought: bool,
     /// Milliseconds since the epoch when the line was said. `None` on a live
     /// emit so the surface stamps wall-clock now; replay fills this from
     /// `Turn.at` so a line said before Chat opened keeps that moment.
@@ -2182,6 +2187,7 @@ fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
         busy: false,
         reacting_to: None,
         you: false,
+        thought: false,
         at: None,
         error: None,
         superseded_by: Some(happened_cell(by)),
@@ -2254,7 +2260,8 @@ fn chat_ready(
                     said: turn.said,
                     busy: false,
                     reacting_to: turn.reacting_to,
-                    you: turn.you,
+                    you: turn.who == session_log::Who::You,
+                    thought: turn.who == session_log::Who::Thinking,
                     error: None,
                     superseded_by: None,
                     at: Some(

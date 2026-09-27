@@ -464,8 +464,8 @@ pub enum Forwarded {
         request: String,
         option: Option<String>,
     },
-    /// The Harness's thinking so far, blank lines included. The strip
-    /// scrolls inside a fixed box; this is the whole thought. ADR-0025.
+    /// The Harness's thinking so far, blank lines included: the whole
+    /// thought, which the Chat surface's Thinking row redraws. ADR-0034.
     Thought(String),
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
@@ -1714,8 +1714,8 @@ fn note_event(dir: &Path, forward: &Forward, asked: &AtomicUsize, event: Event) 
             forward(Forwarded::Settled { request, option })
         }
         // Forwarded and not logged. The Action Log points at the Harness's own
-        // session dump rather than copying it (CONTEXT.md). A thought chunk is
-        // the part the Harness treats as disposable (ADR-0025).
+        // session dump rather than copying it (CONTEXT.md), and a reply is not
+        // copied there either (ADR-0034).
         Event::Thought(line) => forward(Forwarded::Thought(line)),
     }
 }
@@ -2785,7 +2785,7 @@ mod tests {
 
     /// A thought is forwarded to the Chat surface and written nowhere. The
     /// Action Log points at the Harness's own session dump rather than copying
-    /// it (CONTEXT.md). Streamed reasoning is the copy it refuses (ADR-0025).
+    /// it (CONTEXT.md). Replies are not in it either (ADR-0034).
     #[test]
     fn a_thought_reaches_the_surface_and_not_the_action_log() {
         let dir = std::env::temp_dir().join(format!("ai-buddy-thought-{}", uuid::Uuid::new_v4()));

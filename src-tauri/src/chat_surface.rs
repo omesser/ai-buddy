@@ -30,9 +30,8 @@ pub(crate) const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 /// every open Chat surface draws it, the first answer wins.
 pub(crate) const CHAT_ELICITATION_EVENT: &str = "chat-elicitation";
 
-/// The Harness's latest thought, for the strip above the composer. Each one
-/// replaces the last; an empty line is the turn saying it has stopped
-/// thinking, which takes the strip away.
+/// The Harness's whole thought so far, for the Thinking row in the log. Each
+/// one replaces the last; an empty one is the turn saying it has stopped.
 pub(crate) const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 
 /// The event carrying the agent's plan to every open Chat surface. Each one
