@@ -680,7 +680,7 @@ if (typeof document !== "undefined") {
     }
   }
 
-  if (typeof window.__TAURI__ !== "undefined") {
+  function initializeWithTauri() {
     const { listen } = window.__TAURI__.event;
     // The handle comes from getCurrentWebviewWindow, which is what this global
     // exports and what chat.js and main.js already call. Reaching for the
@@ -734,4 +734,48 @@ if (typeof document !== "undefined") {
 
     loadSnapshot();
   }
+
+  function showTauriError() {
+    if (panel) {
+      while (panel.firstChild) {
+        panel.removeChild(panel.firstChild);
+      }
+      panel.setAttribute("role", "alert");
+      panel.style.padding = "2rem";
+      panel.style.color = "var(--txt)";
+      const p = document.createElement("p");
+      p.textContent =
+        "Settings could not initialize: Tauri API is not available. " +
+        "This is a packaging or WebView2 issue. Please restart the application.";
+      panel.appendChild(p);
+    }
+  }
+
+  function waitForTauri() {
+    if (typeof window.__TAURI__ !== "undefined") {
+      initializeWithTauri();
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 50;
+    const pollInterval = 100;
+
+    const pollTimer = setInterval(() => {
+      attempts++;
+
+      if (typeof window.__TAURI__ !== "undefined") {
+        clearInterval(pollTimer);
+        initializeWithTauri();
+        return;
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(pollTimer);
+        showTauriError();
+      }
+    }, pollInterval);
+  }
+
+  waitForTauri();
 }
