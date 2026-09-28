@@ -435,9 +435,6 @@ Rejected:
   stream output.
 - **Provider abstraction layer** — MCP already is that layer.
 
-One first-party adapter ships so the out-of-box experience is not "install a
-harness first."
-
 ### 11. Permission surface: as small as possible
 
 Fidget owns consent for **sensing only** — window titles and application
