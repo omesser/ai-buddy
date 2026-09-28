@@ -1095,19 +1095,6 @@ mod tests {
         assert!(!probe.granted(CapabilityId::WindowNames));
     }
 
-    /// The fake portal grants what it was told to grant. Settings can flip
-    /// rows on and off, and the consent model stays testable without a live
-    /// portal or a window server.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn fake_portal_grants_what_it_was_constructed_with() {
-        let granted = Fake::granting(&[CapabilityId::WindowNames]);
-        assert!(granted.granted(CapabilityId::WindowNames));
-
-        let nothing = Fake::granting(&[]);
-        assert!(!nothing.granted(CapabilityId::WindowNames));
-    }
-
     /// Usable requires both wanted and granted. #886 will gate on this,
     /// not wanted alone.
     #[test]

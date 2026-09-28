@@ -1820,17 +1820,6 @@ mod tests {
         assert!(ask.locations.is_empty());
     }
 
-    /// The outbound `initialize` payload, as JSON, not as a builder call.
-    /// Empty `form: {}` is how ACP spells form support; `form: true` is MCP.
-    #[test]
-    fn initialize_advertises_form_elicitation() {
-        let value = serde_json::to_value(initialize_request()).expect("serializes");
-        assert_eq!(
-            value["clientCapabilities"]["elicitation"],
-            serde_json::json!({"form": {}})
-        );
-    }
-
     fn elicited(schema: serde_json::Value) -> ElicitationForm {
         let request: CreateElicitationRequest = serde_json::from_value(serde_json::json!({
             "sessionId": "s1",

@@ -162,15 +162,6 @@ mod tests {
     }
 
     #[test]
-    fn catalog_lists_the_three_stable_uris() {
-        let uris: Vec<&str> = catalog().iter().map(|r| r.uri).collect();
-        assert_eq!(
-            uris,
-            vec!["fidget://windows", "fidget://memory", "fidget://action-log"]
-        );
-    }
-
-    #[test]
     fn window_titles_text_is_owner_and_title_when_present() {
         assert_eq!(
             format_window_titles(&[

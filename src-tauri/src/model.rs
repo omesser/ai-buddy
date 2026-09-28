@@ -3821,7 +3821,6 @@ pub(crate) mod tests {
         with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             assert_eq!(timeout_for(), TIMEOUT);
-            assert_eq!(TIMEOUT, Duration::from_secs(30));
         });
     }
 

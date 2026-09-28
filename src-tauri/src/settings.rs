@@ -2547,27 +2547,6 @@ mod tests {
     }
 
     #[test]
-    fn a_partial_document_fills_missing_director_endpoint_from_defaults() {
-        let path = temp_path();
-        fs::write(&path, r#"{"director_enabled":false}"#).expect("write");
-        let settings = Settings::load(&path);
-        assert!(settings.director_base_url.is_empty());
-        assert!(settings.director_model.is_empty());
-        assert!(settings.pi_project_mcp);
-        let _ = fs::remove_file(&path);
-    }
-
-    #[test]
-    fn a_file_without_chat_appearance_loads_system_and_keeps_a_set_field() {
-        let path = temp_path();
-        fs::write(&path, r#"{"director_enabled":false}"#).expect("write");
-        let settings = Settings::load(&path);
-        assert_eq!(settings.chat_appearance, ChatAppearance::System);
-        assert!(!settings.director_enabled);
-        let _ = fs::remove_file(&path);
-    }
-
-    #[test]
     fn a_saved_light_appearance_loads_as_light() {
         let path = temp_path();
         let settings = Settings {
@@ -2792,6 +2771,10 @@ mod tests {
             settings.harness_cwd.is_empty(),
             "a file from before the row is empty, which is the data folder"
         );
+        assert!(settings.director_base_url.is_empty());
+        assert!(settings.director_model.is_empty());
+        assert!(settings.pi_project_mcp);
+        assert_eq!(settings.chat_appearance, ChatAppearance::System);
         let _ = fs::remove_file(&path);
     }
 
