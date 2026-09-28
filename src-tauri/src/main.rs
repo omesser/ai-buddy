@@ -656,6 +656,43 @@ struct AiDraftWire {
     clear_key: bool,
 }
 
+impl AiDraftWire {
+    /// Writes the values the page sent over the live ones.
+    fn overlay(self, draft: &mut settings::AiDraft) {
+        if let Some(value) = self.director {
+            draft.director = value;
+        }
+        if let Some(value) = self.proactive {
+            draft.proactive = value;
+        }
+        if let Some(value) = self.pi_project_mcp {
+            draft.pi_project_mcp = value;
+        }
+        if let Some(value) = self.director_wake_secs {
+            draft.wake_secs = value;
+        }
+        if let Some(value) = self.byo_harness {
+            draft.byo_harness = value;
+        }
+        if let Some(value) = self.director_base_url {
+            draft.base_url = value;
+        }
+        if let Some(value) = self.director_model {
+            draft.model = value;
+        }
+        if let Some(value) = self.director_api_key {
+            draft.key = value;
+        }
+        if let Some(value) = self.harness {
+            draft.harness = value;
+        }
+        if let Some(value) = self.harness_command {
+            draft.harness_command = value;
+        }
+        draft.clear_key = self.clear_key;
+    }
+}
+
 #[cfg(test)]
 mod settings_event_tests {
     use super::*;
@@ -989,6 +1026,70 @@ mod settings_event_tests {
         assert_eq!(json, r#"{"action":"run","operation":"new_session"}"#);
     }
 
+    /// What Apply writes for a payload the page sent, against the view its
+    /// fixtures were drawn from. That view has a key stored.
+    fn applied(payload: serde_json::Value) -> Vec<settings::SettingsPatch> {
+        let Ok(SettingsEventPayload::Press { press, draft, .. }) = serde_json::from_value(payload)
+        else {
+            panic!("the payload is a press");
+        };
+        let mut applied = Vec::new();
+        model::tests::with_env(None, None, None, || {
+            let view = settings::form::tests::fixture_view(false);
+            let description = settings::form::describe();
+            let mut staged = settings::AiDraft::live(&view, &description);
+            if let Some(wire) = draft {
+                wire.overlay(&mut staged);
+            }
+            let outcome = settings::controller::handle(
+                &settings::controller::Event::Press { id: press },
+                &staged,
+                &view,
+            );
+            let response = respond(
+                outcome,
+                |patch| {
+                    applied.push(patch);
+                    Ok(())
+                },
+                |_| panic!("Apply and Cancel run no operation"),
+            );
+            assert_eq!(response, Ok(SettingsEventResponse::Reset));
+        });
+        applied
+    }
+
+    /// tests/settings-batched-draft.test.js asserts the page's Apply button
+    /// sends exactly this after Clear key, so it is the real wire.
+    fn apply_after_clear_key() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/settings-apply-clear-key.json"
+        ))
+        .expect("the fixture has to be JSON")
+    }
+
+    #[test]
+    fn apply_after_clear_key_deletes_the_stored_key() {
+        let mut delete = settings::SettingsPatch::default();
+        delete.completer.director_api_key = Some(String::new());
+        assert_eq!(applied(apply_after_clear_key()), vec![delete]);
+    }
+
+    #[test]
+    fn a_key_typed_after_clear_key_replaces_the_stored_one() {
+        let mut payload = apply_after_clear_key();
+        payload["draft"]["director_api_key"] = "sk-new".into();
+        let mut replace = settings::SettingsPatch::default();
+        replace.completer.director_api_key = Some("sk-new".into());
+        assert_eq!(applied(payload), vec![replace]);
+    }
+
+    #[test]
+    fn cancel_after_clear_key_writes_nothing() {
+        let cancel = serde_json::json!({ "press": "director_cancel", "fields": {} });
+        assert_eq!(applied(cancel), Vec::new());
+    }
+
     /// The page redraws every tab switch from its cached snapshot, so a
     /// write it is not told about comes back undone: the consent checkbox in
     /// #995. `Apply` is the only outcome that writes and does not otherwise
@@ -1154,37 +1255,7 @@ fn settings_event_blocking(
             pressed = fields;
             let mut draft = settings::AiDraft::live(&view, &description);
             if let Some(wire) = wire {
-                if let Some(value) = wire.director {
-                    draft.director = value;
-                }
-                if let Some(value) = wire.proactive {
-                    draft.proactive = value;
-                }
-                if let Some(value) = wire.pi_project_mcp {
-                    draft.pi_project_mcp = value;
-                }
-                if let Some(value) = wire.director_wake_secs {
-                    draft.wake_secs = value;
-                }
-                if let Some(value) = wire.byo_harness {
-                    draft.byo_harness = value;
-                }
-                if let Some(value) = wire.director_base_url {
-                    draft.base_url = value;
-                }
-                if let Some(value) = wire.director_model {
-                    draft.model = value;
-                }
-                if let Some(value) = wire.director_api_key {
-                    draft.key = value;
-                }
-                if let Some(value) = wire.harness {
-                    draft.harness = value;
-                }
-                if let Some(value) = wire.harness_command {
-                    draft.harness_command = value;
-                }
-                draft.clear_key = wire.clear_key;
+                wire.overlay(&mut draft);
             }
             (controller::Event::Press { id: press }, draft)
         }

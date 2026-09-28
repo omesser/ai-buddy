@@ -16,7 +16,21 @@ function snapshot(name) {
 const MODEL_API = snapshot("modelApi");
 const AI = MODEL_API.form.tabs.find((tab) => tab.title === "AI");
 
-function stubDocument() {
+// Apply reads the drawn controls back through querySelector, so the stub
+// answers the two shapes the page asks: a row by data-row, with an optional
+// descendant tag, and a list of tags.
+function query(node, selector) {
+  const below = (n) => (n.children ?? []).flatMap((child) => [child, ...below(child)]);
+  const row = selector.match(/^\[data-row="([^"]+)"\](?: (\w+))?$/);
+  if (row) {
+    const found = below(node).find((n) => n.attributes?.["data-row"] === row[1]);
+    return row[2] ? (found && query(found, row[2])) ?? null : found ?? null;
+  }
+  const tags = selector.split(/,\s*/);
+  return below(node).find((n) => tags.includes(n.tagName)) ?? null;
+}
+
+function stubDocument(root) {
   globalThis.document = {
     getElementById: () => null,
     createElement(tag) {
@@ -44,7 +58,8 @@ function stubDocument() {
           node.handlers[name] = handler;
         },
         closest: () => null,
-        getRootNode: () => node,
+        getRootNode: () => root,
+        querySelector: (selector) => query(node, selector),
         focus() {},
       };
       return node;
@@ -62,13 +77,17 @@ function draw(values, emit, stage, tab = AI) {
     append(...nodes) {
       this.children.push(...nodes);
     },
+    querySelector(selector) {
+      return query(this, selector);
+    },
   };
-  stubDocument();
+  stubDocument(root);
   render(root, tab, values, emit, stage);
   const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
   const all = root.children.flatMap(walk);
   delete globalThis.document;
-  const find = (id) => all.find((node) => node.id === `set-f-${id}` || node.dataset.id === id);
+  const find = (id) =>
+    all.find((node) => node.id === `set-f-${id}` || node.dataset.id === id || node.attributes?.["data-id"] === id);
   find.row = (id) => all.find((node) => node.attributes?.["data-row"] === id);
   return find;
 }
@@ -259,11 +278,48 @@ test("a Base URL shortcut fill is drawn after the redraw, and Cancel drops it", 
   assert.equal(draw({ ...MODEL_API.values, ...cancelled })("director_base_url").value, "https://api.openai.com");
 });
 
-test("Clear key blanks only the key's draft entry", () => {
+test("Clear key blanks the key's draft entry and stages the delete", () => {
   const draft = { director_api_key: "sk-draft", director_model: "gpt-5" };
-  assert.deepEqual(foldDraft(draft, { clearKey: true }), { director_model: "gpt-5" });
+  assert.deepEqual(foldDraft(draft, { clearKey: true }), { director_model: "gpt-5", clear_key: true });
   assert.deepEqual(foldDraft(draft, true), draft, "a plain refresh keeps the draft");
   assert.deepEqual(foldDraft(draft, false), draft, "a no-op answer keeps the draft");
+});
+
+// What the page sends for Apply after Clear key. The Rust side parses the
+// same file, so the two cannot drift apart unseen.
+const APPLY_AFTER_CLEAR = JSON.parse(
+  readFileSync(new URL("./fixtures/settings-apply-clear-key.json", import.meta.url), "utf8"),
+);
+
+function pressApply(draft) {
+  const emitted = [];
+  draw({ ...MODEL_API.values, ...draft }, (payload) => emitted.push(payload))("director_apply").handlers.click();
+  return emitted[0];
+}
+
+test("Apply after Clear key tells Rust to delete the key", () => {
+  const draft = foldDraft({}, processResponse({ action: "clear_key" }));
+  assert.deepEqual(pressApply(draft), APPLY_AFTER_CLEAR);
+  assert.equal(pressApply(draft).draft.clear_key, true);
+});
+
+test("Cancel after Clear key drops the staged delete", () => {
+  const cleared = foldDraft({}, processResponse({ action: "clear_key" }));
+  const cancelled = foldDraft(cleared, { reset: true });
+  assert.equal(pressApply(cancelled).draft.clear_key, false);
+});
+
+test("a key typed after Clear key is sent to replace the stored one", () => {
+  let draft = foldDraft({}, processResponse({ action: "clear_key" }));
+  const key = draw({ ...MODEL_API.values, ...draft }, () => {}, (id, value) => (draft = { ...draft, [id]: value }))(
+    "director_api_key",
+  );
+  key.value = "sk-new";
+  key.handlers.input();
+
+  const sent = pressApply(draft).draft;
+  assert.equal(sent.director_api_key, "sk-new");
+  assert.equal(sent.clear_key, true, "Rust lets the typed key beat the staged clear");
 });
 
 test("a fresh snapshot prunes the draft entries it already holds", () => {

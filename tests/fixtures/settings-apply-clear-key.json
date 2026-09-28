@@ -1,0 +1,17 @@
+{
+  "press": "director_apply",
+  "fields": {},
+  "draft": {
+    "director": true,
+    "proactive": true,
+    "pi_project_mcp": true,
+    "director_wake_secs": "180",
+    "byo_harness": "claude",
+    "director_base_url": "https://api.openai.com",
+    "director_model": "gpt-4o-mini",
+    "director_api_key": "",
+    "harness": "Model API",
+    "harness_command": "",
+    "clear_key": true
+  }
+}
