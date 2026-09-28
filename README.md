@@ -14,9 +14,9 @@
 
 A little character that lives on your desktop. It walks the tops of your windows, naps, and lets you pick it up and throw it.
 
-Talk to it, toss it around, and enjoy the company while your code compiles or that spreadsheet drags on. Each character has its own personality, and with nothing set up it still has a life of its own.
+Talk to it, toss it around, and enjoy the company while your code compiles or that spreadsheet drags on. Each character has a personality and a life of its own. Put an AI agent behind it and it comes to life, and colors your desktop with its character.
 
-It is also a capable helper. Double-click it and you are talking to the AI agent of your choice: Claude Code, Codex, Cursor, or any [harness](#harness-support) that speaks ACP. Through that agent it can do almost anything on your machine, and it answers in speech and motion.
+It helps, too. Double-click to chat with your agent of choice: Claude Code, Codex, Cursor, or any [harness](#harness-support) that speaks ACP. It can do almost anything on your machine, and answers in speech and motion.
 
 <p align="center">
   <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
