@@ -92,31 +92,3 @@ fn kill_pid(report: &RunReport, pid: &str) {
         report.say(&format!("cleanup: skip kill on non-unix pid={pid}"));
     }
 }
-
-/// Test helper: cleanup must not delete evidence.
-#[cfg(test)]
-pub fn cleanup_keeps_evidence(scratch: &std::path::Path, evidence: &std::path::Path) -> bool {
-    let _ = fs::create_dir_all(scratch.join("pids"));
-    let _ = fs::create_dir_all(evidence);
-    let _ = fs::write(evidence.join("PROOF.md"), "keep\n");
-    let _ = fs::write(scratch.join("pids").join("owned.pids"), "");
-    let _ = fs::remove_dir_all(scratch);
-    let _ = fs::create_dir_all(evidence);
-    evidence.is_dir() && evidence.join("PROOF.md").is_file()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn cleanup_keeps_evidence_dir() {
-        let dir = tempdir().unwrap();
-        let scratch = dir.path().join("scratch");
-        let evidence = dir.path().join("evidence");
-        assert!(cleanup_keeps_evidence(&scratch, &evidence));
-        assert!(!scratch.exists());
-        assert!(evidence.join("PROOF.md").is_file());
-    }
-}

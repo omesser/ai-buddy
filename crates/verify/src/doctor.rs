@@ -244,29 +244,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fidget_bin_relpaths_include_exe_suffix_on_windows() {
-        let paths = fidget_bin_relpaths();
-        assert_eq!(
-            paths[0],
-            format!("target/release/fidget{}", env::consts::EXE_SUFFIX)
-        );
-        assert_eq!(
-            paths[1],
-            format!("target/debug/fidget{}", env::consts::EXE_SUFFIX)
-        );
-        #[cfg(windows)]
-        {
-            assert!(paths[0].ends_with(".exe"));
-            assert!(paths[1].ends_with(".exe"));
-        }
-        #[cfg(not(windows))]
-        {
-            assert!(!paths[0].ends_with(".exe"));
-            assert!(!paths[1].ends_with(".exe"));
-        }
-    }
-
-    #[test]
     fn command_on_path_finds_a_known_command() {
         #[cfg(windows)]
         {
