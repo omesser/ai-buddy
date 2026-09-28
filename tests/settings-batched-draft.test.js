@@ -326,3 +326,34 @@ test("a fresh snapshot prunes the draft entries it already holds", () => {
   const draft = { director_model: "gpt-4o-mini", harness: "Claude Code" };
   assert.deepEqual(pruneDraft(draft, MODEL_API.values), { harness: "Claude Code" });
 });
+
+test("Apply sends every row the form marks batched, and only those", () => {
+  const development = MODEL_API.form.tabs.find((tab) => tab.title === "Development");
+  const timeout = development.sections.flatMap((s) => s.rows).find((row) => row.id === "director_timeout_secs");
+  const withTimeout = (batched) => ({
+    ...AI,
+    sections: [...AI.sections, { heading: "Limits", rows: [{ ...timeout, batched }] }],
+  });
+  const apply = (tab) => {
+    const emitted = [];
+    draw({ ...MODEL_API.values, director_timeout_secs: "90" }, (payload) => emitted.push(payload), () => {}, tab)(
+      "director_apply",
+    ).handlers.click();
+    return emitted[0].draft;
+  };
+  const drawn = {
+    director: true,
+    proactive: true,
+    director_wake_secs: "180",
+    harness: "Model API",
+    pi_project_mcp: true,
+    harness_command: "",
+    byo_harness: "claude",
+    director_base_url: "https://api.openai.com",
+    director_model: "gpt-4o-mini",
+    director_api_key: "",
+    clear_key: false,
+  };
+  assert.deepEqual(apply(withTimeout(false)), drawn, "an unbatched row saves on blur instead");
+  assert.deepEqual(apply(withTimeout(true)), { ...drawn, director_timeout_secs: "90" });
+});
