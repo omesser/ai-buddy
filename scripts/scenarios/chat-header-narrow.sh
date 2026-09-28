@@ -93,8 +93,8 @@ check() { # <width>
     [ $((x + ww)) -le $((wr + 1)) ] || fail "$w: '$label' ends at $((x + ww)), past the window edge at $wr"
     if [ "$top" -lt 0 ]; then
       top=$y bottom=$((y + h))
-    else
-      [ "$y" -lt "$bottom" ] && [ $((y + h)) -gt "$top" ] || fail "$w: '$label' at y $y..$((y + h)) left the name's row $top..$bottom"
+    elif [ "$y" -ge "$bottom" ] || [ $((y + h)) -le "$top" ]; then
+      fail "$w: '$label' at y $y..$((y + h)) left the name's row $top..$bottom"
     fi
   done <<< "$rows"
 
