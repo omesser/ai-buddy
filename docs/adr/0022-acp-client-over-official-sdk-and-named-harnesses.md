@@ -59,8 +59,8 @@ way the call reaches the live Instances.
 A protocol-compatible harness not yet named is reachable through the custom
 command and earns a named row once a turn has been smoked against it.
 Protocol compatibility alone does not earn the row: Copilot CLI had it from
-the start and was named only once smoked (#1016). Google has none:
-Antigravity (`agy`) speaks its own protocol rather than ACP, so it needs an
-adapter before any row (#604).
+the start and was named only once smoked (#1016). Antigravity's row names
+Google's own ACP server, `agy_acp_server`, because `agy` has no ACP mode
+(#604).
 Their always-approve or auto-approve flags are never passed by default — the
 Chat surface owns permissions.

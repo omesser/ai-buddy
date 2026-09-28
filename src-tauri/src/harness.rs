@@ -96,8 +96,7 @@ pub struct Launch {
 }
 
 /// The launch table. `None` is the HTTP Completer path. Unknown values are a
-/// command line of the user's own. Antigravity (`agy`) does not speak ACP, so
-/// Google has no row. Keep the README Harness Support table in step.
+/// command line of the user's own. Keep the README Harness Support table in step.
 pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
     let (name, argv): (&str, Vec<&str>) = match value {
@@ -131,6 +130,10 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
         "pi" => (value, vec!["npx", "-y", "pi-acp@latest"]),
+        // Google's own server, not `agy`, which has no ACP mode. The argv is
+        // the ACP registry's per platform, and `localharness_external` from
+        // the same archive has to sit beside it.
+        "antigravity" => (value, antigravity_argv()),
         custom => {
             let argv: Vec<&str> = custom.split_whitespace().collect();
             (argv[0], argv)
@@ -140,6 +143,16 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
         name: name.to_string(),
         argv: argv.into_iter().map(str::to_string).collect(),
     })
+}
+
+fn antigravity_argv() -> Vec<&'static str> {
+    if cfg!(windows) {
+        vec!["agy_acp_server.exe"]
+    } else if cfg!(target_os = "linux") {
+        vec!["agy_acp_server.par", "--uid="]
+    } else {
+        vec!["agy_acp_server.par"]
+    }
 }
 
 /// `cursor-agent` loads MCP servers from its own project config and not from
@@ -2007,6 +2020,12 @@ pub(crate) fn install_page(command: &str) -> Option<(&'static str, &'static str)
         "cursor-agent" => ("Cursor", "https://www.cursor.com/"),
         "grok" => ("Grok", "https://x.ai/"),
         "opencode" => ("OpenCode", "https://opencode.ai/"),
+        // Google publishes the archive through the ACP registry only. This
+        // page is where it names the registry and the sign-in.
+        "agy_acp_server.par" | "agy_acp_server.exe" => (
+            "the Antigravity ACP server",
+            "https://antigravity.google/docs/ide/extensions",
+        ),
         _ => return None,
     })
 }
@@ -2054,6 +2073,9 @@ fn named_login(name: &str) -> Option<&'static str> {
         "hermes" => "hermes login",
         "opencode" => "opencode login",
         "pi" => "npx -y pi-acp@latest --terminal-login",
+        // The server has no login command. Its Google methods open the
+        // browser themselves on `authenticate`, so Chat's buttons are the way in.
+        "antigravity" => "Log in with Google from Chat",
         _ => return None,
     })
 }
@@ -3189,6 +3211,14 @@ mod tests {
             launch(Some("pi")).unwrap().argv,
             ["npx", "-y", "pi-acp@latest"]
         );
+        let antigravity = launch(Some("antigravity")).unwrap();
+        assert_eq!(antigravity.name, "antigravity");
+        #[cfg(target_os = "macos")]
+        assert_eq!(antigravity.argv, ["agy_acp_server.par"]);
+        #[cfg(target_os = "linux")]
+        assert_eq!(antigravity.argv, ["agy_acp_server.par", "--uid="]);
+        #[cfg(windows)]
+        assert_eq!(antigravity.argv, ["agy_acp_server.exe"]);
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
         assert_eq!(custom.name, "my-agent");
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
@@ -3575,6 +3605,7 @@ mod tests {
             "hermes",
             "opencode",
             "pi",
+            "antigravity",
         ] {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(&tmp_attach());
@@ -5616,6 +5647,8 @@ mod tests {
             ("cursor-agent", "cursor.com"),
             ("grok", "x.ai"),
             ("opencode", "opencode.ai"),
+            ("agy_acp_server.par", "antigravity.google/docs/ide/extensions"),
+            ("agy_acp_server.exe", "antigravity.google/docs/ide/extensions"),
         ];
         for (command, url_part) in cases {
             let message = not_installed(command);
@@ -6179,6 +6212,30 @@ mod tests {
             ),
             "codex login"
         );
+
+        // What agy_acp_server 1.2.1 advertised. The two Google logins open the
+        // browser from `authenticate`; the key and cloud methods need what
+        // this app never sends.
+        let antigravity = [
+            ("oauth-personal", "Log in with Google"),
+            ("oauth-business", "Log in with Gemini Enterprise"),
+            ("gemini-api-key", "Gemini API key"),
+            ("agent-platform", "Gemini Enterprise Agent Platform"),
+        ]
+        .map(|(id, name)| {
+            crate::acp_wire::auth_offer(&AuthMethod::Agent(AuthMethodAgent::new(id, name)))
+        });
+        let actions = crate::acp_wire::sign_in_button(true, &antigravity);
+        assert_eq!(
+            actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("oauth-personal", "Log in with Google"),
+                ("oauth-business", "Log in with Gemini Enterprise"),
+            ]
+        );
     }
 
     #[test]
@@ -6220,6 +6277,7 @@ mod tests {
             "hermes",
             "opencode",
             "pi",
+            "antigravity",
         ] {
             assert!(launch(Some(name)).is_some(), "{name} is not a named row");
             let hint = login_hint(name);

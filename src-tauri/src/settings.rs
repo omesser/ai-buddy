@@ -5293,17 +5293,17 @@ mod tests {
                         "hermes snippet should not embed the token, got {snippet:?}"
                     );
                 }
-                "goose" => {
+                "goose" | "antigravity" => {
                     // No vendor registration command is verified. The catch-all
                     // still hands the URL and the raw token, and the steps name
                     // the Bearer header.
                     assert!(
                         snippet.contains("http://127.0.0.1:5051/mcp") && snippet.contains("beef"),
-                        "goose falls through to the URL and token pair, got {snippet:?}"
+                        "{harness} falls through to the URL and token pair, got {snippet:?}"
                     );
                     assert!(
                         steps.contains("Bearer"),
-                        "goose steps still name the Bearer header, got {steps:?}"
+                        "{harness} steps still name the Bearer header, got {steps:?}"
                     );
                 }
                 _ => {
