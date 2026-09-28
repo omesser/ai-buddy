@@ -169,7 +169,7 @@ impl Slots {
         Self::default()
     }
 
-    /// Send this Character Prompt for `id`. Newest-wins, except where ADR-0033
+    /// Send this Character Prompt for `id`. Newest-wins, except where ADR-0016
     /// keeps the wake on the wire: mid-answer, an ambient tick, or a Summon
     /// over a reply still generating. The return says whether this one started.
     pub fn wake<C: Completer + Send + Sync + 'static>(
@@ -607,7 +607,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// The other direction, which ADR-0033 turns around. A reactive call is an
+    /// The other direction, which ADR-0016 turns around. A reactive call is an
     /// answer the user is waiting for and an ambient tick is the fidget musing.
     /// The muse is dropped rather than costing the user their answer.
     #[test]

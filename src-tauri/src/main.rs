@@ -359,7 +359,7 @@ struct SpritePlacement<'a> {
     /// Engine stays tick-pure. False on every overlay but the bubble owner's.
     thinking: bool,
     /// On this tick only: a touch was dropped because a question waits on the
-    /// user (ADR-0033), so the bubble points at Chat. False off the bubble owner.
+    /// user (ADR-0016), so the bubble points at Chat. False off the bubble owner.
     asking: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were

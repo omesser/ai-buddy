@@ -4534,7 +4534,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// #1038, ADR-0033. The character has a question out to the user, and every
+    /// #1038, ADR-0016. The character has a question out to the user, and every
     /// wake is dropped until the user answers it. Newest-wins is about the world
     /// moving past a moment; the user mid-answer is not that.
     #[test]

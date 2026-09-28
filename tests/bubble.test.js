@@ -461,7 +461,7 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
   );
 });
 
-// A Poke dropped because the user owes an answer (ADR-0033) points at Chat.
+// A Poke dropped because the user owes an answer (ADR-0016) points at Chat.
 // It carries a control, so it stays up for the longest reading window.
 test("an asking pulse points at Chat for the longest reading window", () => {
   const { machine, calls, advance, placement, surface } = machineHarness();
