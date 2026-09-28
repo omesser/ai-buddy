@@ -1,13 +1,7 @@
 #!/usr/bin/env node
-// Drives the real Chat surface (src/chat.html + chat.js) in headless Chromium
-// with `window.__TAURI__` stubbed, replays one typed turn that raises a
-// permission ask and then answers, and prints the log rows in DOM order.
-// Exit 1 when the answer row sits above the ask it followed, when the command
-// is not a <code> with the kind and paths beside it, or when that <code>
-// paints unlike reply code.
-//   node scripts/chat-ask-order.mjs
-// Env:
-//   FIDGET_CHROME  the headless Chromium binary (default: Playwright's shell)
+// Replays a permission-ask turn on the real Chat surface in headless Chromium
+// (`window.__TAURI__` stubbed). Exit 1: answer above its ask, or the command's
+// <code> lacks kind/paths or paints unlike reply code. FIDGET_CHROME picks Chromium.
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";

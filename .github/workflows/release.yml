@@ -38,10 +38,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Every run leaves its bundles on the run page; a Release run also attaches
-  # them to the human-published Release, and never creates a Release or tag.
-  # The platform choice lives in a job because a job-level `if:` cannot name
-  # the matrix.
+  # A Release run attaches bundles to the human-published Release and never
+  # creates one. Platforms are picked in a job because a job-level `if:`
+  # cannot name the matrix.
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5

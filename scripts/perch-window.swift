@@ -10,9 +10,8 @@
 // 24), the only way to check from a script that neither is a Perch. It quits on
 // its own, so an interrupted run leaves no stray window.
 
-// --glide never steps: the window slides side to side every frame for as long
-// as it lives, which keeps the Engine riding and the window poll at its ride
-// cadence, so a bench can sample that cadence for longer than one step.
+// --glide slides the window every frame, keeping the Engine riding and the poll
+// at ride cadence for longer than one step.
 // Usage: swift scripts/perch-window.swift [--fast|--glide] x y width height [level]
 
 import AppKit

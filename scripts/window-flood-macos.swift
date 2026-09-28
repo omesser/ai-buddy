@@ -1,11 +1,5 @@
-// LOAD GENERATOR. Floods the main display with `count` real, titled windows,
-// cascaded over whatever is on screen, so a bench can measure what a large
-// window list costs. It covers the screen for as long as it runs.
-//
-// Refuses to start unless FIDGET_BENCH_GREEN_LIGHT=1: the person at the machine
-// has to agree to lose the screen first. Capped at 300 windows so a typo cannot
-// bury the display, and quits after quit-after-secs so an interrupted run
-// leaves none behind. Prints one JSON line of opened, listed and on-screen counts.
+// LOAD GENERATOR: covers the main display with `count` titled windows. Needs
+// FIDGET_BENCH_GREEN_LIGHT=1; capped at 300 and quits after quit-after-secs.
 // Usage: FIDGET_BENCH_GREEN_LIGHT=1 swift scripts/window-flood-macos.swift count [quit-after-secs]
 
 import AppKit

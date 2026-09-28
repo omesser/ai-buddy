@@ -2,10 +2,9 @@
 // crates/core/src/visibility.rs fades the Character. The rule reads rectangles,
 // not pixels, so the window is nearly transparent and lets every click through.
 
-// It re-asserts its place at the front while it lives: an accessory window is
-// buried by anything that takes focus, and the rule takes the first window
-// overlapping a display. Prints one JSON line with the bounds it settled on.
-// Usage: swift scripts/fullscreen-window.swift [quit-after-secs]
+// It re-asserts its place at the front: an accessory window is buried by any
+// focus change, and the rule takes the first window overlapping a display.
+// Prints its bounds as JSON. Usage: swift scripts/fullscreen-window.swift [quit-after-secs]
 
 import AppKit
 

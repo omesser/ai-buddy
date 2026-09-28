@@ -413,10 +413,9 @@ function Get-OverlayWidth([string]$log) {
     return [double]$Matches[1]
 }
 
-# frame: lives in the overlay's point space. That matches SetCursorPos on this
-# panel when the overlay width equals the primary's physical width. DPI/96 on
-# a process that called SetProcessDPIAware is a different number, and multiplying
-# by it walks the point off the virtual screen.
+# frame: is in overlay points, which match SetCursorPos when the overlay is the
+# primary's physical width. Scaling by DPI/96 under SetProcessDPIAware walks the
+# point off the virtual screen.
 function Convert-FrameCursor([int]$x, [int]$y, [double]$overlayWidth, [double]$physicalWidth) {
     $scale = 1.0
     if ($overlayWidth -gt 0 -and $physicalWidth -gt 0) {

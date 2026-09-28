@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Hit the Director Completer with the same env and the same HTTP client the
-# overlay uses. Never prints the key, only its length and last four.
-# Usage: scripts/probe-model.sh
-#   Reads FIDGET_DIRECTOR_* from the environment. A local base URL makes the
-#   key optional, so this is also the fastest check that a local server is up
-#   and serving the model you configured.
+# Hit the Director Completer with the overlay's env and HTTP client; prints only
+# the key's length and last four. Usage: scripts/probe-model.sh, reading
+# FIDGET_DIRECTOR_*. With a local base URL the key is optional.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

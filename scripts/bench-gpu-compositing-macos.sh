@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
-# GPU compositing cost of the transparent overlay on macOS (#429). The twin of
-# bench-gpu-compositing-linux.sh: same subcommands, one TSV row per scenario.
-# GPU% and VRAM are ioreg's IOAccelerator PerformanceStatistics (no sudo).
-# Watts and HW active residency are `sudo powermetrics --samplers gpu_power`,
-# reduced by scripts/parse-powermetrics.py. Frame rate stays N/A: the
-# compositor's presented rate needs Instruments (Metal System Trace), and
-# `frame:` lines are engine ticks, so they are reported as ticks_hz instead.
-#
-# Every scenario but env and baseline launches fidget on the live desktop,
-# warps the cursor, or covers the main display, so it refuses to run unless
-# FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to lose the screen.
+# GPU compositing cost of the overlay on macOS (#429); same subcommands as the
+# Linux twin. Frame rate is N/A (needs Instruments); `frame:` ticks are ticks_hz.
+# All but env and baseline take the screen and need FIDGET_BENCH_GREEN_LIGHT=1.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -1,9 +1,7 @@
 name: Matt Pocock Skills Sync
 
 # Re-vendors `.agents/mattpocock/` from `mattpocock/skills@main:skills/engineering`
-# weekly.
-#
-# It never merges: third-party agent instructions land only through review.
+# weekly. It never merges: third-party agent instructions land only through review.
 
 on:
   schedule:

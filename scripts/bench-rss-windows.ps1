@@ -1,13 +1,6 @@
-# Sample the resident set of a running fidget, Windows only. WebView2 is
-# Chromium, so it spawns GPU, Network and Renderer processes; every
-# msedgewebview2.exe that appears after launch is attributed to the app.
+# Sample a running fidget's resident set, Windows only. WebView2 is multi-process,
+# so every msedgewebview2.exe that appears after launch counts as the app's.
 # Usage: scripts\bench-rss-windows.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]
-#   Launches target\debug\fidget.exe, waits Settle seconds, samples every
-#   Interval for Seconds, writes one TSV row per sample, prints min/median/max
-#   and each process's peak working set, then stops the app.
-#   Default is a brief smoke (settle ~3s, sample ~10s); -Research soaks 300s + 300s.
-#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
-#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
 
 # WorkingSet alone does not compare two runs on a busy machine; PeakWorkingSet
 # only ever rises. Compare scenarios on it and read the WorkingSet series for

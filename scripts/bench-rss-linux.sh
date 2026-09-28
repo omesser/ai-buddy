@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running fidget, Linux only. WebKitGTK helpers,
-# if any, are children of the main process, so the process tree at launch is
-# the app.
-# Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/fidget, waits `settle` seconds, samples every
-#   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
-#   and each process's peak RSS (VmHWM), then stops the app.
-#   Default is a brief smoke (settle ~3s, sample ~10s); --research soaks 300s + 300s.
-#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
-#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
+# Sample a running fidget's resident set, Linux only; WebKitGTK helpers are its
+# children. Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N]
+# [--interval N] [--out FILE] [--research]. Env reaches the app; set HOME to scratch.
 
 # RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
 # Compare scenarios on VmHWM and read the RSS series for shape, and record the

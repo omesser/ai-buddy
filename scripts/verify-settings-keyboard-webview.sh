@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
-# Keyboard-only sitting for the Settings webview (#848, #854, #706 artefact 2).
+# Keyboard-only Settings sitting: after the tray open, Tab/Space/Enter/Escape only.
 # Usage: [FIDGET_VERIFY_BIN=path/to/fidget] ./scripts/verify-settings-keyboard-webview.sh
-#
-# After the tray open, every control is reached with Tab / Space / Enter /
-# Escape, not AXPress. Needs Accessibility (scripts/ax-settings.swift). CI does
-# not run this; scripts/test_verify_settings_keyboard.sh covers the pure checks.
-#
-# Stills land under .verify/; do not commit PNGs.
-# Shares /tmp/fidget-settings-overlay.lock with the clipboard sitting.
+# Needs Accessibility. Stills land in .verify/. Shares the clipboard sitting's lock.
 
 set -uo pipefail
 

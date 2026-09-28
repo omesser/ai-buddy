@@ -252,12 +252,9 @@ func dumpOne(_ element: AXUIElement) -> String {
     return "\(role)\(subrole.isEmpty ? "" : ":" + subrole)|\(flat(title))|\(flat(value))|\(enabled)"
 }
 
-/// A WKWebView publishes its tree only on request. The first pass into the
-/// window gets the content view as a childless AXGroup with no AXScrollArea
-/// or AXWebArea under it, and the real subtree lands 107 ms after that ask.
-/// Sleeping instead of asking never gets it, because the ask is what primes
-/// it. The native Settings window has no childless AXGroup among its own
-/// direct children, so that shape is an unprimed webview and nothing else. #706.
+/// An unprimed WKWebView shows as a childless AXGroup. Asking for the tree is
+/// what primes it (the subtree lands ~107 ms later), so sleeping never works.
+/// The native Settings window has no such child, so the shape is unambiguous.
 func webContentSettled(_ window: AXUIElement) -> Bool {
     if let area = find(window, where: { string($0, kAXRoleAttribute) == "AXWebArea" }) {
         return !children(area).isEmpty
@@ -544,10 +541,8 @@ case "dump":
         let settable =
             AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settableFlag)
             == .success ? String(settableFlag.boolValue) : ""
-        // Role does not say what Tab can reach: WebKit reports a
-        // <pre tabindex="0"> as a plain AXGroup, the same role it gives the
-        // layout wrappers around it. Whether AXFocused can be written is the
-        // only signal that separates them.
+        // WebKit reports a <pre tabindex="0"> as a plain AXGroup, like its layout
+        // wrappers; only a settable AXFocused says Tab can reach it.
         var focusableFlag: DarwinBoolean = false
         let focusable =
             AXUIElementIsAttributeSettable(element, kAXFocusedAttribute as CFString, &focusableFlag)

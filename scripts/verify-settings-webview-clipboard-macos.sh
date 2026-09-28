@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Click Copy on the Settings webview BYO row and read the pasteboard (#855).
 # Usage: [FIDGET_VERIFY_BIN=path/to/fidget] ./scripts/verify-settings-webview-clipboard-macos.sh
-#
-# Needs Accessibility (scripts/ax-settings.swift).
-# Stills land under .verify/; downscale before attaching. Do not commit PNGs.
-# Shares /tmp/fidget-settings-overlay.lock with the other Settings sittings.
+# Needs Accessibility. Stills land in .verify/. Holds /tmp/fidget-settings-overlay.lock.
 
 set -uo pipefail
 

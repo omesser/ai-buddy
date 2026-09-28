@@ -1,13 +1,7 @@
 #!/usr/bin/env pwsh
-# Optional Windows console smoke for Chrome_WidgetWin_0 error 1411.
-# Not acceptance. The quit plan, Ctrl+C inheritance probe, and harness
-# shutdown tests are what CI runs. Do not treat this script as the gate.
-#
-# When a Windows console session is authorized:
-#   $env:FIDGET_VERIFY_BIN = "target\debug\fidget.exe"
-#   .\scripts\windows-ctrl-c-smoke.ps1
-# Then press Ctrl+C in that console. The process should leave without
-# "Failed to unregister class Chrome_WidgetWin_0" or "Error = 1411".
+# Optional console smoke for Chrome_WidgetWin_0 error 1411; not the CI gate.
+# Set $env:FIDGET_VERIFY_BIN, run it, press Ctrl+C, and expect no "Failed to
+# unregister class Chrome_WidgetWin_0" or "Error = 1411".
 
 $ErrorActionPreference = "Stop"
 

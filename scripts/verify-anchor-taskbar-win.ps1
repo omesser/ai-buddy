@@ -1,14 +1,7 @@
 #!/usr/bin/env pwsh
-# Windows anchor taskbar smoke test (#767)
-#
-# Verifies the Settings window does NOT auto-open on startup (Q1), and DOES
-# open when the anchor HWND receives a WM_ACTIVATE with WA_CLICKACTIVE (Q2).
-#
-# Usage:
-#   .\scripts\verify-anchor-taskbar-win.ps1
-#   $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\verify-anchor-taskbar-win.ps1
-#
-# Expects a built debug binary (does not cargo build). Logs under .verify/anchor-taskbar-win-<stamp>/.
+# Windows anchor taskbar smoke: Settings stays closed at startup (Q1) and opens
+# on a WA_CLICKACTIVE to the anchor (Q2). Needs a built binary; override with
+# $env:FIDGET_VERIFY_BIN. Logs under .verify/anchor-taskbar-win-<stamp>/.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

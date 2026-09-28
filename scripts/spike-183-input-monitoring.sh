@@ -1,19 +1,7 @@
 #!/usr/bin/env bash
 # #183 Stage 1: does a mouse-only listen-only CGEventTap prompt for Input
-# Monitoring on a clean TCC record? Builds spike-183-tap.swift into a
-# throwaway .app under its own bundle id, signs it like the real app, resets
-# only that id's ListenEvent record, launches it through LaunchServices so
-# TCC attributes the tap to the bundle, and reads tccd's own decision from
-# the unified log. Runs the full mask, then the mask without mouseMoved.
-#
-# Usage: scripts/spike-183-input-monitoring.sh <bundle id> [out dir]
-#   The bundle id must contain "tccspike". A bare `tccutil reset ListenEvent`
-#   wipes every app's grant, and dev.omesser.fidget is the shipped app, so
-#   anything else is refused.
-#
-# Needs: swiftc, passwordless sudo for `log stream` (tccd's lines are private
-# to root), and an Accessibility grant on the terminal for the alert dump.
-# If a prompt appears the script presses Deny and says so.
+# Monitoring? Usage: scripts/spike-183-input-monitoring.sh <bundle id> [out dir].
+# Needs swiftc, passwordless sudo, and Accessibility for the terminal.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,6 +12,8 @@ BUNDLE="${1:-}"
 OUT="${2:-$HOME/Library/Caches/fidget-spike-183}"
 APP="$OUT/Spike183.app"
 
+# A bare `tccutil reset ListenEvent` wipes every app's grant and
+# dev.omesser.fidget is the shipped app, so only a throwaway id is accepted.
 case "$BUNDLE" in
   *tccspike*) ;;
   *)

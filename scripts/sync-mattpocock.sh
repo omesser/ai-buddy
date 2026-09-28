@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034  # scripts/lib/sync-exclusions.sh reads EXCLUDED; shellcheck can't follow a dynamic source path without -x
-# Keep the vendored Matt Pocock engineering skills in `.agents/skills/` current.
-#
-#   scripts/sync-mattpocock.sh            regenerate the index
-#   scripts/sync-mattpocock.sh --fetch    re-vendor from upstream first
-#
-# `.agents/skills/` is shared with pstack and this repository's own skills.
-# `UPSTREAM.json` records which names are this sync's and gates deletion.
-# `scripts/sync-pstack.sh` owns the `.claude` and `.cursor` symlinks.
+# Keep the vendored Matt Pocock skills in `.agents/skills/` current; `--fetch`
+# re-vendors from upstream first. `UPSTREAM.json` records this sync's names and
+# gates deletion. `scripts/sync-pstack.sh` owns the `.claude`/`.cursor` symlinks.
 
 set -euo pipefail
 

@@ -21,9 +21,9 @@ KEEP=0
 BIN_PATH="$(pwd)/target/debug/fidget"
 stray_pid() { pgrep -f "$BIN_PATH" 2> /dev/null | head -1; }
 
-# An orphaned overlay is always-on-top with no window controls, so an
-# interrupted run must not leave one. --keep spares the app, never the prop
-# window. The app is killed by its pid, never by a path pattern.
+# An orphaned always-on-top overlay has no controls; --keep spares only the
+# app, killed by its pid. Props go by pattern: the trap is set before any of
+# them starts.
 trap 'pkill -f perch-window.swift 2> /dev/null;
       [ "$KEEP" = "1" ] || [ -z "${APP_PID:-}" ] || kill "$APP_PID" 2> /dev/null' EXIT INT TERM
 

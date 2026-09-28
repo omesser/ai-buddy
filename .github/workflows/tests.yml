@@ -39,6 +39,7 @@ jobs:
         id: changed
         # `files_ignore` lists what is not code, so an unanticipated file type,
         # this workflow included, counts as code and cannot switch itself off.
+        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
         uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         continue-on-error: true
         with:

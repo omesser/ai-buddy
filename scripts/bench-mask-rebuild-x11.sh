@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Benchmark X11 mask rebuild cost for click-through regions (issue #428).
-# Measures XShapeCombineMask calls under different scenarios using shipped characters.
-#
-# Usage: scripts/bench-mask-rebuild-x11.sh [SCENARIO] [DURATION]; --help lists scenarios.
+# X11 mask rebuild cost for click-through regions (#428), in XShapeCombineMask
+# calls per scenario. Usage: scripts/bench-mask-rebuild-x11.sh [SCENARIO]
+# [DURATION]; --help lists scenarios.
 
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1

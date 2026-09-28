@@ -1,7 +1,6 @@
 name: pstack Sync
 
 # Re-vendors `.agents/pstack/` from `cursor/plugins@main:pstack` weekly.
-#
 # It never merges: third-party agent instructions land only through review.
 
 on:
