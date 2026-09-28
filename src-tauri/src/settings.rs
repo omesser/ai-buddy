@@ -35,7 +35,7 @@ use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
 /// One running character, as settings lists it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceRow {
     pub id: String,
     pub name: String,
@@ -198,7 +198,7 @@ pub struct SettingsView {
 ///
 /// Untagged, so a checkbox reads a bare `true` and a text row a bare string,
 /// which is what `src/settings.js` indexes out of `values`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RowValue {
     Bool(bool),
@@ -1166,202 +1166,79 @@ fn harness_source_changed(settings: &Settings, patch: &SettingsPatch) -> bool {
     next.harness_source() != settings.harness_source()
 }
 
-/// Which AI fields hold an edit. Per field so Apply writes only edited values
-/// and does not overwrite a later live change to an untouched row.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Staged {
-    pub director: bool,
-    pub proactive: bool,
-    pub pi_project_mcp: bool,
-    pub wake_secs: bool,
-    pub byo_harness: bool,
-    pub base_url: bool,
-    pub model: bool,
-    pub key: bool,
-    pub harness: bool,
-    pub harness_command: bool,
-}
-
-impl Staged {
-    pub fn any(&self) -> bool {
-        self.director
-            || self.proactive
-            || self.pi_project_mcp
-            || self.wake_secs
-            || self.byo_harness
-            || self.base_url
-            || self.model
-            || self.key
-            || self.harness
-            || self.harness_command
-    }
-}
-
-/// AI tab values read from its controls. `patch` checks frozen rows against
-/// the description so an exported variable keeps ownership.
-pub struct AiDraft<'a> {
-    pub director: bool,
-    pub proactive: bool,
-    pub pi_project_mcp: bool,
-    pub wake_secs: String,
-    pub byo_harness: String,
-    pub base_url: String,
-    pub model: String,
-    pub key: String,
+/// The AI tab's batched rows as the page drew them at Apply, by row id and in
+/// the shapes `row_values` hands the page. A row it did not send reads as live.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct DraftRows {
+    #[serde(flatten)]
+    pub values: BTreeMap<String, RowValue>,
+    /// Clear key draws a blank field, and a blank key field is an untouched
+    /// one, so the staged delete crosses as its own flag.
+    #[serde(default)]
     pub clear_key: bool,
-    pub harness: String,
-    pub harness_command: String,
+}
+
+/// What the page drew, read against the description it drew from.
+pub struct AiDraft<'a> {
+    pub rows: DraftRows,
     pub description: &'a form::FormDescription,
 }
 
 impl<'a> AiDraft<'a> {
-    /// The AI tab as live state would draw it, with no typed key. Tests and
-    /// the webview override the fields that moved.
-    pub fn live(view: &SettingsView, description: &'a form::FormDescription) -> Self {
+    /// The AI tab as live state draws it: nothing staged.
+    pub fn live(description: &'a form::FormDescription) -> Self {
         Self {
-            director: view.director_enabled,
-            proactive: view.proactive_wakes,
-            pi_project_mcp: view.development_switches[form::PI_PROJECT_MCP_ID],
-            wake_secs: view.development_texts[form::DIRECTOR_WAKE_SECS_ID].clone(),
-            byo_harness: view.byo_harness.clone(),
-            base_url: view.director_base_url.clone(),
-            model: view.director_model.clone(),
-            key: String::new(),
-            clear_key: false,
-            harness: view.harness.clone(),
-            harness_command: view
-                .development_texts
-                .get(form::HARNESS_COMMAND_ID)
-                .cloned()
-                .unwrap_or_default(),
+            rows: DraftRows::default(),
             description,
         }
     }
 
-    /// The new Base URL, or `None` when the row is frozen or unchanged.
-    ///
-    /// A frozen row never applies: `model::resolve` gives the exported
-    /// variable the last word and would discard the edit (#272).
-    fn base_url_edit(&self, view: &SettingsView) -> Option<&str> {
-        self.edit(
-            form::DIRECTOR_BASE_URL_ID,
-            &self.base_url,
-            &view.director_base_url,
-        )
-    }
-
-    fn model_edit(&self, view: &SettingsView) -> Option<&str> {
-        self.edit(form::DIRECTOR_MODEL_ID, &self.model, &view.director_model)
-    }
-
-    fn wake_secs_edit(&self, view: &SettingsView) -> Option<&str> {
-        self.edit(
-            form::DIRECTOR_WAKE_SECS_ID,
-            &self.wake_secs,
-            &view.development_texts[form::DIRECTOR_WAKE_SECS_ID],
-        )
-    }
-
-    fn byo_harness_edit(&self, view: &SettingsView) -> Option<&str> {
-        self.edit(form::BYO_HARNESS_ID, &self.byo_harness, &view.byo_harness)
-    }
-
-    fn harness_edit(&self, view: &SettingsView) -> Option<&str> {
-        self.edit(form::HARNESS_ID, &self.harness, &view.harness)
-    }
-
-    fn harness_command_edit(&self, view: &SettingsView) -> Option<&str> {
-        self.edit(
-            form::HARNESS_COMMAND_ID,
-            &self.harness_command,
-            view.development_texts
-                .get(form::HARNESS_COMMAND_ID)
-                .map(String::as_str)
-                .unwrap_or_default(),
-        )
-    }
-
-    fn edit<'t>(&self, id: &str, text: &'t str, live: &str) -> Option<&'t str> {
-        (!self.description.frozen(id) && text != live).then_some(text)
-    }
-
-    /// What the key field means: the typed key, or the empty string for a
-    /// staged delete. `None` when neither.
-    ///
-    /// A typed key beats a staged clear, because Clear key blanks the field
-    /// and text sitting in it afterwards is the later intent. A blank field is
-    /// an untouched one — `key_was_typed` is the whole of that test, and it is
-    /// what keeps tabbing past the field from meaning delete.
-    fn key_edit(&self, view: &SettingsView) -> Option<&str> {
-        if self.description.frozen(form::DIRECTOR_API_KEY_ID) {
-            return None;
-        }
-        if key_was_typed(&self.key) {
-            return Some(&self.key);
-        }
-        // Nothing stored is nothing to delete, so a staged clear of it is not
-        // an edit and must not read as dirty.
-        (self.clear_key && view.clear_key_enabled()).then_some("")
-    }
-
     /// The changed AI values Apply sends in one patch, or `None` when clean.
-    /// A staged key deletion bypasses `set_text` because blank input normally
-    /// means an untouched key.
+    ///
+    /// Only a batched row applies here, and a frozen one never does:
+    /// `model::resolve` gives the exported variable the last word (#272). A
+    /// blank key is refused by `set_text`, so a typed key beats a staged clear.
     pub fn patch(&self, view: &SettingsView) -> Option<SettingsPatch> {
-        let staged = self.staged(view);
-        if !staged.any() {
-            return None;
-        }
+        let live = view.row_values();
+        let description = self.description;
         let mut patch = SettingsPatch::default();
-        if staged.director {
-            patch.set_bool(BoolField::DirectorEnabled, self.director);
+        for (id, value) in &self.rows.values {
+            if !description.batched(id) || description.frozen(id) || live.get(id) == Some(value) {
+                continue;
+            }
+            match value {
+                RowValue::Bool(on) => {
+                    if let Some(field) = description.bool_write(id) {
+                        patch.set_bool(field, *on);
+                    }
+                }
+                RowValue::Text(text) => {
+                    if let Some(field) = description.text_write(id) {
+                        patch.set_text(field, text);
+                    }
+                }
+                RowValue::Instances(_) => {}
+            }
         }
-        if staged.proactive {
-            patch.set_bool(BoolField::ProactiveWakes, self.proactive);
+        // Nothing stored is nothing to delete, so that clear is not an edit.
+        if self.rows.clear_key
+            && patch.completer.director_api_key.is_none()
+            && !description.frozen(form::DIRECTOR_API_KEY_ID)
+            && view.clear_key_enabled()
+        {
+            patch.completer.director_api_key = Some(String::new());
         }
-        if staged.pi_project_mcp {
-            patch.set_bool(BoolField::PiProjectMcp, self.pi_project_mcp);
-        }
-        if let Some(text) = self.wake_secs_edit(view) {
-            patch.set_text(TextField::DirectorWakeSecs, text);
-        }
-        if let Some(text) = self.byo_harness_edit(view) {
-            patch.set_text(TextField::ByoHarness, text);
-        }
-        if let Some(text) = self.base_url_edit(view) {
-            patch.set_text(TextField::DirectorBaseUrl, text);
-        }
-        if let Some(text) = self.model_edit(view) {
-            patch.set_text(TextField::DirectorModel, text);
-        }
-        if let Some(key) = self.key_edit(view) {
-            patch.completer.director_api_key = Some(key.to_string());
-        }
-        if let Some(text) = self.harness_edit(view) {
-            patch.set_text(TextField::Harness, text);
-        }
-        if let Some(text) = self.harness_command_edit(view) {
-            patch.set_text(TextField::HarnessCommand, text);
-        }
-        Some(patch)
+        (patch != SettingsPatch::default()).then_some(patch)
     }
+}
 
-    /// The same edit decisions as `patch`, as booleans.
-    pub fn staged(&self, view: &SettingsView) -> Staged {
-        Staged {
-            director: !self.description.frozen(form::DIRECTOR_ID)
-                && self.director != view.director_enabled,
-            proactive: !self.description.frozen(form::PROACTIVE_ID)
-                && self.proactive != view.proactive_wakes,
-            pi_project_mcp: !self.description.frozen(form::PI_PROJECT_MCP_ID)
-                && self.pi_project_mcp != view.development_switches[form::PI_PROJECT_MCP_ID],
-            wake_secs: self.wake_secs_edit(view).is_some(),
-            byo_harness: self.byo_harness_edit(view).is_some(),
-            base_url: self.base_url_edit(view).is_some(),
-            model: self.model_edit(view).is_some(),
-            key: self.key_edit(view).is_some(),
-            harness: self.harness_edit(view).is_some(),
-            harness_command: self.harness_command_edit(view).is_some(),
+#[cfg(test)]
+impl<'a> AiDraft<'a> {
+    /// The draft for `rows`, parsed the way Apply's payload is.
+    pub fn drawn(description: &'a form::FormDescription, rows: serde_json::Value) -> Self {
+        Self {
+            rows: serde_json::from_value(rows).expect("the page's draft"),
+            description,
         }
     }
 }
@@ -3593,11 +3470,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(false);
             let description = form::describe();
-            let patch = AiDraft {
-                base_url: "https://api.x.ai".into(),
-                model: "grok-4.6".into(),
-                ..AiDraft::live(&view, &description)
-            }
+            let patch = AiDraft::drawn(&description, serde_json::json!({ "director_base_url": "https://api.x.ai", "director_model": "grok-4.6" }))
             .patch(&view)
             .expect("a new URL and model is dirty");
             assert_eq!(
@@ -3631,14 +3504,9 @@ mod tests {
                 description.frozen(form::DIRECTOR_BASE_URL_ID),
                 "precondition: the variable owns the URL row"
             );
-            let draft = AiDraft {
-                base_url: "https://typed.example".into(),
-                model: "grok-4.6".into(),
-                ..AiDraft::live(&view, &description)
-            };
-            assert!(
-                !draft.staged(&view).base_url,
-                "a frozen row is never staged, so a redraw always redraws it"
+            let draft = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "https://typed.example", "director_model": "grok-4.6" }),
             );
             let patch = draft
                 .patch(&view)
@@ -3655,19 +3523,17 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let typed = AiDraft {
-                key: "sk-typed-then-cancelled".into(),
-                ..AiDraft::live(&view, &description)
-            };
+            let typed = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_api_key": "sk-typed-then-cancelled" }),
+            );
             assert!(
                 typed.patch(&view).is_some(),
                 "precondition: a typed key is dirty"
             );
             // What Cancel leaves behind: the blank field a redraw writes.
-            let after_cancel = AiDraft {
-                key: String::new(),
-                ..typed
-            };
+            let after_cancel =
+                AiDraft::drawn(&description, serde_json::json!({ "director_api_key": "" }));
             assert!(
                 after_cancel.patch(&view).is_none(),
                 "a key never typed is not a delete"
@@ -3680,12 +3546,9 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let patch = AiDraft {
-                clear_key: true,
-                ..AiDraft::live(&view, &description)
-            }
-            .patch(&view)
-            .expect("a staged clear is dirty");
+            let patch = AiDraft::drawn(&description, serde_json::json!({ "clear_key": true }))
+                .patch(&view)
+                .expect("a staged clear is dirty");
             assert_eq!(patch.completer.director_api_key.as_deref(), Some(""));
         });
     }
@@ -3695,14 +3558,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(false);
             let description = form::describe();
-            let draft = AiDraft {
-                director: !view.director_enabled,
-                proactive: !view.proactive_wakes,
-                pi_project_mcp: !view.development_switches[form::PI_PROJECT_MCP_ID],
-                wake_secs: "240".into(),
-                byo_harness: "hermes".into(),
-                ..AiDraft::live(&view, &description)
-            };
+            let draft = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director": !view.director_enabled, "proactive": !view.proactive_wakes, "pi_project_mcp": !view.development_switches[form::PI_PROJECT_MCP_ID], "director_wake_secs": "240", "byo_harness": "hermes" }),
+            );
             let patch = draft.patch(&view).expect("the edits are staged");
             assert_eq!(
                 patch.completer.director_enabled,
@@ -3726,10 +3585,7 @@ mod tests {
             let view = director_view(false);
             assert!(!view.clear_key_enabled(), "precondition: no key is stored");
             let description = form::describe();
-            let draft = AiDraft {
-                clear_key: true,
-                ..AiDraft::live(&view, &description)
-            };
+            let draft = AiDraft::drawn(&description, serde_json::json!({ "clear_key": true }));
             assert!(draft.patch(&view).is_none());
         });
     }
@@ -3741,11 +3597,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let patch = AiDraft {
-                key: "sk-typed-after-clear".into(),
-                clear_key: true,
-                ..AiDraft::live(&view, &description)
-            }
+            let patch = AiDraft::drawn(&description, serde_json::json!({ "director_api_key": "sk-typed-after-clear", "clear_key": true }))
             .patch(&view)
             .expect("a typed key is dirty");
             assert_eq!(
@@ -3763,18 +3615,14 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let staged = AiDraft {
-                key: "sk-typed".into(),
-                ..AiDraft::live(&view, &description)
-            }
-            .staged(&view);
-            assert_eq!(
-                staged,
-                Staged {
-                    key: true,
-                    ..Staged::default()
-                }
-            );
+            let patch = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_api_key": "sk-typed" }),
+            )
+            .patch(&view);
+            let mut key = SettingsPatch::default();
+            key.completer.director_api_key = Some("sk-typed".into());
+            assert_eq!(patch, Some(key));
         });
     }
 
@@ -3785,23 +3633,13 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let draft = AiDraft {
-                base_url: "https://api.x.ai".into(),
-                ..AiDraft::live(&view, &description)
-            };
-            assert_eq!(
-                draft.staged(&view),
-                Staged {
-                    base_url: true,
-                    ..Staged::default()
-                }
+            let draft = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "https://api.x.ai" }),
             );
-            let patch = draft.patch(&view).expect("a typed URL is dirty");
-            assert_eq!(
-                patch.completer.director_base_url.as_deref(),
-                Some("https://api.x.ai")
-            );
-            assert!(patch.completer.director_model.is_none());
+            let mut url = SettingsPatch::default();
+            url.completer.director_base_url = Some("https://api.x.ai".into());
+            assert_eq!(draft.patch(&view), Some(url));
         });
     }
 
@@ -3810,14 +3648,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let draft = AiDraft::live(&view, &description);
+            let draft = AiDraft::live(&description);
             assert!(
                 draft.patch(&view).is_none(),
                 "a clean tab is what disables both buttons"
-            );
-            assert!(
-                !draft.staged(&view).any(),
-                "and what lets a redraw take every field from live state"
             );
         });
     }
@@ -3829,11 +3663,10 @@ mod tests {
         crate::model::tests::with_harness(None, || {
             let view = director_view(false);
             let description = form::describe();
-            let draft = AiDraft {
-                harness: "Harness · opencode".into(),
-                ..AiDraft::live(&view, &description)
-            };
-            assert!(draft.staged(&view).harness);
+            let draft = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "harness": "Harness · opencode" }),
+            );
             let patch = draft.patch(&view).expect("a pick is dirty");
             assert_eq!(patch.completer.harness.as_deref(), Some("opencode"));
             assert!(patch.completer.director_base_url.is_none());
@@ -3841,7 +3674,7 @@ mod tests {
                 completer_retargets(&endpoint_settings(), &patch),
                 "Apply has to retarget once, not the pick"
             );
-            let cancelled = AiDraft::live(&view, &description);
+            let cancelled = AiDraft::live(&description);
             assert!(cancelled.patch(&view).is_none());
             assert!(!completer_retargets(
                 &endpoint_settings(),
@@ -3858,10 +3691,10 @@ mod tests {
         crate::model::tests::with_harness(None, || {
             let view = director_view(false);
             let description = form::describe();
-            let draft = AiDraft {
-                base_url: "https://api.x.ai".into(),
-                ..AiDraft::live(&view, &description)
-            };
+            let draft = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "https://api.x.ai" }),
+            );
             let patch = draft.patch(&view).expect("a typed URL is dirty");
             assert_eq!(
                 patch.completer.director_base_url.as_deref(),
@@ -3886,13 +3719,10 @@ mod tests {
                 description.frozen(form::HARNESS_ID),
                 "precondition: the variable owns the source row"
             );
-            let draft = AiDraft {
-                harness: "Harness · opencode".into(),
-                harness_command: "typed acp".into(),
-                ..AiDraft::live(&view, &description)
-            };
-            assert!(!draft.staged(&view).harness);
-            assert!(!draft.staged(&view).harness_command);
+            let draft = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "harness": "Harness · opencode", "harness_command": "typed acp" }),
+            );
             assert!(draft.patch(&view).is_none());
         });
     }
@@ -3914,26 +3744,18 @@ mod tests {
             let description = form::describe();
             // The fields as a freshly built window holds them, a line before
             // its first redraw.
-            let unfilled = AiDraft {
-                base_url: String::new(),
-                model: String::new(),
-                ..AiDraft::live(&view, &description)
-            };
-            assert_eq!(
-                unfilled.staged(&view),
-                Staged {
-                    base_url: true,
-                    model: true,
-                    ..Staged::default()
-                },
-                "empty text differs from live state, so a redraw that leaves \
-                 staged rows alone leaves both of these showing placeholders"
+            let unfilled = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "", "director_model": "" }),
             );
-            let patch = unfilled
-                .patch(&view)
-                .expect("and arms Apply, over the wipe");
-            assert_eq!(patch.completer.director_base_url.as_deref(), Some(""));
-            assert_eq!(patch.completer.director_model.as_deref(), Some(""));
+            let mut wipe = SettingsPatch::default();
+            wipe.completer.director_base_url = Some(String::new());
+            wipe.completer.director_model = Some(String::new());
+            assert_eq!(
+                unfilled.patch(&view),
+                Some(wipe),
+                "empty text differs from live state, so Apply is armed over the wipe"
+            );
         });
     }
 

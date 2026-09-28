@@ -616,7 +616,7 @@ enum SettingsEventPayload {
     Press {
         press: String,
         #[serde(default)]
-        draft: Option<AiDraftWire>,
+        draft: Option<settings::DraftRows>,
         /// New reads the name and Character beside it from here (#875).
         #[serde(default)]
         fields: std::collections::HashMap<String, String>,
@@ -635,71 +635,6 @@ enum SettingsEventPayload {
 #[derive(serde::Deserialize, Debug)]
 struct PickFills {
     row: String,
-}
-
-/// Values the webview holds for batched AI rows. Apply reads these from the
-/// controls rather than saving each edit as it happens.
-#[derive(serde::Deserialize, Debug, Default)]
-struct AiDraftWire {
-    #[serde(default)]
-    director: Option<bool>,
-    #[serde(default)]
-    proactive: Option<bool>,
-    #[serde(default)]
-    pi_project_mcp: Option<bool>,
-    #[serde(default)]
-    director_wake_secs: Option<String>,
-    #[serde(default)]
-    byo_harness: Option<String>,
-    #[serde(default)]
-    director_base_url: Option<String>,
-    #[serde(default)]
-    director_model: Option<String>,
-    #[serde(default)]
-    director_api_key: Option<String>,
-    #[serde(default)]
-    harness: Option<String>,
-    #[serde(default)]
-    harness_command: Option<String>,
-    #[serde(default)]
-    clear_key: bool,
-}
-
-impl AiDraftWire {
-    /// Writes the values the page sent over the live ones.
-    fn overlay(self, draft: &mut settings::AiDraft) {
-        if let Some(value) = self.director {
-            draft.director = value;
-        }
-        if let Some(value) = self.proactive {
-            draft.proactive = value;
-        }
-        if let Some(value) = self.pi_project_mcp {
-            draft.pi_project_mcp = value;
-        }
-        if let Some(value) = self.director_wake_secs {
-            draft.wake_secs = value;
-        }
-        if let Some(value) = self.byo_harness {
-            draft.byo_harness = value;
-        }
-        if let Some(value) = self.director_base_url {
-            draft.base_url = value;
-        }
-        if let Some(value) = self.director_model {
-            draft.model = value;
-        }
-        if let Some(value) = self.director_api_key {
-            draft.key = value;
-        }
-        if let Some(value) = self.harness {
-            draft.harness = value;
-        }
-        if let Some(value) = self.harness_command {
-            draft.harness_command = value;
-        }
-        draft.clear_key = self.clear_key;
-    }
 }
 
 #[cfg(test)]
@@ -757,8 +692,8 @@ mod settings_event_tests {
             SettingsEventPayload::Press { press, draft, .. } => {
                 assert_eq!(press, "director_apply");
                 assert_eq!(
-                    draft.expect("draft").harness.as_deref(),
-                    Some("Harness · opencode")
+                    draft.expect("draft").values.get("harness"),
+                    Some(&settings::RowValue::Text("Harness · opencode".into()))
                 );
             }
             _ => panic!("expected Press variant"),
@@ -1046,10 +981,10 @@ mod settings_event_tests {
         model::tests::with_env(None, None, None, || {
             let view = settings::form::tests::fixture_view(false);
             let description = settings::form::describe();
-            let mut staged = settings::AiDraft::live(&view, &description);
-            if let Some(wire) = draft {
-                wire.overlay(&mut staged);
-            }
+            let staged = settings::AiDraft {
+                rows: draft.unwrap_or_default(),
+                description: &description,
+            };
             let outcome = settings::controller::handle(
                 &settings::controller::Event::Press { id: press },
                 &staged,
@@ -1247,14 +1182,14 @@ fn settings_event_blocking(
                 id: set_bool,
                 value,
             },
-            settings::AiDraft::live(&view, &description),
+            settings::AiDraft::live(&description),
         ),
         SettingsEventPayload::SetText { set_text, value } => (
             controller::Event::SetText {
                 id: set_text,
                 value,
             },
-            settings::AiDraft::live(&view, &description),
+            settings::AiDraft::live(&description),
         ),
         SettingsEventPayload::Press {
             press,
@@ -1262,10 +1197,10 @@ fn settings_event_blocking(
             fields,
         } => {
             pressed = fields;
-            let mut draft = settings::AiDraft::live(&view, &description);
-            if let Some(wire) = wire {
-                wire.overlay(&mut draft);
-            }
+            let draft = settings::AiDraft {
+                rows: wire.unwrap_or_default(),
+                description: &description,
+            };
             (controller::Event::Press { id: press }, draft)
         }
         SettingsEventPayload::Pick {
@@ -1286,7 +1221,7 @@ fn settings_event_blocking(
             fills: None,
         } => (
             controller::Event::Pick { id: pick, value },
-            settings::AiDraft::live(&view, &description),
+            settings::AiDraft::live(&description),
         ),
         SettingsEventPayload::Pick {
             pick,
@@ -1312,7 +1247,7 @@ fn settings_event_blocking(
                     value,
                     current,
                 },
-                settings::AiDraft::live(&view, &description),
+                settings::AiDraft::live(&description),
             )
         }
         SettingsEventPayload::Dismiss { dismiss, value } => {

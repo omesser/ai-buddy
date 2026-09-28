@@ -184,11 +184,6 @@ mod tests {
         )
     }
 
-    /// A window that has drawn itself from `view` and has not been typed into.
-    fn drawn<'a>(view: &SettingsView, description: &'a FormDescription) -> AiDraft<'a> {
-        AiDraft::live(view, description)
-    }
-
     fn press(id: &str) -> Event {
         Event::Press { id: id.into() }
     }
@@ -202,7 +197,7 @@ mod tests {
             let view = director_view();
             let description = form::describe();
             assert_eq!(
-                handle(&press(form::APPLY_ID), &drawn(&view, &description), &view),
+                handle(&press(form::APPLY_ID), &AiDraft::live(&description), &view),
                 Outcome::Commit(None),
             );
         });
@@ -210,17 +205,16 @@ mod tests {
 
     /// Clearing a field is a real edit, so the controller cannot tell an
     /// untouched tab from a cleared one. Only a window that draws before it
-    /// reads itself back can; do not put a blank guard in `AiDraft::edit`.
+    /// reads itself back can; do not put a blank guard in `AiDraft::patch`.
     #[test]
     fn a_blank_field_is_an_edit_not_an_untouched_row() {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let blank = AiDraft {
-                base_url: String::new(),
-                model: String::new(),
-                ..drawn(&view, &description)
-            };
+            let blank = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "", "director_model": "" }),
+            );
             let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &blank, &view) else {
                 panic!("a cleared pair of rows is a patch");
             };
@@ -236,10 +230,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let typed = AiDraft {
-                base_url: "https://api.x.ai".into(),
-                ..drawn(&view, &description)
-            };
+            let typed = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "https://api.x.ai" }),
+            );
             let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &typed, &view) else {
                 panic!("a typed URL is a patch");
             };
@@ -256,10 +250,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let typed = AiDraft {
-                model: "grok-4.6".into(),
-                ..drawn(&view, &description)
-            };
+            let typed = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_model": "grok-4.6" }),
+            );
             assert_eq!(
                 handle(&press(form::CANCEL_ID), &typed, &view),
                 Outcome::Reset,
@@ -284,7 +278,7 @@ mod tests {
                 value: "https://typed.example".into(),
             };
             assert_eq!(
-                handle(&event, &drawn(&view, &description), &view),
+                handle(&event, &AiDraft::live(&description), &view),
                 Outcome::Nothing,
             );
         });
@@ -305,7 +299,7 @@ mod tests {
                 value: shown,
             };
             assert_eq!(
-                handle(&event, &drawn(&view, &description), &view),
+                handle(&event, &AiDraft::live(&description), &view),
                 Outcome::Nothing,
             );
         });
@@ -329,7 +323,7 @@ mod tests {
                 current: String::new(),
             };
             let Outcome::Fill { id, patch, .. } =
-                handle(&event, &drawn(&view, &description), &view)
+                handle(&event, &AiDraft::live(&description), &view)
             else {
                 panic!("a shortcut fills the row below it");
             };
@@ -351,7 +345,7 @@ mod tests {
                 current: String::new(),
             };
             assert_eq!(
-                handle(&event, &drawn(&view, &description), &view),
+                handle(&event, &AiDraft::live(&description), &view),
                 Outcome::Nothing,
             );
         });
@@ -364,7 +358,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let draft = drawn(&view, &description);
+            let draft = AiDraft::live(&description);
             for event in [
                 press("no_such_row"),
                 Event::SetBool {
@@ -389,7 +383,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let draft = drawn(&view, &description);
+            let draft = AiDraft::live(&description);
             let event = Event::SetBool {
                 id: form::DND_ID.into(),
                 value: true,
@@ -400,6 +394,42 @@ mod tests {
         });
     }
 
+    /// Marking a row batched in the form is all Apply needs to commit it.
+    #[test]
+    fn a_row_marked_batched_in_the_form_reaches_the_applied_patch() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view();
+            let mut description = form::describe();
+            let apply = |description: &FormDescription| {
+                let draft = AiDraft::drawn(
+                    description,
+                    serde_json::json!({ form::DIRECTOR_TIMEOUT_SECS_ID: "90" }),
+                );
+                handle(&press(form::APPLY_ID), &draft, &view)
+            };
+            assert_eq!(
+                apply(&description),
+                Outcome::Commit(None),
+                "an unbatched row saves on blur, so Apply leaves it alone"
+            );
+            for row in description
+                .tabs
+                .iter_mut()
+                .flat_map(|tab| &mut tab.sections)
+                .flat_map(|section| &mut section.rows)
+            {
+                if let form::FormRow::TextField { id, batched, .. } = row {
+                    if id == form::DIRECTOR_TIMEOUT_SECS_ID {
+                        *batched = true;
+                    }
+                }
+            }
+            let mut timeout = SettingsPatch::default();
+            timeout.completer.director_timeout_secs = Some("90".into());
+            assert_eq!(apply(&description), Outcome::Commit(Some(timeout)));
+        });
+    }
+
     /// A batched switch saves nothing on the tick. Cancel writes nothing and
     /// Apply commits the staged value.
     #[test]
@@ -407,7 +437,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let live = drawn(&view, &description);
+            let live = AiDraft::live(&description);
             for id in [
                 form::DIRECTOR_ID,
                 form::PROACTIVE_ID,
@@ -419,10 +449,10 @@ mod tests {
                 };
                 assert_eq!(handle(&event, &live, &view), Outcome::Nothing, "{id}");
             }
-            let toggled = AiDraft {
-                director: !view.director_enabled,
-                ..drawn(&view, &description)
-            };
+            let toggled = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director": !view.director_enabled }),
+            );
             assert_eq!(
                 handle(&press(form::CANCEL_ID), &toggled, &view),
                 Outcome::Reset
@@ -449,10 +479,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let typed = AiDraft {
-                base_url: "https://half.typed".into(),
-                ..drawn(&view, &description)
-            };
+            let typed = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "director_base_url": "https://half.typed" }),
+            );
             let Outcome::Apply(patch) = handle(&press(form::NEW_SESSION_ID), &typed, &view) else {
                 panic!("new session is a patch of its own");
             };
@@ -473,13 +503,13 @@ mod tests {
                 value: "Harness · opencode".into(),
             };
             assert_eq!(
-                handle(&event, &drawn(&view, &description), &view),
+                handle(&event, &AiDraft::live(&description), &view),
                 Outcome::Nothing,
             );
-            let typed = AiDraft {
-                harness: "Harness · opencode".into(),
-                ..drawn(&view, &description)
-            };
+            let typed = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "harness": "Harness · opencode" }),
+            );
             let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &typed, &view) else {
                 panic!("Apply commits the staged source");
             };
@@ -501,7 +531,7 @@ mod tests {
                 value: "hermes acp".into(),
             };
             assert_eq!(
-                handle(&event, &drawn(&view, &description), &view),
+                handle(&event, &AiDraft::live(&description), &view),
                 Outcome::Nothing,
             );
         });
