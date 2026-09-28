@@ -53,7 +53,7 @@ function stubDocument() {
   };
 }
 
-function draw(values, emit, stage) {
+function draw(values, emit, stage, tab = AI) {
   const root = {
     children: [],
     replaceChildren() {
@@ -64,7 +64,7 @@ function draw(values, emit, stage) {
     },
   };
   stubDocument();
-  render(root, AI, values, emit, stage);
+  render(root, tab, values, emit, stage);
   const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
   const all = root.children.flatMap(walk);
   delete globalThis.document;
@@ -174,7 +174,7 @@ test("registration Harness previews without saving and Cancel restores the picke
     steps: "Run the command.",
     token: "secret-token",
   });
-  draft = foldDraft(draft, preview);
+  draft = foldDraft(draft, preview, emitted[0]);
   const shown = draw({ ...MODEL_API.values, ...draft });
   assert.equal(shown("byo_harness").value, "hermes");
   assert.equal(shown.row("byo_snippet").children[0].textContent, "hermes mcp add fidget");
@@ -182,6 +182,42 @@ test("registration Harness previews without saving and Cancel restores the picke
 
   draft = foldDraft(draft, { reset: true });
   assert.equal(draw({ ...MODEL_API.values, ...draft })("byo_harness").value, "claude");
+});
+
+test("a registration preview that lands after Cancel is dropped", () => {
+  const emitted = [];
+  let draft = {};
+  const control = draw(MODEL_API.values, (payload) => emitted.push(payload), (id, value) => {
+    draft[id] = value;
+  });
+  const picker = control("byo_harness");
+  picker.value = "hermes";
+  picker.handlers.change();
+  const [pick] = emitted;
+
+  draft = foldDraft(draft, { reset: true });
+  const late = processResponse({ action: "preview_byo", snippet: "hermes mcp add fidget", steps: "Run it.", token: "t" });
+  draft = foldDraft(draft, late, pick);
+
+  assert.deepEqual(draft, {});
+  assert.deepEqual(emitted, [pick], "a pick writes nothing; only Apply saves");
+  const shown = draw({ ...MODEL_API.values, ...draft });
+  assert.equal(shown("byo_harness").value, MODEL_API.values.byo_harness);
+  assert.equal(shown.row("byo_snippet").children[0].textContent, MODEL_API.values.byo_snippet);
+});
+
+test("an unbatched popup saves its pick at once and stages nothing", () => {
+  const emitted = [];
+  const staged = [];
+  const chat = MODEL_API.form.tabs.find((tab) => tab.title === "Chat");
+  const control = draw(MODEL_API.values, (payload) => emitted.push(payload), (id) => staged.push(id), chat);
+  const select = control("chat_ui");
+  const other = select.children.find((option) => option.attributes.value !== select.value);
+  select.value = other.attributes.value;
+  select.handlers.change();
+
+  assert.deepEqual(emitted, [{ pick: "chat_ui", value: other.attributes.value }]);
+  assert.deepEqual(staged, []);
 });
 
 // The regression in #995, as a tab switch does it: the page redraws the panel

@@ -247,7 +247,7 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
 ///
 /// Both windows fill such a row from this map by id, so the tab it is drawn on
 /// does not matter: the wake interval and the Harness command line are the
-/// Director tab's. Numbers were all it held when #273 landed it; the name is
+/// AI tab's. Numbers were all it held when #273 landed it; the name is
 /// the tab those first rows sat on, not a type.
 fn development_texts(settings: &Settings) -> HashMap<String, String> {
     HashMap::from([
@@ -1199,7 +1199,7 @@ impl Staged {
 
 /// AI tab values read from its controls. `patch` checks frozen rows against
 /// the description so an exported variable keeps ownership.
-pub struct DirectorDraft<'a> {
+pub struct AiDraft<'a> {
     pub director: bool,
     pub proactive: bool,
     pub pi_project_mcp: bool,
@@ -1214,7 +1214,7 @@ pub struct DirectorDraft<'a> {
     pub description: &'a form::FormDescription,
 }
 
-impl<'a> DirectorDraft<'a> {
+impl<'a> AiDraft<'a> {
     /// The AI tab as live state would draw it, with no typed key. Tests and
     /// the webview override the fields that moved.
     pub fn live(view: &SettingsView, description: &'a form::FormDescription) -> Self {
@@ -3568,7 +3568,7 @@ mod tests {
         drop(guard);
     }
 
-    /// The Director tab's live state, with or without a stored key.
+    /// The AI tab's live state, with or without a stored key.
     fn director_view(api_key_set: bool) -> SettingsView {
         let fingerprint = if api_key_set {
             "len=12 last=key1".to_string()
@@ -3593,10 +3593,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(false);
             let description = form::describe();
-            let patch = DirectorDraft {
+            let patch = AiDraft {
                 base_url: "https://api.x.ai".into(),
                 model: "grok-4.6".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             }
             .patch(&view)
             .expect("a new URL and model is dirty");
@@ -3631,10 +3631,10 @@ mod tests {
                 description.frozen(form::DIRECTOR_BASE_URL_ID),
                 "precondition: the variable owns the URL row"
             );
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 base_url: "https://typed.example".into(),
                 model: "grok-4.6".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert!(
                 !draft.staged(&view).base_url,
@@ -3655,16 +3655,16 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let typed = DirectorDraft {
+            let typed = AiDraft {
                 key: "sk-typed-then-cancelled".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert!(
                 typed.patch(&view).is_some(),
                 "precondition: a typed key is dirty"
             );
             // What Cancel leaves behind: the blank field a redraw writes.
-            let after_cancel = DirectorDraft {
+            let after_cancel = AiDraft {
                 key: String::new(),
                 ..typed
             };
@@ -3680,9 +3680,9 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let patch = DirectorDraft {
+            let patch = AiDraft {
                 clear_key: true,
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             }
             .patch(&view)
             .expect("a staged clear is dirty");
@@ -3695,13 +3695,13 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(false);
             let description = form::describe();
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 director: !view.director_enabled,
                 proactive: !view.proactive_wakes,
                 pi_project_mcp: !view.development_switches[form::PI_PROJECT_MCP_ID],
                 wake_secs: "240".into(),
                 byo_harness: "hermes".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             let patch = draft.patch(&view).expect("the edits are staged");
             assert_eq!(
@@ -3726,9 +3726,9 @@ mod tests {
             let view = director_view(false);
             assert!(!view.clear_key_enabled(), "precondition: no key is stored");
             let description = form::describe();
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 clear_key: true,
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert!(draft.patch(&view).is_none());
         });
@@ -3741,10 +3741,10 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let patch = DirectorDraft {
+            let patch = AiDraft {
                 key: "sk-typed-after-clear".into(),
                 clear_key: true,
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             }
             .patch(&view)
             .expect("a typed key is dirty");
@@ -3763,9 +3763,9 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let staged = DirectorDraft {
+            let staged = AiDraft {
                 key: "sk-typed".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             }
             .staged(&view);
             assert_eq!(
@@ -3785,9 +3785,9 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 base_url: "https://api.x.ai".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert_eq!(
                 draft.staged(&view),
@@ -3810,7 +3810,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view(true);
             let description = form::describe();
-            let draft = DirectorDraft::live(&view, &description);
+            let draft = AiDraft::live(&view, &description);
             assert!(
                 draft.patch(&view).is_none(),
                 "a clean tab is what disables both buttons"
@@ -3829,9 +3829,9 @@ mod tests {
         crate::model::tests::with_harness(None, || {
             let view = director_view(false);
             let description = form::describe();
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 harness: "Harness · opencode".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert!(draft.staged(&view).harness);
             let patch = draft.patch(&view).expect("a pick is dirty");
@@ -3841,7 +3841,7 @@ mod tests {
                 completer_retargets(&endpoint_settings(), &patch),
                 "Apply has to retarget once, not the pick"
             );
-            let cancelled = DirectorDraft::live(&view, &description);
+            let cancelled = AiDraft::live(&view, &description);
             assert!(cancelled.patch(&view).is_none());
             assert!(!completer_retargets(
                 &endpoint_settings(),
@@ -3858,9 +3858,9 @@ mod tests {
         crate::model::tests::with_harness(None, || {
             let view = director_view(false);
             let description = form::describe();
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 base_url: "https://api.x.ai".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             let patch = draft.patch(&view).expect("a typed URL is dirty");
             assert_eq!(
@@ -3886,10 +3886,10 @@ mod tests {
                 description.frozen(form::HARNESS_ID),
                 "precondition: the variable owns the source row"
             );
-            let draft = DirectorDraft {
+            let draft = AiDraft {
                 harness: "Harness · opencode".into(),
                 harness_command: "typed acp".into(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert!(!draft.staged(&view).harness);
             assert!(!draft.staged(&view).harness_command);
@@ -3914,10 +3914,10 @@ mod tests {
             let description = form::describe();
             // The fields as a freshly built window holds them, a line before
             // its first redraw.
-            let unfilled = DirectorDraft {
+            let unfilled = AiDraft {
                 base_url: String::new(),
                 model: String::new(),
-                ..DirectorDraft::live(&view, &description)
+                ..AiDraft::live(&view, &description)
             };
             assert_eq!(
                 unfilled.staged(&view),
@@ -4485,7 +4485,7 @@ mod tests {
         assert_eq!(settings.harness_cwd, "/tmp/project");
     }
 
-    /// The row is the Director tab's, and the window fills it from the same
+    /// The row is the AI tab's, and the window fills it from the same
     /// keyed map the Development rows use, so a missing key draws blank over
     /// a value that is in force.
     #[test]
