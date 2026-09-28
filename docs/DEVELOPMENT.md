@@ -480,6 +480,12 @@ The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the ro
 - **Absent or false** → the Harness gets a stdio MCP server entry to spawn (ADR-0026). That binary is a stateless relay: it posts every JSON-RPC message to the app's endpoint, using `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from its environment. It is found as `FIDGET_MCP_BIN`, else a `fidget-mcp` sidecar beside the app, else the app binary itself (`fidget --mcp-stdio`).
 - **`cursor-agent`** ignores `mcpServers` entirely and loads servers only from an approved `.cursor/mcp.json` (#1020). It gets the loopback URL and token through that file.
 
+### Elicitation
+
+`initialize` declares both elicitation modes, `form` and `url`, to every Harness. With `url` declared, a Harness can hand Chat a link rather than open a browser itself. codex-acp offers its device-code sign-in only then. codex-acp and claude-agent-acp send an MCP server's OAuth link the same way; without `url` that server stays signed out.
+
+It is not narrowed per Harness. A Harness already runs code as the user, so a link lets it do nothing new. What the link adds is a gate: Chat draws the URL in full, as `open_link` will open it, and nothing opens until the user clicks Open. `open_link` refuses any scheme but `http`, `https` and `mailto`.
+
 ### How `cursor-agent` is reached
 
 `src-tauri/src/cursor_mcp.rs`. `.cursor/mcp.json` is the only place to define a server (`cursor-agent mcp` has no `add`), and `cursor-agent mcp enable` is the only way to approve one. Approvals are read once per `cursor-agent` process, so before spawning `cursor-agent acp`, attach:

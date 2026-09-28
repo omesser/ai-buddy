@@ -1226,7 +1226,11 @@ fn elicitation_form(request: &CreateElicitationRequest, id: String) -> Elicitati
         _ => (String::new(), Vec::new()),
     };
     let url = match &request.mode {
-        ElicitationMode::Url(link) => Some(link.url.clone()),
+        // What `open_link` would open, so the row shows the host Open goes to.
+        // Parsing drops tabs and newlines and punycodes a lookalike host.
+        ElicitationMode::Url(link) => {
+            Some(crate::platform::openable(&link.url).unwrap_or_else(|_| link.url.clone()))
+        }
         _ => None,
     };
     ElicitationForm {
@@ -1964,6 +1968,36 @@ mod tests {
             .expect("serializes");
 
         assert_eq!(value, serde_json::json!({"action": "decline"}));
+    }
+
+    fn linked(url: &str) -> ElicitationForm {
+        let request: CreateElicitationRequest = serde_json::from_value(serde_json::json!({
+            "requestId": 7,
+            "mode": "url",
+            "elicitationId": "e1",
+            "message": "Sign in",
+            "url": url,
+        }))
+        .expect("a URL elicitation");
+        elicitation_form(&request, "44".to_string())
+    }
+
+    /// Production change that would fail this: drawing the Harness's raw
+    /// string. `open_link` opens the parsed URL, so the row showed one host
+    /// and Open went to another.
+    #[test]
+    fn a_link_is_drawn_as_the_url_open_opens() {
+        let split = linked("https://accounts.example.com\n.evil.test/login");
+        assert_eq!(
+            split.url.as_deref(),
+            Some("https://accounts.example.com.evil.test/login")
+        );
+
+        let lookalike = linked("https://аpple.com/");
+        assert_eq!(lookalike.url.as_deref(), Some("https://xn--pple-43d.com/"));
+
+        let unparsed = linked("not a url");
+        assert_eq!(unparsed.url.as_deref(), Some("not a url"));
     }
 }
 
