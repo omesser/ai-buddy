@@ -12,9 +12,11 @@
 
 ---
 
-An animated Character with an authored personality that lives on your desktop, backed by the coding agent you already use.
+A little character that lives on your desktop. It walks the tops of your windows, naps, and lets you pick it up and throw it.
 
-It walks along the tops of your windows, naps now and then, and can be picked up and thrown. Double-click it to chat with Claude Code, Codex, Cursor, or any [Harness](#harness-support) that speaks ACP. It answers in speech and a Behavior, and the agent can do real work on your machine. With no Harness attached it still has a life of its own. It reads window metadata, never pixels.
+Talk to it, toss it around, and enjoy the company while your code compiles or that spreadsheet drags on. Each character has its own personality, and with nothing set up it still has a life of its own.
+
+It is also a capable helper. Double-click it and you are talking to the AI agent of your choice: Claude Code, Codex, Cursor, or any [harness](#harness-support) that speaks ACP. Through that agent it can do almost anything on your machine, and it answers in speech and motion.
 
 <p align="center">
   <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
