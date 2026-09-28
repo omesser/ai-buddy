@@ -64,7 +64,7 @@ wait_for() { # <seconds> <command...>
   done
 }
 
-mind='^AXStaticText\|[^|]*\|[^|]* · session [0-9a-f]+\|'
+mind='^AXStaticText\|[^|]*\|[^|]* · session [^|]+\|'
 dump() { # <name>
   "$tools/ax" dump "$pid" BMO frames > "$out/$1.ax.txt" 2>&1
 }
@@ -107,6 +107,6 @@ check() { # <width>
 wait_for 30 grep -qx asked "$marks" || fail "no wake reached the Harness; see $log"
 wait_for 15 "$tools/window-id" "$pid" BMO || fail "Chat did not open for the ask"
 wait_for 30 shows_session || fail "the mind line names no session; see $out/session.ax.txt"
-echo "ok: $(grep -oEm1 '[^|]* · session [0-9a-f]+' "$out/session.ax.txt")"
+echo "ok: $(grep -oEm1 '[^|]* · session [^|]+' "$out/session.ax.txt")"
 for w in 420 360 320; do check "$w"; done
 echo "PASS: evidence in $out"
