@@ -2652,8 +2652,20 @@ mod tests {
                             format!("fresh-id-{n}")
                         };
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
-                        if script == "mcp-link" {
+                        if script == "mcp-link" || script == "mcp-link-complete-turn" {
                             mcp_link(&session);
+                        }
+                        // The user signs in some other way, so the Harness
+                        // says the link is done. The first names no form.
+                        if script == "mcp-link-complete" {
+                            mcp_link(&session);
+                            for link in ["nope", "mcp-1"] {
+                                say(
+                                    json!({"jsonrpc": "2.0", "method": "elicitation/complete", "params": {
+                                        "elicitationId": link,
+                                    }}),
+                                );
+                            }
                         }
                     }
                 }
@@ -2823,6 +2835,17 @@ mod tests {
                         }
                         "mcp-link-turn" if prompts == 1 => {
                             mcp_link(&session);
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
+                        // The link was held between turns; the user finishes
+                        // it elsewhere while this turn runs.
+                        "mcp-link-complete-turn" if prompts == 1 => {
+                            say(
+                                json!({"jsonrpc": "2.0", "method": "elicitation/complete", "params": {
+                                    "elicitationId": "mcp-1",
+                                }}),
+                            );
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                         }
@@ -4883,6 +4906,64 @@ mod tests {
             assert_eq!(fx.settled(), (form.request, Some("decline".to_string())));
             session.shutdown();
         }
+    }
+
+    /// `elicitation/complete` for a held link retires its row as an answer
+    /// would, with no option and no reply on the wire. One for an id no form
+    /// holds is ignored.
+    #[test]
+    fn a_completed_link_retires_its_row_and_sends_no_answer() {
+        let (fx, session) = Fixture::new("mcp-link-complete");
+        let key = SessionKey {
+            instance: "buddy-1".to_string(),
+            character: "bmo".to_string(),
+            blank: false,
+        };
+        assert!(session.attach(Some(&key)).is_ok());
+        let form = fx.form();
+        assert_eq!(form.url.as_deref(), Some("https://example.test/oauth"));
+        assert_eq!(fx.settled(), (form.request, None));
+        assert!(
+            fx.forwarded
+                .recv_timeout(Duration::from_millis(300))
+                .is_err(),
+            "the unknown id retired something"
+        );
+        for action in ["accept", "decline", "cancel"] {
+            assert_eq!(
+                fx.count(&format!("elicit-mcp:{action}")),
+                0,
+                "{action} went on the wire"
+            );
+        }
+        session.shutdown();
+    }
+
+    /// A link held between turns, completed while a turn runs, is retired by
+    /// that turn, with no reply on the wire.
+    #[test]
+    fn a_link_completed_mid_turn_retires_the_row_held_between_turns() {
+        let (fx, session) = Fixture::new("mcp-link-complete-turn");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        let mut form = None;
+        let mut settled = None;
+        while let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(500)) {
+            match forwarded {
+                Forwarded::Form(link) => form = Some(link),
+                Forwarded::Settled { request, option } => settled = Some((request, option)),
+                _ => {}
+            }
+        }
+        let form = form.expect("the link was never forwarded");
+        assert_eq!(settled, Some((form.request, None)));
+        for action in ["accept", "decline", "cancel"] {
+            assert_eq!(
+                fx.count(&format!("elicit-mcp:{action}")),
+                0,
+                "{action} went on the wire"
+            );
+        }
+        session.shutdown();
     }
 
     /// The attach path's translation, on the turn path (#991). The session

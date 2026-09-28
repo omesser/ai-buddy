@@ -14,14 +14,14 @@ use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
-    ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
-    ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
-    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema, ElicitationScope,
-    ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
-    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
+    CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
+    ElicitationContentValue, ElicitationFormCapabilities, ElicitationId, ElicitationMode,
+    ElicitationPropertySchema, ElicitationScope, ElicitationUrlCapabilities, EnvVariable, Error,
+    ErrorCode, HttpHeader, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
+    McpServerHttp, McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -707,6 +707,7 @@ fn run(
         let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
         let updates = incoming_tx.clone();
         let asks = incoming_tx.clone();
+        let completes = incoming_tx.clone();
         let mut ready = Some(ready);
         let mut refused = None;
         let outcome = Client
@@ -715,6 +716,13 @@ fn run(
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
                     let _ = updates.send(Incoming::Update(notification.update));
+                    Ok(())
+                },
+                agent_client_protocol::on_receive_notification!(),
+            )
+            .on_receive_notification(
+                async move |notification: CompleteElicitationNotification, _cx| {
+                    let _ = completes.send(Incoming::Complete(notification.elicitation_id));
                     Ok(())
                 },
                 agent_client_protocol::on_receive_notification!(),
@@ -841,11 +849,15 @@ enum Incoming {
         CreateElicitationRequest,
         Responder<CreateElicitationResponse>,
     ),
+    /// `elicitation/complete`: the Harness says a link's flow finished.
+    Complete(ElicitationId),
 }
 
 struct PendingElicit {
     form: ElicitationForm,
     responder: Responder<CreateElicitationResponse>,
+    /// A URL form's `elicitationId`, which `elicitation/complete` names.
+    link: Option<ElicitationId>,
 }
 
 /// What `serve` lends a turn: both channels, and the forms that outlive it.
@@ -901,6 +913,10 @@ async fn serve(
                 message = incoming.recv() => match message {
                     Some(Incoming::Elicit(request, responder)) => {
                         hold_form(&mut forms, &request, responder, waiting, on_event);
+                        continue;
+                    }
+                    Some(Incoming::Complete(link)) => {
+                        complete_form(&mut forms, &link, on_event);
                         continue;
                     }
                     // History replayed by `session/load`, and anything said
@@ -1119,6 +1135,11 @@ async fn turn(
                 }
                 Some(Incoming::Elicit(request, responder)) => {
                     hold_form(&mut forms, &request, responder, false, on_event)
+                }
+                // Either list may hold it: a link can wait from before the turn.
+                Some(Incoming::Complete(link)) => {
+                    complete_form(&mut forms, &link, on_event);
+                    complete_form(held, &link, on_event);
                 }
                 None => {
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
@@ -1420,9 +1441,14 @@ fn hold_form(
 ) {
     let mut form = elicitation_form(request, responder.id().to_string());
     form.waits = form.url.is_some() && !signing_in;
+    let link = match &request.mode {
+        ElicitationMode::Url(link) => Some(link.elicitation_id.clone()),
+        _ => None,
+    };
     forms.push(PendingElicit {
         form: form.clone(),
         responder,
+        link,
     });
     on_event(Event::Elicitation(form));
 }
@@ -1449,6 +1475,23 @@ fn answer_form(
         .responder
         .respond(elicitation_response(&pending.form, answer));
     on_event(Event::PermissionSettled { request, option });
+}
+
+/// A link the Harness says is done, retired as an answer would retire it. The
+/// user finished elsewhere, so nothing is sent: dropping a responder writes no
+/// reply. An id no open form holds is ignored.
+fn complete_form(forms: &mut Vec<PendingElicit>, link: &ElicitationId, on_event: &OnEvent) {
+    let Some(at) = forms
+        .iter()
+        .position(|pending| pending.link.as_ref() == Some(link))
+    else {
+        return;
+    };
+    let pending = forms.remove(at);
+    on_event(Event::PermissionSettled {
+        request: pending.form.request,
+        option: None,
+    });
 }
 
 /// Every open form, answered with the protocol's `cancel`.

@@ -1,6 +1,7 @@
 // A sign-in link a Harness hands over as a URL elicitation: Chat draws the
-// link whole, and Open opens it before it tells the Harness yes. Drives
-// src/chat.html the way chat-landing-format.test.js does.
+// link whole, and Open opens it before it tells the Harness yes. A link the
+// Harness says is complete goes dead with nothing sent. Drives src/chat.html
+// the way chat-landing-format.test.js does.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -55,7 +56,9 @@ const form = {
   url: URL_,
 };
 
-function paint() {
+// Clicks Open, or with `settled` retires the row the way the Shell does on
+// `elicitation/complete`: the settled event with no option.
+function paint(settled = false) {
   const stub = `
 <script type="module">
   const handlers = {};
@@ -89,12 +92,21 @@ function paint() {
       anchors: row.querySelectorAll("a").length,
     };
     const before = window.__invoked.length;
-    buttons.find((b) => b.textContent === "Open").click();
+    if (${settled}) {
+      handlers["chat-permission-settled"]({ payload: { request: "7", option: null } });
+    } else {
+      buttons.find((b) => b.textContent === "Open").click();
+    }
     for (let i = 0; i < 10; i += 1) await tick();
     const calls = window.__invoked.slice(before);
     const out = document.createElement("pre");
     out.id = "probe";
-    out.textContent = JSON.stringify({ ...drawn, calls, disabled: buttons.every((b) => b.disabled) });
+    out.textContent = JSON.stringify({
+      ...drawn,
+      calls,
+      disabled: buttons.every((b) => b.disabled),
+      chosen: row.querySelectorAll(".chosen").length,
+    });
     document.body.append(out);
   }
   window.addEventListener("load", drive);
@@ -148,4 +160,12 @@ test("a sign-in link is drawn whole and Open opens it before answering yes", { s
     { name: "elicitation_answer", args: { request: "7", value: "open" } },
   ]);
   assert.equal(report.disabled, true);
+});
+
+test("a completed link goes dead with nothing chosen and nothing sent", { skip, timeout: 60000 }, () => {
+  const report = paint(true);
+  assert.deepEqual(report.code, [URL_], "the row stays, so the log says what was asked");
+  assert.equal(report.disabled, true);
+  assert.equal(report.chosen, 0);
+  assert.deepEqual(report.calls, []);
 });
