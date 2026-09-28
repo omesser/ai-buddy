@@ -112,7 +112,6 @@ function status(text) {
 }
 
 const PI_HARNESS = "Harness · pi";
-const AI_BATCHED_SWITCHES = new Set(["director", "proactive", "pi_project_mcp"]);
 
 function revealPiMcp(select) {
   const panel = select.closest?.("[data-row]")?.parentElement?.parentElement;
@@ -156,7 +155,7 @@ function drawRow(row, values, emit, stage) {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
       input.checked = Boolean(values[row.id]);
       input.addEventListener("change", () => {
-        if (AI_BATCHED_SWITCHES.has(row.id)) stage(row.id, input.checked);
+        if (row.batched) stage(row.id, input.checked);
         else emit({ set_bool: row.id, value: input.checked });
       });
       const node = el(
@@ -447,6 +446,18 @@ export function pruneDraft(draft, values) {
   return Object.fromEntries(Object.entries(draft).filter(([id, value]) => value !== values[id]));
 }
 
+// The staged row keeps the preview it had until the new one arrives, so the
+// snippet, steps, and token never draw empty in between.
+export function stageDraft(draft, id, value) {
+  return { ...draft, [id]: value };
+}
+
+// Apply and Cancel report only a draft that differs from the store.
+export function pressFeedback(press, draft, values) {
+  if (Object.keys(pruneDraft(draft, values)).length === 0) return null;
+  return press === "director_cancel" ? "Changes discarded." : "Changes applied.";
+}
+
 export async function handleEvent(payload) {
   const response = await invokeSettingsEvent(payload);
   return processResponse(response);
@@ -561,15 +572,9 @@ if (typeof document !== "undefined") {
   let feedback = null;
 
   function stage(id, value) {
-    draft[id] = value;
+    draft = stageDraft(draft, id, value);
     feedback = null;
     document.querySelector(".set-feedback")?.remove();
-    if (id === "byo_harness") {
-      draft.byo_snippet = "";
-      draft.byo_steps = "";
-      draft.byo_token = "";
-      renderCurrentTab();
-    }
   }
 
   async function loadSnapshot() {
@@ -605,13 +610,12 @@ if (typeof document !== "undefined") {
     const hinted = copyRunForPress(payload);
     const early =
       hinted !== undefined ? writeRunClipboard(hinted, { ...currentValues, ...draft }, writeText) : Promise.resolve();
+    const staged = draft;
     try {
       const outcome = await handleEvent(payload);
       await early;
       draft = foldDraft(draft, outcome);
-      if (outcome?.reset) {
-        feedback = payload.press === "director_cancel" ? "Changes discarded." : "Changes applied.";
-      }
+      if (outcome?.reset) feedback = pressFeedback(payload.press, staged, currentValues);
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();
       } else if (await applyEventOutcome(outcome, { ...currentValues, ...draft }, writeText)) {

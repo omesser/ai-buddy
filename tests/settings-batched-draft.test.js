@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { foldDraft, processResponse, pruneDraft, render } from "../src/settings.js";
+import { foldDraft, pressFeedback, processResponse, pruneDraft, render } from "../src/settings.js";
 
 function snapshot(name) {
   const read = (kind) =>
@@ -135,6 +135,17 @@ test("AI switches and wake interval wait for Apply and can be discarded", () => 
   draft = foldDraft(draft, { reset: true });
   assert.equal(draw({ ...MODEL_API.values, ...draft }).row("director").children[0].children[0].checked, true);
   assert.equal(draw({ ...MODEL_API.values, ...draft })("director_wake_secs").value, "180");
+});
+
+test("Apply and Cancel report a change only when the draft differs from the store", () => {
+  const values = MODEL_API.values;
+  for (const press of ["director_apply", "director_cancel"]) {
+    assert.equal(pressFeedback(press, {}, values), null, press);
+    assert.equal(pressFeedback(press, { director: values.director }, values), null, `${press}, toggled back`);
+  }
+  const toggled = { director: !values.director };
+  assert.equal(pressFeedback("director_apply", toggled, values), "Changes applied.");
+  assert.equal(pressFeedback("director_cancel", toggled, values), "Changes discarded.");
 });
 
 test("a batched row draws the draft it is handed, the key field included", () => {
