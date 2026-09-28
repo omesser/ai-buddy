@@ -1158,7 +1158,6 @@ fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
 }
 
 fn harness_source_changed(settings: &Settings, patch: &SettingsPatch) -> bool {
-    // Presence of the row is not a change: both windows commit on blur.
     if patch.completer.harness.is_none() && patch.completer.harness_command.is_none() {
         return false;
     }
@@ -1167,14 +1166,14 @@ fn harness_source_changed(settings: &Settings, patch: &SettingsPatch) -> bool {
     next.harness_source() != settings.harness_source()
 }
 
-/// Which of the Director tab's fields hold an edit.
-///
-/// A redraw asks this so it can leave a staged field alone and still take
-/// every other one from live state. Per field rather than per tab: a tab
-/// dirty only because a key was typed would otherwise freeze the endpoint
-/// text beside it, and Apply would write that stale text back (#279).
+/// Which AI fields hold an edit. Per field so Apply writes only edited values
+/// and does not overwrite a later live change to an untouched row.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Staged {
+    pub director: bool,
+    pub proactive: bool,
+    pub pi_project_mcp: bool,
+    pub wake_secs: bool,
     pub base_url: bool,
     pub model: bool,
     pub key: bool,
@@ -1184,18 +1183,29 @@ pub struct Staged {
 
 impl Staged {
     pub fn any(&self) -> bool {
-        self.base_url || self.model || self.key || self.harness || self.harness_command
+        self.director
+            || self.proactive
+            || self.pi_project_mcp
+            || self.wake_secs
+            || self.base_url
+            || self.model
+            || self.key
+            || self.harness
+            || self.harness_command
     }
 }
 
 /// What the Director tab holds right now, as the window reads it straight
 /// back off its own widgets.
 ///
-/// Verbatim text, one field per batched row. Nothing here is filtered by the
+/// One value per batched row. Nothing here is filtered by the
 /// renderer: `patch` applies the frozen rule itself, from the description, so
-/// the two windows cannot disagree about which rows an exported variable owns
-/// (#272).
+/// an exported variable still owns its row.
 pub struct DirectorDraft<'a> {
+    pub director: bool,
+    pub proactive: bool,
+    pub pi_project_mcp: bool,
+    pub wake_secs: String,
     pub base_url: String,
     pub model: String,
     pub key: String,
@@ -1211,6 +1221,10 @@ impl<'a> DirectorDraft<'a> {
     /// override the fields that moved.
     pub fn live(view: &SettingsView, description: &'a form::FormDescription) -> Self {
         Self {
+            director: view.director_enabled,
+            proactive: view.proactive_wakes,
+            pi_project_mcp: view.development_switches[form::PI_PROJECT_MCP_ID],
+            wake_secs: view.development_texts[form::DIRECTOR_WAKE_SECS_ID].clone(),
             base_url: view.director_base_url.clone(),
             model: view.director_model.clone(),
             key: String::new(),
@@ -1239,6 +1253,14 @@ impl<'a> DirectorDraft<'a> {
 
     fn model_edit(&self, view: &SettingsView) -> Option<&str> {
         self.edit(form::DIRECTOR_MODEL_ID, &self.model, &view.director_model)
+    }
+
+    fn wake_secs_edit(&self, view: &SettingsView) -> Option<&str> {
+        self.edit(
+            form::DIRECTOR_WAKE_SECS_ID,
+            &self.wake_secs,
+            &view.development_texts[form::DIRECTOR_WAKE_SECS_ID],
+        )
     }
 
     fn harness_edit(&self, view: &SettingsView) -> Option<&str> {
@@ -1279,9 +1301,8 @@ impl<'a> DirectorDraft<'a> {
         (self.clear_key && view.clear_key_enabled()).then_some("")
     }
 
-    /// The patch one Apply sends: only the fields that changed, so at most one
-    /// `SettingsOp::Retarget` comes out of it. `None` when the tab is clean,
-    /// which is also what disables both buttons.
+    /// The patch one Apply sends. Only changed fields are included, so at most
+    /// one `SettingsOp::Retarget` comes out of it. `None` when the tab is clean.
     ///
     /// Through `set_text` rather than by assignment, so the field names are
     /// the ones every other control writes through. The one exception is the
@@ -1293,6 +1314,18 @@ impl<'a> DirectorDraft<'a> {
             return None;
         }
         let mut patch = SettingsPatch::default();
+        if staged.director {
+            patch.set_bool(BoolField::DirectorEnabled, self.director);
+        }
+        if staged.proactive {
+            patch.set_bool(BoolField::ProactiveWakes, self.proactive);
+        }
+        if staged.pi_project_mcp {
+            patch.set_bool(BoolField::PiProjectMcp, self.pi_project_mcp);
+        }
+        if let Some(text) = self.wake_secs_edit(view) {
+            patch.set_text(TextField::DirectorWakeSecs, text);
+        }
         if let Some(text) = self.base_url_edit(view) {
             patch.set_text(TextField::DirectorBaseUrl, text);
         }
@@ -1311,10 +1344,16 @@ impl<'a> DirectorDraft<'a> {
         Some(patch)
     }
 
-    /// The same decisions as `patch`, as booleans, so a redraw and an Apply
-    /// cannot disagree about what is staged.
+    /// The same edit decisions as `patch`, as booleans.
     pub fn staged(&self, view: &SettingsView) -> Staged {
         Staged {
+            director: !self.description.frozen(form::DIRECTOR_ID)
+                && self.director != view.director_enabled,
+            proactive: !self.description.frozen(form::PROACTIVE_ID)
+                && self.proactive != view.proactive_wakes,
+            pi_project_mcp: !self.description.frozen(form::PI_PROJECT_MCP_ID)
+                && self.pi_project_mcp != view.development_switches[form::PI_PROJECT_MCP_ID],
+            wake_secs: self.wake_secs_edit(view).is_some(),
             base_url: self.base_url_edit(view).is_some(),
             model: self.model_edit(view).is_some(),
             key: self.key_edit(view).is_some(),
@@ -3645,6 +3684,32 @@ mod tests {
             .patch(&view)
             .expect("a staged clear is dirty");
             assert_eq!(patch.completer.director_api_key.as_deref(), Some(""));
+        });
+    }
+
+    #[test]
+    fn ai_switches_and_wake_interval_commit_together() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(false);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                director: !view.director_enabled,
+                proactive: !view.proactive_wakes,
+                pi_project_mcp: !view.development_switches[form::PI_PROJECT_MCP_ID],
+                wake_secs: "240".into(),
+                ..DirectorDraft::live(&view, &description)
+            };
+            let patch = draft.patch(&view).expect("the edits are staged");
+            assert_eq!(
+                patch.completer.director_enabled,
+                Some(!view.director_enabled)
+            );
+            assert_eq!(patch.completer.proactive_wakes, Some(!view.proactive_wakes));
+            assert_eq!(
+                patch.completer.pi_project_mcp,
+                Some(!view.development_switches[form::PI_PROJECT_MCP_ID])
+            );
+            assert_eq!(patch.completer.director_wake_secs.as_deref(), Some("240"));
         });
     }
 

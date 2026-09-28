@@ -63,6 +63,12 @@
   border-top: 1px solid var(--chat-rule);
 }
 
+.set-feedback {
+  margin: 8px 0 0;
+  color: var(--chat-ink-2);
+  font-size: 12px;
+}
+
 .set-section {
   padding: 12px 0 6px;
   border-bottom: 1px solid var(--chat-rule);

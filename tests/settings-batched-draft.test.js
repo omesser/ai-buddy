@@ -1,7 +1,5 @@
-// A batched row stays in the widget until Apply (#663), and the page redraws
-// the panel from its snapshot on every tab switch. The draft has to live
-// outside the widget for the two to agree: `render()` reports each edit to a
-// batched row through `stage`, and draws whatever draft value it is handed.
+// A tab switch redraws from the snapshot. The draft preserves staged edits
+// across those redraws until Apply or Cancel.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

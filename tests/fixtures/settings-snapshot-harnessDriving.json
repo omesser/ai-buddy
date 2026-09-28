@@ -211,7 +211,7 @@
               "writes": "DirectorWakeSecs",
               "help": null,
               "frozen": false,
-              "batched": false,
+              "batched": true,
               "disclosure": null,
               "status": null
             },
@@ -472,7 +472,7 @@
                   "frozen": false
                 }
               ],
-              "help": "The endpoint and AI source rows take effect on Apply.",
+              "help": "AI switches, wake interval, endpoint, and AI source take effect on Apply.",
               "disclosure": null
             }
           ],

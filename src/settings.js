@@ -112,6 +112,7 @@ function status(text) {
 }
 
 const PI_HARNESS = "Harness · pi";
+const AI_BATCHED_SWITCHES = new Set(["director", "proactive", "pi_project_mcp"]);
 
 function revealPiMcp(select) {
   const panel = select.closest?.("[data-row]")?.parentElement?.parentElement;
@@ -154,7 +155,10 @@ function drawRow(row, values, emit, stage) {
     case "Checkbox": {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
       input.checked = Boolean(values[row.id]);
-      input.addEventListener("change", () => emit({ set_bool: row.id, value: input.checked }));
+      input.addEventListener("change", () => {
+        if (AI_BATCHED_SWITCHES.has(row.id)) stage(row.id, input.checked);
+        else emit({ set_bool: row.id, value: input.checked });
+      });
       const node = el(
         "div",
         { class: `set-row set-check${row.frozen ? " set-is-frozen" : ""}`, "data-row": row.id },
@@ -313,12 +317,20 @@ function rowValue(root, id) {
 
 function directorDraft(root) {
   return {
+    director: rowChecked(root, "director"),
+    proactive: rowChecked(root, "proactive"),
+    pi_project_mcp: rowChecked(root, "pi_project_mcp"),
+    director_wake_secs: rowValue(root, "director_wake_secs"),
     director_base_url: rowValue(root, "director_base_url"),
     director_model: rowValue(root, "director_model"),
     director_api_key: rowValue(root, "director_api_key"),
     harness: rowValue(root, "harness"),
     harness_command: rowValue(root, "harness_command"),
   };
+}
+
+function rowChecked(root, id) {
+  return Boolean(root.querySelector?.(`[data-row="${id}"] input`)?.checked);
 }
 
 // Every control this page draws, in render order, the footer's after the
@@ -409,10 +421,8 @@ export function processResponse(response) {
   }
 }
 
-// The batched rows' draft, keyed by row id, between a keystroke and Apply or
-// Cancel. A tab switch redraws the panel from the snapshot, so the draft is
-// what the redraw is handed over it. Exported so the round trip has a test
-// without a browser (#995).
+// A tab switch redraws from the snapshot, so edits must stay in the draft
+// keyed by row id until Apply or Cancel.
 export function foldDraft(draft, outcome) {
   if (!outcome || outcome === true) return draft;
   if (outcome.reset) return {};
@@ -539,9 +549,12 @@ if (typeof document !== "undefined") {
   let currentTabIndex = 0;
   let lastSnapshotPromise = null;
   let draft = {};
+  let feedback = null;
 
   function stage(id, value) {
     draft[id] = value;
+    feedback = null;
+    document.querySelector(".set-feedback")?.remove();
   }
 
   async function loadSnapshot() {
@@ -581,6 +594,9 @@ if (typeof document !== "undefined") {
       const outcome = await handleEvent(payload);
       await early;
       draft = foldDraft(draft, outcome);
+      if (outcome?.reset) {
+        feedback = payload.press === "director_cancel" ? "Changes discarded." : "Changes applied.";
+      }
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();
       } else if (await applyEventOutcome(outcome, currentValues, writeText)) {
@@ -598,6 +614,14 @@ if (typeof document !== "undefined") {
     const tab = currentForm.tabs[currentTabIndex];
     if (tab) {
       render(panel, tab, { ...currentValues, ...draft }, emitEvent, stage);
+      if (feedback && tab.title === "AI") {
+        document.getElementById("set-footer")?.append(el("p", {
+          class: "set-feedback",
+          role: "status",
+          "aria-live": "polite",
+          text: feedback,
+        }));
+      }
     }
   }
 
@@ -626,6 +650,7 @@ if (typeof document !== "undefined") {
     for (let i = 0; i < tabs.length; i++) {
       const tab = tabs[i];
       tab.addEventListener("click", () => {
+        feedback = null;
         currentTabIndex = i;
         for (let j = 0; j < tabs.length; j++) {
           tabs[j].setAttribute("aria-selected", String(j === i));

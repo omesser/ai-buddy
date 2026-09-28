@@ -628,10 +628,18 @@ struct PickFills {
     row: String,
 }
 
-/// Widget text the webview holds for batched Director rows. Apply reads this
-/// the way a native window reads its fields (#663).
+/// Values the webview holds for batched AI rows. Apply reads these from the
+/// controls rather than saving each edit as it happens.
 #[derive(serde::Deserialize, Debug, Default)]
 struct DirectorDraftWire {
+    #[serde(default)]
+    director: Option<bool>,
+    #[serde(default)]
+    proactive: Option<bool>,
+    #[serde(default)]
+    pi_project_mcp: Option<bool>,
+    #[serde(default)]
+    director_wake_secs: Option<String>,
     #[serde(default)]
     director_base_url: Option<String>,
     #[serde(default)]
@@ -1120,6 +1128,18 @@ fn settings_event_blocking(
             pressed = fields;
             let mut draft = settings::DirectorDraft::live(&view, &description);
             if let Some(wire) = wire {
+                if let Some(value) = wire.director {
+                    draft.director = value;
+                }
+                if let Some(value) = wire.proactive {
+                    draft.proactive = value;
+                }
+                if let Some(value) = wire.pi_project_mcp {
+                    draft.pi_project_mcp = value;
+                }
+                if let Some(value) = wire.director_wake_secs {
+                    draft.wake_secs = value;
+                }
                 if let Some(value) = wire.director_base_url {
                     draft.base_url = value;
                 }

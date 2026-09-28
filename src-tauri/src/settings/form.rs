@@ -151,11 +151,8 @@ pub enum FormRow {
         frozen: bool,
         /// Committed by Apply rather than on every blur.
         ///
-        /// Declared here so the page cannot decide it for itself. The
-        /// Director's four controls only mean anything together: committing
-        /// one at a time points the Completer at a host and model that were
-        /// never meant to go together, and every commit drops the in-flight
-        /// session history with it (#279).
+        /// A partial endpoint or source edit would retarget the Completer and
+        /// drop session history before the user applies the batch.
         batched: bool,
         /// Extended explanation behind progressive disclosure.
         disclosure: Option<String>,
@@ -897,7 +894,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     placeholder: model::wake_secs_placeholder(),
                     writes: TextField::DirectorWakeSecs,
                     frozen: wake_frozen,
-                    batched: false,
+                    batched: true,
                     help: None,
                     disclosure: None,
                     status: wake_status,
@@ -981,7 +978,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "director_actions".to_string(),
-                    help: Some("The endpoint and AI source rows take effect on Apply.".to_string()),
+                    help: Some("AI switches, wake interval, endpoint, and AI source take effect on Apply.".to_string()),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
@@ -2386,19 +2383,10 @@ mod tests {
         ));
     }
 
-    /// The Director endpoint and Completer source, and no other editable row.
-    ///
-    /// The Completer limits stay live: #273 landed them to be changed and
-    /// watched, and a button between a limit and its effect would undo that.
-    /// The source rows join the endpoint batch so a pick cannot kill a child
-    /// before Apply (#663).
-    ///
-    /// Clear key is the fourth batched control and is absent here, because it
-    /// is an operation rather than a value: `RowOperation::ClearKey` stages,
-    /// and that is the whole of what it means. `actions_map_to_patches_or_ops`
-    /// is what holds that end (#279).
+    /// The wake interval joins the endpoint and source text batch. The other
+    /// Completer limits remain live; Clear key stages through an operation.
     #[test]
-    fn only_the_director_endpoint_and_source_batch() {
+    fn ai_text_and_source_rows_are_marked_batched() {
         let description = describe();
         let mut batched: Vec<&str> = Vec::new();
         for row in description.sections().flat_map(|section| &section.rows) {
@@ -2419,6 +2407,7 @@ mod tests {
             DIRECTOR_API_KEY_ID,
             DIRECTOR_BASE_URL_ID,
             DIRECTOR_MODEL_ID,
+            DIRECTOR_WAKE_SECS_ID,
             HARNESS_COMMAND_ID,
             HARNESS_ID,
         ];
