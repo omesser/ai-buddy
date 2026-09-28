@@ -35,9 +35,11 @@ pub fn mode(frame: &Frame, visible: bool, behavior_playing: bool) -> ScheduleMod
     }
 }
 
-/// How long an Active tick sleeps once its work is done.
-pub fn active_wait(tick: Duration, _worked: Duration) -> Duration {
-    tick
+/// How long an Active tick sleeps once its work is done: the rest of the tick,
+/// so the work counts against the period instead of adding to it. A tick that
+/// overran sleeps not at all and the loop runs as fast as its work allows.
+pub fn active_wait(tick: Duration, worked: Duration) -> Duration {
+    tick.saturating_sub(worked)
 }
 
 #[cfg(test)]

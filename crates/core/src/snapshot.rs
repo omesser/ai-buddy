@@ -444,7 +444,7 @@ mod tests {
     }
 
     /// A tick's own work counts against its period. Sleeping a whole tick after
-    /// 6ms of work is a 22ms period, the 45 Hz ride the #427 matrix measured.
+    /// 6ms of work is a 22ms period, a 45 Hz ride.
     #[test]
     fn a_ride_polls_sixty_times_a_second_though_each_tick_works_6ms() {
         let tick = Duration::from_millis(16);
