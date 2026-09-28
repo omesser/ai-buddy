@@ -239,7 +239,7 @@ It is not narrowed per Harness. A Harness already runs code as the user, so a li
 
 Only a link that arrives during Fidget's own `authenticate` opens Chat. Any other link, such as an MCP server's after `session/new`, waits in Chat: the next Chat to open draws it, and nothing takes focus. A link scoped to the session and no tool call belongs to the session, so the turn it lands in does not cancel it.
 
-`elicitation/complete` retires a held link's row, as an answer does, and sends nothing back. The user finished the flow somewhere else. An `elicitationId` no held link carries is ignored.
+`elicitation/complete` retires a held link's row, as an answer does, and answers the request with `cancel`. The user finished the flow somewhere else and made no choice in Chat, which is what `cancel` means; `decline` would say they refused. An `elicitationId` no held link carries is ignored.
 
 ### How `cursor-agent` is reached
 

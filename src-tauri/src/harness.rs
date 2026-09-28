@@ -2841,11 +2841,13 @@ mod tests {
                         // The link was held between turns; the user finishes
                         // it elsewhere while this turn runs.
                         "mcp-link-complete-turn" if prompts == 1 => {
-                            say(
-                                json!({"jsonrpc": "2.0", "method": "elicitation/complete", "params": {
-                                    "elicitationId": "mcp-1",
-                                }}),
-                            );
+                            for link in ["nope", "mcp-1"] {
+                                say(
+                                    json!({"jsonrpc": "2.0", "method": "elicitation/complete", "params": {
+                                        "elicitationId": link,
+                                    }}),
+                                );
+                            }
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                         }
@@ -4909,10 +4911,10 @@ mod tests {
     }
 
     /// `elicitation/complete` for a held link retires its row as an answer
-    /// would, with no option and no reply on the wire. One for an id no form
-    /// holds is ignored.
+    /// would, with no option, and answers the request with `cancel`. One for
+    /// an id no form holds is ignored.
     #[test]
-    fn a_completed_link_retires_its_row_and_sends_no_answer() {
+    fn a_completed_link_retires_its_row_and_answers_cancel() {
         let (fx, session) = Fixture::new("mcp-link-complete");
         let key = SessionKey {
             instance: "buddy-1".to_string(),
@@ -4929,18 +4931,16 @@ mod tests {
                 .is_err(),
             "the unknown id retired something"
         );
-        for action in ["accept", "decline", "cancel"] {
-            assert_eq!(
-                fx.count(&format!("elicit-mcp:{action}")),
-                0,
-                "{action} went on the wire"
-            );
+        assert!(fx.wait_for("elicit-mcp:cancel", 1));
+        assert_eq!(fx.count("elicit-mcp:cancel"), 1);
+        for action in ["accept", "decline"] {
+            assert_eq!(fx.count(&format!("elicit-mcp:{action}")), 0, "{action}");
         }
         session.shutdown();
     }
 
     /// A link held between turns, completed while a turn runs, is retired by
-    /// that turn, with no reply on the wire.
+    /// that turn and answered with `cancel`. An unknown id mid-turn is ignored.
     #[test]
     fn a_link_completed_mid_turn_retires_the_row_held_between_turns() {
         let (fx, session) = Fixture::new("mcp-link-complete-turn");
@@ -4956,12 +4956,10 @@ mod tests {
         }
         let form = form.expect("the link was never forwarded");
         assert_eq!(settled, Some((form.request, None)));
-        for action in ["accept", "decline", "cancel"] {
-            assert_eq!(
-                fx.count(&format!("elicit-mcp:{action}")),
-                0,
-                "{action} went on the wire"
-            );
+        assert!(fx.wait_for("elicit-mcp:cancel", 1));
+        assert_eq!(fx.count("elicit-mcp:cancel"), 1);
+        for action in ["accept", "decline"] {
+            assert_eq!(fx.count(&format!("elicit-mcp:{action}")), 0, "{action}");
         }
         session.shutdown();
     }

@@ -1477,9 +1477,9 @@ fn answer_form(
     on_event(Event::PermissionSettled { request, option });
 }
 
-/// A link the Harness says is done, retired as an answer would retire it. The
-/// user finished elsewhere, so nothing is sent: dropping a responder writes no
-/// reply. An id no open form holds is ignored.
+/// A link the Harness says is done, retired as an answer would retire it.
+/// The user finished elsewhere and made no choice in Chat, so the request is
+/// closed with `cancel`. An id no open form holds is ignored.
 fn complete_form(forms: &mut Vec<PendingElicit>, link: &ElicitationId, on_event: &OnEvent) {
     let Some(at) = forms
         .iter()
@@ -1488,6 +1488,9 @@ fn complete_form(forms: &mut Vec<PendingElicit>, link: &ElicitationId, on_event:
         return;
     };
     let pending = forms.remove(at);
+    let _ = pending
+        .responder
+        .respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
     on_event(Event::PermissionSettled {
         request: pending.form.request,
         option: None,
