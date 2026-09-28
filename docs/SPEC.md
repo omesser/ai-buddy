@@ -5,8 +5,8 @@ Decisions and their rejected alternatives are recorded in [DESIGN.md](../DESIGN.
 and in [docs/adr/](./adr/). This document does not re-argue them.
 
 Scope is v1 as cut in DESIGN.md: Spatial Layer, Character Packages, Director on the
-free sensing tier, MCP server, Harness attach, chat, Memory. Voice and the Windows
-implementation are deferred. Ambient Capture, On-Demand Capture, and Local Gate are
+free sensing tier, MCP server, Harness attach, chat, Memory. Voice is deferred.
+Ambient Capture, On-Demand Capture, and Local Gate are
 dropped (not deferred) per [ADR-0031](./adr/0031-drop-capture-tiers.md).
 
 ## Problem Statement
@@ -53,7 +53,7 @@ opens a chat surface that reaches the attached Harness.
 Every **Character Instance** reads the same file. The user can open it in any text editor,
 edit it, and wipe it.
 
-Characters are packages. Two ship with the app. The format is first-class from day one so
+Characters are packages, and several ship with the app. The format is first-class from day one so
 that adding a character is drawing, not programming.
 
 ## User Stories
@@ -116,8 +116,8 @@ that adding a character is drawing, not programming.
     chatting is something I choose rather than something that happens by accident.
 25. As a user, I want the character to get out of the way when I go fullscreen, so that it
     does not appear in my video or my presentation.
-26. As a user, I want the character to hide during screen sharing, so that I do not have to
-    explain it in a meeting.
+26. As a user, I want to keep the character out of screen captures and shares, so that I do
+    not have to explain it in a meeting.
 27. As a user, I want the character to respect Do Not Disturb (#84), so that it stays visible
     but quiet — proposals are refused and unprompted dialogue is not spoken — while Poke,
     Grab, and Throw still work.
@@ -338,8 +338,10 @@ and toggles ignore-mouse-events by hit-testing the sprite's current alpha, so tr
 regions pass clicks through. WindowPet's implementation is the reference under MIT.
 
 Z-order is a single fixed level. Restacking by sprite state is rejected. Hiding is
-implemented as visibility rules — fullscreen frontmost, screen sharing active, Do Not
-Disturb, and a global hotkey.
+implemented as visibility rules: fullscreen frontmost and a global hotkey. Screen
+capture is a separate window-level switch, capturable by default
+([ADR-0024](./adr/0024-capturable-by-default.md)). Do Not Disturb keeps the character
+visible and quiet.
 
 ### Character Package
 
@@ -399,9 +401,8 @@ Two implementations ship:
   not cost the turn (#609); every other line is the spoken one, whichever side of the
   name it falls, because nothing tells a stray sentence from a Harness's chrome. A
   reply that is not a declared Behavior plays
-  `talk` and is spoken (`say:`); #119 put that in a bubble. Until a
-  Harness exists, an HTTP Completer stands in behind the same trait
-  ([ADR-0008](./adr/0008-one-harness-session.md)).
+  `talk` and is spoken (`say:`) in a bubble. An HTTP Completer fills the same role
+  behind the same trait ([ADR-0008](./adr/0008-one-harness-session.md)).
 
 A session wake is reactive (the user addressed the character: Poke, Throw, Grab
 start, landing on a Perch, Summon, a chat turn) or proactive (exponential
@@ -482,9 +483,6 @@ error the author sees, not which validator produced it.
 Tests must not sleep, poll, or depend on wall-clock time. Time enters the Engine as
 elapsed milliseconds on a snapshot, so a test advances time by constructing the next
 snapshot. `Clock` is a trait for the same reason.
-
-There is no existing prior art — this is a new repository. These tests establish the
-pattern, so they are worth writing carefully.
 
 ### Primary seam: the Engine
 
@@ -568,8 +566,8 @@ about whether it can fail quietly.
 
 Whichever file it was found in, and whether or not the seam was agreed in advance.
 
-This rule is written from four of them, every one pure arithmetic, every one found by
-measuring a running program rather than by review:
+Four bugs taught this, each pure arithmetic and each found by measuring a running
+program rather than by review:
 
 - The display union computed in physical pixels, producing a 7296x2234 overlay on a
   3648x1117 desktop.
@@ -577,10 +575,8 @@ measuring a running program rather than by review:
 - The window level discarded, so the Dock and the menu bar became Perches.
 - The one-way platform rule, which could be inverted with every test still passing.
 
-Each was understood and written up when it was fixed. Two got a test at the time and two
-did not, and the two that did not were rediscovered later by mutating the code to see
-whether anything noticed. A commit message explaining why a bug happened warns a reader
-who may never arrive; a test warns the next change.
+The two fixed without a test were rediscovered later by mutation. A commit message warns a
+reader who may never arrive; a test warns the next change.
 
 ## Out of Scope
 
@@ -588,7 +584,6 @@ Deferred to a later version, decided but not built:
 
 - Voice: hotkey push-to-talk, wake word, transcription. Transcription will be a trait
   with Apple `SpeechAnalyzer` on macOS 26+ and `whisper.cpp` elsewhere.
-- Window titles as Director context.
 - Publishing the Character Package format and authoring documentation. The format is
   first-class internally and stays undocumented until v2.
 
@@ -602,28 +597,20 @@ Decided against, not merely deferred:
 - Ambient Capture, On-Demand Capture, and the Local Gate. Fidget never takes screenshots,
   never analyzes screen pixels, and never embeds OCR or vision models. Agents that need
   pixel access or desktop control use harness-native computer use or attach an MCP server
-  like cua-driver. [ADR-0031](./adr/0031-drop-capture-tiers.md) supersedes
-  [ADR-0005](./adr/0005-sensing-posture.md).
+  like cua-driver. [ADR-0031](./adr/0031-drop-capture-tiers.md).
 - Desktop-level or dynamically restacked z-order, and peeking out from behind windows.
 - Window side and bottom collision.
 - Interaction verbs beyond the five.
 
 ## Further Notes
 
-**Build order.** Click-through alpha hit-testing on a transparent Tauri overlay comes
-first. It gates every visual decision, it is the fastest way to learn whether the overlay
-approach feels right, and WindowPet has a working MIT reference. Physics and Perch
-collision follow, then Character Packages, then the Director, then MCP and chat.
-
 **The riskiest unproven thing is Director quality**, not any of the platform work. A
 Director that proposes dull or repetitive Behaviors makes the product feel worse than
 static weights, which is a thesis failure rather than a bug. Measure it early against the
-static fallback, with the same two Characters.
+static fallback, with the same Characters.
 
 **Prompt injection reaches a model with Harness access through three paths**: Character
-Packages, the Memory file, and — once Capture ships — screen content. Two of the three
-exist in v1.
+Packages, the Memory file, and window titles under consent.
 
-**Attribution.** WindowPet is MIT and is the reference for click-through and for the
-tray/updater shape. No source is copied today; should any be lifted, the attribution
-belongs in the README's prior-art section.
+**Attribution.** WindowPet (MIT) is the reference for click-through and the tray/updater
+shape. Attribution lives in the README's prior-art section.

@@ -29,11 +29,10 @@ gh project item-list 2 --owner omesser --limit 300 --format json \
 `--format json` carries the full body of every issue, so filter with `--jq` and
 never print the raw output.
 
-Match the names exactly as they are written above. The five options carried a
-leading emoji until 2026-09-21 and no longer do, so a filter copied from an
-older transcript — one whose status string still carries that prefix — matches
-nothing and reports an empty board rather than an error. An empty Todo list is
-a result worth double-checking before believing.
+Match the names exactly as written above. A filter copied from an older
+transcript may carry a leading emoji the options no longer have; it matches
+nothing and reports an empty board rather than an error. Double-check an empty
+Todo list before believing it.
 
 An item whose `linked pull requests` field holds an open PR is being worked on
 even when its status still reads `Todo`. Treat it as taken.

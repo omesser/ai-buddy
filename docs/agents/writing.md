@@ -94,10 +94,8 @@ exception; a contact sheet of frames says more than a sentence about timing.
 Upload the image with `gh pr create --attach` or `gh pr comment --attach`, in
 `<file>#<alt text>` form. GitHub rewrites a body reference such as
 `![alt](./before.png)` to point at the uploaded asset, which outlives the branch
-and the squash merge. Until gh 2.101.0 this page said to commit the image
-instead, because attachment upload was a browser affordance no agent could
-reach. That is no longer true, and a still committed only to be looked at once
-leaves a file in the tree that nothing references after the merge.
+and the squash merge. Do not commit an image only to show it in a pull request;
+nothing references it after the merge.
 
 Check an image in only when it documents an asset that lives here.
 `branding/app-icon-preview.png` is the worked example, and it earns its place

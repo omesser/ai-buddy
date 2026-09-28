@@ -1,5 +1,7 @@
 # Naming / Terminology Review — September 2026
 
+Shipped: the product rename to Fidget landed in #1079, after this review.
+
 Systematic review of codebase naming against `CONTEXT.md` glossary and ADRs.
 
 ## Executive Summary
