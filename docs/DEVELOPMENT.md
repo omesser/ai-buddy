@@ -472,7 +472,7 @@ The README lists the [tools and resources](../README.md#harness--mcp).
 
 ### How it works
 
-Dispatch lives in the running app (ADR-0023). `src-tauri/src/mcp_http.rs` serves the tools on `http://127.0.0.1:<random-port>/mcp` behind a per-run bearer token: 32 fresh bytes in memory, never on disk or in a log. It is thread-per-request with no async runtime, request/response only: no notifications, progress, sampling, SSE push, or prompts. If the bind fails at launch, the app runs without MCP (ADR-0026). The bind is loopback only, because the token authorizes moving the fidget (ADR-0023). The denylist applies to `list_windows`, `describe_screen`, and `fidget://windows`: it filters password managers and redacts password fields.
+Dispatch lives in the running app (ADR-0023). `src-tauri/src/mcp_http.rs` serves the tools on `http://127.0.0.1:<random-port>/mcp` behind a per-run bearer token: 32 fresh bytes in memory, never on disk or in a log. It is thread-per-request with no async runtime, request/response only: no notifications, progress, sampling, SSE push, or prompts. If the bind fails at launch, the app runs without MCP (ADR-0023). The bind is loopback only, because the token authorizes moving the fidget (ADR-0023). The denylist applies to `list_windows`, `describe_screen`, and `fidget://windows`: it filters password managers and redacts password fields.
 
 The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the route:
 
