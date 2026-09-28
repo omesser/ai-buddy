@@ -31,7 +31,8 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
-const NVM_NODE = "/Users/oded/.nvm/versions/node/v20.19.2/bin/node";
+// A custom Harness command's argv[0]. No hyphen: a hyphen is a break opportunity.
+const LONG_HARNESS_PATH = "/Users/me/.local/share/agentlauncher/versions/2.4.1/bin/agentacp";
 
 function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1a2-497f-4899-a827-a4e42fbdc1f2" }) {
   const opening = {
@@ -199,12 +200,15 @@ test(
 );
 
 test(
-  "a launcher path with no break opportunity wraps inside the path instead of widening the header",
+  "a custom Harness path with no break opportunity wraps inside the path instead of widening the header",
   { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
   () => {
     for (const theme of THEMES) {
-      const report = measure(theme, "Buddy Bot", { name: NVM_NODE, session: "smoke-1" });
-      assert.equal(report.mind, `${NVM_NODE} · session smoke-1`, theme);
+      const report = measure(theme, "Buddy Bot", {
+        name: LONG_HARNESS_PATH,
+        session: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      });
+      assert.equal(report.mind, `${LONG_HARNESS_PATH} · session 7c9e6679`, theme);
       check(theme, report);
     }
   },
