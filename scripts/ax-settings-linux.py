@@ -233,17 +233,14 @@ def main():
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # wait subcommand
     wait_parser = subparsers.add_parser('wait', help='Wait for Settings window')
     wait_parser.add_argument('--timeout', type=int, default=30,
                              help='Timeout in seconds (default: 30)')
     wait_parser.set_defaults(func=cmd_wait)
 
-    # dump subcommand
     dump_parser = subparsers.add_parser('dump', help='Dump Settings window tree')
     dump_parser.set_defaults(func=cmd_dump)
 
-    # pick-source subcommand
     pick_parser = subparsers.add_parser('pick-source', help='Pick AI source')
     pick_parser.add_argument('title', help='AI source title to pick')
     pick_parser.set_defaults(func=cmd_pick_source)

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Click Copy on the Settings webview BYO row and read the pasteboard (#855).
-# Usage:
-#   ./scripts/verify-settings-webview-clipboard-macos.sh
-#   FIDGET_VERIFY_BIN=path/to/fidget ./scripts/verify-settings-webview-clipboard-macos.sh
+# Usage: [FIDGET_VERIFY_BIN=path/to/fidget] ./scripts/verify-settings-webview-clipboard-macos.sh
 #
-# Settings webview is the default. Needs Accessibility (scripts/ax-settings.swift).
+# Needs Accessibility (scripts/ax-settings.swift).
 # Stills land under .verify/; downscale before attaching. Do not commit PNGs.
 # Shares /tmp/fidget-settings-overlay.lock with the other Settings sittings.
 

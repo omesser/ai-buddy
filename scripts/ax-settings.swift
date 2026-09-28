@@ -7,8 +7,7 @@
 // wrong row. Coordinates appear nowhere; controls are pressed by name.
 
 // Needs an Accessibility grant for whatever runs it (System Settings > Privacy
-// & Security > Accessibility). Callers: verify-settings-webview-select-macos.sh,
-// verify-settings-keyboard-webview.sh, verify-settings-webview-clipboard-macos.sh.
+// & Security > Accessibility).
 
 import AppKit
 import ApplicationServices
@@ -126,18 +125,11 @@ func click(_ element: AXUIElement) -> Bool {
     return true
 }
 
-/// How many windows this process has on the menu layer. WebKit presents a
-/// `<select>` popup itself rather than through an NSPopUpButton, and publishes
-/// that menu to no accessibility tree: not under the popup, not under the
-/// application, and not by hit test from either. A window on the menu layer is
-/// the only evidence the script has that the menu opened. #797.
 func menuWindowCount() -> Int { menuWindows().count }
 
 /// Picks an item out of an already-open menu by typing its title, then Return.
-/// macOS menus select by typed prefix, so the script can still pick by name
-/// from a menu the tree offers no element for. The caller checks that a menu is
-/// up first. A tracking menu takes the keyboard, so the characters land nowhere
-/// else.
+/// macOS menus select by typed prefix, so this picks by name from a menu the
+/// tree offers no element for. The tracking menu takes the keyboard.
 func typeSelect(_ title: String) {
     for character in title {
         var utf16 = Array(String(character).utf16)
@@ -150,14 +142,14 @@ func typeSelect(_ title: String) {
         usleep(50_000)
     }
     // 36 is Return. The tracking menu consumes it, so the Settings window's own
-    // Enter handler from #774 never sees it and the window stays open.
+    // Enter handler never sees it and the window stays open.
     for down in [true, false] {
         CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)?.post(tap: .cghidEventTap)
         usleep(30_000)
     }
 }
 
-/// AXPress, falling back to AXShowMenu and then to a synthesized click. A
+/// AXPress, falling back to AXShowMenu, AXPick, then a synthesized click. A
 /// status item answers to AXPress on some macOS versions and only to
 /// AXShowMenu on others, and which one has never been documented.
 func press(_ element: AXUIElement) -> Bool {
@@ -197,8 +189,9 @@ func popup(labelled label: String) -> AXUIElement? {
     return hit
 }
 
-/// On-screen menu-layer windows this pid owns. WebKit's `<select>` menu is
-/// one of these and publishes no AXMenu (#797).
+/// On-screen menu-layer windows this pid owns. WebKit's `<select>` menu
+/// publishes to no accessibility tree, not even by hit test, so such a window
+/// is the only evidence that it opened (#797).
 func menuWindows() -> [[String: AnyObject]] {
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
     return ((info as? [[String: AnyObject]]) ?? []).filter {
@@ -274,9 +267,9 @@ func webContentSettled(_ window: AXUIElement) -> Bool {
     }
 }
 
-/// `tab`, `pick`, `dump`, `popup-frame` and `open-popup` each address a
-/// control the webview owns, so each waits for that priming. `open`, `move`
-/// and `frame` do not: the status item and the window rectangle are AppKit's. #779.
+/// Commands that address a control the webview owns wait for that priming.
+/// `open`, `move`, `frame` and `focus-window` do not: the status item and the
+/// window rectangle are AppKit's. #779.
 func settledWindow(titled title: String) -> AXUIElement? {
     guard let window = window(titled: title) else { return nil }
     _ = waitFor(5, { webContentSettled(window) ? window : nil })
@@ -320,8 +313,7 @@ case "tab":
 
 case "pick":
     // Changing a popup in place is the only way to reach the states between
-    // two launches. The popup is addressed by the label above it, because the
-    // tree is in render order and a label is stabler than an index.
+    // two launches.
     guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
     guard let target = popup(labelled: args[2]) else { die("no popup labelled \(args[2])") }
     // Setting AXValue is refused by NSPopUpButton, so open it and press the
@@ -329,11 +321,9 @@ case "pick":
     // action the renderer listens for.
     let menusBefore = menuWindowCount()
     guard press(target) else { die("could not open the \(args[2]) popup") }
-    // Two kinds of menu answer that press. AppKit publishes its NSMenu under the
-    // popup, so the option is an element to find and press. WebKit's `<select>`
-    // menu draws but publishes nothing, so the only signal is a new window on
-    // the menu layer, and the script types the option instead. One loop polls
-    // both, because on the webview the AX search alone never resolves.
+    // AppKit publishes its NSMenu under the popup, so the option is an element
+    // to press. WebKit's `<select>` menu publishes nothing, so a new menu-layer
+    // window is the signal and the option is typed. One loop polls both.
     var option: AXUIElement?
     var drew = false
     let deadline = Date().addingTimeInterval(5)
@@ -449,8 +439,6 @@ case "frame":
     printRect(rect)
 
 case "key":
-    // HID key into the Settings webview. Open still goes through the tray;
-    // after that the sitting is keyboard only.
     guard args.count >= 3 else {
         die("usage: ax-settings key <pid> <tab|space|return|escape|down|up|delete|end>")
     }
@@ -466,7 +454,7 @@ case "type":
     typeText(args[2])
 
 case "focused":
-    // The control Tab last landed on, same columns as dump minus placeholder/settable.
+    // The control Tab last landed on: dump's columns minus placeholder, settable and focusable.
     guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
     var focusedRef: CFTypeRef?
     let err = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focusedRef)
@@ -479,7 +467,7 @@ case "focused":
 
 case "focus-window":
     // Click the title bar, not a control, so the webview is key without
-    // changing a row. Keyboard-only starts after this.
+    // changing a row.
     guard let window = settingsWindow(), let rect = frame(window) else {
         die("Settings is not open")
     }
@@ -499,7 +487,6 @@ case "focus-window":
     usleep(150_000)
 
 case "menus":
-    // WebKit's <select> menu is a layer>=100 window with no AX tree. #797.
     print(menuWindowCount())
 
 case "press-button":
@@ -534,9 +521,8 @@ case "press-button":
 
 case "dump":
     // One line per element as role|title|value|placeholder|enabled|settable|
-    // focusable, so the shell can grep for a label and read the enabled flag
-    // beside it. Order is the tree's own, which is the render order, so section
-    // order is assertable.
+    // focusable, in tree order, which is render order, so section order is
+    // assertable.
     let wanted = args.count >= 3 ? args[2] : "Settings"
     guard let window = settledWindow(titled: wanted) else { die("\(wanted) is not open") }
     func walk(_ element: AXUIElement, depth: Int) {

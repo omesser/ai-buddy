@@ -3,14 +3,9 @@ name: Release
 on:
   release:
     types: [published]
-  # Dispatching takes write access, so whoever fills these in could already
-  # push the commit they build. Traced in #384: `version-override` is the only
-  # input that reaches a shell, it gets there through `env:` rather than
-  # spliced into a `run:`, and it must match semver before anything downstream
-  # sees it. The three booleans are read by nothing until #387 repairs the job
-  # `if:` that names them. No input names a ref, an action, a secret or an
-  # upload target.
-  #
+  # Dispatching takes write access already. `version-override` is the only
+  # input that reaches a shell, through `env:`, and must match semver first.
+  # No input names a ref, an action, a secret or an upload target.
   # checkov:skip=CKV_GHA_7:reviewed in #384, see above
   workflow_dispatch:
     inputs:
@@ -43,19 +38,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Three runners, three installers. macOS is the real overlay; Linux supports
-  # window Perches on X11, degraded Spatial Layer on Wayland. Windows packages
-  # NSIS installers; runtime furniture (#197) is stubbed in SPEC.
-  #
-  # Every run builds the same bundles and leaves them on the run page. A
-  # Release run additionally attaches them to the Release the human
-  # published in GitHub's UI, which is also what created the tag; this job
-  # never creates either. tests.yml already gated the merge.
-  # Which platforms this run builds. A Release builds all three; a manual
-  # dispatch builds the ones its checkboxes asked for. The choice cannot live
-  # in the package job's `if:`, because that is evaluated before the matrix
-  # exists and may not name it — which is what made this whole file invalid
-  # from #343 until #387. A job the matrix depends on can decide it instead.
+  # Every run leaves its bundles on the run page; a Release run also attaches
+  # them to the human-published Release, and never creates a Release or tag.
+  # The platform choice lives in a job because a job-level `if:` cannot name
+  # the matrix.
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -65,7 +51,6 @@ jobs:
       - id: pick
         shell: bash
         env:
-          # Empty on a Release, where every platform builds regardless.
           RELEASE: ${{ github.event_name == 'release' }}
           LINUX: ${{ inputs.linux }}
           MACOS: ${{ inputs.macos }}
@@ -94,20 +79,14 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # A manual run reads its version off the commit it was pointed at,
-          # which takes tags, and checkout fetches none by default. Tags
-          # only, not fetch-depth: 0 — this repo's history is ~900 MB.
+          # The version comes from tags. Not fetch-depth: 0, the history is
+          # ~900 MB.
           fetch-tags: true
 
       - name: The version that ships
-        # git names the version, never tauri.conf.json. Three sources, in
-        # order: version-override, for a run that has to stamp a specific
-        # number; the Release's tag; the tag on the commit the run was
-        # pointed at. Falling off the end, the highest release tag plus a
-        # -dev prerelease reads as "after that release, not yet a release",
-        # and the short SHA keeps two dev bundles off one filename.
-        #
-        # 0.0.0 covers a repo with no tags at all, which is today.
+        # git names the version, never tauri.conf.json. With no override or
+        # tag on the commit, <latest tag>-dev.g<sha> reads as "after that
+        # release", and the SHA keeps two dev bundles off one filename.
         id: ver
         shell: bash
         env:
@@ -127,15 +106,8 @@ jobs:
               version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
             fi
           fi
-          # A leading `v` is already stripped from all three sources above, so
-          # `v1.2.3` and `1.2.3` both arrive here as `1.2.3` — semver itself
-          # carries no prefix, and the bundles must not either. A typo reaches
-          # the bundle filenames and the macOS Info.plist, so this checks
-          # semver's shape, though not every rule in it.
-          #
-          # bash's `=~`, not `grep`: grep matches a line, so a two-line
-          # override passed on its first and carried the second into
-          # GITHUB_OUTPUT as another output. `=~` matches the whole string. #384.
+          # `=~`, not grep: grep matches per line, so a two-line override
+          # would smuggle its second line into GITHUB_OUTPUT.
           semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
           if [[ ! $version =~ $semver ]]; then
             echo "::error::version '$version' is not semver: expected 1.2.3 or v1.2.3, 1.2.3-dev.gabc1234"
@@ -155,15 +127,9 @@ jobs:
           cache-on-failure: true
 
       - name: Install the Linux system packages
-        # Same set tests.yml uses to link the shell. patchelf is what the
-        # AppImage bundler patches with; skip it and the Linux job dies
-        # after compiling. Not cached: unpacking WebKit headers dominates.
-        #
-        # libayatana-appindicator3-dev is a packaging decision, not just a
-        # build one. Tauri derives the .deb's Depends from whichever
-        # appindicator is linked here, and the README promises the ayatana
-        # one. Swapping it for libappindicator3-dev changes what users are
-        # required to install, silently.
+        # patchelf is what the AppImage bundler patches with. The .deb's
+        # Depends follows the appindicator linked here, and docs/DEVELOPMENT.md
+        # promises ayatana: libappindicator3-dev would silently change it.
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -172,27 +138,15 @@ jobs:
             libayatana-appindicator3-dev
 
       - name: Set up Node
-        # tauri-action installs @tauri-apps/cli through npm. The app itself
-        # has no Node build step (frontendDist is static files under src/).
+        # tauri-action installs @tauri-apps/cli through npm.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 'lts/*'
 
       - name: Build the packages
-        # projectPath is src-tauri so the action uses this app's
-        # tauri.conf.json rather than walking the repo and guessing.
-        # --bundles keeps each OS on the installer that OS can produce;
-        # the conf lists all three so a local `tauri build` matches CI.
-        #
-        # Workflow artifacts are unconditional: every run's bundles belong
-        # on its own run page, whatever triggered it. The release inputs
-        # are all a Release run adds, and they are empty otherwise, which
-        # is how the action is told there is no Release to attach to.
-        #
-        # No updater signing key: updater signatures are #200, and
-        # createUpdaterArtifacts is false until that key exists. No Apple
-        # certificate: signingIdentity "-" in tauri.conf.json is ad-hoc
-        # (#132's signed-enough first drop; notarization is a follow-up).
+        # Empty release inputs tell the action there is no Release to attach
+        # to. No signing secrets: createUpdaterArtifacts is false until #200,
+        # and signingIdentity "-" is ad-hoc.
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

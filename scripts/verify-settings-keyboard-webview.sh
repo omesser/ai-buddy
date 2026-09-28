@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 # Keyboard-only sitting for the Settings webview (#848, #854, #706 artefact 2).
-# Usage:
-#   FIDGET_SETTINGS_WEBVIEW=1 ./scripts/verify-settings-keyboard-webview.sh
-#   FIDGET_VERIFY_BIN=path/to/fidget ./scripts/verify-settings-keyboard-webview.sh
+# Usage: [FIDGET_VERIFY_BIN=path/to/fidget] ./scripts/verify-settings-keyboard-webview.sh
 #
-# Overlay may be up. After the tray open, every control is reached with
-# Tab / Space / Enter / Escape, not AXPress. Needs Accessibility
-# (scripts/ax-settings.swift). CI does not run this; the pure checks are
-# covered by scripts/test_verify_settings_keyboard.sh on fixtures.
+# After the tray open, every control is reached with Tab / Space / Enter /
+# Escape, not AXPress. Needs Accessibility (scripts/ax-settings.swift). CI does
+# not run this; scripts/test_verify_settings_keyboard.sh covers the pure checks.
 #
-# Stills land under .verify/; downscale before attaching. Do not commit PNGs.
-# Shares /tmp/fidget-settings-overlay.lock with the #849 sitting.
+# Stills land under .verify/; do not commit PNGs.
+# Shares /tmp/fidget-settings-overlay.lock with the clipboard sitting.
 
 set -uo pipefail
 
@@ -34,19 +31,16 @@ fail() {
   failures=$((failures + 1))
 }
 
-# role|title of a focused or dump line. The focused element carries a ▸ on a
-# disclosure that the dump does not, and the value column changes with state,
-# so neither takes part in the identity. Duplicate and empty titles survive
-# because the sequence is compared by position, never as a set.
+# role|title of a focused or dump line. Focus carries a ▸ on a disclosure the
+# dump does not, and the value changes with state, so neither is identity.
+# Sequences compare by position, so duplicate and empty titles survive.
 identity() {
   awk -F'|' '{ t = $2; sub(/^▸ /, "", t); print $1 "|" t }'
 }
 
-# The tab stops in dump order. A role allowlist cannot express them: WebKit
-# gives a <pre tabindex="0"> the same AXGroup role as the layout wrappers around
-# it, so the dump's focusable column is the only signal that separates the two.
-# The scan starts at the AXWebArea because the Tab cycle stays inside the page,
-# and the window chrome and AppKit scroll area above it take focus from a click.
+# The tab stops in dump order, by the focusable column: WebKit gives a
+# <pre tabindex="0"> the same AXGroup role as its layout wrappers. The scan
+# starts at the AXWebArea because the Tab cycle stays inside the page.
 expected_sequence() {
   awk -F'|' '$1 == "AXWebArea" { web = 1 } web && $7 == "true" { print }' "$1" | identity
 }

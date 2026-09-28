@@ -1,9 +1,6 @@
 // Places the cursor at a point in top-left-origin points, and prints where it
-// ended up. The hit-test check needs the cursor and the sprite in one place,
-// and the sprite's position belongs to the Engine, so the cursor is what moves.
-
-// Needs no permission and posts no event: CGWarpMouseCursorPosition moves the
-// pointer directly. Warping is this harness's business, not the app's (ADR-0003).
+// ended up. Needs no permission and posts no event. Warping is this harness's
+// business, not the app's (ADR-0003).
 // Usage: swift scripts/warp-cursor.swift x y
 
 import AppKit

@@ -53,7 +53,6 @@ for _ in $(seq 30); do
 done
 displays=$(sed -n 's/^overlay: \([0-9]*\) display.*/\1/p' "$log" | head -1)
 if [ -z "$displays" ]; then
-  # Check if the app failed to start (e.g., no DISPLAY)
   if grep -qi "error\|failed\|cannot" "$log" 2> /dev/null; then
     echo "app failed to start; see $log" >&2
     cat "$log" >&2
@@ -67,14 +66,12 @@ sleep 2 # Give helpers time to spawn
 children=$(pgrep -P "$app" 2> /dev/null || true)
 pids=$(echo "$app" | cat - <(echo "$children") | tr '\n' ' ' | xargs)
 
-# Count distinct pids for diagnostics
 pid_count=$(echo "$pids" | wc -w)
 
 echo "displays: $displays   main pid: $app   total processes: $pid_count"
 echo "pids: $pids"
 echo "settling ${settle}s, then sampling ${seconds}s every ${interval}s -> $out"
 
-# Log process tree for forensics
 ps -p "$app" -o pid,ppid,comm,args 2> /dev/null || true
 for child in $children; do
   ps -p "$child" -o pid,ppid,comm,args 2> /dev/null || true
@@ -85,7 +82,6 @@ printf 'epoch\ttotal_kb\t%s\n' "$(echo "$pids" | tr ' ' '\t')" > "$out"
 
 end=$(($(date +%s) + seconds))
 while [ "$(date +%s)" -lt "$end" ]; do
-  # Read RSS from /proc/[pid]/status. Dead processes produce no line.
   rss=""
   for pid in $pids; do
     if [ -f "/proc/$pid/status" ]; then
@@ -110,7 +106,6 @@ awk -F'\t' 'NR > 1 {print $2}' "$out" | sort -n |
         n, t[0] / 1024, t[int(n / 2)] / 1024, t[n - 1] / 1024
     }'
 
-# Per process, using VmHWM (peak RSS) from /proc/[pid]/status
 column=3
 for pid in $pids; do
   comm=$(ps -p "$pid" -o comm= 2> /dev/null | xargs || echo "gone")

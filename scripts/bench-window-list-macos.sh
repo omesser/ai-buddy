@@ -4,13 +4,8 @@
 # each call takes, and how that grows with the window count. One TSV row per
 # scenario, the same shape as bench-gpu-compositing-macos.sh.
 #
-# micro times the call from its own process against whatever is on the desktop
-# (scripts/bench-window-list-macos.swift) and needs no green light. idle,
-# riding, sweep, and profile launch fidget on the live desktop, and all but
-# profile can flood it with windows, so they refuse to run unless
-# FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed.
-# The flood comes from scripts/window-flood-macos.swift (PR #1043); without
-# that file the added-window rows skip and say so.
+# usage() lists the scenarios. All but env and micro launch fidget on the live
+# desktop, so they refuse to run unless FIDGET_BENCH_GREEN_LIGHT=1.
 #
 # The per-call numbers for a running fidget come from dtrace on SkyLight's
 # SLWindowListCopyWindowInfo: on macOS 26 CoreGraphics forwards to it and the

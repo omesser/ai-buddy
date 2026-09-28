@@ -1,27 +1,19 @@
 name: Matt Pocock Skills Sync
 
-# `.agents/mattpocock/` is a copy of `mattpocock/skills@main:skills/engineering`,
-# and a copy only stays useful while someone refreshes it. This does that once a
-# week and opens a pull request when upstream actually moved.
+# Re-vendors `.agents/mattpocock/` from `mattpocock/skills@main:skills/engineering`
+# weekly.
 #
-# It never merges. Every pull request here goes through review, and a bot that
-# lands third-party markdown into an agent's instructions unreviewed is the one
-# thing this workflow must not become.
+# It never merges: third-party agent instructions land only through review.
 
 on:
   schedule:
-    # Mondays, 06:30 UTC — half an hour behind the pstack sync, deliberately.
-    # `scripts/sync-mattpocock.sh` reserves every name `.agents/pstack/UPSTREAM.json`
-    # claims, so it should read a pstack lock file that is already current.
-    # Running the two in the other order would only delay a collision by a week,
-    # but there is no reason to choose the worse order.
+    # After the pstack sync, whose UPSTREAM.json names the skills this one
+    # must skip.
     - cron: '30 6 * * 1'
   workflow_dispatch:
 
 permissions:
-  # Push the sync branch, open or update the pull request for it, and dispatch
-  # `PR Tests` at the branch. `actions: write` is what `gh workflow run` spends.
-  # No other scope is used.
+  # `actions: write` is for dispatching PR Tests at the sync branch.
   contents: write
   pull-requests: write
   actions: write
@@ -36,14 +28,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node
-        # The layout and ownership tests run here rather than as checks on the
-        # pull request: a pull request opened with GITHUB_TOKEN does not trigger
-        # `on: pull_request`, so PR Tests never fires for it. The full suite does
-        # still run — the last step dispatches it at the branch, and
-        # `workflow_dispatch` is the exception GitHub carves out of that
-        # suppression — but a dispatched run reports against the branch, not
-        # against the pull request. Testing here is what makes the branch
-        # verified at the moment it is pushed.
+        # The tests run here because a pull request opened with GITHUB_TOKEN
+        # does not trigger PR Tests; the dispatched run reports on the branch.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 'lts/*'
@@ -55,8 +41,6 @@ jobs:
             .agents/mattpocock/UPSTREAM.json >> "$GITHUB_OUTPUT"
 
       - name: Re-vendor from upstream
-        # The same script a human runs locally. One code path, so a sync done
-        # by hand and a sync done here cannot produce different trees.
         run: scripts/sync-mattpocock.sh --fetch
 
       - name: Decide whether upstream moved
@@ -70,10 +54,8 @@ jobs:
           fi
 
       - name: Layout and ownership tests
-        # Ownership is the one that matters here. `.agents/skills` is flat and
-        # shared with the pstack sync, so an upstream that adds a name pstack
-        # already owns is the failure this catches. The script skips such a name
-        # rather than clobbering it, and this proves the skip happened.
+        # `.agents/skills` is shared with pstack; ownership proves the script
+        # skipped a name pstack already owns.
         if: steps.changes.outputs.moved == 'true'
         run: node --test tests/skills-layout.test.js tests/skills-ownership.test.js
 
@@ -86,21 +68,13 @@ jobs:
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          # Explicit path, never `git add -A`: a runner that leaves a stray
-          # file behind should not get it committed for free. `.agents` is the
-          # only tree the sync writes; `.claude/skills` and `.cursor/skills`
-          # are symlinks into it and never change.
+          # Explicit path, so a stray runner file is not committed.
           git add .agents
-          # Captured from the index, before the commit. The checkout is shallow,
-          # so neither `HEAD~1` nor a merge base is available afterwards.
+          # Before the commit: the shallow checkout has no `HEAD~1` after it.
           git diff --cached --stat | tail -40 > /tmp/mattpocock-diffstat.txt
           git commit -m "chore(mattpocock): Sync vendored skills to ${after:0:12}"
-          # `--force-with-lease` rather than `--force`: the sync branch is
-          # shared, and a concurrent push should lose this race rather than be
-          # silently clobbered. The lease needs an explicit expectation because
-          # the checkout is shallow and carries no remote-tracking ref for the
-          # branch. An empty one means "expect it not to exist", which is the
-          # first run.
+          # An explicit lease, because the shallow checkout has no
+          # remote-tracking ref. Empty means "expect no branch yet".
           lease=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
           git push --force-with-lease="refs/heads/$BRANCH:$lease" \
             origin "HEAD:$BRANCH"
@@ -110,8 +84,6 @@ jobs:
       - name: Open or update the pull request
         if: steps.changes.outputs.moved == 'true'
         run: |
-          # The diff summary and the compare link are the point: a reviewer
-          # should see what moved without opening every file.
           {
             echo '## Why'
             echo
@@ -144,11 +116,8 @@ jobs:
           if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
             gh pr edit "$BRANCH" --title "$title" --body-file /tmp/mattpocock-pr.md
           else
-            # No label. Every string in docs/agents/triage-labels.md is an
-            # issue triage role — `needs-triage` reads "maintainer needs to
-            # evaluate this issue" — and this is a pull request. It already
-            # arrives needing review, which is what the architect gate is for.
-            # No auto-merge is armed, here or anywhere.
+            # No label: docs/agents/triage-labels.md labels issues, not pull
+            # requests. No auto-merge.
             gh pr create --base "$GITHUB_BASE" --head "$BRANCH" \
               --title "$title" --body-file /tmp/mattpocock-pr.md
           fi
@@ -161,14 +130,9 @@ jobs:
           AFTER: ${{ steps.push.outputs.after }}
 
       - name: Dispatch the full test suite at the sync branch
-        # Guarded on the same `moved` output as the push: a run of this workflow
-        # that found upstream unchanged has no branch to test.
         if: steps.changes.outputs.moved == 'true'
-        # Last, and deliberately unable to fail the job. A sync pull request
-        # that exists with no dispatched run is worth keeping; one that never
-        # opened because the dispatch call errored is not. The failure is an
-        # annotation rather than a silent skip, and the pull request body says
-        # what to do when the run is missing.
+        # Last, and unable to fail the job: the pull request is worth keeping
+        # without the run, and its body says what to do when the run is missing.
         run: |
           gh workflow run tests.yml --ref "$BRANCH" ||
             echo "::error::Could not dispatch PR Tests for $BRANCH." \

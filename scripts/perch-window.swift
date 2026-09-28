@@ -6,10 +6,6 @@
 // it behind to fall. Each event prints one JSON line: Unix ms, the bounds the
 // window server settled on (what was asked for is not evidence), and depth.
 
-// The window re-asserts its place at the front of its level while it lives: an
-// accessory window is buried by anything that takes focus, and a buried prop is
-// one the sprite falls through, so a landing check would assert nothing.
-
 // An optional window level makes the prop desktop furniture (Dock 20, menu bar
 // 24), the only way to check from a script that neither is a Perch. It quits on
 // its own, so an interrupted run leaves no stray window.
@@ -33,9 +29,9 @@ let steps = 3
 /// read with neither half fast enough to be a yank.
 let flingPoints = stepPoints * Double(steps)
 
-/// How often the prop re-asserts its place at the front of its level. Faster
-/// than the app's ~10Hz window poll, so a burial cannot survive a whole tick and
-/// be read as one.
+/// How often the prop re-asserts its place at the front of its level: anything
+/// that takes focus buries it, and the sprite falls through a buried prop.
+/// Faster than the app's ~10Hz window poll, so a burial never survives a tick.
 let reassertInterval = 0.05
 
 /// How far a glide travels each way, and how much each frame moves it.
@@ -129,8 +125,6 @@ let settle = 0.3
 RunLoop.current.run(until: Date().addingTimeInterval(settle))
 report(at: Date())
 
-/// When each move happens, and where it puts the top edge. The two variants
-/// differ in nothing else: same window, same travel, same reports.
 let moves: [(after: Double, top: Double)] =
     fast
     ? [(stepInterval, y + flingPoints)]
