@@ -4497,100 +4497,33 @@ mod tests {
         session.shutdown();
     }
 
-    /// #1038. The character has a question out to the user and the user touches
-    /// the sprite. Newest-wins is about the world moving past a moment; the
-    /// user mid-answer is not that, so the Poke is dropped instead.
+    /// #1038, ADR-0033. The character has a question out to the user, and every
+    /// wake is dropped until the user answers it. Newest-wins is about the world
+    /// moving past a moment; the user mid-answer is not that.
     #[test]
-    fn a_poke_does_not_take_a_turn_blocked_on_the_users_answer() {
-        let (fx, session) = Fixture::new("permission");
-        let session = Arc::new(session);
-        let id = WOKEN.to_string();
-        let mut slots = crate::completer::Slots::new();
-        slots.wake(
-            &id,
-            harness_director(&session),
-            woken(Happened::Chat("hi".into())),
-        );
-        let ask = fx.ask();
-        assert_eq!(
-            slots.wake(&id, harness_director(&session), woken(Happened::Poke)),
-            crate::completer::Woke::AwaitingUser,
-            "the Poke is held for the answer the user owes"
-        );
-        thread::sleep(Duration::from_millis(300));
-        assert_eq!(
-            fx.count("perm:cancelled"),
-            0,
-            "the ask was taken from under the user"
-        );
-
-        session.answer_permission(&ask.request, "allow");
-        let answered = polled(&mut slots).expect("the chat turn's answer");
-        assert!(
-            matches!(answered.context.happened, Happened::Chat(_)),
-            "the answer belongs to the typed line, not {:?}",
-            answered.context.happened
-        );
-        assert_eq!(said(&answered), Some("ok:allow"));
-        assert_eq!(fx.count("cancel"), 0);
-        assert_eq!(fx.count("prompt"), 1, "the Poke was dropped, not queued");
-        session.shutdown();
-    }
-
-    /// The same hold as a Poke. The user is mid-answer, so a Summon does not
-    /// take the turn either. The two differ only while a reply is still
-    /// generating.
-    #[test]
-    fn a_summon_does_not_take_a_turn_blocked_on_the_users_answer() {
-        let (fx, session) = Fixture::new("permission");
-        let session = Arc::new(session);
-        let id = WOKEN.to_string();
-        let mut slots = crate::completer::Slots::new();
-        slots.wake(
-            &id,
-            harness_director(&session),
-            woken(Happened::Chat("hi".into())),
-        );
-        let ask = fx.ask();
-        assert_eq!(
-            slots.wake(&id, harness_director(&session), woken(Happened::Summon),),
-            crate::completer::Woke::AwaitingUser,
-            "opening Chat took the turn the user is answering"
-        );
-        thread::sleep(Duration::from_millis(300));
-        assert_eq!(
-            fx.count("perm:cancelled"),
-            0,
-            "the ask was taken from under the user"
-        );
-
-        session.answer_permission(&ask.request, "allow");
-        let answered = polled(&mut slots).expect("the chat turn's answer");
-        assert!(
-            matches!(answered.context.happened, Happened::Chat(_)),
-            "the answer belongs to the typed line, not {:?}",
-            answered.context.happened
-        );
-        assert_eq!(said(&answered), Some("ok:allow"));
-        assert_eq!(fx.count("cancel"), 0);
-        assert_eq!(fx.count("prompt"), 1, "the Summon was dropped, not queued");
-        session.shutdown();
-    }
-
-    /// Mid-answer, a Throw and a Grab are the same hold as a Poke. The user
-    /// answers in Chat, and that turn continues. Neither gesture cancels it.
-    #[test]
-    fn a_throw_or_a_grab_does_not_take_a_turn_blocked_on_the_users_answer() {
-        for happened in [Happened::Throw, Happened::Grab] {
+    fn no_wake_takes_a_turn_blocked_on_the_users_answer() {
+        use Happened::*;
+        let every = [
+            Poke,
+            Throw,
+            Summon,
+            Grab,
+            Perch,
+            Chat("and another thing".into()),
+            Proactive,
+        ];
+        // No wildcard, so a new variant does not compile until it is listed above.
+        for happened in &every {
+            match happened {
+                Poke | Throw | Summon | Grab | Perch | Chat(_) | Proactive => {}
+            }
+        }
+        for happened in every {
             let (fx, session) = Fixture::new("permission");
             let session = Arc::new(session);
             let id = WOKEN.to_string();
             let mut slots = crate::completer::Slots::new();
-            slots.wake(
-                &id,
-                harness_director(&session),
-                woken(Happened::Chat("hi".into())),
-            );
+            slots.wake(&id, harness_director(&session), woken(Chat("hi".into())));
             let ask = fx.ask();
             assert_eq!(
                 slots.wake(&id, harness_director(&session), woken(happened.clone())),
@@ -4606,10 +4539,10 @@ mod tests {
 
             session.answer_permission(&ask.request, "allow");
             let answered = polled(&mut slots).expect("the chat turn's answer");
-            assert!(
-                matches!(answered.context.happened, Happened::Chat(_)),
-                "{happened:?} replaced the typed line with {:?}",
-                answered.context.happened
+            assert_eq!(
+                answered.context.happened,
+                Chat("hi".into()),
+                "{happened:?} replaced the typed line"
             );
             assert_eq!(said(&answered), Some("ok:allow"));
             assert_eq!(fx.count("cancel"), 0, "{happened:?} cancelled the turn");
