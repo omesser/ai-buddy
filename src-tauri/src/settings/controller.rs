@@ -73,6 +73,7 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
     let description = draft.description;
     match event {
         Event::SetBool { id, value } => match description.bool_write(id) {
+            Some(_) if description.batched(id) => Outcome::Nothing,
             Some(field) => {
                 let mut patch = SettingsPatch::default();
                 patch.set_bool(field, *value);
@@ -83,7 +84,7 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
         Event::SetText { id, value } => {
             // A batched row lives in the widgets until Apply. Writing here
             // would kill a Harness child the Cancel button still offers (#663).
-            if description.text_batched(id) {
+            if description.batched(id) {
                 return Outcome::Nothing;
             }
             text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::Apply)
@@ -95,7 +96,7 @@ pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> 
             if view.popup_value(id).as_deref() == Some(value.as_str()) {
                 return Outcome::Nothing;
             }
-            if description.text_batched(id) {
+            if description.batched(id) {
                 return Outcome::Nothing;
             }
             text_patch(description, id, value).map_or(Outcome::Nothing, Outcome::Apply)
@@ -136,7 +137,7 @@ fn shortcut(description: &FormDescription, id: &str, value: &str, current: &str)
         // A batched row stages: the four Director rows only apply together, so
         // Apply is what reaches the file. An unbatched one has no Apply beside
         // it and saves here. #279.
-        patch: if description.text_batched(shortcut.row) {
+        patch: if description.batched(shortcut.row) {
             None
         } else {
             text_patch(description, shortcut.row, value)
@@ -396,6 +397,48 @@ mod tests {
             let mut expected = SettingsPatch::default();
             expected.set_bool(crate::settings::BoolField::DoNotDisturb, true);
             assert_eq!(handle(&event, &draft, &view), Outcome::Apply(expected));
+        });
+    }
+
+    /// A batched switch saves nothing on the tick. Cancel writes nothing and
+    /// Apply commits the staged value.
+    #[test]
+    fn a_batched_checkbox_waits_for_apply() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view();
+            let description = form::describe();
+            let live = drawn(&view, &description);
+            for id in [
+                form::DIRECTOR_ID,
+                form::PROACTIVE_ID,
+                form::PI_PROJECT_MCP_ID,
+            ] {
+                let event = Event::SetBool {
+                    id: id.into(),
+                    value: true,
+                };
+                assert_eq!(handle(&event, &live, &view), Outcome::Nothing, "{id}");
+            }
+            let toggled = DirectorDraft {
+                director: !view.director_enabled,
+                ..drawn(&view, &description)
+            };
+            assert_eq!(
+                handle(&press(form::CANCEL_ID), &toggled, &view),
+                Outcome::Reset
+            );
+            let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &toggled, &view)
+            else {
+                panic!("Apply commits the staged switch");
+            };
+            assert_eq!(
+                patch.completer.director_enabled,
+                Some(!view.director_enabled)
+            );
+            assert_eq!(
+                handle(&press(form::APPLY_ID), &live, &view),
+                Outcome::Commit(None)
+            );
         });
     }
 

@@ -24,3 +24,24 @@ test("non-batched Popup rows emit pick on change, not set_text", () => {
     "non-batched Popup rows must not emit set_text"
   );
 });
+
+test("picking a registration Harness keeps the previous preview until the new one arrives", async () => {
+  const { foldDraft, processResponse, stageDraft } = await import("../src/settings.js");
+  const values = {
+    ...JSON.parse(readFileSync(new URL("./fixtures/settings-values-modelApi.json", import.meta.url), "utf8")),
+    byo_token: "old-token",
+  };
+  const shown = (draft) => ({ ...values, ...draft });
+  const fields = ["byo_snippet", "byo_steps", "byo_token"];
+
+  let draft = stageDraft({}, "byo_harness", "hermes");
+  for (const id of fields) assert.equal(shown(draft)[id], values[id], `${id} while the preview is in flight`);
+  for (const id of fields) assert.notEqual(shown(draft)[id], "", id);
+
+  draft = foldDraft(
+    draft,
+    processResponse({ action: "preview_byo", snippet: "hermes mcp add fidget", steps: "Run it.", token: "t" }),
+  );
+  assert.equal(shown(draft).byo_snippet, "hermes mcp add fidget");
+  assert.equal(shown(draft).byo_harness, "hermes");
+});

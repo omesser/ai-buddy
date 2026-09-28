@@ -1,13 +1,11 @@
-// A batched row stays in the widget until Apply (#663), and the page redraws
-// the panel from its snapshot on every tab switch. The draft has to live
-// outside the widget for the two to agree: `render()` reports each edit to a
-// batched row through `stage`, and draws whatever draft value it is handed.
+// A tab switch redraws from the snapshot. The draft preserves staged edits
+// across those redraws until Apply or Cancel.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { foldDraft, pruneDraft, render } from "../src/settings.js";
+import { foldDraft, pressFeedback, processResponse, pruneDraft, render } from "../src/settings.js";
 
 function snapshot(name) {
   const read = (kind) =>
@@ -106,11 +104,84 @@ test("a batched row reports each edit through stage and writes nothing on blur",
   assert.deepEqual(emitted, [], "a batched row never writes on blur (#663)");
 });
 
+test("AI switches and wake interval wait for Apply and can be discarded", () => {
+  const emitted = [];
+  let draft = {};
+  const control = draw(MODEL_API.values, (payload) => emitted.push(payload), (id, value) => {
+    draft[id] = value;
+  });
+  const director = control.row("director").children[0].children[0];
+  director.checked = false;
+  director.handlers.change();
+  const proactive = control.row("proactive").children[0].children[0];
+  proactive.checked = false;
+  proactive.handlers.change();
+  const piMcp = control.row("pi_project_mcp").children[0].children[0];
+  piMcp.checked = false;
+  piMcp.handlers.change();
+  const wake = control("director_wake_secs");
+  wake.value = "240";
+  wake.handlers.input();
+  wake.handlers.blur?.();
+
+  assert.deepEqual(emitted, []);
+  assert.deepEqual(draft, {
+    director: false,
+    proactive: false,
+    pi_project_mcp: false,
+    director_wake_secs: "240",
+  });
+  assert.equal(draw({ ...MODEL_API.values, ...draft }).row("director").children[0].children[0].checked, false);
+  draft = foldDraft(draft, { reset: true });
+  assert.equal(draw({ ...MODEL_API.values, ...draft }).row("director").children[0].children[0].checked, true);
+  assert.equal(draw({ ...MODEL_API.values, ...draft })("director_wake_secs").value, "180");
+});
+
+test("Apply and Cancel report a change only when the draft differs from the store", () => {
+  const values = MODEL_API.values;
+  for (const press of ["director_apply", "director_cancel"]) {
+    assert.equal(pressFeedback(press, {}, values), null, press);
+    assert.equal(pressFeedback(press, { director: values.director }, values), null, `${press}, toggled back`);
+  }
+  const toggled = { director: !values.director };
+  assert.equal(pressFeedback("director_apply", toggled, values), "Changes applied.");
+  assert.equal(pressFeedback("director_cancel", toggled, values), "Changes discarded.");
+});
+
 test("a batched row draws the draft it is handed, the key field included", () => {
   const control = draw({ ...MODEL_API.values, director_model: "gpt-5", director_api_key: "sk-draft" });
 
   assert.equal(control("director_model").value, "gpt-5");
   assert.equal(control("director_api_key").value, "sk-draft");
+});
+
+test("registration Harness previews without saving and Cancel restores the picker", () => {
+  const emitted = [];
+  let draft = {};
+  const control = draw(MODEL_API.values, (payload) => emitted.push(payload), (id, value) => {
+    draft[id] = value;
+  });
+  const picker = control("byo_harness");
+  picker.value = "hermes";
+  picker.handlers.change();
+
+  assert.deepEqual(emitted, [{ pick: "byo_harness", value: "hermes" }]);
+  assert.deepEqual(draft, { byo_harness: "hermes" });
+
+  const preview = processResponse({
+    action: "preview_byo",
+    snippet: "hermes mcp add fidget",
+    steps: "Run the command.",
+    token: "secret-token",
+  });
+  draft = foldDraft(draft, preview);
+  const shown = draw({ ...MODEL_API.values, ...draft });
+  assert.equal(shown("byo_harness").value, "hermes");
+  assert.equal(shown.row("byo_snippet").children[0].textContent, "hermes mcp add fidget");
+  assert.equal(shown.row("byo_token").children[0].textContent, "secret-token");
+
+  draft = foldDraft(draft, { reset: true });
+  assert.equal(draw({ ...MODEL_API.values, ...draft })("byo_harness").value, "claude");
 });
 
 // The regression in #995, as a tab switch does it: the page redraws the panel

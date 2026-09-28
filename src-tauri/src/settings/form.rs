@@ -83,6 +83,8 @@ pub enum FormRow {
         label: String,
         writes: BoolField,
         frozen: bool,
+        /// Committed by Apply rather than on the tick.
+        batched: bool,
         help: Option<String>,
         comment: Option<String>,
         /// Extended explanation behind progressive disclosure.
@@ -149,13 +151,8 @@ pub enum FormRow {
         /// an exported variable owns the field, since `model::resolve` gives
         /// it the last word and would discard an edit made here (#272).
         frozen: bool,
-        /// Committed by Apply rather than on every blur.
-        ///
-        /// Declared here so the page cannot decide it for itself. The
-        /// Director's four controls only mean anything together: committing
-        /// one at a time points the Completer at a host and model that were
-        /// never meant to go together, and every commit drops the in-flight
-        /// session history with it (#279).
+        /// Committed by Apply. A partial endpoint or source edit would retarget
+        /// the Completer and drop session history.
         batched: bool,
         /// Extended explanation behind progressive disclosure.
         disclosure: Option<String>,
@@ -382,15 +379,19 @@ impl FormDescription {
             })
     }
 
-    /// Whether the text row with this id commits on Apply rather than on
-    /// every blur or pick. Secure fields are always batched
-    /// (`FormRow::SecureField`); an id that is not a text or popup row stays
-    /// false.
-    pub fn text_batched(&self, id: &str) -> bool {
+    /// Whether the row with this id commits on Apply rather than on every
+    /// tick, blur, or pick. Secure fields are always batched
+    /// (`FormRow::SecureField`); an id that is not a value row stays false.
+    pub fn batched(&self, id: &str) -> bool {
         self.sections()
             .flat_map(|section| &section.rows)
             .find_map(|row| match row {
-                FormRow::TextField {
+                FormRow::Checkbox {
+                    id: row_id,
+                    batched,
+                    ..
+                }
+                | FormRow::TextField {
                     id: row_id,
                     batched,
                     ..
@@ -839,6 +840,7 @@ fn flag_row(
         id: id.to_string(),
         label,
         writes,
+        batched: false,
         frozen,
         help: Some(help.to_string()),
         comment: None,
@@ -875,6 +877,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     id: DIRECTOR_ID.to_string(),
                     label: director_label,
                     writes: BoolField::DirectorEnabled,
+                    batched: true,
                     frozen: director_frozen,
                     help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
@@ -885,6 +888,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     id: PROACTIVE_ID.to_string(),
                     label: "Proactive model calls".to_string(),
                     writes: BoolField::ProactiveWakes,
+                    batched: true,
                     frozen: false,
                     help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
@@ -897,7 +901,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     placeholder: model::wake_secs_placeholder(),
                     writes: TextField::DirectorWakeSecs,
                     frozen: wake_frozen,
-                    batched: false,
+                    batched: true,
                     help: None,
                     disclosure: None,
                     status: wake_status,
@@ -981,7 +985,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "director_actions".to_string(),
-                    help: Some("The endpoint and AI source rows take effect on Apply.".to_string()),
+                    help: Some("Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.".to_string()),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
@@ -1058,6 +1062,7 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 id: PI_PROJECT_MCP_ID.to_string(),
                 label: "Write .mcp.json in the working directory".to_string(),
                 writes: BoolField::PiProjectMcp,
+                batched: true,
                 frozen: false,
                 help: None,
                 comment: None,
@@ -1117,10 +1122,10 @@ fn byo_section() -> FormSection {
                 id: BYO_HARNESS_ID.to_string(),
                 label: Some("Harness".to_string()),
                 writes: TextField::ByoHarness,
-                help: Some("Which Harness the box below is written for.".to_string()),
+                help: Some("Preview instructions for this Harness. Apply saves the choice; Cancel restores it.".to_string()),
                 options: HARNESS_PRESETS.map(str::to_string).to_vec(),
                 frozen: false,
-                batched: false,
+                batched: true,
                 disclosure: None,
                 status: None,
             },
@@ -1254,6 +1259,7 @@ fn presence_sections() -> Vec<FormSection> {
                     id: DND_ID.to_string(),
                     label: "Do Not Disturb".to_string(),
                     writes: BoolField::DoNotDisturb,
+                    batched: false,
                     frozen: false,
                     help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
                     comment: None,
@@ -1264,6 +1270,7 @@ fn presence_sections() -> Vec<FormSection> {
                     id: SOUND_ID.to_string(),
                     label: "Sound".to_string(),
                     writes: BoolField::Sound,
+                    batched: false,
                     frozen: false,
                     help: Some("Off silences audio cues.".to_string()),
                     comment: None,
@@ -1282,6 +1289,7 @@ fn presence_sections() -> Vec<FormSection> {
                     id: HIDDEN_ID.to_string(),
                     label: "Go away".to_string(),
                     writes: BoolField::Hidden,
+                    batched: false,
                     frozen: false,
                     help: Some("Go off screen. But still exist.".to_string()),
                     comment: None,
@@ -1292,6 +1300,7 @@ fn presence_sections() -> Vec<FormSection> {
                     id: FULLSCREEN_ID.to_string(),
                     label: "Hide in fullscreen apps".to_string(),
                     writes: BoolField::HideInFullscreen,
+                    batched: false,
                     frozen: false,
                     help: Some("Steps aside for fullscreen apps.".to_string()),
                     comment: None,
@@ -1303,6 +1312,7 @@ fn presence_sections() -> Vec<FormSection> {
                     id: CAPTURABLE_ID.to_string(),
                     label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
+                    batched: false,
                     frozen: false,
                     help: Some("Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()),
                     comment: None,
@@ -1327,6 +1337,7 @@ fn presence_sections() -> Vec<FormSection> {
                 id: LAUNCH_ID.to_string(),
                 label: "Launch at login (unimplemented)".to_string(),
                 writes: BoolField::LaunchAtLogin,
+                batched: false,
                 frozen: true,
                 help: Some("Not available yet.".to_string()),
                 comment: None,
@@ -1379,6 +1390,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             id: CONSENT_ACCESSIBILITY_ID.to_string(),
             label: "Accessibility".to_string(),
             writes: BoolField::UseAccessibility,
+            batched: false,
             frozen: false,
             help: Some("Reads the Dock's position.".to_string()),
             comment: None,
@@ -1390,6 +1402,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
             label: "Window and application names".to_string(),
             writes: BoolField::UseWindowNames,
+            batched: false,
             frozen: false,
             help: Some("Requires macOS Screen Recording.".to_string()),
             comment: None,
@@ -1401,6 +1414,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             id: CONSENT_WINDOW_NAMES_ID.to_string(),
             label: "Window and Application Names".to_string(),
             writes: BoolField::UseWindowNames,
+            batched: false,
             frozen: false,
             help: Some("Reads window titles and application names.".to_string()),
             comment: None,
@@ -1412,6 +1426,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             id: CONSENT_INPUT_MONITORING_ID.to_string(),
             label: "Input Monitoring".to_string(),
             writes: BoolField::UseInputMonitoring,
+            batched: false,
             frozen: false,
             help: Some("Reacts to the mouse at once, not a second late.".to_string()),
             comment: None,
@@ -1426,6 +1441,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             id: CONSENT_PORTAL_SCREENCAST_ID.to_string(),
             label: "Window and application names".to_string(),
             writes: BoolField::UseWindowNames,
+            batched: false,
             frozen: false,
             help: Some("Requires xdg-desktop-portal ScreenCast.".to_string()),
             comment: None,
@@ -2386,24 +2402,19 @@ mod tests {
         ));
     }
 
-    /// The Director endpoint and Completer source, and no other editable row.
-    ///
-    /// The Completer limits stay live: #273 landed them to be changed and
-    /// watched, and a button between a limit and its effect would undo that.
-    /// The source rows join the endpoint batch so a pick cannot kill a child
-    /// before Apply (#663).
-    ///
-    /// Clear key is the fourth batched control and is absent here, because it
-    /// is an operation rather than a value: `RowOperation::ClearKey` stages,
-    /// and that is the whole of what it means. `actions_map_to_patches_or_ops`
-    /// is what holds that end (#279).
+    /// The AI switches and wake interval join the endpoint and source batch.
+    /// The other Completer limits remain live; Clear key stages through an
+    /// operation.
     #[test]
-    fn only_the_director_endpoint_and_source_batch() {
+    fn ai_rows_are_marked_batched() {
         let description = describe();
         let mut batched: Vec<&str> = Vec::new();
         for row in description.sections().flat_map(|section| &section.rows) {
             match row {
-                FormRow::TextField {
+                FormRow::Checkbox {
+                    id, batched: true, ..
+                }
+                | FormRow::TextField {
                     id, batched: true, ..
                 }
                 | FormRow::Popup {
@@ -2419,13 +2430,19 @@ mod tests {
             DIRECTOR_API_KEY_ID,
             DIRECTOR_BASE_URL_ID,
             DIRECTOR_MODEL_ID,
+            DIRECTOR_WAKE_SECS_ID,
+            BYO_HARNESS_ID,
+            DIRECTOR_ID,
             HARNESS_COMMAND_ID,
             HARNESS_ID,
+            PI_PROJECT_MCP_ID,
+            PROACTIVE_ID,
         ];
         expected.sort_unstable();
         assert_eq!(batched, expected);
-        assert!(!description.text_batched(CHARACTER_ID));
-        assert!(!description.text_batched(BYO_HARNESS_ID));
+        assert!(!description.batched(CHARACTER_ID));
+        assert!(description.batched(BYO_HARNESS_ID));
+        assert!(!description.batched(DND_ID));
     }
 
     /// Mute sits under Do Not Disturb because that is the heading a user
@@ -3273,11 +3290,8 @@ mod tests {
             // Stage or save is the target row's, not a second flag on the
             // picker: Apply owns the Director rows and nothing owns the
             // Development ones.
-            assert!(description.text_batched(DIRECTOR_BASE_URL_ID), "#279");
-            assert!(
-                !description.text_batched(DIRECTOR_REASONING_EFFORT_ID),
-                "#638"
-            );
+            assert!(description.batched(DIRECTOR_BASE_URL_ID), "#279");
+            assert!(!description.batched(DIRECTOR_REASONING_EFFORT_ID), "#638");
         });
     }
 
@@ -3614,8 +3628,8 @@ mod tests {
             );
             assert!(lower.contains("apply"), "got {copy:?}");
             let description = describe();
-            assert!(description.text_batched(HARNESS_ID));
-            assert!(description.text_batched(HARNESS_COMMAND_ID));
+            assert!(description.batched(HARNESS_ID));
+            assert!(description.batched(HARNESS_COMMAND_ID));
         });
     }
 

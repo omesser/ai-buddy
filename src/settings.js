@@ -154,7 +154,10 @@ function drawRow(row, values, emit, stage) {
     case "Checkbox": {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
       input.checked = Boolean(values[row.id]);
-      input.addEventListener("change", () => emit({ set_bool: row.id, value: input.checked }));
+      input.addEventListener("change", () => {
+        if (row.batched) stage(row.id, input.checked);
+        else emit({ set_bool: row.id, value: input.checked });
+      });
       const node = el(
         "div",
         { class: `set-row set-check${row.frozen ? " set-is-frozen" : ""}`, "data-row": row.id },
@@ -201,6 +204,7 @@ function drawRow(row, values, emit, stage) {
         select.addEventListener("change", () => {
           stage(row.id, select.value);
           if (row.id === "harness") revealPiMcp(select);
+          if (row.id === "byo_harness") emit({ pick: row.id, value: select.value });
         });
       } else {
         select.addEventListener("change", () => emit({ pick: row.id, value: select.value }));
@@ -313,12 +317,21 @@ function rowValue(root, id) {
 
 function directorDraft(root) {
   return {
+    director: rowChecked(root, "director"),
+    proactive: rowChecked(root, "proactive"),
+    pi_project_mcp: rowChecked(root, "pi_project_mcp"),
+    director_wake_secs: rowValue(root, "director_wake_secs"),
+    byo_harness: rowValue(root, "byo_harness"),
     director_base_url: rowValue(root, "director_base_url"),
     director_model: rowValue(root, "director_model"),
     director_api_key: rowValue(root, "director_api_key"),
     harness: rowValue(root, "harness"),
     harness_command: rowValue(root, "harness_command"),
   };
+}
+
+function rowChecked(root, id) {
+  return Boolean(root.querySelector?.(`[data-row="${id}"] input`)?.checked);
 }
 
 // Every control this page draws, in render order, the footer's after the
@@ -399,6 +412,12 @@ export function processResponse(response) {
       return { fill: { id: response.id, value: response.value } };
     case "clear_key":
       return { clearKey: true };
+    case "preview_byo":
+      return { preview: {
+        byo_snippet: response.snippet,
+        byo_steps: response.steps,
+        byo_token: response.token,
+      } };
     case "reset":
       return { reset: true };
     case "run":
@@ -409,16 +428,15 @@ export function processResponse(response) {
   }
 }
 
-// The batched rows' draft, keyed by row id, between a keystroke and Apply or
-// Cancel. A tab switch redraws the panel from the snapshot, so the draft is
-// what the redraw is handed over it. Exported so the round trip has a test
-// without a browser (#995).
+// A tab switch redraws from the snapshot, so edits must stay in the draft
+// keyed by row id until Apply or Cancel.
 export function foldDraft(draft, outcome) {
   if (!outcome || outcome === true) return draft;
   if (outcome.reset) return {};
   const next = { ...draft };
   if (outcome.clearKey) delete next.director_api_key;
   if (outcome.fill) next[outcome.fill.id] = outcome.fill.value;
+  if (outcome.preview) Object.assign(next, outcome.preview);
   return next;
 }
 
@@ -426,6 +444,18 @@ export function foldDraft(draft, outcome) {
 // mask a later external write to the same row.
 export function pruneDraft(draft, values) {
   return Object.fromEntries(Object.entries(draft).filter(([id, value]) => value !== values[id]));
+}
+
+// The staged row keeps the preview it had until the new one arrives, so the
+// snippet, steps, and token never draw empty in between.
+export function stageDraft(draft, id, value) {
+  return { ...draft, [id]: value };
+}
+
+// Apply and Cancel report only a draft that differs from the store.
+export function pressFeedback(press, draft, values) {
+  if (Object.keys(pruneDraft(draft, values)).length === 0) return null;
+  return press === "director_cancel" ? "Changes discarded." : "Changes applied.";
 }
 
 export async function handleEvent(payload) {
@@ -539,9 +569,12 @@ if (typeof document !== "undefined") {
   let currentTabIndex = 0;
   let lastSnapshotPromise = null;
   let draft = {};
+  let feedback = null;
 
   function stage(id, value) {
-    draft[id] = value;
+    draft = stageDraft(draft, id, value);
+    feedback = null;
+    document.querySelector(".set-feedback")?.remove();
   }
 
   async function loadSnapshot() {
@@ -576,14 +609,16 @@ if (typeof document !== "undefined") {
     const writeText = (text) => navigator.clipboard.writeText(text);
     const hinted = copyRunForPress(payload);
     const early =
-      hinted !== undefined ? writeRunClipboard(hinted, currentValues, writeText) : Promise.resolve();
+      hinted !== undefined ? writeRunClipboard(hinted, { ...currentValues, ...draft }, writeText) : Promise.resolve();
+    const staged = draft;
     try {
       const outcome = await handleEvent(payload);
       await early;
       draft = foldDraft(draft, outcome);
+      if (outcome?.reset) feedback = pressFeedback(payload.press, staged, currentValues);
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();
-      } else if (await applyEventOutcome(outcome, currentValues, writeText)) {
+      } else if (await applyEventOutcome(outcome, { ...currentValues, ...draft }, writeText)) {
         await loadSnapshot();
       }
     } catch (err) {
@@ -598,6 +633,14 @@ if (typeof document !== "undefined") {
     const tab = currentForm.tabs[currentTabIndex];
     if (tab) {
       render(panel, tab, { ...currentValues, ...draft }, emitEvent, stage);
+      if (feedback && tab.title === "AI") {
+        document.getElementById("set-footer")?.append(el("p", {
+          class: "set-feedback",
+          role: "status",
+          "aria-live": "polite",
+          text: feedback,
+        }));
+      }
     }
   }
 
@@ -626,6 +669,7 @@ if (typeof document !== "undefined") {
     for (let i = 0; i < tabs.length; i++) {
       const tab = tabs[i];
       tab.addEventListener("click", () => {
+        feedback = null;
         currentTabIndex = i;
         for (let j = 0; j < tabs.length; j++) {
           tabs[j].setAttribute("aria-selected", String(j === i));

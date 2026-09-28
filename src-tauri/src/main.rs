@@ -628,10 +628,20 @@ struct PickFills {
     row: String,
 }
 
-/// Widget text the webview holds for batched Director rows. Apply reads this
-/// the way a native window reads its fields (#663).
+/// Values the webview holds for batched AI rows. Apply reads these from the
+/// controls rather than saving each edit as it happens.
 #[derive(serde::Deserialize, Debug, Default)]
 struct DirectorDraftWire {
+    #[serde(default)]
+    director: Option<bool>,
+    #[serde(default)]
+    proactive: Option<bool>,
+    #[serde(default)]
+    pi_project_mcp: Option<bool>,
+    #[serde(default)]
+    director_wake_secs: Option<String>,
+    #[serde(default)]
+    byo_harness: Option<String>,
     #[serde(default)]
     director_base_url: Option<String>,
     #[serde(default)]
@@ -950,6 +960,20 @@ mod settings_event_tests {
     }
 
     #[test]
+    fn byo_preview_serializes_for_the_page() {
+        let response = SettingsEventResponse::PreviewByo {
+            snippet: "hermes mcp add fidget".into(),
+            steps: "Run the command.".into(),
+            token: "secret-token".into(),
+        };
+        let json = serde_json::to_value(response).expect("should serialize");
+        assert_eq!(json["action"], "preview_byo");
+        assert_eq!(json["snippet"], "hermes mcp add fidget");
+        assert_eq!(json["steps"], "Run the command.");
+        assert_eq!(json["token"], "secret-token");
+    }
+
+    #[test]
     fn response_run_uses_stable_wire_format() {
         use settings::form::RowOperation;
         let response = SettingsEventResponse::Run {
@@ -1065,10 +1089,20 @@ mod settings_event_tests {
 enum SettingsEventResponse {
     Nothing,
     Refresh,
-    Fill { id: String, value: String },
+    Fill {
+        id: String,
+        value: String,
+    },
+    PreviewByo {
+        snippet: String,
+        steps: String,
+        token: String,
+    },
     ClearKey,
     Reset,
-    Run { operation: String },
+    Run {
+        operation: String,
+    },
 }
 
 #[tauri::command]
@@ -1120,6 +1154,21 @@ fn settings_event_blocking(
             pressed = fields;
             let mut draft = settings::DirectorDraft::live(&view, &description);
             if let Some(wire) = wire {
+                if let Some(value) = wire.director {
+                    draft.director = value;
+                }
+                if let Some(value) = wire.proactive {
+                    draft.proactive = value;
+                }
+                if let Some(value) = wire.pi_project_mcp {
+                    draft.pi_project_mcp = value;
+                }
+                if let Some(value) = wire.director_wake_secs {
+                    draft.wake_secs = value;
+                }
+                if let Some(value) = wire.byo_harness {
+                    draft.byo_harness = value;
+                }
                 if let Some(value) = wire.director_base_url {
                     draft.base_url = value;
                 }
@@ -1138,6 +1187,18 @@ fn settings_event_blocking(
                 draft.clear_key = wire.clear_key;
             }
             (controller::Event::Press { id: press }, draft)
+        }
+        SettingsEventPayload::Pick {
+            pick,
+            value,
+            fills: None,
+        } if pick == settings::form::BYO_HARNESS_ID => {
+            let (snippet, steps, token) = settings::byo_rows(&value);
+            return Ok(SettingsEventResponse::PreviewByo {
+                snippet,
+                steps,
+                token,
+            });
         }
         SettingsEventPayload::Pick {
             pick,
