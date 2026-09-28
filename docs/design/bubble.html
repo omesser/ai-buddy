@@ -457,6 +457,12 @@
     margin-left: 1px;
     fill: #14171e;
   }
+  .quick-message-field:disabled { cursor: default; }
+  .quick-message-send:disabled {
+    background: #2c3340;
+    cursor: default;
+  }
+  .quick-message-send:disabled svg { fill: #8b93a7; }
   @media (prefers-reduced-motion: reduce) {
     .dots span { animation: none; opacity: .75; }
     .quick-message, .quick-message.visible {
@@ -539,6 +545,40 @@
     <button type="button" id="qm-show">Show</button>
   </div>
   <div class="qm-grounds" id="qm-grounds"></div>
+
+  <h2 id="quick-message-frozen">When nothing can answer</h2>
+
+  <p>The same pill, frozen. The field takes nothing. Empty, it says
+    <b>Nothing can answer yet</b>, or <b>Starting Hermes…</b> while a harness
+    is still coming up. A draft is cleared so that sentence is what shows.
+    Send is the dim disc <code>#2c3340</code>, not the accent.</p>
+
+  <div class="qm-grounds" id="qm-frozen">
+    <section class="qm-card">
+      <p class="cap"><b>Unavailable</b> — the sentence replaces the prompt, and Send is not the accent.</p>
+      <div class="qm-stage" data-wall="light">
+        <div class="quick-message visible">
+          <div class="quick-message-row">
+            <div class="quick-message-mirror" aria-hidden="true">Nothing can answer yet&#8203;</div>
+            <textarea class="quick-message-field" rows="1" maxlength="16000" disabled placeholder="Nothing can answer yet" autocomplete="off" spellcheck="false" aria-label="Nothing can answer yet"></textarea>
+          </div>
+          <button type="button" class="quick-message-send" disabled aria-label="Send"><svg viewBox="0 0 12 12" aria-hidden="true"><path fill="#8b93a7" d="M2.2 1.4 L10.2 6 L2.2 10.6 L2.2 7.1 L6.5 6 L2.2 4.9 Z"/></svg></button>
+        </div>
+      </div>
+    </section>
+    <section class="qm-card">
+      <p class="cap"><b>Starting</b> — the harness sentence, still with nothing to type.</p>
+      <div class="qm-stage" data-wall="dark">
+        <div class="quick-message visible">
+          <div class="quick-message-row">
+            <div class="quick-message-mirror" aria-hidden="true">Starting Hermes…&#8203;</div>
+            <textarea class="quick-message-field" rows="1" maxlength="16000" disabled placeholder="Starting Hermes…" autocomplete="off" spellcheck="false" aria-label="Starting Hermes…"></textarea>
+          </div>
+          <button type="button" class="quick-message-send" disabled aria-label="Send"><svg viewBox="0 0 12 12" aria-hidden="true"><path fill="#8b93a7" d="M2.2 1.4 L10.2 6 L2.2 10.6 L2.2 7.1 L6.5 6 L2.2 4.9 Z"/></svg></button>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <h2>One bubble, dark, always above the head</h2>
 

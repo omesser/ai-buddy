@@ -317,6 +317,23 @@ function gateDouble() {
   };
 }
 
+test("a draft does not hide the unavailable sentence when the pill freezes", () => {
+  const { qm } = shown();
+  qm.setText("still drafting");
+  const gate = gateDouble();
+  gate.machine = qm;
+
+  applyQuickMessageGate(gate, { name: "bmo", configured: true, enabled: false });
+
+  assert.equal(qm.text, "");
+  assert.equal(gate.field.placeholder, "Nothing can answer yet");
+  assert.equal(
+    quickMessageMirror(qm.text, gate.field.placeholder, qm.available),
+    "Nothing can answer yet\u200b",
+    "leftover draft text would hide the sentence the placeholder is showing",
+  );
+});
+
 test("the gate disables the field and send from the same opening chat uses", () => {
   const frozen = gateDouble();
   applyQuickMessageGate(frozen, { name: "bmo", configured: true, enabled: false });
@@ -441,9 +458,10 @@ test("the overlay freezes the pill from chat's opening, including while it is al
     "the same push that thaws Chat reaches this overlay",
   );
   assert.match(js, /invoke\("chat_opening", \{ instance: id \}\)/);
+  assert.match(rs, /fan_out_chat_opening\(/);
   assert.match(
     rs,
-    /emit_to\(&overlay, CHAT_OPENING_EVENT, &opening\)/,
+    /emit_to\(target, event, &opening\)/,
     "emit_to a Chat label does not reach the overlay, and Chat may not be open",
   );
 });

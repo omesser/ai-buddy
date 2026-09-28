@@ -108,6 +108,61 @@ fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
 
+/// Deliver `chat-opening` to Chat and to each open overlay, in index order.
+/// `emit_to` a Chat label does not reach the overlay, and Chat may not be
+/// open when the harness settles. The first missing overlay ends the scan.
+fn fan_out_chat_opening(
+    chat: &str,
+    mut present: impl FnMut(&str) -> bool,
+    mut emit: impl FnMut(&str, &'static str),
+) {
+    emit(chat, CHAT_OPENING_EVENT);
+    let mut index = 0;
+    loop {
+        let overlay = overlay_label(index);
+        if !present(&overlay) {
+            break;
+        }
+        emit(&overlay, CHAT_OPENING_EVENT);
+        index += 1;
+    }
+}
+
+#[cfg(test)]
+mod chat_opening_fanout_tests {
+    use super::fan_out_chat_opening;
+
+    fn deliver(open: &[&str]) -> Vec<(String, &'static str)> {
+        let mut got = Vec::new();
+        fan_out_chat_opening(
+            "chat-bmo",
+            |label| open.contains(&label),
+            |label, event| got.push((label.to_string(), event)),
+        );
+        got
+    }
+
+    #[test]
+    fn every_open_overlay_receives_chat_opening() {
+        assert_eq!(
+            deliver(&["overlay-0", "overlay-1"]),
+            vec![
+                ("chat-bmo".to_string(), "chat-opening"),
+                ("overlay-0".to_string(), "chat-opening"),
+                ("overlay-1".to_string(), "chat-opening"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_missing_overlay_stops_the_scan() {
+        assert_eq!(
+            deliver(&["overlay-1"]),
+            vec![("chat-bmo".to_string(), "chat-opening")]
+        );
+    }
+}
+
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
 
@@ -2116,18 +2171,13 @@ fn push_chat_opening(
     let label = chat_label(id);
     let title = opening.name.clone();
     let handle = app.clone();
-    let _ = app.emit_to(label.clone(), CHAT_OPENING_EVENT, &opening);
-    // The pill freezes from this opening. `emit_to` the Chat label does not
-    // reach the overlay, and Chat may not be open when the harness settles.
-    let mut index = 0;
-    loop {
-        let overlay = overlay_label(index);
-        if app.get_webview_window(&overlay).is_none() {
-            break;
-        }
-        let _ = app.emit_to(&overlay, CHAT_OPENING_EVENT, &opening);
-        index += 1;
-    }
+    fan_out_chat_opening(
+        &label,
+        |overlay| app.get_webview_window(overlay).is_some(),
+        |target, event| {
+            let _ = app.emit_to(target, event, &opening);
+        },
+    );
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
             if let Err(why) = window.set_title(&title) {
