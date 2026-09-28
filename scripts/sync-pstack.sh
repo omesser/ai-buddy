@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2034  # scripts/lib/sync-skills.sh reads EXCLUDED; shellcheck can't follow a dynamic source path without -x
 # Keep the vendored pstack skills in `.agents/skills/` current.
 #
 #   scripts/sync-pstack.sh            regenerate the index and the symlinks
@@ -32,7 +33,6 @@ META=.agents/pstack/UPSTREAM.json
 # this script stops claiming, so it also stops being eligible for deletion.
 EXCLUDED='tdd|Collision. The Matt Pocock engineering set ships a tdd too, and its implement skill calls it by name, so that one wins. .agents/skills is flat and holds one of the two. See .agents/mattpocock/UPSTREAM.json.'
 
-# shellcheck source=scripts/lib/sync-skills.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/sync-skills.sh"
 
 # The vendored names, one per line, read back out of the lock file.
