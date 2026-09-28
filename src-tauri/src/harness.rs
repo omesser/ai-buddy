@@ -2527,6 +2527,15 @@ mod tests {
         );
     }
 
+    fn thought(session: &str, text: &str) {
+        say(
+            json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                "sessionId": session,
+                "update": {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": text}},
+            }}),
+        );
+    }
+
     fn stop(id: &Value, reason: &str) {
         say(json!({"jsonrpc": "2.0", "id": id, "result": {"stopReason": reason}}));
     }
@@ -2731,14 +2740,43 @@ mod tests {
                         // Thinks before it answers, so each turn's thought
                         // names the session it came from.
                         "thinking" => {
-                            say(
-                                json!({"jsonrpc": "2.0", "method": "session/update", "params": {
-                                    "sessionId": session,
-                                    "update": {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": format!("thinking in {session}")}},
-                                }}),
-                            );
+                            thought(&session, &format!("thinking in {session}"));
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
+                        }
+                        // `scripts/scenarios/thinking-row.sh`. The first turn
+                        // asks, so Chat opens by itself, and its end cancels
+                        // the ask. Later turns think slowly enough to capture.
+                        "scenario-thinking" if prompts == 1 => {
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": &session,
+                                    "toolCall": {
+                                        "toolCallId": "t1",
+                                        "title": "Open Chat for the scenario",
+                                        "kind": "other",
+                                        "content": [{"type": "content", "content": {"type": "text", "text": "Opens Chat."}}],
+                                    },
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                    ],
+                                }}),
+                            );
+                            record(count, "asked");
+                            thread::sleep(Duration::from_secs(3));
+                            chunk(&session, "fidget\nChat is open.");
+                            stop(&id, "end_turn");
+                        }
+                        "scenario-thinking" => {
+                            for n in 1..=4 {
+                                thought(&session, &format!("Thought {n} of four. "));
+                                record(count, &format!("thought {n}"));
+                                thread::sleep(Duration::from_millis(1200));
+                            }
+                            chunk(&session, "fidget\nI thought it over and I am staying put.");
+                            stop(&id, "end_turn");
+                            record(count, "replied");
                         }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
