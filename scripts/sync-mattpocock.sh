@@ -35,21 +35,8 @@ PSTACK_META=.agents/pstack/UPSTREAM.json
 EXCLUDED='ask-matt|Policy. A router over the whole upstream set, including the four groups this repository does not vendor, so most of what it offers is not here. docs/agents/picking-work.md decides what to work on.
 setup-matt-pocock-skills|Already run here, and a re-run only does damage. It scaffolds docs/agents/issue-tracker.md, docs/agents/triage-labels.md and docs/agents/domain.md plus the Agent skills block in AGENTS.md; all four exist and have been hand-edited since. Its step 4 also prefers CLAUDE.md, which here only points at AGENTS.md, so a re-run would write a second Agent skills block into the file that does nothing else. See docs/agents/vendored-skills.md.'
 
-excluded_names() {
-  printf '%s\n' "$EXCLUDED" | cut -d'|' -f1 | sort
-}
-
-# The `excluded` object body for the lock file, one JSON member per line.
-excluded_json() {
-  local first=1 name reason
-  while IFS='|' read -r name reason; do
-    [ -n "$name" ] || continue
-    [ "$first" -eq 1 ] || echo ','
-    printf '    "%s": "%s"' "$name" "$reason"
-    first=0
-  done <<< "$EXCLUDED"
-  echo
-}
+# shellcheck source=scripts/sync-skills-exclusions.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sync-skills-exclusions.sh"
 
 # The owned names of either lock file, one per line. A missing file owns
 # nothing, which is the bootstrap case: the very first `--fetch` has no lock
