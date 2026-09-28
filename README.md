@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/omesser/fidget/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/fidget/actions/workflows/tests.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-[![harness](https://img.shields.io/badge/harness-claude-C25B3A)](#harness-support) [![harness](https://img.shields.io/badge/harness-codex-0E8A6A)](#harness-support) [![harness](https://img.shields.io/badge/harness-cursor--agent-D04200)](#harness-support) [![harness](https://img.shields.io/badge/harness-hermes-5C5AD6)](#harness-support) [![harness](https://img.shields.io/badge/harness-opencode-005BBB)](#harness-support) [![harness](https://img.shields.io/badge/harness-pi-0C7EA8)](#harness-support) [![harness](https://img.shields.io/badge/harness-grok-2B2B2B)](#harness-support)
+[![harness](https://img.shields.io/badge/harness-claude-C25B3A)](#harness-support) [![harness](https://img.shields.io/badge/harness-codex-0E8A6A)](#harness-support) [![harness](https://img.shields.io/badge/harness-cursor--agent-D04200)](#harness-support) [![harness](https://img.shields.io/badge/harness-hermes-5C5AD6)](#harness-support) [![harness](https://img.shields.io/badge/harness-opencode-005BBB)](#harness-support) [![harness](https://img.shields.io/badge/harness-pi-0C7EA8)](#harness-support) [![harness](https://img.shields.io/badge/harness-grok-2B2B2B)](#harness-support) [![harness](https://img.shields.io/badge/harness-copilot-57606A)](#harness-support) [![harness](https://img.shields.io/badge/harness-goose-B83800)](#harness-support) [![harness](https://img.shields.io/badge/harness-antigravity-C5221F)](#harness-support)
 
 </div>
 
