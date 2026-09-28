@@ -227,6 +227,34 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
   assert.deepEqual(landingCopy({ configured: false, enabled: false }).signIn, []);
 });
 
+test("Antigravity signs in from its buttons and names no terminal command", () => {
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "antigravity",
+    login: "Log in with Google from Chat",
+    sign_in: [
+      { id: "oauth-personal", label: "Log in with Google" },
+      { id: "oauth-business", label: "Log in with Gemini Enterprise" },
+    ],
+    harness: {
+      name: "antigravity",
+      session: null,
+      alive: true,
+      login: "Log in with Google from Chat",
+    },
+  };
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Antigravity needs login");
+  assert.equal(copy.signInLabel, "Login using:");
+  assert.equal(copy.command, null);
+  assert.deepEqual(
+    copy.signIn.map((action) => action.id),
+    ["oauth-personal", "oauth-business"],
+  );
+});
+
 test("unconfigured and switched-off copy is unchanged", () => {
   assert.equal(
     landingCopy({ configured: false, enabled: false }).title,

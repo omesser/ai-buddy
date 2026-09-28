@@ -42,6 +42,22 @@ codex runs against a fresh `CODEX_HOME` with file credential storage, so your
 `~/.codex` and your keychain stay untouched. The run deletes that directory on
 exit, and the tokens with it.
 
+## antigravity-sign-in
+
+`antigravity-sign-in.sh` checks Chat's Google sign-in against Google's real ACP
+server, because the browser flow under test is the server's own. It needs a
+Google account, the network, and you at the keyboard. It takes the app binary
+and the folder you unzipped the `antigravity-acp` registry archive into:
+
+```sh
+scripts/scenarios/antigravity-sign-in.sh --go target/debug/fidget ~/agy-acp
+```
+
+The server runs against a fresh `GEMINI_HOME`, so your `~/.gemini` stays
+untouched. The run deletes that directory on exit, and the tokens with it.
+After the sign-in it quits Fidget and runs `--probe-harness` twice, fresh and
+resumed, against the same login.
+
 ## The header
 
 The comment block at the top of each scenario, one field per line:
@@ -60,7 +76,7 @@ The comment block at the top of each scenario, one field per line:
 - Isolated `HOME` under the evidence directory, so a run never reads or writes
   the owner's settings.
 - A fixture Harness from `src-tauri/src/harness.rs`, never a real one and never
-  a stub agent script. `codex-sign-in-link.sh` is the one exception, below.
+  a stub agent script. The two sign-in scenarios above are the exceptions.
 - Kill what the run started on exit, and nothing else.
 - Assert and exit non-zero. A count printed for someone to read is not a check.
 

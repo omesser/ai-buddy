@@ -164,19 +164,21 @@ pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
     }
 }
 
-/// Codex reads this method's key from `authenticate` `_meta` or from
-/// `CODEX_API_KEY` / `OPENAI_API_KEY`. This app sends neither, so a button
-/// cannot collect it.
-const SHELVED_API_KEY: &str = "api-key";
+/// Agent methods that need a key or a cloud project this app never sends, so
+/// a button cannot collect them. Codex reads `api-key` from `authenticate`
+/// `_meta` or `CODEX_API_KEY` / `OPENAI_API_KEY`. Antigravity answers Ok to a
+/// keyless `gemini-api-key` and stores it as the method, and refuses
+/// `agent-platform` without `GOOGLE_CLOUD_PROJECT` or a key.
+const SHELVED: [&str; 3] = ["api-key", "gemini-api-key", "agent-platform"];
 
-/// Whether an agent method id can be a button. The shelved API Key id cannot.
+/// Whether an agent method id can be a button. The shelved key ids cannot.
 pub(crate) fn sign_in_offered(id: &str) -> bool {
-    id != SHELVED_API_KEY
+    !SHELVED.contains(&id)
 }
 
 /// Agent methods with a visible name, in advertisement order, while login is
 /// still required. Terminal methods, unrecognized methods, and the shelved
-/// API Key id are not buttons.
+/// key ids are not buttons.
 pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<SignIn> {
     if !login_active {
         return Vec::new();

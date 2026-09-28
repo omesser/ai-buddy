@@ -13,7 +13,11 @@ const DISPLAY_NAMES = {
   opencode: "OpenCode",
   hermes: "Hermes",
   pi: "Pi",
+  antigravity: "Antigravity",
 };
+
+// Harnesses with no login command to run. Their buttons are the only way in.
+const BUTTONS_ONLY = new Set(["antigravity"]);
 
 export function harnessDisplayName(opening) {
   const key = opening?.harness_name || opening?.harness?.name;
@@ -79,10 +83,11 @@ export function landingCopy(opening) {
   if (opening?.configured && opening.enabled && opening.login) {
     const signIn = loginPresentation(opening).actions;
     const buttons = signIn.length > 0;
+    const terminal = !BUTTONS_ONLY.has(opening.harness_name);
     return {
       title: `${name} needs login`,
       lede: `${name} needs login, or you can switch to a different Harness:`,
-      command: opening.login,
+      command: terminal ? opening.login : null,
       signInLabel: buttons ? "Login using:" : null,
       hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
       // The Harness opens the browser itself and may prefill a code there that

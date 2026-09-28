@@ -92,6 +92,8 @@
      obvious pick, but it lands between OpenCode and Hermes and the three read
      as one blue; sunkissed is the same palette and stays apart. */
   --pi-accent: #E1B06E;
+  /* Google red. The blue, green and yellow sit on OpenCode, Codex and Pi. */
+  --antigravity-accent: #EA4335;
 }
 
 [data-chat-palette="light"].chat-ui-minimal {
@@ -119,6 +121,7 @@
   --opencode-accent: #4A72D0;
   --hermes-accent: #5A5ACF;
   --pi-accent: #B8854E;
+  --antigravity-accent: #C5221F;
 }
 
 /* Terminal log. Port of .v-term from docs/design/chat-mockups.html: 62 rules
@@ -1630,6 +1633,17 @@ body {
 }
 .empty .connect-btn[data-harness="pi"] .connect-icon {
   color: var(--pi-accent);
+}
+
+.empty .connect-btn[data-harness="antigravity"] {
+  border-color: color-mix(in srgb, var(--antigravity-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="antigravity"]:hover {
+  background: color-mix(in srgb, var(--antigravity-accent) 10%, var(--chat-fill));
+  border-color: var(--antigravity-accent);
+}
+.empty .connect-btn[data-harness="antigravity"] .connect-icon {
+  color: var(--antigravity-accent);
 }
 
 .empty .settings-btn {

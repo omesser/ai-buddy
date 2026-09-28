@@ -167,7 +167,8 @@ Named rows are smoked with `scripts/probe-harness.sh` (see [harness.md](./docs/h
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
 | <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Needs a global `pi` on `PATH`: `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`, `node`, and `pi` must resolve in the app's environment; Finder-launched builds inherit launchd's `PATH`, as with every `npx` row. An unconfigured Pi may pick up an ambient provider key from the environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins. An npm-global `pi` can shadow the keg: `npm uninstall -g @earendil-works/pi-coding-agent`, then `brew link pi-coding-agent`. |
-| anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. Google has none: Antigravity (`agy`) speaks its own protocol rather than ACP, so it needs an adapter (#604). |
+| `antigravity` | `agy_acp_server.par` (`agy_acp_server.exe` on Windows) | First-party, Google's ACP server; `agy` itself has no ACP mode. Unzip the `antigravity-acp` archive from the [ACP registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json) and put its folder on `PATH`, keeping `localharness_external` beside the server. Sign in with Chat's Log in with Google or Gemini Enterprise button; the server opens your browser, and it has no terminal login. Google's [FAQ](https://antigravity.google/docs/faq) says third-party software using an Antigravity login violates its Terms of Service and may get the account suspended. Live smoke pending (#604). |
+| anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. |
 
 What each named Harness keeps under an ACP attach, measured in the [tool-class probe](./docs/research/harness-tools-under-acp-probe.md):
 
@@ -203,9 +204,10 @@ Session handling:
 | `opencode` | yes | yes | yes | http | Login with opencode |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
+| `antigravity` | pending | pending | yes | http | four: Log in with Google, Log in with Gemini Enterprise, Gemini API key, Gemini Enterprise Agent Platform. The last two need a key or cloud project Fidget never sends, so they are not buttons |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](./docs/harness.md#how-cursor-agent-is-reached)). `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose`, `copilot` and `antigravity` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](./docs/harness.md#how-cursor-agent-is-reached)). `opencode`, `grok`, `copilot` and `antigravity` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
