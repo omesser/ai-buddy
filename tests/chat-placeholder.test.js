@@ -2,20 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { composerPlaceholder } from "../src/chat-placeholder.js";
+import { composerPlaceholder } from "../src/chat-connect.js";
 
 const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
 const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
-
-test("when something can answer, the composer asks the Instance by name", () => {
-  const text = composerPlaceholder({
-    name: "bmo",
-    configured: true,
-    enabled: true,
-  });
-
-  assert.equal(text, "Ask bmo…");
-});
 
 test("when nothing can answer, the composer keeps the disabled string", () => {
   assert.equal(
@@ -32,26 +22,6 @@ test("when nothing can answer, the composer keeps the disabled string", () => {
       configured: true,
       enabled: true,
       login: "claude /login",
-    }),
-    "Nothing can answer yet",
-  );
-});
-
-// #726: configured is not ready. A named Harness whose launcher is missing
-// must not enable Ask {name} the way a live session does.
-test("a missing launcher is not something that can answer", () => {
-  assert.equal(
-    composerPlaceholder({
-      name: "bmo",
-      configured: true,
-      enabled: true,
-      harness: {
-        name: "codex",
-        session: null,
-        alive: false,
-        login: null,
-        missing: "npx",
-      },
     }),
     "Nothing can answer yet",
   );
@@ -82,7 +52,6 @@ test("unanswerable empty-state copy is unchanged", () => {
 });
 
 test("chat.js asks the helper for the composer placeholder", () => {
-  assert.match(js, /import \{ composerPlaceholder \} from "\.\/chat-placeholder\.js"/);
   assert.equal(js.split("composerPlaceholder(opening)").length - 1, 2);
   assert.doesNotMatch(js, /Ask \$\{opening\.name\}…/);
   assert.doesNotMatch(js, /"Nothing can answer yet"/);

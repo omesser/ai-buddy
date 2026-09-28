@@ -119,27 +119,6 @@ impl FreeTier {
     }
 }
 
-/// Every other platform for now. Windows is stubbed deliberately (`docs/SPEC.md`
-/// puts it out of scope for v1), so the Director meets a platform that reports
-/// nothing rather than one that is missing.
-#[cfg(not(target_os = "macos"))]
-pub struct StubActivitySource;
-
-#[cfg(not(target_os = "macos"))]
-impl ActivitySource for StubActivitySource {
-    fn frontmost_application(&self) -> Option<String> {
-        None
-    }
-
-    fn idle(&self) -> Duration {
-        Duration::ZERO
-    }
-
-    fn displays_asleep(&self) -> bool {
-        false
-    }
-}
-
 /// Hand-written fake: it reports exactly what it was set to, so a test can
 /// describe a desktop as a literal and change it between reads.
 #[cfg(test)]

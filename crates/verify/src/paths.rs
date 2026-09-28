@@ -197,19 +197,16 @@ mod tests {
     }
 
     #[test]
-    fn overlay_script_selection_by_os() {
-        assert_eq!(
-            overlay_script_for_os("macos"),
-            Some("scripts/verify-overlay.sh")
-        );
-        assert_eq!(
-            overlay_script_for_os("linux"),
-            Some("scripts/verify-overlay-x11.sh")
-        );
-        assert_eq!(
-            overlay_script_for_os("windows"),
-            Some("scripts/verify-overlay-win.ps1")
-        );
+    fn each_os_runs_its_own_overlay_script_and_it_is_in_the_tree() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (os, expected) in [
+            ("macos", "scripts/verify-overlay.sh"),
+            ("linux", "scripts/verify-overlay-x11.sh"),
+            ("windows", "scripts/verify-overlay-win.ps1"),
+        ] {
+            assert_eq!(overlay_script_for_os(os), Some(expected), "{os}");
+            assert!(root.join(expected).is_file(), "{expected} is missing");
+        }
         assert_eq!(overlay_script_for_os("freebsd"), None);
     }
 }

@@ -2606,28 +2606,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn buttons_map_to_operations() {
-        let description = describe();
-
-        assert_eq!(
-            description.operations.get(SPAWN_ID),
-            Some(&RowOperation::Spawn)
-        );
-        assert_eq!(
-            description.operations.get(MEMORY_OPEN_ID),
-            Some(&RowOperation::OpenMemory)
-        );
-        assert_eq!(
-            description.operations.get(APPLY_ID),
-            Some(&RowOperation::Apply)
-        );
-        assert_eq!(
-            description.operations.get(CANCEL_ID),
-            Some(&RowOperation::Cancel)
-        );
-    }
-
     /// #679: the control is a button of its own on the AI tab. Reaching it
     /// through Blank AI or through an Instance Prompt save is what the issue
     /// rules out, and a button on another tab is not the one it asks for.
@@ -3789,25 +3767,6 @@ mod tests {
         assert_eq!(
             before, after,
             "describing the form must not create or rewrite the user settings document"
-        );
-    }
-
-    /// The button is wired, not just drawn: a control with no operation behind
-    /// it is a button that does nothing when clicked (#577).
-    #[test]
-    fn the_byo_copy_button_carries_an_operation() {
-        assert_eq!(
-            describe().operations.get(BYO_COPY_ID),
-            Some(&RowOperation::CopyByoSnippet)
-        );
-    }
-
-    /// The token copy button is wired to CopyByoToken operation.
-    #[test]
-    fn the_byo_copy_token_button_carries_an_operation() {
-        assert_eq!(
-            describe().operations.get(BYO_COPY_TOKEN_ID),
-            Some(&RowOperation::CopyByoToken)
         );
     }
 

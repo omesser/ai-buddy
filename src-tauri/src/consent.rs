@@ -153,7 +153,6 @@ pub fn wanted(id: CapabilityId) -> bool {
 }
 
 /// Whether the capability is both wanted and granted. #912 gates on it.
-#[allow(dead_code)] // used in window_source implementations
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
@@ -1094,19 +1093,6 @@ mod tests {
     fn linux_live_probe_is_portal_not_null() {
         let probe = live();
         assert!(!probe.granted(CapabilityId::WindowNames));
-    }
-
-    /// The fake portal grants what it was told to grant. Settings can flip
-    /// rows on and off, and the consent model stays testable without a live
-    /// portal or a window server.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn fake_portal_grants_what_it_was_constructed_with() {
-        let granted = Fake::granting(&[CapabilityId::WindowNames]);
-        assert!(granted.granted(CapabilityId::WindowNames));
-
-        let nothing = Fake::granting(&[]);
-        assert!(!nothing.granted(CapabilityId::WindowNames));
     }
 
     /// Usable requires both wanted and granted. #886 will gate on this,

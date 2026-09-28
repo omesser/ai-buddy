@@ -35,7 +35,7 @@ function npxOpening(name) {
 }
 
 test("chat.js paints the landing from the helper, and does not celebrate a pick", () => {
-  assert.match(js, /import \{ canAnswer, drawInline, landingCopy \} from "\.\/chat-connect\.js"/);
+  assert.match(js, /import \{ canAnswer, composerPlaceholder, drawInline, landingCopy \} from "\.\/chat-connect\.js"/);
   assert.match(js, /canAnswer\(opening\)/);
   assert.match(js, /landingCopy\(opening\)/);
   assert.doesNotMatch(js, /is the AI brain now/);

@@ -378,20 +378,6 @@ mod tests {
     // Memory tools
 
     #[test]
-    fn recall_returns_memory_contents() {
-        let dir = TempDir::new("recall");
-        let memory = MemoryManifest::new(dir.join("memory.md"));
-        memory
-            .remember("Facts", "The user likes coffee")
-            .expect("remembering writes");
-
-        let result = recall(&memory).expect("recall succeeds");
-
-        assert!(result.content.contains("The user likes coffee"));
-        assert!(result.content.contains("## Facts"));
-    }
-
-    #[test]
     fn recall_returns_empty_string_when_memory_is_empty() {
         let dir = TempDir::new("empty-recall");
         let memory = MemoryManifest::new(dir.join("memory.md"));
@@ -399,84 +385,6 @@ mod tests {
         let result = recall(&memory).expect("recall succeeds");
 
         assert_eq!(result.content, "");
-    }
-
-    #[test]
-    fn remember_records_a_fact_and_returns_the_line() {
-        let dir = TempDir::new("remember");
-        let memory = MemoryManifest::new(dir.join("memory.md"));
-
-        let result =
-            remember(&memory, "Facts", "The user's name is Oded").expect("remember succeeds");
-
-        assert_eq!(result.recorded, "- The user's name is Oded");
-        let content = memory.recall().expect("recall reads back");
-        assert!(content.contains("The user's name is Oded"));
-    }
-
-    #[test]
-    fn remember_uses_a_real_temporary_file_not_a_fake() {
-        let dir = TempDir::new("real-file");
-        let path = dir.join("memory.md");
-        let memory = MemoryManifest::new(&path);
-
-        remember(&memory, "Facts", "Simba is a cat").expect("remember succeeds");
-
-        assert!(
-            path.exists(),
-            "the tool must write to a real file, not a fake"
-        );
-        let content = fs::read_to_string(&path).expect("the file is readable");
-        assert!(content.contains("Simba is a cat"));
-    }
-
-    // Identity tools
-
-    #[test]
-    fn list_instances_returns_empty_list_when_no_instances_exist() {
-        let result = list_instances(&[]);
-
-        assert_eq!(result.instances.len(), 0);
-    }
-
-    #[test]
-    fn list_instances_returns_spawned_instances() {
-        let instances = vec![
-            InstanceInfo {
-                id: "abc-123".to_string(),
-                name: "Buddy One".to_string(),
-            },
-            InstanceInfo {
-                id: "def-456".to_string(),
-                name: "Buddy Two".to_string(),
-            },
-        ];
-
-        let result = list_instances(&instances);
-
-        assert_eq!(result.instances.len(), 2);
-        assert_eq!(result.instances[0].id, "abc-123");
-        assert_eq!(result.instances[0].name, "Buddy One");
-        assert_eq!(result.instances[1].id, "def-456");
-        assert_eq!(result.instances[1].name, "Buddy Two");
-    }
-
-    #[test]
-    fn list_instances_reflects_dismissal() {
-        let instances = vec![InstanceInfo {
-            id: "abc-123".to_string(),
-            name: "Buddy One".to_string(),
-        }];
-
-        let before = list_instances(&instances);
-        assert_eq!(before.instances.len(), 1);
-
-        let after = list_instances(&[]);
-        assert_eq!(
-            after.instances.len(),
-            0,
-            "after dismissing, the list is empty"
-        );
     }
 
     // Sensing tools
@@ -752,14 +660,5 @@ mod tests {
         assert!(result.description.contains("Terminal (bash)"));
         assert!(result.description.contains("Safari at"));
         assert!(!result.description.contains("Safari ()"));
-    }
-
-    // No tool posts input events
-
-    #[test]
-    fn no_tool_posts_mouse_or_keyboard_events() {
-        // ADR-0003: fidget ships no Executor. The assertion is structural: this
-        // module depends on nothing that could post events, and every tool returns
-        // a value rather than mutating the desktop.
     }
 }

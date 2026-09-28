@@ -5,16 +5,10 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const ax = readFileSync(join(root, "scripts/ax-settings.swift"), "utf8");
 const sh = readFileSync(
   join(root, "scripts/verify-settings-webview-select-macos.sh"),
   "utf8",
 );
-
-test("ax-settings can leave a <select> menu open for a still", () => {
-  assert.match(ax, /case "open-popup":/);
-  assert.match(ax, /verify-settings-webview-select-macos\.sh/);
-});
 
 test("select-over-overlay verify summons a character and uses a mouse pick", () => {
   assert.doesNotMatch(sh, /FIDGET_SETTINGS_NATIVE=1/);

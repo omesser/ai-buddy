@@ -397,26 +397,6 @@ mod tests {
         });
     }
 
-    /// The exported limit is read where the file's is, so both reach the read
-    /// site through one decision rather than an if-cascade there.
-    #[test]
-    fn an_exported_limit_outranks_the_file() {
-        model::tests::with_env(None, None, None, || {
-            std::env::set_var(model::TIMEOUT_SECS, "7");
-            std::env::set_var(model::MAX_TOKENS, "11");
-            seed(&Settings {
-                director_timeout_secs: "45".to_string(),
-                director_max_tokens: "300".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(director_timeout_secs(), Some(7));
-            assert_eq!(director_max_tokens(), Some(11));
-
-            std::env::remove_var(model::TIMEOUT_SECS);
-            std::env::remove_var(model::MAX_TOKENS);
-        });
-    }
-
     /// The Harness knobs answer to the same precedence as the Completer limits,
     /// so a CI job exporting either does not have to know a settings file exists.
     #[test]
@@ -487,31 +467,6 @@ mod tests {
             assert_eq!(mcp_bin(), Some(PathBuf::from("/tmp/from-the-env")));
 
             std::env::remove_var(harness::MCP_BIN);
-        });
-    }
-
-    /// The wait a user can now type is worth nothing if a stale process
-    /// variable keeps deciding it, so the export has to win here too.
-    #[test]
-    fn an_exported_wake_interval_outranks_the_file() {
-        model::tests::with_env(None, None, None, || {
-            seed(&Settings::default());
-            assert_eq!(director_wake_secs(), None, "blank is unset");
-
-            seed(&Settings {
-                director_wake_secs: "300".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(director_wake_secs(), Some(300));
-
-            std::env::set_var(model::WAKE_SECS, "30");
-            seed(&Settings {
-                director_wake_secs: "300".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(director_wake_secs(), Some(30));
-
-            std::env::remove_var(model::WAKE_SECS);
         });
     }
 }

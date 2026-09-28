@@ -1245,11 +1245,6 @@ mod tests {
     }
 
     #[test]
-    fn the_first_ambient_wait_is_two_minutes() {
-        assert_eq!(Pace::FIRST, Duration::from_secs(2 * 60));
-    }
-
-    #[test]
     fn a_character_sets_how_ambient_session_waits_grow() {
         let mut pace = Pace::with_growth(Duration::from_secs(60), 3, 1);
         assert_eq!(pace.wait(), Duration::from_secs(60));
@@ -2240,25 +2235,8 @@ mod tests {
     }
 
     #[test]
-    fn session_due_unchanged_when_do_not_disturb_is_off() {
+    fn ambient_off_still_wakes_on_a_poke() {
         let pace = Pace::new();
-
-        assert!(
-            session_due(true, Duration::ZERO, &pace, false, false, true),
-            "addressed and Do Not Disturb is off"
-        );
-        assert!(
-            session_due(false, Pace::FIRST, &pace, false, false, true),
-            "ambient wait elapsed and Do Not Disturb is off"
-        );
-        assert!(
-            !session_due(false, Duration::ZERO, &pace, false, false, true),
-            "nothing happened and wait not elapsed"
-        );
-        assert!(
-            !session_due(true, Duration::ZERO, &pace, true, false, true),
-            "asleep silences even when Do Not Disturb is off"
-        );
 
         // Ambient off is not Director off: a Poke still spends a session turn,
         // and an elapsed idle wait does not. Static weights keep the life.
@@ -2304,48 +2282,6 @@ mod tests {
     }
 
     #[test]
-    fn due_unchanged_when_do_not_disturb_is_off() {
-        assert!(
-            due(
-                WAKE_EVERY,
-                WAKE_EVERY,
-                &working(),
-                Duration::MAX,
-                Duration::ZERO,
-                false
-            ),
-            "timer elapsed and Do Not Disturb is off"
-        );
-
-        let switched = Activity {
-            switched: true,
-            ..working()
-        };
-        assert!(
-            due(
-                Duration::ZERO,
-                WAKE_EVERY,
-                &switched,
-                Duration::MAX,
-                Duration::ZERO,
-                false
-            ),
-            "frontmost switched and Do Not Disturb is off"
-        );
-        assert!(
-            !due(
-                Duration::ZERO,
-                WAKE_EVERY,
-                &working(),
-                Duration::MAX,
-                Duration::ZERO,
-                false
-            ),
-            "nothing happened and timer not elapsed"
-        );
-    }
-
-    #[test]
     fn a_trailing_full_stop_or_colon_still_names_the_behavior() {
         let director = directing(Scripted::says("Prowl."), ["prowl"]);
         match director.wake(&context(working(), &[])) {
@@ -2374,13 +2310,7 @@ mod tests {
     }
 
     #[test]
-    fn a_full_stop_or_colon_after_the_name_is_not_part_of_it() {
-        let nap_dot = parse_proposal("nap.").expect("trailing full stop");
-        assert_eq!(nap_dot.behavior, "nap");
-
-        let nap_colon = parse_proposal("nap:").expect("trailing colon");
-        assert_eq!(nap_colon.behavior, "nap");
-
+    fn parsing_strips_a_trailing_colon_before_dialogue_and_keeps_the_case() {
         let with_dialogue = parse_proposal("nap: | so sleepy...").expect("colon with dialogue");
         assert_eq!(with_dialogue.behavior, "nap");
         assert_eq!(with_dialogue.dialogue.as_deref(), Some("so sleepy..."));

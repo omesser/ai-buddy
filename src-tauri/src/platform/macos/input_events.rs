@@ -230,9 +230,7 @@ unsafe extern "C-unwind" fn heard(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // The spike prints what the grant reads straight from CoreGraphics: it is
-    // the API under test, not a thing to ask the consent probe about.
-    use objc2_core_graphics::{CGMouseButton, CGPreflightListenEventAccess};
+    use objc2_core_graphics::CGMouseButton;
     use std::sync::Mutex;
 
     /// Serializes the tests that write the wanted flag.
@@ -351,54 +349,5 @@ mod tests {
             );
             println!("  the tap woke the loop at {here:?}");
         });
-    }
-
-    /// The four observations #183 Stage 1 asks for, on whatever Mac runs it.
-    /// Deliberately outside the suite: it can put a TCC dialog on screen, and
-    /// what it answers depends on a grant no assertion may require.
-    ///
-    /// ```text
-    /// tccutil reset ListenEvent <bundle id>   # start from a clean grant
-    /// cargo test -p fidget stage_one -- --ignored --nocapture
-    /// ```
-    ///
-    /// Report: whether a dialog appeared, whether the tap created, whether it
-    /// was enabled, and what preflight said either side of the call. Run it
-    /// once more with `mouseMoved` out of `MOUSE_EVENTS` — motion may be gated
-    /// differently from buttons.
-    #[test]
-    #[ignore = "prompts for a TCC grant; run by hand"]
-    fn stage_one_observations() {
-        println!("  preflight before: {}", CGPreflightListenEventAccess());
-
-        let mut tap = Box::new(Tap {
-            wake: mpsc::sync_channel(1).0,
-            port: None,
-        });
-        // SAFETY: as in `listen` — `heard` has the callback's shape, and the
-        // box outlives the port, which is dropped at the end of this test.
-        let port = unsafe {
-            CGEvent::tap_create(
-                CGEventTapLocation::SessionEventTap,
-                CGEventTapPlacement::HeadInsertEventTap,
-                CGEventTapOptions::ListenOnly,
-                MOUSE_EVENTS,
-                Some(heard),
-                std::ptr::from_mut(tap.as_mut()).cast(),
-            )
-        };
-
-        match &port {
-            // A port that exists but was never enabled is the documented shape
-            // of a tap the grant is missing for.
-            Some(port) => println!(
-                "  tap created: yes, enabled: {}",
-                CGEvent::tap_is_enabled(port)
-            ),
-            None => println!("  tap created: no (CGEventTapCreate returned NULL)"),
-        }
-
-        println!("  preflight after: {}", CGPreflightListenEventAccess());
-        println!("  dialog: only you can see that one");
     }
 }
