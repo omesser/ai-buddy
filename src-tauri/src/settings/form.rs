@@ -1793,7 +1793,7 @@ pub fn describe_with(live: &Live) -> FormDescription {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// The intro a packaged macOS build writes. A literal, because
@@ -1956,7 +1956,7 @@ mod tests {
 
     /// The view behind the values fixtures, in the two states the
     /// description fixtures pin.
-    fn fixture_view(driving: bool) -> crate::settings::SettingsView {
+    pub(crate) fn fixture_view(driving: bool) -> crate::settings::SettingsView {
         let settings = crate::settings::Settings {
             director_enabled: true,
             proactive_wakes: true,

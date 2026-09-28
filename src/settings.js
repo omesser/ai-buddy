@@ -275,7 +275,7 @@ function drawRow(row, values, emit, stage) {
             const payload = { press: control.id, fields: typed() };
             if (control.id === "director_apply") {
               const root = button.closest('[role="tabpanel"]') ?? button.getRootNode();
-              payload.draft = aiDraft(root);
+              payload.draft = aiDraft(root, values);
             }
             emit(payload);
           });
@@ -315,7 +315,9 @@ function rowValue(root, id) {
   return control ? control.value : "";
 }
 
-function aiDraft(root) {
+// A cleared key draws as a blank field, and Rust reads a blank field as
+// untouched, so the staged delete rides along as its own flag.
+function aiDraft(root, values) {
   return {
     director: rowChecked(root, "director"),
     proactive: rowChecked(root, "proactive"),
@@ -327,6 +329,7 @@ function aiDraft(root) {
     director_api_key: rowValue(root, "director_api_key"),
     harness: rowValue(root, "harness"),
     harness_command: rowValue(root, "harness_command"),
+    clear_key: values.clear_key === true,
   };
 }
 
@@ -436,7 +439,10 @@ export function foldDraft(draft, outcome, payload) {
   if (!outcome || outcome === true) return draft;
   if (outcome.reset) return {};
   const next = { ...draft };
-  if (outcome.clearKey) delete next.director_api_key;
+  if (outcome.clearKey) {
+    delete next.director_api_key;
+    next.clear_key = true;
+  }
   if (outcome.fill) next[outcome.fill.id] = outcome.fill.value;
   if (outcome.preview && draft.byo_harness === payload?.value) Object.assign(next, outcome.preview);
   return next;
