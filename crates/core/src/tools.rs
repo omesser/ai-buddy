@@ -346,41 +346,13 @@ pub(crate) fn describe_screen(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(label: &str) -> Self {
-            static NEXT: AtomicU32 = AtomicU32::new(0);
-            let unique = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!(
-                "fidget-tools-{label}-{}-{unique}",
-                std::process::id()
-            ));
-            fs::create_dir_all(&dir).expect("temp dir is creatable");
-            Self(dir)
-        }
-
-        fn join(&self, name: &str) -> PathBuf {
-            self.0.join(name)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     // Memory tools
 
     #[test]
     fn recall_returns_empty_string_when_memory_is_empty() {
-        let dir = TempDir::new("empty-recall");
-        let memory = MemoryManifest::new(dir.join("memory.md"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let memory = MemoryManifest::new(dir.path().join("memory.md"));
 
         let result = recall(&memory).expect("recall succeeds");
 

@@ -1325,6 +1325,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "serde_json",
+ "tempfile",
  "toml_edit 0.25.15+spec-1.1.0",
  "uuid",
 ]
