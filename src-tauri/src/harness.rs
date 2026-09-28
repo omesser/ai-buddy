@@ -2548,6 +2548,21 @@ mod tests {
         );
     }
 
+    /// codex-acp's MCP startup shape: a session-scoped link, unprompted.
+    /// `mcp-link` sends it right after `session/new`, and `mcp-link-turn`
+    /// inside the first turn, which is where a slow MCP server's lands.
+    fn mcp_link(session: &str) {
+        say(
+            json!({"jsonrpc": "2.0", "id": 102, "method": "elicitation/create", "params": {
+                "sessionId": session,
+                "mode": "url",
+                "elicitationId": "mcp-1",
+                "url": "https://example.test/oauth",
+                "message": "Authenticate with MCP server linear",
+            }}),
+        );
+    }
+
     fn stop(id: &Value, reason: &str) {
         say(json!({"jsonrpc": "2.0", "id": id, "result": {"stopReason": reason}}));
     }
@@ -2637,6 +2652,9 @@ mod tests {
                             format!("fresh-id-{n}")
                         };
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
+                        if script == "mcp-link" {
+                            mcp_link(&session);
+                        }
                     }
                 }
                 Some("authenticate") => {
@@ -2803,6 +2821,11 @@ mod tests {
                             stop(&id, "end_turn");
                             record(count, "replied");
                         }
+                        "mcp-link-turn" if prompts == 1 => {
+                            mcp_link(&session);
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -2859,6 +2882,13 @@ mod tests {
                             );
                         }
                     }
+                }
+                None if id == json!(102) => {
+                    let action = message
+                        .pointer("/result/action")
+                        .and_then(Value::as_str)
+                        .unwrap_or("?");
+                    record(count, &format!("elicit-mcp:{action}"));
                 }
                 None if id == json!(100) => {
                     let action = message
@@ -4817,6 +4847,7 @@ mod tests {
                 form.url.as_deref(),
                 Some("https://example.test/device?code=ABCD-1234")
             );
+            assert!(!form.waits, "a sign-in Fidget started opens Chat");
             assert_eq!(form.message, "Enter ABCD-1234 on the sign-in page.");
             assert!(form.options.is_empty());
             session.answer_elicitation(&form.request, answer);
@@ -4824,6 +4855,32 @@ mod tests {
             assert_eq!(worker.join().unwrap().is_ok(), signed_in, "{action}");
             assert!(fx.wait_for(&format!("elicit-url:{action}"), 1));
             assert_eq!(fx.count("new"), 1 + usize::from(signed_in), "{action}");
+            session.shutdown();
+        }
+    }
+
+    /// An MCP server's link after `session/new` is not one Fidget asked for,
+    /// so it waits in Chat. It lands between turns or in the first one, and
+    /// either way outlives that turn, so the next Chat to open can answer it.
+    #[test]
+    fn a_link_nobody_asked_for_waits_past_the_turn_and_can_still_be_answered() {
+        for script in ["mcp-link", "mcp-link-turn"] {
+            let (fx, session) = Fixture::new(script);
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            let mut form = None;
+            while let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(500)) {
+                match forwarded {
+                    Forwarded::Form(link) => form = Some(link),
+                    Forwarded::Settled { request, .. } => panic!("{script}: {request} was retired"),
+                    _ => {}
+                }
+            }
+            let form = form.expect("the link was never forwarded");
+            assert_eq!(form.url.as_deref(), Some("https://example.test/oauth"));
+            assert!(form.waits, "{script}");
+            session.answer_elicitation(&form.request, ElicitationAnswer::Decline);
+            assert!(fx.wait_for("elicit-mcp:decline", 1), "{script}");
+            assert_eq!(fx.settled(), (form.request, Some("decline".to_string())));
             session.shutdown();
         }
     }

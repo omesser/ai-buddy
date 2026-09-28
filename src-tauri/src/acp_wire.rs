@@ -16,7 +16,7 @@ use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
     ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
-    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema,
+    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema, ElicitationScope,
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
@@ -246,6 +246,11 @@ pub struct ElicitationForm {
     /// A URL-mode form's link, untrusted like `message`. Accept means the
     /// user opened it; the Harness learns the rest on its own side.
     pub url: Option<String>,
+    /// A link Fidget did not ask for, such as an MCP server's sign-in after
+    /// `session/new`. It waits in Chat rather than opening it. Only a link
+    /// that arrives during Fidget's own `authenticate` counts as asked for.
+    #[serde(skip)]
+    pub waits: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -843,6 +848,13 @@ struct PendingElicit {
     responder: Responder<CreateElicitationResponse>,
 }
 
+/// What `serve` lends a turn: both channels, and the forms that outlive it.
+struct Serving<'a> {
+    rx: &'a mut mpsc::UnboundedReceiver<Msg>,
+    incoming: &'a mut mpsc::UnboundedReceiver<Incoming>,
+    held: &'a mut Vec<PendingElicit>,
+}
+
 type InflightAuth<'a> = (
     Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>,
     sync_mpsc::Sender<Result<(), String>>,
@@ -858,8 +870,9 @@ async fn serve(
     on_event: &OnEvent,
 ) {
     let mut auth: Option<InflightAuth<'_>> = None;
-    // Forms asked between turns, as a sign-in link is during `authenticate`.
-    // A turn keeps its own, so each is cancelled with what it belongs to.
+    // Forms asked between turns, as a sign-in link is during `authenticate`,
+    // and links that outlive a turn. A turn keeps its own, so each is
+    // cancelled with what it belongs to.
     let mut forms: Vec<PendingElicit> = Vec::new();
     loop {
         enum Step {
@@ -887,7 +900,7 @@ async fn serve(
                 },
                 message = incoming.recv() => match message {
                     Some(Incoming::Elicit(request, responder)) => {
-                        hold_form(&mut forms, &request, responder, on_event);
+                        hold_form(&mut forms, &request, responder, waiting, on_event);
                         continue;
                     }
                     // History replayed by `session/load`, and anything said
@@ -908,7 +921,10 @@ async fn serve(
                 if let Some((_, reply)) = auth.take() {
                     let _ = reply.send(outcome);
                 }
-                cancel_forms(&mut forms, on_event);
+                // The sign-in's own forms. A link that waits is the session's.
+                let (mut signed, kept) = forms.drain(..).partition(|pending| !pending.form.waits);
+                forms = kept;
+                cancel_forms(&mut signed, on_event);
             }
             Step::Command(Msg::AnswerElicitation { request, answer }) => {
                 answer_form(&mut forms, request, answer, on_event)
@@ -949,7 +965,12 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
-                let outcome = turn(cx, &id, &mut rx, &mut incoming, &text, &reply, on_event).await;
+                let serving = Serving {
+                    rx: &mut rx,
+                    incoming: &mut incoming,
+                    held: &mut forms,
+                };
+                let outcome = turn(cx, &id, serving, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
                 let _ = reply.send(Progress::Done(outcome));
                 if lost {
@@ -1044,12 +1065,12 @@ async fn open(
 async fn turn(
     cx: &ConnectionTo<Agent>,
     session: &SessionId,
-    rx: &mut mpsc::UnboundedReceiver<Msg>,
-    incoming: &mut mpsc::UnboundedReceiver<Incoming>,
+    serving: Serving<'_>,
     text: &str,
     reply: &sync_mpsc::Sender<Progress>,
     on_event: &OnEvent,
 ) -> Result<Reply, TurnError> {
+    let Serving { rx, incoming, held } = serving;
     let sent = cx.send_request(PromptRequest::new(
         session.clone(),
         vec![ContentBlock::Text(TextContent::new(text.to_string()))],
@@ -1091,8 +1112,13 @@ async fn turn(
                     asks.push((ask.request.clone(), responder));
                     on_event(Event::Permission(ask));
                 }
+                // A link that outlives the turn goes to `serve`'s forms, so
+                // `end_turn` does not cancel it and the budget does not stop.
+                Some(Incoming::Elicit(request, responder)) if outlives_turn(&request) => {
+                    hold_form(held, &request, responder, false, on_event)
+                }
                 Some(Incoming::Elicit(request, responder)) => {
-                    hold_form(&mut forms, &request, responder, on_event)
+                    hold_form(&mut forms, &request, responder, false, on_event)
                 }
                 None => {
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
@@ -1136,7 +1162,9 @@ async fn turn(
                     }
                 }
                 Some(Msg::AnswerElicitation { request, answer }) => {
-                    answer_form(&mut forms, request, answer, on_event)
+                    let mine = forms.iter().any(|pending| pending.form.request == request);
+                    let from = if mine { &mut forms } else { &mut *held };
+                    answer_form(from, request, answer, on_event)
                 }
                 Some(Msg::Prompt { reply, .. }) => {
                     let _ = reply.send(Progress::Done(Err(TurnError::Busy)));
@@ -1239,6 +1267,7 @@ fn elicitation_form(request: &CreateElicitationRequest, id: String) -> Elicitati
         url,
         field,
         options,
+        waits: false,
     }
 }
 
@@ -1373,14 +1402,24 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
     }
 }
 
-/// A form the Harness asked, held open and handed on to Chat.
+/// A link scoped to the session and no tool call, as an MCP server's sign-in
+/// after `session/new` is. It belongs to the session, not the turn it lands in.
+fn outlives_turn(request: &CreateElicitationRequest) -> bool {
+    matches!(&request.mode, ElicitationMode::Url(link)
+        if matches!(&link.scope, ElicitationScope::Session(scope) if scope.tool_call_id.is_none()))
+}
+
+/// A form the Harness asked, held open and handed on to Chat. `signing_in` is
+/// whether Fidget's own `authenticate` is in flight.
 fn hold_form(
     forms: &mut Vec<PendingElicit>,
     request: &CreateElicitationRequest,
     responder: Responder<CreateElicitationResponse>,
+    signing_in: bool,
     on_event: &OnEvent,
 ) {
-    let form = elicitation_form(request, responder.id().to_string());
+    let mut form = elicitation_form(request, responder.id().to_string());
+    form.waits = form.url.is_some() && !signing_in;
     forms.push(PendingElicit {
         form: form.clone(),
         responder,

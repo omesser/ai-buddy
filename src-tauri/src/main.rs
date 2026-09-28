@@ -179,6 +179,15 @@ struct Pending {
     opened: bool,
 }
 
+impl Pending {
+    /// Keep `form` for the next Chat to open, and say whether to open one for
+    /// it now. A link Fidget did not ask for waits, as Do Not Disturb does.
+    fn hold_form(&mut self, form: &harness::ElicitationForm, shut: bool, dnd: bool) -> bool {
+        self.forms.push(form.clone());
+        shut && !form.waits && !dnd && !std::mem::replace(&mut self.opened, true)
+    }
+}
+
 struct PendingAsks(Mutex<Pending>);
 
 /// Director config and the last Character Prompt, for the frame loop.
@@ -1813,7 +1822,6 @@ fn forward_form(app: &tauri::AppHandle, form: harness::ElicitationForm) {
     let Ok(mut pending) = state.0.lock() else {
         return;
     };
-    pending.forms.push(form.clone());
 
     let mut on_screen = false;
     let mut shut = None;
@@ -1828,23 +1836,18 @@ fn forward_form(app: &tauri::AppHandle, form: harness::ElicitationForm) {
             shut = Some(label);
         }
     }
-    if on_screen {
-        eprintln!(
-            "harness: elicitation `{}`; answer it in the Chat window",
-            form.message
-        );
-        return;
-    }
-    eprintln!(
-        "harness: elicitation `{}`; no Chat surface is on screen",
-        form.message
-    );
-    if do_not_disturb(app) {
-        return;
-    }
-    if !std::mem::replace(&mut pending.opened, true) {
+    let dnd = !on_screen && do_not_disturb(app);
+    if pending.hold_form(&form, !on_screen, dnd) {
         show_chat_for_ask(app, shut);
     }
+    let next = if on_screen {
+        "answer it in the Chat window"
+    } else if form.waits {
+        "it waits for the next Chat to open"
+    } else {
+        "no Chat surface is on screen"
+    };
+    eprintln!("harness: elicitation `{}`; {next}", form.message);
 }
 
 /// Show the thought so far in the thinking Instance's Chat surface, from
@@ -4122,6 +4125,36 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn link(request: &str, waits: bool) -> harness::ElicitationForm {
+        harness::ElicitationForm {
+            request: request.to_string(),
+            message: "Authenticate with MCP server linear".to_string(),
+            field: String::new(),
+            options: Vec::new(),
+            url: Some("https://example.test/oauth".to_string()),
+            waits,
+        }
+    }
+
+    /// A link nobody asked for opens nothing, and the next Chat's replay,
+    /// which reads `forms`, still draws it. A sign-in link opens Chat once.
+    #[test]
+    fn an_unsolicited_link_waits_for_the_next_chat_and_a_sign_in_link_opens_it() {
+        let mut pending = Pending::default();
+        assert!(!pending.hold_form(&link("7", true), true, false));
+        assert!(!pending.opened);
+        assert_eq!(pending.forms.len(), 1);
+        assert_eq!(pending.forms[0].request, "7");
+
+        assert!(pending.hold_form(&link("8", false), true, false));
+        assert!(!pending.hold_form(&link("9", false), true, false));
+        assert_eq!(pending.forms.len(), 3);
+
+        let mut quiet = Pending::default();
+        assert!(!quiet.hold_form(&link("10", false), true, true));
+        assert!(!quiet.hold_form(&link("11", false), false, false));
+    }
 
     /// Sync commands run on the main thread. These two must stay async so a
     /// settings save or a keychain prompt cannot freeze Chat and the character.
