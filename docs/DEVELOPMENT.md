@@ -1,6 +1,6 @@
 # Development Guide
 
-This document covers toolchains, verification, trace variables, Character Packages, and developer workflows that were moved from the main README for conciseness.
+Toolchains, verification, trace variables, Completers and Harnesses, Character Packages, and MCP.
 
 ## Quick Start
 
@@ -11,61 +11,49 @@ cd fidget
 cargo run -p fidget
 ```
 
-## Local Data Management
+## Local Data
 
-fidget writes two files to the data directory:
+The data folder:
+
 - macOS: `~/Library/Application Support/fidget`
 - Linux: `~/.local/share/fidget`
 - Windows: `%APPDATA%\fidget` (e.g. `C:\Users\<user>\AppData\Roaming\fidget`)
 
-Files:
-- **`memory.md`**: Everything the fidgets know about you, shared across all Character Instances. Human-editable Markdown with no automatic size limit.
-- **`action-log.jsonl`**: One JSON line per Harness action (prompts, tool calls, usage). Append-only, automatically rotated.
+It holds two files:
 
-### Action Log Growth Policy
+- **`memory.md`**: everything the fidgets know about you, shared across all Character Instances. Human-editable Markdown with no size limit.
+- **`action-log.jsonl`**: one JSON line per Harness action (prompts, tool calls, usage). Append-only, rotated.
 
-The Action Log uses the [`file-rotate`](https://crates.io/crates/file-rotate) crate (0.8.x) for automatic rotation. K=10 retention: 10 rotated files + 1 current = 11 files total.
+### Action Log rotation
 
-**Rotation policy:**
-- Each file is rotated when a write pushes it past 2 MB (`ContentLimit::BytesSurpassed`)
-- Files are named: `action-log.jsonl` (current), `action-log.jsonl.1`, ..., `action-log.jsonl.10`
-- When the current file exceeds 2 MB, file-rotate moves it to `.1`, and older files cascade automatically
-- The oldest (`.10`) is dropped when it would become `.11`
-- **Disk ceiling: ~22 MB** (11 files × 2 MB)
+[`file-rotate`](https://crates.io/crates/file-rotate) 0.8.x rotates the log.
 
-**Single-writer assumption:** file-rotate and this module assume no other process writes to these log files. Concurrent writes from multiple processes are not supported.
+- A write that pushes the current file past 2 MB rotates it (`ContentLimit::BytesSurpassed`). `ContentLimit::Bytes` would split a write mid-line and break JSONL.
+- Files are `action-log.jsonl`, then `.1` through `.10`. The oldest drops off. Disk ceiling is about 22 MB.
+- One writer only. Concurrent writes from several processes are not supported.
+- Rotation and write failures are dropped, with at most one stderr line per 60s. The log must never block a Director turn.
+- JSON is serialized with `serde_json::to_string` before the write.
 
-**Drop-on-error contract:** Rotation and write failures are dropped silently (rate-limited to stderr max once per 60s). The log explains the fidget after the fact and must never block a Director turn.
+To inspect it:
 
-**Why BytesSurpassed:** `ContentLimit::Bytes(n)` can split a single write mid-string, breaking JSONL. `BytesSurpassed(n)` rotates *after* a write that pushes past the limit, keeping lines whole. JSON is pre-formatted with `serde_json::to_string` before writing to avoid buffering issues with serde_json's Display impl.
-
-**K=10 rationale:** Light retention (weeks of regular use, days of heavy use) without micro-hygiene that drops recent history too quickly. ~10k typical events per file at 2 MB means months of context before the oldest file is dropped.
-
-**To inspect the log:**
-- macOS/Linux: `tail -f ~/Library/Application\ Support/fidget/action-log.jsonl` (macOS) or `tail -f ~/.local/share/fidget/action-log.jsonl` (Linux)
+- macOS: `tail -f ~/Library/Application\ Support/fidget/action-log.jsonl`
+- Linux: `tail -f ~/.local/share/fidget/action-log.jsonl`
 - Windows (PowerShell): `Get-Content -Wait -Tail 50 $env:APPDATA\fidget\action-log.jsonl`
-- From the fidget: the **Action Log…** row in the tray and sprite menus opens the current file in the system editor
+- The **Action Log…** row in the tray and sprite menus opens the current file in the system editor.
 
-### Memory Growth Policy
+### Memory size
 
-Memory has no automatic size limit. This is deliberate: Memory is user-owned, and auto-deletion or write refusal would violate that contract. The Action Log provides visibility into what the Harness writes, so runaway growth is observable.
-
-Users can:
-- Edit `memory.md` in any text editor to trim or correct content
-- Wipe Memory entirely in Settings (which keeps a timestamped backup)
-- Monitor Memory size and growth via the Action Log
+Memory has no automatic size limit, on purpose: it is user-owned, and auto-deletion or write refusal would break that. Trim it in any editor, wipe it in Settings (a timestamped backup is kept), and watch what the Harness writes in the Action Log.
 
 ## Toolchains
 
-Three toolchains, each earning its place:
-
 | Toolchain | Needed for | Needed to build? |
 |---|---|---|
-| **Rust** | Everything: core crate, Tauri shell | yes |
+| **Rust** | Core crate and Tauri shell | yes |
 | **Python** | pre-commit, frame generators, pet importer | no |
-| **Node** | Renderer unit tests only | no |
+| **Node** | Renderer unit tests | no |
 
-Node tests the webview arithmetic that runs between Engine ticks. Any Node with `node --test` works; no package manager, no `node_modules`. See `package.json` for ESM declaration only.
+Any Node with `node --test` works. No package manager, no `node_modules`; `package.json` only declares ESM.
 
 ## Pre-commit Hooks
 
@@ -73,14 +61,20 @@ Node tests the webview arithmetic that runs between Engine ticks. Any Node with 
 pre-commit install
 ```
 
-Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, and one workspace `cargo clippy --workspace --all-targets -- -D warnings` (same shape as the Windows CI job). Toolchain pinned in `rust-toolchain.toml`.
+Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, and `cargo clippy --workspace --all-targets -- -D warnings`, as CI runs it. The toolchain is pinned in `rust-toolchain.toml`.
 
 ## Trace Variables
 
+All off by default. Switches take `1`/`on`/`true`/`yes` or `0`/`off`/`false`/`no`, in any case.
+
 | Variable | Effect |
 |---|---|
-| `FIDGET_TRACE_FRAMES=1` | Log every frame state to stderr: `Grounded pos(x,y)`, `Dragged`, `Perched`, etc. |
-| `FIDGET_TRACE_WINDOWS=1` | Log window count and first 3 window bounds on first read (Windows only). |
+| `FIDGET_TRACE_HITTEST` | Click-through decisions |
+| `FIDGET_TRACE_FRAMES` | Engine frames per tick: `Grounded pos(x,y)`, `Dragged`, `Perched`, animation |
+| `FIDGET_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played or refused |
+| `FIDGET_TRACE_ENGINE` | Behavior, Primitive, Animation, and State changes |
+| `FIDGET_TRACE_WINDOWS` | Windows only, set to any value: window count and the first 3 bounds on first read |
+| `FIDGET_CAPTURABLE` | `1` forces the overlay into screen captures, `0` excludes it. Overrides Settings → Presence → "Appear in screenshots and screen shares". For verify scripts and CI. |
 
 ## Verifying the Overlay
 
@@ -88,8 +82,8 @@ Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo 
 
 ```sh
 cargo test -p fidget-core     # Pure core, builds anywhere
-cargo test                      # Everything including platform shell  
-node --test tests/*.test.js     # Renderer interpolation
+cargo test                    # Everything including the platform shell
+node --test tests/*.test.js   # Renderer and design pages
 ```
 
 ### Automated Scripts
@@ -101,23 +95,21 @@ scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual displ
 node scripts/chat-ask-order.mjs # Chat surface in headless Chromium: a typed turn, an ask, the answer under it
 ```
 
-`chat-ask-order.mjs` loads the real `src/chat.html` with `window.__TAURI__` stubbed, so it runs with no app and activates no window. It needs a headless Chromium; `FIDGET_CHROME` names one other than Playwright's shell.
+The overlay scripts need a real desktop. `chat-ask-order.mjs` loads `src/chat.html` with `window.__TAURI__` stubbed, so it needs no app and activates no window. It needs a headless Chromium; `FIDGET_CHROME` names one other than Playwright's shell.
 
 ```sh
-scripts/verify-settings-webview-select-macos.sh  # macOS: <select> above overlay (#849)
-scripts/verify-settings-keyboard-webview.sh  # macOS: keyboard-only Settings (#848)
-scripts/verify-settings-webview-clipboard-macos.sh  # macOS: Copy writes the pasteboard (#855)
-scripts/verify-settings-webview-phase2-win.ps1  # Windows: webview window, tabs, Sound, z-order
-scripts/verify-settings-zorder-x11.sh  # Linux: Settings above overlay
-scripts/verify-anchor-taskbar-win.ps1  # Windows: no auto-open Settings (Q1), taskbar click opens Settings (Q2)
-scripts/bench-rss-macos.sh      # macOS: resident set over a run, per process
-scripts/bench-rss-linux.sh      # Linux: RSS baseline (requires working display)
-scripts/bench-rss-windows.ps1   # Windows: RSS baseline
+scripts/verify-settings-webview-select-macos.sh     # macOS: AI-source <select> opens above the overlay (#849)
+scripts/verify-settings-keyboard-webview.sh         # macOS: keyboard-only Settings (#848)
+scripts/verify-settings-webview-clipboard-macos.sh  # macOS: Copy on the BYO row writes the pasteboard (#855)
+scripts/verify-settings-webview-phase2-win.ps1      # Windows: window, tabs, Sound round-trip, z-order
+scripts/verify-settings-zorder-x11.sh               # Linux: Settings above the overlay
+scripts/verify-anchor-taskbar-win.ps1               # Windows: no auto-open Settings, taskbar click opens Settings
+scripts/bench-rss-macos.sh                          # macOS: resident set over a run, per process
+scripts/bench-rss-linux.sh                          # Linux: RSS baseline (needs a working display)
+scripts/bench-rss-windows.ps1                       # Windows: RSS baseline
 ```
 
-Each overlay script checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
-
-Settings is the webview (`src/settings.html`). CI does not run the live sittings. `verify-settings-keyboard-webview.sh` drives Tab, Space, Enter, and Escape; it compares each tab's full focus sequence with the AX dump, requires a focused still per tab and a committed `<select>` value, and writes a six-row pass/fail table and stills under `.verify/`. Its pure checks run on fixtures in `scripts/test_verify_settings_keyboard.sh`. `verify-settings-webview-clipboard-macos.sh` clicks Copy on the BYO row and checks `pbpaste`. `verify-settings-webview-select-macos.sh` opens the AI-source `<select>` above the overlay. `verify-settings-webview-phase2-win.ps1` is the Windows smoke (window, tabs, Sound round-trip, z-order). `verify-settings-zorder-x11.sh` measures X11 stacking. `scripts/ax-settings.swift`, `scripts/ax-settings-win.ps1`, and `scripts/ax-settings-linux.py` are the AX / UIA / AT-SPI helpers those sittings call.
+CI does not run the Settings sittings. `verify-settings-keyboard-webview.sh` drives Tab, Space, Enter, and Escape, compares each tab's focus sequence with the AX dump, requires a focused still per tab and a committed `<select>` value, and writes a pass/fail table and stills under `.verify/`. Its pure checks run on fixtures in `scripts/test_verify_settings_keyboard.sh`. The AX / UIA / AT-SPI helpers are `scripts/ax-settings.swift`, `scripts/ax-settings-win.ps1`, and `scripts/ax-settings-linux.py`.
 
 Build the debug binary, then run from the repo root:
 
@@ -127,77 +119,52 @@ cargo build -p fidget
 .\scripts\verify-settings-webview-phase2-win.ps1
 ```
 
-The scripts look for `target/debug/fidget`. Set `FIDGET_VERIFY_BIN` to use another binary.
+The scripts use `target/debug/fidget`. `FIDGET_VERIFY_BIN` names another binary.
 
-Grant Accessibility to the terminal or IDE that runs a macOS sitting (System Settings > Privacy & Security > Accessibility). Without that grant the helper exits before it dumps the window. On Windows, UI Automation is built-in.
+On macOS, grant Accessibility to the terminal or IDE that runs a sitting (System Settings > Privacy & Security > Accessibility). Without it the helper exits before it dumps the window. UI Automation on Windows needs no grant.
 
-The bench-rss scripts measure rather than check: they sample the app and its
-webview helpers and print RSS and peak memory. Brief by default (settle ~3s,
-sample ~10s) for fast smoke tests; pass `--research` (bash) or `-Research`
-(PowerShell) for the long research soak (settle 300s, sample 300s) used in
-measurement studies. What the numbers came out as, and what they mean, is
-[docs/research/memory-rss-and-multi-monitor.md](research/memory-rss-and-multi-monitor.md).
+The bench-rss scripts measure rather than check. They sample the app and its webview helpers and print RSS and peak memory. The default is brief (settle ~3s, sample ~10s). `--research` (bash) or `-Research` (PowerShell) runs the long soak (settle 300s, sample 300s). Results are in [docs/research/memory-rss-and-multi-monitor.md](research/memory-rss-and-multi-monitor.md).
 
 ### Manual Verification Checklist
 
-A human is still needed for the last step, because only the window server can answer it. Run the app, then confirm:
+Only the window server can answer these. Run the app, then confirm:
 
-1. **Clicks pass through empty space.** Click the desktop or a window anywhere the sprite is not. The click lands underneath.
-2. **Clicks on the sprite do not pass through.** Click the sprite's body. The window underneath does not receive the click.
-3. **Typing is never interrupted.** Put the cursor in another application and type. Click the sprite mid-sentence and keep typing. Every keystroke reaches the other application and focus never moves.
-4. **Follows you across Spaces.** Switch Spaces. The sprite is present on the new one, in the same screen position.
-5. **Motion is continuous, not stepped.** Watch it fall. It slides down the screen rather than jumping between positions, and it does not judder when it crosses a window's edge.
-6. **The art is crisp.** On a Retina display the pixels are hard squares with no blur or soft edges, and every pixel of the sprite is the same size as every other. A blurred sprite means the integer scale or the nearest-neighbour filtering was lost.
-7. **It rests on the Dock, not behind it.** Let the sprite settle at the bottom of the screen. Its feet stand on the Dock's top edge and the whole sprite is visible. Then turn on Dock auto-hiding in System Settings: within a poll the sprite falls the rest of the way to the bottom of the screen, because the Dock gave the space back. Turn it off and the sprite is lifted again.
-8. **Declared cadence is honoured.** Point fidget at a copy of Black Mage whose idle declares a faster `fps`, and the idle is visibly faster than it was at the declared 1.
-9. **A click makes it react.** Click the sprite once without moving the mouse. It plays its `react` animation for about half a second, then goes back to what it was doing.
-10. **Press and drag picks it up.** Press on the sprite and move. It follows the cursor. Release over a window and it lands on that window's top edge.
-11. **A flick throws it.** Drag and release while still moving and it leaves your hand on an arc. Hold still for a moment before releasing and it drops straight down instead.
-12. **It can be put down over the Dock, and does not stay there.** Drag it down over the Dock. Let go and it settles back onto the Dock's top edge, fully visible.
-13. **A window you drag slowly carries it.** Let the sprite settle on a window's top edge, then drag that window slowly. The sprite rides the edge and keeps its place along it.
-14. **A window you fling leaves it behind.** With the sprite perched, throw the same window: grab the title bar and move fast. The sprite stays where it stood, in the air, and falls.
-15. **The two shipped Characters are two companions.** Run each in turn and watch it idle. BMO hums to itself through a four-frame singing loop; Nim eases through six, blinks, and carries a translucent shadow.
-16. **A fullscreen application takes the screen and the fidget leaves it.** Put any application into fullscreen. Within about a tenth of a second the sprite fades out. Leave fullscreen and it fades back in.
-17. **Ordinary window switching changes nothing.** Command-Tab between applications, open and close windows, drag them around, switch Spaces. The sprite never blinks.
-18. **The hotkey puts it away and brings it back at once.** Press Control-Option-Command-B. The sprite is gone on the keystroke, with no fade. Press it again and it is back, instantly.
-19. **The hotkey outranks the rules.** Press the hotkey to put the sprite away, then enter a fullscreen application and leave it again. The sprite stays away.
-20. **It is absent from a real screen share.** Start a real share — Zoom, Meet, Teams — sharing your whole screen. The sprite is on your screen and not in theirs.
+1. **Clicks pass through empty space.** Click anywhere the sprite is not. The click lands underneath.
+2. **Clicks on the sprite do not pass through.** Click the sprite's body. The window underneath gets nothing.
+3. **Typing is never interrupted.** Type in another application and click the sprite mid-sentence. Every keystroke reaches that application and focus never moves.
+4. **Follows you across Spaces.** Switch Spaces. The sprite is on the new one, in the same place.
+5. **Motion is continuous.** Watch it fall. It slides rather than jumps, and does not judder at a window's edge.
+6. **The art is crisp.** On a Retina display the pixels are hard squares, all the same size. Blur means the integer scale or nearest-neighbour filtering was lost.
+7. **It rests on the Dock, not behind it.** Its feet stand on the Dock's top edge. Turn on Dock auto-hiding: within a poll it falls to the bottom of the screen. Turn it off and it is lifted again.
+8. **Declared cadence is honoured.** Give a copy of Black Mage a faster idle `fps`. The idle is visibly faster than at the declared 1.
+9. **A click makes it react.** Click once without moving. It plays `react` for about half a second, then resumes.
+10. **Press and drag picks it up.** It follows the cursor. Release over a window and it lands on that window's top edge.
+11. **A flick throws it.** Release while moving and it leaves on an arc. Hold still before releasing and it drops straight down.
+12. **It can be put down over the Dock, and does not stay there.** Drop it over the Dock. It settles back onto the Dock's top edge, fully visible.
+13. **A window you drag slowly carries it.** With the sprite on a window's top edge, drag the window slowly. The sprite rides the edge and keeps its place.
+14. **A window you fling leaves it behind.** Throw the same window by its title bar. The sprite stays where it stood, in the air, and falls.
+15. **Two Characters are two companions.** Run BMO, then Nim. BMO hums through a four-frame singing loop; Nim eases through six, blinks, and carries a translucent shadow.
+16. **Fullscreen takes the screen and the fidget leaves it.** Enter fullscreen in any app. Within about a tenth of a second the sprite fades out, and fades back when you leave.
+17. **Ordinary window switching changes nothing.** Command-Tab, open, close, and drag windows, switch Spaces. The sprite never blinks.
+18. **The hotkey puts it away and brings it back at once.** Control-Option-Command-B hides it with no fade. Press again and it is back.
+19. **The hotkey outranks the rules.** Hide it with the hotkey, then enter and leave fullscreen. It stays away.
+20. **It can leave a real screen share.** Turn off Settings → Presence → "Appear in screenshots and screen shares", then share your whole screen in Zoom, Meet, or Teams. The sprite is on your screen and not in theirs.
 
-The last three need a second display:
+With a second display:
 
-21. **A fidget on a seam is whole.** Drag the sprite slowly across the boundary between two displays and hold it there, half on each. Both halves are drawn, and they meet.
-22. **Either half can be clicked.** With the sprite straddling, click the half on each display in turn. Both pick it up.
-23. **A display can come and go.** With the app running, unplug a display. The sprite carries on. Plug it back in: the sprite can be dragged onto it again within a second or so.
+21. **A fidget on a seam is whole.** Hold the sprite across the boundary, half on each display. Both halves are drawn and meet.
+22. **Either half can be clicked.** Click the half on each display in turn. Both pick it up.
+23. **A display can come and go.** Unplug a display while running. The sprite carries on. Plug it back in and it can be dragged onto it within a second or so.
 
-For multiple instances (24–27), start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` and confirm each fidget acts independently.
-
-## Trace Variables
-
-Set environment variables for live debugging (all off by default):
-
-| Variable | Traces |
-|---|---|
-| `FIDGET_TRACE_HITTEST` | Click-through decisions |
-| `FIDGET_TRACE_FRAMES` | Engine frames (state, position, animation) per tick |
-| `FIDGET_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played, Behavior refused |
-| `FIDGET_TRACE_ENGINE` | Behavior/Primitive/Animation/State changes |
-| `FIDGET_CAPTURABLE` | Force capturable (`1`) or hidden (`0`); overrides setting — for verify scripts/CI |
-
-Values: `1`/`on`/`true`/`yes` for on, `0`/`off`/`false`/`no` for off (case-insensitive).
-
-By default, the overlay appears in screen captures (capturable). Set `FIDGET_CAPTURABLE=1`
-to force it visible (for verify scripts that screenshot the fidget), or `=0` to force
-exclusion (testing the hide path). Most users control this via Settings → Presence →
-"Appear in screenshots and screen shares" checkbox. The env var is for CI/testing when
-sprite's appearance.
+For multiple instances, start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` and confirm each fidget acts independently.
 
 ## Running with a Completer
 
-With no Director key, Static weights pick idle Behaviors from the Character's manifest — no model, no account, no permission required. Connect a Completer for model-driven variety.
+With no Director key, Static weights pick idle Behaviors from the Character's manifest. No model, no account, no permission. Connect a Completer for model-driven variety.
 
 ### Quick Start
 
-OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`; `FIDGET_DIRECTOR_BASE_URL=https://api.x.ai` selects that path. An explicit full URL (ending in `/chat/completions` or `/responses`) is used as-is.
+OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`, selected by `FIDGET_DIRECTOR_BASE_URL=https://api.x.ai`. A full URL ending in `/chat/completions` or `/responses` is used as-is.
 
 ```sh
 # OpenAI
@@ -230,49 +197,51 @@ cargo run
 
 ### Director Environment
 
-Every variable that names a switch reads the same words: `1`, `on`, `true` or `yes` for on, `0`, `off`, `false` or `no` for off, in any case. Any other value is a typo rather than a choice — the switch stays as Settings has it, and the launch prints a line naming the variable it ignored. An empty value is an expansion that produced nothing, and is quietly no override at all.
+Switches read the same words as the trace variables. Any other value is a typo: the switch stays as Settings has it, and the launch prints a line naming the variable it ignored. An empty value is no override.
 
 | Variable | What it does |
 |---|---|
-| `FIDGET_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a local server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
+| `FIDGET_DIRECTOR_API_KEY` | Required for a remote provider. For a local server, set it only when the server requires auth. Empty or unset with a remote URL means Static only. |
 | `FIDGET_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
 | `FIDGET_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
-| `FIDGET_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
-| `FIDGET_DIRECTOR_TIMEOUT_SECS` | Model API hop: an HTTP Completer request, then Static. Default 30 seconds, remote or local. A cold local server that needs longer sets this. A Harness turn is `FIDGET_HARNESS_TURN_TIMEOUT`. |
-| `FIDGET_DIRECTOR_MAX_TOKENS` | Ceiling on one HTTP Completer turn. A safeguard against a model that will not stop, not a reply-length budget, so it does not vary by what woke the fidget or by where the server runs. Default 1024, or 8192 once the endpoint has been seen to mark its thinking (#606). A number set here outranks both. A Harness decides its own reply length. |
-| `FIDGET_DIRECTOR_BLANK` | Blank-AI mode: empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract) and still sends an Instance Prompt. Off unless set, and Settings → Development's "Blank AI" says the same thing. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the reply is prose and the fidget speaks it without acting, unless the Instance Prompt asks otherwise. The Harness lane keeps a session of its own for the mode, so no session mixes the two prompts. #657, #680. |
-| `FIDGET_DIRECTOR_REASONING_EFFORT` | How hard the HTTP Completer asks the model to think, sent verbatim: `reasoning_effort` on chat-completions, `reasoning.effort` on the Responses path. Overrides Settings → Development's "Reasoning effort", and `low` stands when neither says anything — not "send nothing", which costs lost wakes on a local reasoning model at the turn ceiling. The picker offers `low`, `medium` and `high` because those are the three every documented host takes; anything else (`max`, `xhigh`, or whatever a llama.cpp or oMLX chat template invents) can be typed and is not validated. A host that refuses the field drops it for the rest of the session, and `FIDGET_TRACE_DIRECTOR` names the value that cost it. |
-| `FIDGET_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `codex`, `copilot`, `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the AI tab's AI source row saved. Unset falls through to that row, which offers the same choices (Off, the presets, and Custom). ADR-0017, #436. |
-| `FIDGET_HARNESS_CWD` | Directory the Harness treats as the project: spawn `current_dir` and ACP `session/new` / `session/load` cwd. Empty is the data folder (`~/.local/share/fidget` on Linux, `~/Library/Application Support/fidget` on macOS, `%APPDATA%\fidget` on Windows), not `$HOME`. Overrides Settings → Development's "Working directory". Session file and Action Log stay in the data folder. #782. |
-| `FIDGET_MCP_URL`, `FIDGET_MCP_TOKEN` | Where the running app serves MCP on loopback, and the per-run bearer token that reaches it. The app sets both on the stdio MCP server entry it hands the Harness, and the shim relays there; with neither set it answers every call with a failure. Set them by hand to point the shim at an app you are already running. Never written to a file or a log. ADR-0026. |
-| `FIDGET_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Overrides Settings → Development's "MCP server binary", and is read at attach, so a change lands on the next one. First of three stdio routes: this, else an `fidget-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three relay to the running app over loopback once the app hands them the two variables above (#501). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server directly (ADR-0023), and so is `cursor-agent`, through its own config file (#1020). |
-| `FIDGET_HARNESS_TURN_TIMEOUT` | How long a Harness `session/prompt` may run before `session/cancel`, not counting the time it waits on you to answer an ask, and started over once you answer (#1001). Overrides Settings → Development's "Turn timeout, in seconds", and 120 stands when neither says anything. Not `FIDGET_DIRECTOR_TIMEOUT_SECS`. Read when the Session is built, so a change lands on the next attach. #690. |
-| `FIDGET_HARNESS_AUTH_RETRY_SECS` | How long a Harness that has not signed in is left alone before `session/new` is tried again. Overrides Settings → Development's "Auth retry, in seconds", and 60 stands when neither says anything. Read when the Session is built, so a change lands on the next attach. |
-| `FIDGET_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → AI's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+| `FIDGET_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even with a key; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
+| `FIDGET_DIRECTOR_TIMEOUT_SECS` | Timeout for one HTTP Completer request, then Static. Default 30 seconds. Raise it for a cold local server. A Harness turn uses `FIDGET_HARNESS_TURN_TIMEOUT`. |
+| `FIDGET_DIRECTOR_MAX_TOKENS` | Ceiling on one HTTP Completer turn. A safeguard against a model that will not stop, not a reply-length budget. Default 1024, or 8192 once the endpoint has been seen to mark its thinking (#606). A value here outranks both. A Harness decides its own reply length. |
+| `FIDGET_DIRECTOR_BLANK` | Blank-AI mode, same as Settings → Development → "Blank AI". Empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract) and still sends the Instance Prompt. The Prompt tab marks emptied layers Empty. With no contract the reply is prose, spoken without acting unless the Instance Prompt asks otherwise. The Harness lane keeps a separate session for this mode. |
+| `FIDGET_DIRECTOR_REASONING_EFFORT` | Sent verbatim as `reasoning_effort` (chat-completions) or `reasoning.effort` (Responses). Overrides Settings → Development → "Reasoning effort". Default `low`, because sending nothing loses wakes on a local reasoning model at the turn ceiling. The picker offers `low`, `medium`, `high`; other values can be typed and are not validated. A host that refuses the field drops it for the session, and `FIDGET_TRACE_DIRECTOR` names the value. |
+| `FIDGET_HARNESS` | Attach a Harness as the Completer: `claude`, `codex`, `copilot`, `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`, or any command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in Chat with the command that fixes it. Set and empty is the kill switch (Off, whatever Settings saved). Unset falls through to Settings → AI → AI source. ADR-0022. |
+| `FIDGET_HARNESS_CWD` | The Harness's project directory: spawn `current_dir` and ACP `session/new` / `session/load` cwd. Empty means the data folder, not `$HOME`. Overrides Settings → Development → "Working directory". The session file and Action Log stay in the data folder. |
+| `FIDGET_HARNESS_TURN_TIMEOUT` | How long a Harness `session/prompt` may run before `session/cancel`, excluding time spent waiting on your answer to an ask, and restarted when you answer. Overrides Settings → Development → "Turn timeout, in seconds". Default 120. Read at attach. |
+| `FIDGET_HARNESS_AUTH_RETRY_SECS` | How long to leave a not-signed-in Harness before retrying `session/new`. Overrides Settings → Development → "Auth retry, in seconds". Default 60. Read at attach. |
+| `FIDGET_MCP_URL`, `FIDGET_MCP_TOKEN` | The app's loopback MCP endpoint and per-run bearer token. The app sets both on the stdio MCP entry it hands the Harness; with neither set the shim fails every call. Set them by hand to point the shim at a running app. Never written to a file or a log. ADR-0026. |
+| `FIDGET_MCP_BIN` | The stdio MCP server binary, when it is not beside the app. Overrides Settings → Development → "MCP server binary". Read at attach. See [MCP Server](#mcp-server) for the three stdio routes. |
+| `FIDGET_DIRECTOR_WAKE_SECS` | First proactive model-call wait. Overrides Settings → AI → "First wake, in seconds". Default 120. Each proactive call multiplies the wait by the Character's `[director]` `model_base ^ model_power` (default doubling), capped at two hours. Poke and Summon wake immediately. |
 
 ### Settings and Keyring
 
-Settings → AI persists base URL, model, and the first wake interval, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, and — under Harness attachment — the turn timeout, the auth-retry interval, the MCP server binary, and the working directory. A working-directory edit respawns the Harness so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach. Editing the Completer source or HTTP endpoint retargets the running Director: the next wake reaches the new host on the new interval, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
+Settings → AI persists base URL, model, and first wake interval, and stores the API key in the OS secret store. Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory.
 
-`cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `FIDGET_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
+- A working-directory edit respawns the Harness, so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach.
+- Editing the Completer source or HTTP endpoint retargets the running Director with no restart. The session in flight is dropped; a streaming call closes its connection, so the old host stops generating.
+- `cargo run` with the env vars unset uses the saved Completer. A field an env var owns shows its value, names the variable, and takes no edit.
+- An exported `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely.
+- The window moves with a modifier-drag on empty chrome: Command-drag on macOS, Super-drag on Linux, Alt-drag on Windows. Nothing in the UI names this.
 
-**Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.
+**Linux:** the key goes to Secret Service (GNOME Keyring, KWallet), or kernel keyutils when Secret Service is absent. Building the shell needs `libdbus-1-dev`. No packaged secret store is required.
 
-The title-bar grip is small, so the window also moves with a modifier-drag on its background: Command-drag on macOS, Super-drag on Linux, Alt-drag on Windows. The drag starts from empty chrome, not from a field, button, popup, or the tab strip. Nothing in the window names the gesture; this paragraph is how you find it.
-
-**macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. From the repository root:
+**macOS Keychain ACL:** a saved key's access list names the build that wrote it. An ad-hoc signature names it by a hash that every `cargo build` changes, so a rebuilt app costs two Keychain dialogs. `scripts/dev-sign.sh` signs with a stable identity instead. From the repo root:
 
 ```sh
 cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
 ```
 
-A key saved before the first signed run keeps the old list — clear it in Settings and save it once more. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those again, once. Released builds are ad-hoc signed too, so an update prompts the same way until there is a Developer ID to sign with (#283).
+A key saved before the first signed run keeps the old list: clear it in Settings and save it again. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those once more. Released builds are ad-hoc signed too, so updates prompt the same way until there is a Developer ID (#283).
 
-**Accessibility, Screen Recording, and Input Monitoring:** Settings → What the fidget can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as fidget. Check the box, then turn that named app on in Privacy & Security. Input Monitoring is the one that changes what the frame loop does: granted, an idle sprite is woken by the mouse rather than by its own timer, so a poke lands at once instead of up to a second later; ungranted, the loop keeps the back-off #718 shipped (#721). The tap starts within about a second of the grant landing — no relaunch — and the loop stops using it the moment you uncheck the box.
+**Accessibility, Screen Recording, and Input Monitoring:** grant them in Settings → What the fidget can see. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as fidget. Check the box, then turn that app on in Privacy & Security. Input Monitoring lets the mouse wake an idle sprite, so a poke lands at once instead of up to a second later. Without it the frame loop keeps its idle back-off. The tap starts within about a second of the grant, with no relaunch, and stops when you uncheck the box.
 
 ### Local Model Servers
 
-The fidget wakes on a pace all day and every Poke is a wake on top of that, so a hosted API puts a meter on idling — and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the metering, and a server on loopback also keeps that context on this machine; a box across the LAN still receives it. "Local" here means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name — the LAN counts. A local base URL makes `FIDGET_DIRECTOR_API_KEY` optional: leave it unset when the server has no auth, set it when the server requires one.
+The fidget wakes all day and every Poke is another wake, so a hosted API meters idling, and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the meter. On loopback it also keeps that context on the machine; a LAN box still receives it. "Local" means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name. A local base URL makes `FIDGET_DIRECTOR_API_KEY` optional.
 
 These servers speak `/v1/chat/completions`:
 
@@ -309,18 +278,14 @@ cargo run --bin fidget
 
 ### Testing Connectivity
 
-`scripts/probe-model.sh` hits the same Completer without starting the overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST paths. Same env as `cargo run`. It prints status and body, never the key. Later this is also how to check a Harness is reachable.
+`scripts/probe-model.sh` hits the Completer without starting the overlay: GET `/v1/models` (and `/v1/api-key` on xAI), then both POST paths. It reads the same env as `cargo run`, prints status and body, and never prints the key. It also reports whether the configured model is loaded.
 
 ```sh
 FIDGET_DIRECTOR_API_KEY="$XAI_API_KEY" \
 FIDGET_DIRECTOR_BASE_URL=https://api.x.ai \
 FIDGET_DIRECTOR_MODEL=grok-4.6 \
 scripts/probe-model.sh
-```
 
-**Check a server** before you trust it — reports whether the model you configured is actually loaded:
-
-```sh
 # Ollama (no key)
 FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
 FIDGET_DIRECTOR_MODEL=gemma4 \
@@ -333,16 +298,16 @@ FIDGET_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
 scripts/probe-model.sh
 ```
 
-At startup the app asks the same question once, in the background, and says so when the answer is no:
+The app runs the same check once at startup, in the background, and logs a miss:
 
 ```
 director: http://localhost:11439 unreachable: Connection refused; staying on StaticDirector until it answers
 director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:latest
 ```
 
-Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a fidget that went quiet is not a mystery.
+Neither line stops anything. A failed wake already falls back to Static.
 
-`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it serves fidget's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, says whether the reply parsed as a Behavior proposal, and says whether the Harness fetched the tool list. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
+`scripts/probe-harness.sh` does the same for a Harness. It serves fidget's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, and reports whether the reply parsed as a Behavior proposal and whether the Harness fetched the tool list. No overlay, and no credential printed: a Harness that is not signed in comes back as the command to run in your own terminal.
 
 ```sh
 FIDGET_HARNESS=hermes scripts/probe-harness.sh
@@ -371,38 +336,26 @@ turn
   mcp listed   yes, 1 tools/list request(s)
 ```
 
-`mcp` sits under the handshake because it is what the session was actually
-handed, and `mcp http` above it is why: `hermes` advertises none on ACP
-`initialize`, so it gets the stdio server, which relays to the app (ADR-0026).
-That is the handshake bit alone — hermes speaks MCP over HTTP perfectly well as
-a client of someone else's server. A Harness that advertises HTTP MCP prints a
-`http://127.0.0.1:…/mcp` URL there instead — never the bearer token that
-reaches it. The probe binds that listener itself before it attaches, so the
-Harness gets what the app would hand it. `mcp listed` under the turn is the
-Harness's side of it: whether it asked the endpoint for `tools/list` at all.
-A tool it then calls is answered through the same `dispatch` the app uses,
-against an empty desktop and no Instances, so `speak` comes back unsuccessful
-and `list_windows` empty; the probe prints each call as `mcp call`. A probe
-whose loopback bind failed says so in capitals under `mcp`, and nothing it
-reports about tools holds.
+- `mcp` is what the session was handed. `mcp http` is why: `hermes` advertises no HTTP MCP on ACP `initialize`, so it gets the stdio server, which relays to the app (ADR-0026). A Harness that advertises HTTP MCP shows a `http://127.0.0.1:…/mcp` URL instead, never the token. The probe binds that listener itself before it attaches. A failed bind is reported in capitals under `mcp`, and then nothing it reports about tools holds.
+- `mcp listed` is whether the Harness asked for `tools/list`. A tool it calls is answered through the app's `dispatch` against an empty desktop and no Instances, so `speak` fails and `list_windows` is empty. Each call prints as `mcp call`.
+- Exit code: 2 means never asked (nothing configured, no binary, not signed in), 1 means asked and not answered, 0 means `end_turn`, a completed turn.
+- The `probe` folder keeps the session file and the Action Log away from a real install. Memory is not isolated: a `remember` during a probe writes the real `memory.md`.
 
-The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. That stop reason is the probe's, not session teardown: a turn completed, which is not the same as the session ending. Dated transcripts belong on the issue that ran the probe. Update the README's [Harness Support](../README.md#harness-support) table when a named row's command or user-visible session behavior changes — not when a probe is re-run.
-
-The `probe` folder keeps the session file and the Action Log out of a real install's. Memory is not isolated: the MCP server resolves `memory.md` from the data folder, so a `remember` during a probe writes the real one.
+Dated transcripts belong on the issue that ran the probe. Update the README's [Harness Support](../README.md#harness-support) table when a row's command or user-visible session behavior changes, not when a probe is re-run.
 
 ### Provider Details
 
 **Cursor API:** `CURSOR_API_KEY` is for the Cloud Agents API and SDKs, not a Completer. `https://api.cursor.com` has no `/v1/chat/completions`; a POST there is a 404 and Static takes over.
 
-**xAI keys:** A 403 from xAI is the server refusing the key, not a bad JSON body (that is a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai); `/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries chat-completions if Responses returns 403 or 404.
+**xAI keys:** a 403 is xAI refusing the key; a bad body is a 400. Keys are granted per endpoint in [console.x.ai](https://console.x.ai), and `/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that requires mTLS wants `https://mtls.api.x.ai`. The Completer retries chat-completions if Responses returns 403 or 404.
 
-**Streaming:** The stand-in asks for `stream: true`. A reply's first line is the Behavior name and runs one to three tokens, so almost the whole wait is a dialogue line the fidget does not need before it starts moving. Streaming is also the only shape a dropped call can be *stopped* in: closing a streaming connection ends the generation, where a whole-reply request runs to completion on the server whatever the client does. A server that rejects the field — or accepts it and sends whole-reply JSON anyway — stays one the fidget can run against, because the parser handles both.
+**Streaming:** the Completer asks for `stream: true`. The Behavior name is the first line, so the fidget can start moving before the dialogue arrives. Closing a streaming connection also stops the generation, which a whole-reply request does not. A server that rejects the field, or ignores it, still works: the parser handles both shapes.
 
 ### Proactive model calls
 
-Session calls stay quiet while the main display is asleep. Settings can turn the Director off, or leave it on and disable proactive model calls.
+Session calls stay quiet while the main display is asleep. Settings can turn the Director off, or keep it on with proactive calls disabled.
 
-A Character that should grow faster or slower than doubling says so:
+A Character that should back off faster or slower than doubling says so:
 
 ```toml
 [director]
@@ -410,25 +363,26 @@ model_base = 3
 model_power = 1
 ```
 
-Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect on the next frame, no restart. Do Not Disturb also silences the fidget while it is on, and leaves the visual cues (#277). A machine that cannot start an audio context does the same: one warning in the webview console, then silence, with the visual still playing (#292).
+Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect on the next frame. Do Not Disturb also silences cues and keeps the visual ones (#277). A machine that cannot start an audio context logs one webview console warning and stays silent, with the visual still playing (#292).
 
 ### Reply Contract Measurements
 
-**Size and the reply contract, measured** (from `measure_the_reply_contract_failure_rate` test in `src-tauri/src/model.rs`). See [main README archived version](https://github.com/omesser/fidget/blob/main/README.md) lines 450–490 for detailed measurement methodology and results.
+`measure_the_reply_contract_failure_rate` in `src-tauri/src/model.rs` measures how often a model breaks the reply contract. It is `#[ignore]`d and runs against a live server; its doc comment has the command and the `FIDGET_BENCH_*` knobs. The last published results are in the [README before #135](https://github.com/omesser/fidget/blob/f08c6edffaa4cbc310164a594fe4be889e22f9de/README.md#L438).
 
 ## Character Packages
 
-Search paths (in order):
+Search paths, in order:
+
 1. `~/Library/Application Support/fidget/characters/`
 2. Shipped characters (copied from `characters/` at build time)
 
-Override with `FIDGET_CHARACTERS=/path/to/chars` (colon-separated).
+`FIDGET_CHARACTERS=/path/to/chars` overrides them (colon-separated).
 
 Eight characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Timber Wolf, Trump.
 
 ### Writing a Character
 
-A Character Package is a directory or `.zip` archive holding a `character.manifest`, a `personality.txt`, and the frames its manifest names. The format is first-class but undocumented until v2.
+A Character Package is a directory or `.zip` holding a `character.manifest`, a `personality.txt`, and the frames its manifest names. Manifest structure, animation declarations, and Behavior composition stay internal and undocumented until v2.
 
 #### Declaring where the art came from
 
@@ -441,19 +395,19 @@ url     = "https://example.com/the-pack"   # optional, http or https only
 license = "The license the art carries, or that none is declared."
 ```
 
-`license` is required whenever `[source]` is present. "None is declared" is a valid answer; leaving the key out is not, because a reader cannot tell an unlicensed pack from an unfinished manifest. A package with no `[source]` at all still loads, but one cannot ship from this repository.
+`license` is required whenever `[source]` is present. "None is declared" is a valid value; a missing key is not, because it looks like an unfinished manifest. A package with no `[source]` still loads, but cannot ship from this repository.
 
 #### Writing a personality
 
-`personality.txt` is plain prose the loader never interprets, up to 2000 characters. A register alone is not enough: a model given only temperament converges on the same three assistant-flavored lines. A good one contains three things, unlabeled (#156):
+`personality.txt` is plain prose the loader never interprets, up to 2000 characters. Temperament alone is not enough: a model given only that converges on the same few assistant-flavored lines. Include three things, unlabeled (#156):
 
-1. **Who the character is and how it carries itself**, fused — the paragraph or two every shipped file opens with. Skip what the sprite already shows: a description of the art buys nothing, and the words are better spent on how the character speaks and what it notices.
-2. **A fixations paragraph**: three to five strong, specific opinions that generate material — things it loves, resents, takes personally, or takes credit for.
-3. **Sample lines**, verbatim, introduced in prose ("It has been heard to say: …"). Well-chosen lines also carry the character's recurring bits, which is why bits get no section of their own. Be generous: each line is another calibration point, and `characters/black-mage/` shows how far that goes. A catchphrase belongs here: the prompt asks for variety but leaves repetition the character owns to the personality.
+1. **Who the character is and how it carries itself.** Skip what the sprite already shows; spend the words on how it speaks and what it notices.
+2. **Fixations:** three to five strong, specific opinions — things it loves, resents, takes personally, or takes credit for.
+3. **Sample lines**, verbatim, introduced in prose ("It has been heard to say: …"). They carry the character's recurring bits and catchphrases. Be generous; `characters/black-mage/` shows how far that goes.
 
 #### Universal rules
 
-Leave these out of a personality file. `character_prompt` in `crates/core/src/director.rs` injects them once for every Character, so the files cannot drift apart on them:
+Leave these out of a personality file. `character_prompt` in `crates/core/src/director.rs` injects them for every Character:
 
 - Stay in character, and never mention being a model or an assistant.
 - Fit the bubble — five short sentences at the most.
@@ -461,8 +415,6 @@ Leave these out of a personality file. `character_prompt` in `crates/core/src/di
 - Lean away from the Behaviors that just played.
 - React to the moment — what just happened, and what the sprite stands on — when there is something worth remarking on.
 - Dialogue is demeanour, never capability: no promising actions on the machine, no claiming abilities.
-
-The rest of the package format — manifest structure, animation declarations, Behavior composition — stays internal and undocumented until v2.
 
 ### Running Multiple Instances
 
@@ -472,7 +424,7 @@ cd src-tauri && FIDGET_INSTANCES="buddy-bot:One,buddy-bot:Two,nim:Nim" cargo run
 
 ## Importing Pets
 
-Translate petscodex or Shimeji-ee packs to Character Packages:
+Translate [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), or [Shimeji Shop](https://shimejishop.com/) packs to Character Packages:
 
 ```sh
 uv venv && uv pip install pillow
@@ -481,18 +433,6 @@ npx petscodex install labubu
 cargo run -p fidget-core --example validate -- characters/labubu
 ```
 
-Supported: [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), [Shimeji Shop](https://shimejishop.com/).
-
-## macOS Developer Signing
-
-Stable signature for Keychain access:
-
-```sh
-cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
-```
-
-Grant permissions: Settings → What the fidget can see.
-
 ## Linux Dependencies
 
 ```sh
@@ -500,98 +440,71 @@ Grant permissions: Settings → What the fidget can see.
 sudo apt install libayatana-appindicator3-dev
 ```
 
-Tray requires a StatusNotifier host (GNOME Shell, KDE Plasma, XFCE panel). GStreamer for cue audio.
-
 ### Install packages (tray, cue audio, AppImage)
 
-The tray icon is required, not a preference: it is how you reach Settings, Character, Memory, and Quit without hunting the sprite. The `.deb` therefore depends on `libayatana-appindicator3-1`, and `apt` pulls it in with the package. The older `libappindicator3-1` is not an accepted alternative; `Depends` names the `libayatana` one alone. The AppImage carries its own copy, so it needs no appindicator package.
+**Tray.** The tray icon is how you reach Settings, Character, Memory, and Quit, so the `.deb` depends on `libayatana-appindicator3-1` (the older `libappindicator3-1` is not accepted). The AppImage carries its own copy. Showing the icon also needs a StatusNotifier host, which the desktop provides and no package can declare: GNOME Shell, KDE Plasma, and XFCE's Status Tray plugin are hosts; Plank and a Wayland compositor with no tray protocol are not. Without a host, the sprite's right-click menu is the same menu.
 
-Displaying that icon is a second requirement, and no package can declare it: the panel must run a StatusNotifier host, which the desktop environment provides rather than `apt`. GNOME Shell, KDE Plasma, and XFCE's Status Tray plugin are hosts. A dock such as Plank is not one, and neither is a Wayland compositor with no tray protocol — the tray installs and no icon appears. Where no host answers, the sprite's right-click menu opens the same menu.
+**Cue audio** is Web Audio in WebKitGTK, played through GStreamer. `libwebkit2gtk-4.1-0` already depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (which ships `pulsesink`), enough under PipeWire-pulse or PulseAudio. An ALSA-only machine also needs `gstreamer1.0-alsa`. With no sound device the fidget stays silent and still draws the visual cue.
 
-Cue audio is Web Audio in WebKitGTK, which plays through GStreamer. The `.deb` does not name a GStreamer package of its own: `libwebkit2gtk-4.1-0` already Depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (the latter ships `pulsesink`). That is enough on a session with PipeWire-pulse or PulseAudio. An ALSA-only machine also wants `gstreamer1.0-alsa`, which WebKit only Suggests. A machine with no sound device stays silent and still draws the visual cue.
+The AppImage bundles `libgstreamer` but not the plugin pack (`bundleMediaFramework` stays off; it would add tens of megabytes). Cue audio then needs the host's `gstreamer1.0-plugins-good` (plus `gstreamer1.0-alsa` without Pulse/PipeWire) and a running sink. If those are installed and the AppImage is still mute, GStreamer is looking for plugins inside the image.
 
-The AppImage copies `libgstreamer` with WebKit and does **not** ship the plugin pack (`bundleMediaFramework` stays off, or the image grows by tens of megabytes). Cue audio then needs the host's `gstreamer1.0-plugins-good` (and `gstreamer1.0-alsa` on a box with no Pulse/PipeWire) plus a running sink. If those are installed and the AppImage is still mute, GStreamer is looking inside the image for plugins that are not there.
-
-AppImage on Ubuntu needs `libfuse2` (22.04) or `libfuse2t64` (24.04+).
-
+**AppImage on Ubuntu** needs `libfuse2` (22.04) or `libfuse2t64` (24.04+).
 
 ### Linux X11/Wayland
 
-Single build with runtime lane selection. XWayland usually answers. Wayland-only sessions lose window geometry (screen-edge physics only, no Perches).
+One build, lane chosen at runtime. XWayland usually answers. A Wayland-only session loses window geometry: screen-edge physics only, no Perches.
 
 ### Windows
 
-NSIS installer ships. Some cells stub/degraded (see platform table in main README). Shell binary is real; stubs are about overlay depth.
+The NSIS installer ships. The README platform table lists the degraded cells.
 
 #### Harness Process Termination
 
-On Windows, the ACP Harness child and its descendants (e.g. `npx` spawning Node) are assigned to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` at create time. The process is spawned suspended, assigned to the job, then resumed before any user code runs. When the app quits or the Harness is detached, terminating the job ensures grandchildren do not linger. The child is also in its own process group (`CREATE_NEW_PROCESS_GROUP`) so Ctrl+C into `cargo run` does not interrupt it.
+The ACP Harness child and its descendants (e.g. `npx` spawning Node) go in a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. The child is spawned suspended, assigned to the job, then resumed, so no grandchild outlives a quit or detach. It also gets its own process group (`CREATE_NEW_PROCESS_GROUP`), so Ctrl+C into `cargo run` does not reach it.
 
-## MCP Server: Developer Flow
+## MCP Server
 
-Two transport axes (do not conflate):
+Two transports, not to be conflated:
 
-1. **ACP** (fidget ↔ Harness): always stdio. fidget spawns the Harness and prompts it over newline-delimited JSON-RPC on stdio.
-2. **MCP** (Harness → fidget tools): The Harness calls back so `speak`, sensing, and Memory tools reach the fidget.
+1. **ACP** (fidget ↔ Harness): always stdio. fidget spawns the Harness and prompts it over newline-delimited JSON-RPC.
+2. **MCP** (Harness → fidget): the Harness calls back so `speak`, sensing, and Memory reach the fidget.
+
+The README lists the [tools and resources](../README.md#harness--mcp).
 
 ### How it works
 
-**Dispatch lives in the running app** (ADR-0023, #491). `src-tauri/src/mcp_http.rs` serves seven synchronous tools on `http://127.0.0.1:<random-port>/mcp` behind a per-run bearer token. The token is 32 fresh bytes held in memory, never written to disk or a log. The endpoint binds on app launch; if the bind fails, the app continues without MCP (ADR-0010).
+Dispatch lives in the running app (ADR-0023). `src-tauri/src/mcp_http.rs` serves the tools on `http://127.0.0.1:<random-port>/mcp` behind a per-run bearer token: 32 fresh bytes in memory, never on disk or in a log. It is thread-per-request with no async runtime, request/response only: no notifications, progress, sampling, SSE push, or prompts. If the bind fails at launch, the app runs without MCP (ADR-0023). The bind is loopback only, because the token authorizes moving the fidget. The denylist applies to `list_windows`, `describe_screen`, and `fidget://windows`: it filters password managers and redacts password fields.
 
-**The gate is one ACP handshake bit:** `agentCapabilities.mcpCapabilities.http` on `initialize`.
+The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the route:
 
-- **Advertises it (true)** → the Harness gets the loopback URL + bearer token directly (ADR-0023). Tool calls hit the app's endpoint; `speak` reaches the fidget.
-- **Omits it (false or absent)** → the Harness gets a stdio MCP server entry: a binary path it spawns as a child of its own (ADR-0026, #501). That binary is a relay shim with no state; it posts every JSON-RPC message to the app's loopback endpoint and passes the app's answer back untouched. The environment carries `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from the app to the shim. Three stdio routes: `FIDGET_MCP_BIN`, an `fidget-mcp` sidecar, or `fidget --mcp-stdio`; all three relay.
-- **Ignores `mcpServers` altogether** → `cursor-agent` reads the field from neither `session/new` nor its environment; it loads servers only from an approved `.cursor/mcp.json` (#1020). It is handed the same loopback URL and bearer token as an HTTP-capable Harness, written into that file instead of over the wire.
+- **Advertised** → the Harness gets the loopback URL and token directly.
+- **Absent or false** → the Harness gets a stdio MCP server entry to spawn (ADR-0026). That binary is a stateless relay: it posts every JSON-RPC message to the app's endpoint, using `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from its environment. It is found as `FIDGET_MCP_BIN`, else a `fidget-mcp` sidecar beside the app, else the app binary itself (`fidget --mcp-stdio`).
+- **`cursor-agent`** ignores `mcpServers` entirely and loads servers only from an approved `.cursor/mcp.json` (#1020). It gets the loopback URL and token through that file.
 
-**How `cursor-agent` is reached** (`src-tauri/src/cursor_mcp.rs`):
+### How `cursor-agent` is reached
 
-Two mechanisms, because Cursor splits the job in two and neither half does the other's. `.cursor/mcp.json` is the only place a server can be **defined** — `cursor-agent mcp` offers `login`, `list`, `list-tools`, `enable` and `disable`, and no `add`. `cursor-agent mcp enable` is the only way to **approve** one, documented as "Add an MCP server to the local approved list" for a server already "configured in .cursor/mcp.json or ~/.cursor/mcp.json". So attach writes the file, then runs the CLI.
+`src-tauri/src/cursor_mcp.rs`. `.cursor/mcp.json` is the only place to define a server (`cursor-agent mcp` has no `add`), and `cursor-agent mcp enable` is the only way to approve one. Approvals are read once per `cursor-agent` process, so before spawning `cursor-agent acp`, attach:
 
-In order, before `cursor-agent acp` is spawned, because approvals are read once per `cursor-agent` process and afterwards is too late:
+1. Merges `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside existing servers. A file that does not parse is left alone and the attach continues without tools.
+2. `chmod 600` the file, because it holds a live credential. Windows has no mode bits here, so the file keeps the project directory's ACL.
+3. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
 
-1. Merge `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside whatever servers the file already holds. A file that does not parse is left alone and the attach goes on without tools.
-2. `chmod 600` the file. It holds a live credential. Windows has no mode bits to set here, so the file keeps the project directory's ACL.
-3. `cursor-agent mcp enable fidget` in the same directory, ~380ms measured.
+URL and token are new every app run, so each attach rewrites and re-approves. Within one run the entry is unchanged and a re-attach costs only the spawn.
 
-The URL and the token are both new every app run, so this is a rewrite and a re-approval on each attach, not a one-time setup. That is the price of `cursor-agent` using the same transport as everything else. Within one app run the entry does not change, `enable` adds no second approval, and a re-attach costs only the spawn.
+Cursor appends each approval to `~/.cursor/projects/<slug>/mcp-approvals.json` and never prunes: about 31 bytes per app run. Detach does not call `cursor-agent mcp disable`, because that blocks the server from ever loading again.
 
-Cursor records approvals as a hash of the directory and the entry, appended to `~/.cursor/projects/<slug>/mcp-approvals.json`. A new app run means a new id, and nothing prunes the old ones: measured, four runs left four ids, about 31 bytes each. `cursor-agent mcp disable` does **not** prune them — it marks the server never to load again, which would break the next attach, so detach does not call it.
-
-Detach removes our entry, and the file and directory when attach created them. While a session is attached the token is on disk in the Working directory's `.cursor/mcp.json`. It is owner-only, it dies with the app run, and fidget does nothing about the user's VCS — what the project does with an untracked `.cursor/` is the project's business.
-
-**Seven tools** (`crates/core/src/dispatch.rs`):
-
-- `speak` — Make the Character speak dialogue
-- `play_behavior` — Play a named Behavior
-- `list_windows` — List visible windows with bounds, and their names under consent
-- `describe_screen` — Describe screen (window metadata only; Capture dropped, ADR-0031)
-- `recall` — Read everything Memory holds
-- `remember` — Write one fact under a heading
-- `list_instances` — List Character Instances and their names
-
-All requests are synchronous; no streaming, no push. The loopback server (`mcp_http.rs`) is thread-per-request with no async runtime.
+Detach removes our entry, and the file and directory if attach created them. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
 
 ### Pointing a Harness you run yourself at Fidget
 
-The attached case above needs no setup: the app hands its Harness the endpoint on `session/new`. A Harness you launch yourself in a terminal gets nothing forwarded, so you register the endpoint with it by hand — once per app launch.
+An attached Harness needs no setup. A Harness you launch yourself gets nothing forwarded, so register the endpoint by hand, once per app launch:
 
 1. Start fidget and open Settings.
 2. Under **Point a Harness you run yourself at fidget**, pick the Harness.
-3. Copy the generated command (or JSON fragment, for the Harnesses with no `mcp add`) and run it, or paste it where the instructions beside it say. Hermes prompts for the token interactively, so its row carries a separate Copy for the token.
-4. Reload or restart the Harness session as the instructions say. Claude Code and OpenCode read MCP config at session start only.
+3. Copy the generated command (or JSON fragment, for Harnesses with no `mcp add`) and run or paste it as the instructions say. Hermes prompts for the token, so its row has a separate Copy for it.
+4. Reload or restart the Harness session. Claude Code and OpenCode read MCP config only at session start.
 
-No document can carry that command as a literal. `src-tauri/src/mcp_http.rs` binds `127.0.0.1:0`, so the OS picks the port, and mints the bearer token from 32 fresh random bytes into memory on every launch (ADR-0018 keeps it off disk and out of logs). Only the running app knows either value, and both change when the app restarts — so the registration is per launch, and a Harness that keeps a stale entry keeps a dead one. The generator (`byo_registration` in `src-tauri/src/settings.rs`) hands every Harness the loopback URL and token directly; the stdio relay shim is the attached path's fallback and plays no part here. The box is empty when the loopback bind failed this run.
-
-![A user-run Claude Code process speaking through the Settings-generated registration](./pr/166-byo-claude-speak.png)
-
-That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP, registered with nothing but the command the box generated.
-
-**Standing, per Harness the generator knows.** Three states, and no row is implied to work beyond the one it holds:
-
-- **verified by hand** — someone copied the generated registration into a real Harness session and recorded that Harness's `speak` drawn in the fidget's bubble.
-- **config generated, unverified** — the generator emits a shape that was checked against the installed CLI or its documentation, but no on-screen `speak` through that registration has been recorded.
-- **not supported** — the Harness has no way to load an HTTP MCP server with an `Authorization` header, so nothing the generator could emit would work.
+The port is OS-assigned and the token is minted in memory at every launch (ADR-0018), so no document can carry the command, and a stale entry is a dead one. The generator (`byo_registration` in `src-tauri/src/settings.rs`) always hands out the loopback URL and token; the stdio relay plays no part here. The box is empty when the loopback bind failed.
 
 | Harness | What the generator emits | Where the entry lands | Standing |
 |---|---|---|---|
@@ -601,52 +514,33 @@ That bubble is a headless `claude -p` turn calling `speak` over the loopback MCP
 | `grok` | `grok mcp add … --transport http` with a header | `~/.grok/config.toml`, token in the file | **verified by hand** |
 | `hermes` | `hermes mcp add --url … --auth header`, token pasted at its prompt | `~/.hermes/config.yaml`, token in `~/.hermes/.env` | **verified by hand** |
 | `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"` | `~/.config/opencode/opencode.json`, token in the file | **verified by hand** |
-| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **verified by hand** — see footnote ‡ |
+| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **verified by hand** ‡ |
 | `copilot` | `copilot mcp remove` then `copilot mcp add --transport http …` with a header | `~/.copilot/mcp-config.json`, token in the file | **config generated, unverified** |
 
-All seven were read out of the Settings box by accessibility dump and run as the box gave them, and all seven drew their own line in the bubble on a real Mac, each naming itself, checked by OCR across consecutive frames against a control frame taken before the turn. `claude` was verified on 2026-09-21 and the rest on 2026-09-22. The `copilot` row was checked against `copilot mcp add`, `get` and `remove` on 1.0.88, which is why the remove comes first: a second `add` of a name it holds fails rather than overwriting. No `speak` through that registration has been recorded (#1016).
+**Verified by hand** means the box's output was run as given and that Harness's `speak` was recorded in the bubble on a real Mac (2026-09-21/22). **Config generated, unverified** means the shape was checked against the CLI (`copilot` 1.0.88; `remove` comes first because a second `add` fails) but no `speak` is recorded (#1016). A Harness the popup does not list (`custom`) gets the bare URL and token.
 
-‡ `pi` ships no MCP client of its own. It is deliberately barebones, and MCP arrives through an adapter plugin the user installs, such as `pi-mcp-adapter`. With that plugin present the box's fragment works unchanged, verified on pi 0.85.1 with pi-mcp-adapter 2.36.0. Two things differ from every other row. The adapter connects lazily, so a headless `pi -p` run has to call `mcp({"connect": "fidget"})` before the tool exists at all, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. And the tool is reached through Pi's `mcp` proxy under its prefixed name, `fidget_speak`, not as `speak`. The README's Pi tools row is about the attached path. `pi-acp` advertises no HTTP MCP on `initialize`, and whether that session lists fidget's tools is unmeasured (#984).
+‡ `pi` has no MCP client of its own; it needs an adapter plugin such as `pi-mcp-adapter` (verified on pi 0.85.1 with pi-mcp-adapter 2.36.0). The adapter connects lazily: a headless `pi -p` run must call `mcp({"connect": "fidget"})` first, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. The tool is reached through Pi's `mcp` proxy as `fidget_speak`. Whether an attached `pi-acp` session lists fidget's tools is unmeasured (#984).
 
-A Harness the popup does not list (a hand-edited command, `custom`) gets the bare URL and token to place itself.
+**Traps:**
 
-**Four traps worth knowing before you register one of these.**
+- Every registration dies with the app. Under `opencode` a dead entry hangs `opencode run` at startup for minutes with no error; remove the entry or pass `--pure`.
+- `opencode` has no `mcp remove`. Edit `~/.config/opencode/opencode.json` by hand.
+- `hermes mcp remove` leaves `MCP_FIDGET_API_KEY` in `~/.hermes/.env`, so the next `hermes mcp add` skips the token prompt, reuses the dead token, and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml`, stripping comments and re-indenting.
+- `codex` needs the `export` in the same shell that launches `codex`. Sourcing it through a pipe leaves the tool unregistered.
+- `pi` needs its adapter told to connect. The fragment carries no `"lifecycle": "eager"`, so the server stays disconnected until asked.
 
-- Every registration dies with the app. The port and token change on each launch, so a stale entry is a dead entry. Under `opencode` that is worse than useless: an entry pointing at a dead instance silently hangs `opencode run` at startup for minutes with no error, and removing the entry or passing `--pure` is what unsticks it.
-- `opencode` has no `mcp remove`. Its `mcp` subcommand offers add, list, auth, logout and debug only, so removing the entry means editing `~/.config/opencode/opencode.json` by hand.
-- `hermes mcp remove` drops the YAML block but leaves `MCP_FIDGET_API_KEY` behind in `~/.hermes/.env`. A later `hermes mcp add` sees it as already configured, skips the token prompt, reuses the dead token and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml` wholesale, stripping inline comments and re-indenting lists.
-- `codex` needs the `export` to run in the same shell that launches `codex`, exactly as the box's steps say. Sourcing it through a pipe leaves the tool unregistered, and Codex then reports that the tool does not exist.
-- `pi` needs its adapter told to connect before the tool exists. The fragment the box emits carries no `"lifecycle": "eager"`, so the server sits configured and disconnected until something asks for it.
+### Not served
 
-### What MCP implements today
+- **Pixels.** `describe_screen` is window metadata only; fidget takes no screenshots and runs no OCR or vision ([ADR-0031](./adr/0031-drop-capture-tiers.md)). Agents that need pixels use Harness-native computer use or an MCP server like cua-driver.
+- **Input events.** No click, type, or mouse tools (ADR-0003). The Harness owns desktop control.
+- **Non-loopback MCP** (ADR-0023).
 
-- Seven sync tools, JSON-RPC 2.0 over HTTP POST
-- Bearer auth on every request (`Authorization: Bearer <token>`)
-- Loopback-only binding; remote connections refused by design (ADR-0010)
-- Request/response; no notifications from server to client
-- DenyList applied to `list_windows`, `describe_screen`, and the `fidget://windows` resource (filters password managers, redacts password fields)
-- Three readonly MCP resources: `fidget://windows`, `fidget://memory`, `fidget://action-log`
-
-### What it can but doesn't
-
-- **Richer sensing (Capture)** — *dropped* ([ADR-0031](./adr/0031-drop-capture-tiers.md)). `describe_screen` is window metadata only; fidget never takes screenshots, never analyzes pixels, and never embeds OCR/vision. Agents needing pixel access use harness-native computer use or attach an MCP server like cua-driver.
-- **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; fidget ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
-- **MCP sampling, progress, SSE push** — *out of scope today*. The server is sync request/response; no `notifications/progress`, no server-initiated push. Sampling requires long-lived connections the current thread-per-request model doesn't hold.
-- **Prompts** — *not served*. MCP prompt templates are not exposed. Resources are: Memory, the Action Log, and window titles.
-- **Non-loopback MCP** — *by design no* (ADR-0010). The bearer token authorizes moving the fidget; an off-host endpoint would post it there. The bind is `127.0.0.1` only; LAN/WAN addresses are refused.
-- **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; fidget branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit fidget gates on. A future Hermes setting the bit would take the loopback path with no change here.
-
-### Related decisions
-
-- ADR-0003 — no Executor tools (mouse/keyboard events) in fidget
-- ADR-0010 — credential rules, loopback-only MCP, token stays out of logs
-- ADR-0023 — dispatch inside the running app, loopback HTTP MCP
-- ADR-0026 — stdio MCP binary is a relay shim
+Whether a Harness sets `mcpCapabilities.http` is the Harness's decision. Hermes speaks HTTP MCP as a client through its own `mcp_servers` config, a different axis from the ACP bit; a Hermes that set the bit would take the loopback path with no change here.
 
 ## Further Reading
 
-- Main README: What it does, how to run, platform support
-- [CONTEXT.md](../CONTEXT.md): Vocabulary
-- [DESIGN.md](../DESIGN.md): Design decisions  
+- [README](../README.md): what it does, how to run, platform support
+- [CONTEXT.md](../CONTEXT.md): vocabulary
+- [DESIGN.md](../DESIGN.md): design decisions
 - [docs/SPEC.md](./SPEC.md): v1 scope and requirements
 - [docs/adr/](./adr/): Architecture Decision Records

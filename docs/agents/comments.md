@@ -27,7 +27,7 @@ If a comment exists because the code is unclear, fix the code in a different pul
 
 ## What earns the words
 
-`PERSONALITY_LIMIT` in `crates/core/src/character.rs` is the bound. #807 deleted this block. This page used to hold it up as the example.
+`PERSONALITY_LIMIT` in `crates/core/src/character.rs` is the bound. The first draft ran five lines:
 
 ```rust
 /// How long a Personality Prompt may be, in characters.
@@ -58,7 +58,7 @@ The Dock note on `a_walk_into_the_dock_climbs_onto_it_rather_than_behind_it` in 
 
 ## What does not
 
-A comment that restates the code does not earn its length. From a one-line getter this repository once shipped (`src-tauri/src/cast.rs`, dissolved in #94). The example outlives the file.
+A comment that restates the code does not earn its length. From a one-line getter this repository once shipped:
 
 ```rust
 /// Every Animation's frames as `data:` URLs, for the webview to draw from.

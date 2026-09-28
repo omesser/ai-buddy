@@ -25,11 +25,8 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 ## What It Does
 
 - **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue. Works offline with Static weights; optionally connect a model (API key or local) for more variety.
-- **Perches on windows.** Falls, lands on a window's top edge, rides a slow drag, drops when you yank or close the window.
-- **Reacts to gestures.** Poke, pick up, throw — it arcs, lands, and keeps going.
 - **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
-- **Lives its own life.** Walks, idles, sits, sleeps — even with the Director off.
-- **Never reads your screen.** Sensing is window metadata, never pixels: no screenshots, no OCR. An agent that needs to see and act on your desktop gets that from its Harness or an MCP server you attach — see [Computer use](#computer-use).
+- **Never reads your screen.** Sensing is window metadata, never pixels. See [Computer use](#computer-use).
 
 ## See It
 
@@ -49,21 +46,19 @@ Try [Fidget Cues](https://omesser.github.io/fidget/cues.html) — gestures and p
 
 ### Talk to it
 
-Summon opens a chat window belonging to that fidget. What you type is another
-turn in the same conversation that decides what it does on your desktop, so an
-answer arrives as speech in the bubble and as a Behavior it plays, not only as
-text. Lines it says when nobody asked appear here too, labelled with what it was
-reacting to.
+Summon opens that fidget's chat window. What you type joins the same
+conversation that decides what it does on your desktop, so an answer arrives as
+speech and a Behavior, not only as text. Lines it says unprompted appear here
+too, labelled with what it was reacting to.
 
 <img src="./docs/readme/chat-surface.png" width="420" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" />
 
-The bar along the bottom names what the fidget is doing right now — the Behavior,
-the Primitive under it, the Animation playing, its State, and how long until it
-next thinks. It needs a Director; see [Running it](#running-it).
+The bottom bar names the current Behavior, Primitive, Animation, and State, and
+the time until the next wake. It needs a Director; see [Running it](#running-it).
 
 ## Characters
 
-Buddy Bot is the default. Eight Characters ship in the repo; each moves and speaks differently.
+Buddy Bot is the default. Eight Characters ship; each moves and speaks differently.
 
 | Character | Description | Personality |
 |---|---|---|
@@ -76,7 +71,7 @@ Buddy Bot is the default. Eight Characters ship in the repo; each moves and spea
 | <img src="./docs/readme/timber-wolf-walk.gif" height="96" alt="Timber Wolf" /><br>**Timber Wolf** | BattleTech OmniMech (Sketchfab model by [MekaRamen](https://mekaramen.com/), permitted derivative). | Patrol mech. Desktop is a sector to secure, reports are brief. Clan warriors don't waste words. [full prompt](./characters/timber-wolf/personality.txt) |
 | <img src="./docs/readme/trump-talk.gif" height="96" alt="Trump" /><br>**Trump** | Caricature in a navy suit and red tie. | The desktop is his rally. Bombastic, sure this is the greatest desktop in history. [full prompt](./characters/trump/personality.txt) |
 
-Characters are packages of art, personality, and tuning. Packaging details live in [DEVELOPMENT.md](./docs/DEVELOPMENT.md); the on-disk format is still evolving.
+Characters are packages of art, personality, and tuning. See [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packages); the format is still evolving.
 
 ## Install
 
@@ -163,13 +158,13 @@ Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./do
 |---|---|---|
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
 | `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Zed's adapter (`codex-acp`); no first-party ACP mode. Fresh and resumed sessions both work. |
-| <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> `copilot` | `copilot --acp` | First-party, GitHub. `copilot` alone is the interactive TUI, so the flag is the whole of the row; `copilot --help` lists `--acp` and not the `--stdio` this table used to name, and the two argv answer `initialize` alike. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (#1016). |
-| <img src="https://cdn.simpleicons.org/cursor" width="14" alt="" /> `cursor-agent` | `cursor-agent acp` | First-party. `cursor-agent` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh sessions work. Every attach opens a fresh session, because it advertises no `loadSession`. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="./docs/readme/grok-on-dark.svg" /><img src="./docs/readme/grok-on-light.svg" width="14" alt="" /></picture> `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh and resumed sessions both work. |
-| `goose` | `goose acp` | First-party, Block. `goose` alone is the interactive CLI, so the subcommand is the whole of the row. Fresh and resumed sessions both work, smoked on goose 1.51.0. |
+| <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> `copilot` | `copilot --acp` | First-party, GitHub. `copilot` alone is the interactive TUI. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (#1016). |
+| <img src="https://cdn.simpleicons.org/cursor" width="14" alt="" /> `cursor-agent` | `cursor-agent acp` | First-party. `cursor-agent` alone is the interactive TUI. Every attach opens a fresh session, because it advertises no `loadSession`. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="./docs/readme/grok-on-dark.svg" /><img src="./docs/readme/grok-on-light.svg" width="14" alt="" /></picture> `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI. Fresh and resumed sessions both work. |
+| `goose` | `goose acp` | First-party, Block. `goose` alone is the interactive CLI. Fresh and resumed sessions both work, smoked on goose 1.51.0. |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
-| <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Footnote: requires a global `pi` on `PATH` — install with `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`/`node`/`pi` must resolve in the app's environment (Finder-launched builds inherit launchd's `PATH`, same as every other `npx` row). An unconfigured Pi may pick up an ambient provider key from the inherited environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins over that fallback. npm-global `pi` can shadow the keg; `npm uninstall -g @earendil-works/pi-coding-agent` then `brew link pi-coding-agent`. Startup banner on the first fresh-session bubble is #597, not this row. |
+| <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Needs a global `pi` on `PATH`: `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`, `node`, and `pi` must resolve in the app's environment; Finder-launched builds inherit launchd's `PATH`, as with every `npx` row. An unconfigured Pi may pick up an ambient provider key from the environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins. An npm-global `pi` can shadow the keg: `npm uninstall -g @earendil-works/pi-coding-agent`, then `brew link pi-coding-agent`. |
 | anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. Google has none: Antigravity (`agy`) speaks its own protocol rather than ACP, so it needs an adapter (#604). |
 
 What each named Harness keeps under an ACP attach, measured in the [tool-class probe](./docs/research/harness-tools-under-acp-probe.md):
@@ -188,13 +183,12 @@ What each named Harness keeps under an ACP attach, measured in the [tool-class p
 
 No Harness brings desktop control to an ACP session Fidget opens.
 
-`scripts/probe-harness.sh` serves Fidget's MCP endpoint and reports under
-`mcp listed` whether the Harness fetched the tool list (#984). Goose, Copilot
-and Codex fetched it on a stock run; Pi did not. That is delivery of the list,
-not a call into it, and the prefix a Harness shows its model came from the
-tool-class probe's own client.
+`scripts/probe-harness.sh` reports under `mcp listed` whether the Harness
+fetched Fidget's tool list (#984). Goose, Copilot, and Codex fetched it on a
+stock run; Pi did not. The prefixes above come from the tool-class probe's own
+client.
 
-How they handle session differs, and changes what Fidget can do with them:
+Session handling:
 
 | Harness | Fresh session | Resumed session | `loadSession` | MCP transport † | Auth methods ‡ |
 |---|---|---|---|---|---|
@@ -209,19 +203,12 @@ How they handle session differs, and changes what Fidget can do with them:
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it too and ignores the `mcpServers` it is handed altogether, so Fidget writes the same loopback URL and bearer token into `<cwd>/.cursor/mcp.json` at mode 0600 and runs `cursor-agent mcp enable fidget` before each attach, removing the entry on detach (#1020). `pi` advertises no HTTP MCP. `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](./docs/DEVELOPMENT.md#how-cursor-agent-is-reached)). `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
 
-Two transports, two distinct axes:
-
-1. **ACP** (Fidget ↔ Harness): always stdio. How Fidget attaches to the Harness and prompts it.
-2. **MCP** (Harness → Fidget tools): How the Harness calls back so `speak` and sensing reach the fidget.
-
-**MCP transport** is gated by what the Harness advertises in ACP `initialize` → `agentCapabilities.mcpCapabilities.http`:
-- **true** → loopback HTTP URL + bearer token (ADR-0023, #491)
-- **omitted/false** → stdio MCP server entry; shim relays to same loopback endpoint (ADR-0026, #501)
+Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route footnote † describes. [DEVELOPMENT.md](./docs/DEVELOPMENT.md#mcp-server) has the transport details.
 
 **Seven tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917):
 
@@ -270,7 +257,6 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 - `yes` — implemented.
 - `degraded` — runs in reduced form. A supported mode, not an error.
-- `in progress` — foundation in place, iteration ongoing.
 - `†` — needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Developing

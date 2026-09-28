@@ -12,9 +12,7 @@ is defined in [CONTEXT.md](./CONTEXT.md) and used precisely here.
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/fidget/issues).
 
-Feature comparison versus six software desktop pet alternatives is in [docs/research/alternatives.md](./docs/research/alternatives.md).
-
-The overlay is up and the frame loop runs the Engine, so the sprite falls, lands on the top edge of whatever window is under it, rides that edge when the window is dragged slowly, and drops when the window is yanked or closed, and it stands on the Dock rather than behind it. It can be clicked, picked up, dragged and thrown. It knows when to get out of the way: it fades out while a fullscreen application has the screen, goes away at once on Control-Option-Command-B and comes back the same way, and appears in screen captures and shares by default, with an opt-out in Presence settings for users who need meeting privacy. It is a real Character Package on disk, and its Animations play at the speeds its Character Manifest declares. Startup stops if no package loads, because a companion with no Character has nothing to be. A Director proposes Behaviors: Static weights with nothing configured, an HTTP Completer if you set a key, or a Harness if you attach one (see [Running it](./README.md#running-it)). Both HTTP and Harness fill the Director role and answer chat ([ADR-0008](./docs/adr/0008-one-harness-session.md)). Double-clicking is a Summon that opens the chat surface; the sprite reacts and the Director answers. Right-clicking the sprite and the tray / menu bar icon open the same menu: Chat, Character, Instances, Director, Do Not Disturb, Go away, Hide rules, Memory, Action Log, Settings, Quit.
+The overlay is up and the frame loop runs the Engine, so the sprite falls, lands on the top edge of whatever window is under it, rides that edge when the window is dragged slowly, and drops when the window is yanked or closed, and it stands on the Dock rather than behind it. It can be clicked, picked up, dragged and thrown. It knows when to get out of the way: it fades out while a fullscreen application has the screen, goes away at once on Control-Option-Command-B and comes back the same way, and appears in screen captures and shares by default, with an opt-out in Presence settings for users who need meeting privacy. Startup stops if no Character Package loads. A Director proposes Behaviors: Static weights with nothing configured, an HTTP Completer if you set a key, or a Harness if you attach one (see [Running it](./README.md#running-it)). Both HTTP and Harness fill the Director role and answer chat ([ADR-0008](./docs/adr/0008-one-harness-session.md)). Double-clicking is a Summon that opens the chat surface; the sprite reacts and the Director answers. Right-clicking the sprite and the tray / menu bar icon open the same menu: Chat, Character, Instances, Director, Do Not Disturb, Go away, Hide rules, Memory, Action Log, Settings, Quit.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep` and `walk` each answer a State, `fall` covering being dragged as well; `land` plays when a fall ends, `hold` when a Perch is ridden, and `react` answers a Poke. Eight of the nine are also Primitives a Character can compose into a Behavior — all but `fall`, which is what losing your footing looks like rather than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into, and is refused or abandoned when the State the sprite is in does not permit it. `talk` plays when a proposal names a Behavior that includes it.
 
@@ -50,18 +48,18 @@ runs in the frame loop and never drives animation directly. See
 │  └──────────┬────────────┘                                  │
 │             │ occasional                                    │
 │  ┌──────────▼────────────┐   ┌───────────────────────────┐  │
-│  │ Director              │   │ (Capture dropped)         │  │
-│  │ • proposes Behaviors  │◀──│ • phash change detect     │  │
-│  │ • never in frame loop │   │ • on-device OCR (Vision)  │  │
-│  └───────────────────────┘   └─────────▲─────────────────┘  │
-│                                        │ Captures           │
-│  ┌───────────────────────┐   ┌─────────┴─────────────────┐  │
-│  │ MCP server (ours)     │   │ Sensing                   │  │
-│  │ speak / play_behavior │   │ • CGWindowList @10Hz      │  │
-│  │ list_windows          │   │ • Ambient (consented)     │  │
-│  │ describe_screen       │   │ • On-Demand               │  │
-│  │ recall / remember     │   │                           │  │
-│  └──────────┬────────────┘   └───────────────────────────┘  │
+│  │ Director              │   │ Sensing                   │  │
+│  │ • proposes Behaviors  │◀──│ • CGWindowList @10Hz      │  │
+│  │ • never in frame loop │   │ • titles, app (consented) │  │
+│  └───────────────────────┘   └───────────────────────────┘  │
+│                                                             │
+│  ┌───────────────────────┐                                  │
+│  │ MCP server (ours)     │                                  │
+│  │ speak / play_behavior │                                  │
+│  │ list_windows          │                                  │
+│  │ describe_screen       │                                  │
+│  │ recall / remember     │                                  │
+│  └──────────┬────────────┘                                  │
 └─────────────┼───────────────────────────────────────────────┘
               │ MCP
      ┌────────▼─────────┐        ┌──────────────────────────┐
@@ -157,8 +155,8 @@ Rejected:
 **Known cost:** in both Tauri and Electron, mouse click-through is per-window,
 not per-pixel. A small sprite in a large transparent window swallows clicks
 across the whole rectangle unless the cursor is tracked and ignore-mouse-events
-toggled by hit-testing the sprite's alpha. This is a day of work, not an
-afternoon. WindowPet's implementation is the reference.
+toggled by hit-testing the sprite's alpha. WindowPet's implementation is the
+reference.
 
 ### 5. The Director proposes; it never animates
 
@@ -188,15 +186,14 @@ a call is the cancellation of that Instance's previous one — is
 [ADR-0033](./docs/adr/0033-a-call-waiting-on-the-user-is-not-superseded.md)
 makes two exceptions. Nothing replaces a call waiting on the user's answer,
 and neither an ambient tick nor a Summon replaces a reply still generating.
-What the
-convention it replaced cost the user in latency, and what else buys any back, is
+The latency cost of the convention it replaced is in
 [research](./docs/research/director-in-flight-and-latency.md).
 
 ### 6. Characters are packages; the engine owns the vocabulary
 
 A Character Package contains animations, a Character Manifest, a Personality Prompt, and
-Behavior declarations. The format is first-class from day one, with two shipped
-Characters, and it stays internal and undocumented until v2.
+Behavior declarations. The format is first-class from day one, and it stays
+internal and undocumented until v2.
 
 The engine owns the **Primitives** — the State machine and the units of motion
 and expression. No Character can invent one. A Character declares **Behaviors**
@@ -225,10 +222,10 @@ A declared optional set is used when present. A Character with 9 animations
 must work; one with 30 should look better. Nine keeps a hobbyist package to an
 evening's drawing.
 
-**Shipped Characters: two, one hard-pixel retro (a small flat palette, no
-anti-aliasing, dithering only where a shade between two of its colours is
-wanted), one modern pixel art.** Two styles validate the package abstraction
-against real variance before the format is published.
+**Shipped Characters span at least two styles: hard-pixel retro (a small flat
+palette, no anti-aliasing, dithering only where a shade between two of its
+colours is wanted) and modern pixel art.** Two styles validate the package
+abstraction against real variance before the format is published.
 
 The package on disk, as a directory or the same tree inside an archive:
 
@@ -307,10 +304,9 @@ anything.
 
 **A moving Perch carries the sprite.** Standing on a platform that moves means
 moving with it, so a window dragged down, up or sideways takes the sprite along
-at the place it held on the edge. The rule this replaces dropped the sprite the
-moment its Perch shifted, which only ever looked right for a downward drag,
-where the sprite re-landed on the edge it had just lost; moved up or sideways,
-the window left it behind in mid-air. Riding changes position and never
+at the place it held on the edge. Dropping the sprite whenever its Perch
+shifted only looks right for a downward drag; moved up or sideways, the window
+leaves it in mid-air. Riding changes position and never
 velocity, or flinging a window across the desktop would launch the sprite
 ballistically.
 
@@ -387,14 +383,11 @@ Dock SPI to ask for. So the pane offers no row on Linux and says so instead.
 A third row asks for Input Monitoring, and it buys reaction time rather than
 sensing: with it the frame loop hears a mouse-only, listen-only event tap, so a
 poke or the cursor arriving over the art lands at once instead of waiting for
-the next idle wake a second later (#183, #721). X11 has that for free through
-XI2; this row is what it costs on macOS. The rule above is what makes it
-shippable —
-unchecked is the shipped state, the prompt fires when the user checks the box,
-and without the grant the loop backs off as it did before. The tap's mask holds
-six mouse types and no key event: a listen-only tap can neither modify nor
-divert what it hears, and nothing it hears is the keyboard. X11 needs no row
-for this; XI2 raw events are prompt-free (#562).
+the next idle wake a second later (#183, #721). The rule above makes it
+shippable: unchecked is the shipped state, the prompt fires when the user
+checks the box, and without the grant the loop backs off. The tap's mask holds
+six mouse types and no key event, and a listen-only tap can neither modify nor
+divert what it hears. X11 needs no row: XI2 raw events are prompt-free (#562).
 
 **Capture tiers (Ambient, On-Demand, Local Gate) are dropped.** Fidget never takes
 screenshots, never analyzes screen pixels, and never embeds OCR or vision models for
@@ -402,8 +395,7 @@ desktop content awareness. Free sensing — OS metadata without permissions — 
 sensing tier shipped. Agents that need pixel access or desktop control use harness-native
 computer use (Cursor Cloud Agents, Codex Computer Use plugin, Hermes computer_use toolset)
 or attach an MCP server like cua-driver.
-[ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes
-[ADR-0005](./docs/adr/0005-sensing-posture.md).
+[ADR-0031](./docs/adr/0031-drop-capture-tiers.md).
 
 ### 10. No Executor
 
@@ -448,14 +440,14 @@ harness first."
 
 ### 11. Permission surface: as small as possible
 
-Fidget owns consent for **sensing only** — Screen Recording, microphone,
-capture cadence. It owns **no** consent for acting, and does not duplicate the
+Fidget owns consent for **sensing only** — window titles and application
+names today, the microphone once voice ships. It owns **no** consent for acting, and does not duplicate the
 Harness's confirmation prompts. Two dialogs for one click teaches users to click
 through both.
 
 Harness activity is surfaced in a visible Action Log. One denylist stays
 Fidget's regardless of what the Harness permits: password fields and
-explicitly excluded applications never enter a Capture.
+explicitly excluded applications never enter a sensing result.
 
 No undo system. A real undo journal for arbitrary desktop actions is a research
 project, and a fake one is worse than none.
@@ -523,7 +515,7 @@ space.
 - Spatial Layer: Tauri overlay, physics, Perches, five verbs, hide rules,
   multi-monitor, tray
 - Character Package format, engine Primitives, declarative Behaviors
-- Two shipped Characters, 8 required animations each
+- Shipped Characters in two styles, 9 required animations each
 - Director on the free sensing tier — Character Prompt once, then short
   follow-ups (what just happened, time of day, State, frontmost window,
   recent Behaviors). No permissions required.
@@ -535,15 +527,13 @@ space.
 **Deferred:**
 
 - Voice: hotkey push-to-talk, transcription, wake word
-- Windows implementation
 - Published Character Package format and authoring documentation
 
 **Dropped (not deferred):**
 
 - Ambient Capture, On-Demand Capture, and Local Gate. Fidget never takes screenshots,
   never analyzes screen pixels, and never embeds OCR or vision models.
-  [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes
-  [ADR-0005](./docs/adr/0005-sensing-posture.md).
+  [ADR-0031](./docs/adr/0031-drop-capture-tiers.md).
 
 **Explicitly not planned:** a Fidget Executor, an undo system, a provider abstraction
 layer, per-Instance memory.
@@ -593,7 +583,7 @@ poses; window-edge physics, which neither project has.
   Layer at all.
 - **Wayland** degrades the spatial layer to nearly nothing.
 - **Prompt injection** reaches a model with Harness access through three paths:
-  Character Packages, the Memory file, and captured screen content.
+  Character Packages, the Memory file, and window titles.
 - **Asset generation is the top risk to the character library.** Pixel art is
   the cheapest format to store and the hardest to generate: image models produce
   pixel-art-*styled* images at high resolution, with anti-aliased edges and
@@ -608,16 +598,14 @@ poses; window-edge physics, which neither project has.
 
 ## Decision index
 
-The numbering is the original decision log's. The sections above group and
-rewrite those decisions, so the numbers do not line up with them; the index is
-kept because it is the only route from a numbered decision to the ADR that
-records it.
+Numbers are the original decision log's and do not match the sections above.
+The index maps a numbered decision to its ADR.
 
 | # | Decision | Choice |
 |---|---|---|
 | 1 | Centre of gravity | Nostalgia companion first; productivity as a second layer |
 | 2 | Meaning of "interact with screen" | Spatial first (geometry, Perches); functional second (Summoned) |
-| 3 | Platforms | Cross-platform architecture, macOS first; Windows ships (NSIS) with remaining stub/degraded cells; one Linux build takes the X11 lane — [ADR-0014](./docs/adr/0014-x11-lane-no-native-wayland.md) |
+| 3 | Platforms | Cross-platform architecture, macOS first; Windows ships (NSIS) with remaining stub/degraded cells; one Linux build takes the X11 lane — [ADR-0020](./docs/adr/0020-x11-lane-no-native-wayland.md) |
 | 4 | Harness | BYO via MCP — see decision 17 |
 | 5 | Runtime | Tauri (Rust + webview) — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
 | 6 | Model's role in idle | Director proposes Behaviors occasionally — [ADR-0004](./docs/adr/0004-director-outside-frame-loop.md) |
@@ -626,7 +614,7 @@ records it.
 | 9 / 14 | Behavior ownership | Engine-owned Primitives, Character-declared Behaviors — [ADR-0002](./docs/adr/0002-engine-owns-primitives-characters-declare-behaviors.md) |
 | 10 | Physics and verbs | Gravity + Throw; Perch = window top edges only; five verbs, capped |
 | 11 | Z-order | Always-on-top, non-activating, `canJoinAllSpaces`; aggressive auto-hide |
-| 12 / 16 | Sensing | Free tier only (OS metadata, no permissions); Capture dropped — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) supersedes [ADR-0005](./docs/adr/0005-sensing-posture.md) |
+| 12 / 16 | Sensing | Free tier only (OS metadata, no permissions); Capture dropped — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) |
 | 13 | Codebase origin | Greenfield; WindowPet (MIT) as reference — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
 | 15 | Voice | Hotkey PTT + click-to-chat; wake word opt-in, on-device detection only |
 | 15b | Transcription | Trait: Apple `SpeechAnalyzer` on macOS 26+, `whisper.cpp` elsewhere |
