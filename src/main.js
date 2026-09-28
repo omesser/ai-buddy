@@ -10,6 +10,7 @@ import {
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import {
+  CONNECT_PROMPT,
   applyQuickMessageGate,
   createQuickMessage,
   crossedDrag,
@@ -350,7 +351,7 @@ function attachQuickMessage(view, id) {
     link = document.createElement("button");
     link.type = "button";
     link.className = "quick-message-connect";
-    link.textContent = "Connect an AI to talk to me";
+    link.textContent = CONNECT_PROMPT;
     link.hidden = true;
     const swallow = (event) => event.stopPropagation();
     link.addEventListener("pointerdown", swallow);

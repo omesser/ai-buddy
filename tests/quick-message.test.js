@@ -528,3 +528,11 @@ test("the overlay autofocuses, dismisses on the locked gestures, and reports typ
     "a leave during the 2.5s dwell has to cancel the timer",
   );
 });
+
+test("without a clickable link the pill still names the fix as text", () => {
+  const gate = gateDouble();
+  gate.link = null;
+  applyQuickMessageGate(gate, { name: "bmo", configured: false, enabled: false });
+  assert.equal(gate.field.placeholder, "Connect an AI to talk to me");
+  assert.equal(gate.field.disabled, true);
+});

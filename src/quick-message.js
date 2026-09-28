@@ -4,17 +4,17 @@
 import { placeBubble } from "./bubble.js";
 import { canAnswer, composerPlaceholder } from "./chat-connect.js";
 
-// The pill is not Chat, so "Nothing can answer yet" left a first-run user
-// with no next step. Every unavailable state is fixed in Chat's landing, so
-// the pill names the fix and links there. A Harness still starting clears on
-// its own, and keeps Chat's sentence so the two surfaces agree on the wait.
+export const CONNECT_PROMPT = "Connect an AI to talk to me";
+
+// Every unavailable state is fixed in Chat's landing, so the pill links there.
+// A Harness still starting clears on its own and keeps Chat's sentence.
 export function quickMessageConnects(opening) {
   return !canAnswer(opening) && !opening?.harness?.initializing;
 }
 
 export function quickMessagePrompt(opening) {
   if (canAnswer(opening)) return "talk to me";
-  if (quickMessageConnects(opening)) return "Connect an AI to talk to me";
+  if (quickMessageConnects(opening)) return CONNECT_PROMPT;
   return composerPlaceholder(opening);
 }
 
