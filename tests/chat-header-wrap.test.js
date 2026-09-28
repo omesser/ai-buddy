@@ -31,15 +31,17 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
-function measure(theme, name) {
+// A custom Harness command's argv[0]. No hyphen: a hyphen is a break opportunity.
+const LONG_HARNESS_PATH = "/Users/me/.local/share/agentlauncher/versions/2.4.1/bin/agentacp";
+
+function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1a2-497f-4899-a827-a4e42fbdc1f2" }) {
   const opening = {
     name,
     character: "Buddy Bot",
     configured: true,
     enabled: true,
     harness: {
-      name: "cursor-agent",
-      session: "fd4be1a2-497f-4899-a827-a4e42fbdc1f2",
+      ...harness,
       alive: true,
       missing: false,
       initializing: false,
@@ -49,7 +51,7 @@ function measure(theme, name) {
     host: "",
     chat_ui: theme,
     login: null,
-    harness_name: "cursor-agent",
+    harness_name: harness.name,
     instructions: "",
     personality: "",
     instance_prompt: "",
@@ -97,6 +99,9 @@ function measure(theme, name) {
         width,
         oneRow: side(n, c) && side(c, m),
         clipped: text.scrollWidth > text.clientWidth + 0.5 || m.right > header.getBoundingClientRect().right + 0.5,
+        sideways:
+          header.getBoundingClientRect().right > document.body.getBoundingClientRect().right + 0.5 ||
+          document.body.scrollWidth > document.body.clientWidth + 0.5,
         name: lines(name),
         chip: lines(chip),
         mind: lines(text),
@@ -149,7 +154,10 @@ function check(theme, report) {
     const where = `${theme} at ${at.width}px ${JSON.stringify({ mindMin, nameMin, ...at })}`;
     assert.equal(at.oneRow, true, `${where}: the header left one row`);
     // build_chat's minimum. Below it every part can reach its floor and the row overflows.
-    if (at.width >= 320) assert.equal(at.clipped, false, `${where}: the mind line is cut off`);
+    if (at.width >= 320) {
+      assert.equal(at.clipped, false, `${where}: the mind line is cut off`);
+      assert.equal(at.sideways, false, `${where}: Chat scrolls sideways`);
+    }
     if (at.name > 1) {
       assert.ok(at.mindWidth <= mindMin + 0.5, `${where}: the name wrapped while the mind line could still give`);
     }
@@ -184,6 +192,23 @@ test(
       const at = report.widths.find((w) => w.width === 320);
       assert.ok(at.name > 1, `${theme} at 320px ${JSON.stringify(at)}: the name did not wrap`);
       assert.equal(at.chip, 1, `${theme} at 320px ${JSON.stringify(at)}: the chip wrapped`);
+      // Breaking anywhere must not stand the mind line on end, a letter a line.
+      assert.ok(at.mind <= 4, `${theme} at 320px ${JSON.stringify(at)}: the mind line collapsed to a column`);
+      check(theme, report);
+    }
+  },
+);
+
+test(
+  "a custom Harness path with no break opportunity wraps inside the path instead of widening the header",
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  () => {
+    for (const theme of THEMES) {
+      const report = measure(theme, "Buddy Bot", {
+        name: LONG_HARNESS_PATH,
+        session: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      });
+      assert.equal(report.mind, `${LONG_HARNESS_PATH} · session 7c9e6679`, theme);
       check(theme, report);
     }
   },
