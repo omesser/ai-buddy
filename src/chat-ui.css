@@ -1853,22 +1853,3 @@ body {
   gap: 4px;
   margin-left: 4px;
 }
-
-.bar .ladder .v {
-  flex: 0 0 auto;
-}
-
-/* The two values a Character Package names, so the two that can be any length.
-   The only cells allowed to shrink: everything else holds a closed vocabulary
-   that `chat-status.js` measures against the window. */
-.bar .ladder .elide {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bar .ladder .sep {
-  flex: 0 0 auto;
-  color: var(--chat-ink-4);
-}
