@@ -4,7 +4,7 @@
 # app, so it is slow, macOS-only, and cannot run in CI.
 
 # A click passing through, and typing surviving a click on the sprite, still
-# need a human: README.md has the checklist.
+# need a human: docs/DEVELOPMENT.md has the checklist.
 
 # Usage: scripts/verify-overlay.sh [--keep]
 #   --keep   leave the app running afterwards, with tracing on
@@ -584,7 +584,7 @@ GRIP_STATUS=$?
 [ "$GRIP_STATUS" -ne 0 ] && STATUS=1
 
 echo ""
-echo "Still needs a human (README > Verifying the overlay by hand):"
+echo "Still needs a human (docs/DEVELOPMENT.md > Manual Verification Checklist):"
 echo "  that the window server honours the flag - a click really lands underneath,"
 echo "  and typing elsewhere really survives a click on the sprite."
 

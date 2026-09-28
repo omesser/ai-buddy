@@ -614,7 +614,7 @@ The index maps a numbered decision to its ADR.
 | 9 / 14 | Behavior ownership | Engine-owned Primitives, Character-declared Behaviors — [ADR-0002](./docs/adr/0002-engine-owns-primitives-characters-declare-behaviors.md) |
 | 10 | Physics and verbs | Gravity + Throw; Perch = window top edges only; five verbs, capped |
 | 11 | Z-order | Always-on-top, non-activating, `canJoinAllSpaces`; aggressive auto-hide |
-| 12 / 16 | Sensing | Free tier only (OS metadata, no permissions); Capture dropped — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md) |
+| 12 / 16 | Sensing | Free tier only (OS metadata; titles and application names behind one consent); Capture dropped — [ADR-0031](./docs/adr/0031-drop-capture-tiers.md), [ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md) |
 | 13 | Codebase origin | Greenfield; WindowPet (MIT) as reference — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
 | 15 | Voice | Hotkey PTT + click-to-chat; wake word opt-in, on-device detection only |
 | 15b | Transcription | Trait: Apple `SpeechAnalyzer` on macOS 26+, `whisper.cpp` elsewhere |
