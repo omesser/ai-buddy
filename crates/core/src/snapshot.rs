@@ -443,6 +443,33 @@ mod tests {
         );
     }
 
+    /// A tick's own work counts against its period. Sleeping a whole tick after
+    /// 6ms of work is a 22ms period, a 45 Hz ride.
+    #[test]
+    fn a_ride_polls_sixty_times_a_second_though_each_tick_works_6ms() {
+        let tick = Duration::from_millis(16);
+        let work = Duration::from_millis(6);
+        let mut assembler = SnapshotAssembler::new(ChangingDesktop::of_display_widths(&[1000.0]));
+        assembler.poll_fast(true);
+
+        let mut clock = Duration::ZERO;
+        let mut last_tick = Duration::ZERO;
+        let mut polls = 0;
+        loop {
+            clock += crate::scheduler::active_wait(tick, work);
+            if clock >= Duration::from_secs(1) {
+                break;
+            }
+            let elapsed_ms = u32::try_from((clock - last_tick).as_millis()).unwrap();
+            last_tick = clock;
+            polls = assembler
+                .assemble(elapsed_ms, Point::default(), Vec::new())
+                .poll_generation;
+            clock += work;
+        }
+        assert_eq!(polls, 61, "one poll per 16ms tick after the first");
+    }
+
     /// The desktop furniture is not somewhere to stand. Layers, bounds and
     /// owners here are copied from what a real macOS desktop reports.
     #[test]

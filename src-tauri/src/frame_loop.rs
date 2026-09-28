@@ -174,6 +174,7 @@ pub(crate) fn run_frame_loop(
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
+        let mut turn_started = Instant::now();
         let mut time_since_launch = Duration::ZERO;
         let mut tour_triggered = false;
         let mut schedule_mode = scheduler::ScheduleMode::Active;
@@ -264,7 +265,10 @@ pub(crate) fn run_frame_loop(
                     // Monitoring (#183 Stage 2b).
                     match (schedule_mode, was_visible) {
                         (scheduler::ScheduleMode::Active, _) => {
-                            thread::sleep(ENGINE_TICK);
+                            thread::sleep(scheduler::active_wait(
+                                ENGINE_TICK,
+                                turn_started.elapsed(),
+                            ));
                         }
                         (scheduler::ScheduleMode::Idle, false) => {
                             // Hidden idle: uncapped deep sleep. Only non-input
@@ -314,6 +318,10 @@ pub(crate) fn run_frame_loop(
                     }
                 }
             }
+
+            // After the wait, so a turn that ends early at a `continue` still
+            // sleeps a whole tick next time rather than spinning.
+            turn_started = Instant::now();
 
             if listener_hung_up {
                 // The listener thread ended: the tap lost its grant, or X11
