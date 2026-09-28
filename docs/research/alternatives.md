@@ -28,7 +28,7 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 | Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Character Packages (first-class) | ✅ | ✅ (DLC) | ✅ (Workshop) | ✅ (community) | ✅ (beta, +2 soon) | ✅ (catalog) | ✅ (VRM + Workshop) |
-| Art ecosystem / gallery | ✅ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
+| Art ecosystem / gallery | ✅ (import petdex + Shimeji-ee) | 41 official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
 | Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp | ❌ (VRM rigged) |
 | Declarative Behaviors | ✅ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✅ (plugins) | ❌ |
 
@@ -48,7 +48,7 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 
 | Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Harness integrations (ACP Completer) | ✅ (claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Harness integrations (ACP Completer) | ✅ (claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi/antigravity named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | MCP server (fidget-side tools) | ✅ (loopback HTTP + stdio fallback) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | AI chat integration | ✅ (Summon chat surface shipped; #17 tracks polish/bugs) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
 | BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
@@ -86,12 +86,12 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
 | fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
-| Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
-| VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
+| Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 41 official DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
+| VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,874 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
 | Desktop Pet | productivity + BYO OpenAI (vendor claim) | Pomodoro + AI chat | privacy-first vendor claims; free beta | no independent reviews found; unsigned / Run anyway | low (vendor-only) |
-| OpenPets | developers, local agent sidekick | MCP + plugin SDK for coding agents | shipped MCP+SDK; 1,130 stars | Electron; Wayland overlay bugs; MCP is react/say not general harness; gravity ≠ Perch riding | GitHub stars + docs verifiable |
-| MateEngine | VRM fans after Desktop Mate mod removal | my VRM on the desktop, free | 3,532 stars + 974 Steam reviews 97%; Workshop + VRM; free on GitHub | no physics; Windows-only official; no official Linux/macOS; AI is local LLM, not BYO | Steam + GitHub strong |
+| OpenPets | developers, local agent sidekick | MCP + plugin SDK for coding agents | shipped MCP+SDK; 1,246 stars | Electron; Wayland overlay bugs; MCP is react/say not general harness; gravity ≠ Perch riding | GitHub stars + docs verifiable |
+| MateEngine | VRM fans after Desktop Mate mod removal | my VRM on the desktop, free | 3,709 stars + 1,032 Steam reviews 97%; Workshop + VRM; free on GitHub | no physics; Windows-only official; no official Linux/macOS; AI is local LLM, not BYO | Steam + GitHub strong |
 
 ## How others use AI
 
@@ -101,7 +101,7 @@ Desktop pets use AI differently than fidget's personality-driven idle Director:
 
 - **Desktop Pet** ([desktoppet.app](https://desktoppet.app/)): BYO OpenAI **chat/voice assistant**. User opens Assistant Mode; wake word "Hey Pet". Vendor "personality traits" = pet-type copy (cats curious, dogs loyal), not an idle Director that picks Behaviors + spoken lines from authored personality. Chat window product wearing a roaming sprite.
 
-- **OpenPets**: Three different AI uses, none is idle Director: (1) **coding agent talks THROUGH the pet** via MCP `openpets_say` / `openpets_react` — agent-initiated, not idle; (2) **plugins use `ctx.ai`** gateway (Anthropic/OpenAI/Ollama keys) for plugin logic, not idle character speech; (3) host **Pet Assistant** chat/Talk loop ([#138](https://github.com/alvinunreal/openpets/issues/138), architecture.md) that injects owner-authored **personality profile as communication preferences** into conversation turns — profile is chat tone/style, not idle Director. Agent reactions via MCP `say` use validated **speech pools** (pre-approved phrases), not generative idle lines. OpenPets has personality (the profile); it's architecture is chat assistant + agent conduit, not idle personality-driven behavior.
+- **OpenPets**: Three different AI uses, none is idle Director: (1) **coding agent talks THROUGH the pet** via MCP `openpets_say` / `openpets_react` — agent-initiated, not idle; (2) **plugins use `ctx.ai`** gateway (Anthropic/OpenAI/Ollama keys) for plugin logic, not idle character speech; (3) host **Pet Assistant** chat/Talk loop ([#138](https://github.com/OpenPetsHQ/openpets/issues/138), architecture.md) that injects owner-authored **personality profile as communication preferences** into conversation turns — profile is chat tone/style, not idle Director. Agent reactions via MCP `say` use validated **speech pools** (pre-approved phrases), not generative idle lines. OpenPets has personality (the profile); it's architecture is chat assistant + agent conduit, not idle personality-driven behavior. v4.0.x (current desktop tag [v4.0.1](https://github.com/OpenPetsHQ/openpets/releases/tag/v4.0.1)) deepened Pet Assistant/Talk and Zed MCP ([#180](https://github.com/OpenPetsHQ/openpets/pull/180), in the v4.0.0 notes) on top of the OpenClaw plugin ([#163](https://github.com/OpenPetsHQ/openpets/pull/163)); still a chat/agent conduit (`openpets_status` / `openpets_react` / `openpets_say`), not an idle Director. [#215](https://github.com/OpenPetsHQ/openpets/pull/215) is dev screenshot tooling (`pnpm capture`), not Ambient Capture.
 
 - **MateEngine**: Built-in QWEN 2.5 1.5b LLM. Steam page ([3625270](https://store.steampowered.com/app/3625270/MateEngine/)) CHATTING section: "You can chat with your pet anytime! Just note that it's a small, local AI with simple messages." README comparison table: AI Chat ✅. Steam-exclusive event-based "cute messages" on drag/dance/sit = interaction-triggered responses, not idle personality Director (unknown if those messages are LLM-generated or canned, vendor does not specify).
 
@@ -120,9 +120,10 @@ mascots that sit on windows, react to mouse, include voice lines.
 
 **Verified present.** Overlay with click-through. Character sits on window top
 edges (same as fidget Perches). Licensed characters (Hatsune Miku, Hello
-Kitty, Sanrio, VTuber personas, Touhou Project). Multi-Character Mode officially
-released (display up to two characters simultaneously, with special combo actions
-for certain pairs). Built-in alarm feature; some DLC include mascot characters
+Kitty, Sanrio, VTuber personas, Touhou Project). Multi-Character Mode (matrix
+Multi-instance stays ✅): the Steam store page still says this feature is
+"currently available only in the beta version" (several characters at once, with
+combo actions for certain pairs). Built-in alarm feature; some DLC include mascot characters
 that appear during alarms. Mac version (Apple Silicon, open beta) launched June
 24, 2026. Multi-instance (via third-party methods or native multi-character
 feature).
@@ -136,9 +137,10 @@ measures in place. No Steam Workshop. No animation set requirement (3D models,
 not sprites). **Linux:** ❌ official (Steam `platforms.linux=false`); Proton /
 community ports exist ("doesn't work on linux / black desktop" review cluster).
 
-**Review sentiment.** Steam English reviews: Mixed, 61% positive of 5,278 (all
-languages: 6,202 positive / 9,262 total as of 2026-09-04). Recurring complaints:
-DLC pricing ($7.49–$14.99 per character, 40+ SKUs); mod removal. Verified
+**Review sentiment.** Steam English reviews: Mixed, 61% positive of 5,310 (all
+languages: 6,273 positive / 9,351 total as of 2026-09-28). Recurring complaints:
+DLC pricing ($7.49–$14.99 per character, 41 official DLC on the Steam `dlc`
+list); mod removal. Verified
 quotes: Kiraz!! 2026-08-29: customizability / $15 DLC / no Workshop
 (https://steamcommunity.com/id/nyatoi/recommended/3301060/); pyonpyonbun
 2025-03-13 attached character stripped after update; GameBrain cluster: "obvious
@@ -146,8 +148,8 @@ cash grab," "removed mod support to make you purchase the overpriced DLC,"
 "exploitative"; Steam discussion: "I've just uninstalled Desktop Mate because of
 this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 
-**Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
-packs at $7.49–$14.99 each); fidget has eight Character Packages, internal
+**Differences.** Desktop Mate is commercial DLC-driven (41 official DLC;
+character packs $7.49–$14.99 each); fidget has eight Character Packages, internal
 package format (undocumented until v2), and import adapters for petdex / Pets
 Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
 Desktop Mate has no ballistic physics, no agent integrations, no BYO character
@@ -160,8 +162,8 @@ attempt.
 ### VPet-Simulator
 
 **What it is.** Free and open source desktop pet on Steam (App ID 1920960,
-launched Aug 13, 2023). 51,678 reviews, 98% positive, Overwhelmingly Positive
-(August 2026). Steam Charts all-time peak 85,283 players. Windows only (official
+launched Aug 13, 2023). 51,874 reviews, 98% positive, Overwhelmingly Positive
+(2026-09-28). Steam Charts all-time peak 85,283 players. Windows only (official
 Steam platforms: `mac: false`, `linux: false`). Built to promote VUP Simulator;
 the desktop pet is extracted from that program.
 ([Steam](https://store.steampowered.com/app/1920960/VPetSimulator/);
@@ -187,7 +189,7 @@ black background (ValveSoftware/Proton#8471).
 **Onboarding reality.** "starts in Chinese" (review language); off-screen after
 DPI/monitor changes (issue #546).
 
-**Differences.** VPet's Workshop ecosystem is live and massive (98% of 51,678
+**Differences.** VPet's Workshop ecosystem is live and massive (98% of 51,874
 reviews), while fidget's Character Package format is internal and undocumented
 until v2. VPet has no window awareness or Perches, no ballistic physics, and no
 agent integrations or MCP layer. fidget ships Director + authored
@@ -288,11 +290,13 @@ shipped; #17 tracks polish/bugs.
 ### OpenPets
 
 **What it is.** Open source (MIT) desktop companion platform by Boring Dystopia
-Development, launched May 2026. 1,130 GitHub stars as of September 4, 2026.
-Electron app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated
+Development, launched May 2026. 1,246 GitHub stars as of September 28, 2026.
+Canonical source is [OpenPetsHQ/openpets](https://github.com/OpenPetsHQ/openpets);
+[alvinunreal/openpets](https://github.com/alvinunreal/openpets) is a compatibility
+release mirror. Electron app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated
 pets idle/wander/react out of the box; no agent required. Plugin SDK v3 for
 extending functionality.
-([GitHub](https://github.com/alvinunreal/openpets);
+([GitHub](https://github.com/OpenPetsHQ/openpets);
 [openpets.dev](https://openpets.dev/))
 
 **Verified present.** Overlay (transparent, always-on-top pet windows).
@@ -306,7 +310,8 @@ Water Reminder. Plugin SDK v3: sandboxed JS/TS runtime, permissions model
 (explicit consent for sensitive APIs), schedules, storage, commands, panels,
 audio, notifications, ctx.ai (Anthropic/OpenAI/Ollama with user-configured
 keys). MCP server (stdio, tools: `openpets_status`, `openpets_react`,
-`openpets_say`). Agent integrations: Claude Code, OpenCode, Cursor, Pi. Speech
+`openpets_say`). Agent integrations: Claude Code, OpenCode, Cursor, Zed (MCP
+settings), Pi, and an OpenClaw native plugin. Speech
 sanitized (redacts paths, secrets, code). Local-first (no accounts, no cloud
 required). BYO model via plugin SDK ctx.ai gateway. Consent-per-feature
 (permissions declared in manifest, approved at install, flagged sensitive APIs
@@ -339,15 +344,20 @@ ballistic physics (gravity arcs, throw, Perches with acceleration gate) and
 window awareness; OpenPets has gravity overlay but no Perch riding or window app
 name tracking. OpenPets plugin runtime is sandboxed Electron BrowserWindows with
 permissions; fidget's Harness model is external (user attaches their own
-MCP-compatible agent). Both MIT licensed, local-first, no accounts.
+MCP-compatible agent). Both MIT licensed, local-first, no accounts. v4.0.x
+(current desktop tag v4.0.1) deepened Pet Assistant/Talk and Zed MCP on top of
+the OpenClaw plugin; that remains a chat/agent conduit
+(`openpets_status` / `openpets_react` / `openpets_say`), not an idle Director.
+[#215](https://github.com/OpenPetsHQ/openpets/pull/215) is dev screenshot
+tooling, not Ambient Capture.
 
 ### MateEngine
 
 **What it is.** Free and open source desktop companion (GitHub:
-shinyflvre/Mate-Engine, 3,532 stars as of Sep 3 2026), also on Steam (App ID
+shinyflvre/Mate-Engine, 3,709 stars as of September 28, 2026), also on Steam (App ID
 3625270, launched April 16, 2025, $5.49). Positioned as free Desktop Mate
-alternative after DM charged $10–$25 per model and disabled mods. 974 Steam
-reviews, 97% positive, Overwhelmingly Positive (Steambase July 2026).
+alternative after DM charged $10–$25 per model and disabled mods. 1,032 Steam
+reviews, 97% positive, Overwhelmingly Positive (2026-09-28).
 ([Steam](https://store.steampowered.com/app/3625270/MateEngine/);
 [GitHub](https://github.com/shinyflvre/Mate-Engine))
 
@@ -425,8 +435,8 @@ for something, the Director prompt invites using the tools available
 Director proposes a Behavior name and
 optional spoken line; Static weights when no Completer is configured, HTTP
 Completer stand-in with API key/local server, Harness ACP Completer shipped
-(#433 2026-09-07, named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi rows + custom ACP
-command per #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26). Each Instance has its own Director and
+(#433 2026-09-07, named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi/antigravity rows + custom ACP
+command per #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26; antigravity named+verified #1143 2026-09-28). Each Instance has its own Director and
 seed — two of the same Character don't move or speak in lockstep. Each Instance
 has its own user-authored Instance Prompt layer (#531 2026-09-08, ADR-0012)
 strengthening multi-instance personality differentiation; personality.txt remains
@@ -446,8 +456,8 @@ package-authored.
    wake falls back to Static. Engine keeps the sprite alive while the model
    thinks. Static weights when no Completer configured; HTTP Completer stand-in
    with API key/local server; Harness ACP Completer shipped (#433 2026-09-07,
-   named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi rows + custom ACP command per
-   #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26). No other desktop pet ships authored personality
+   named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi/antigravity rows + custom ACP command per
+   #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26; antigravity named+verified #1143 2026-09-28). No other desktop pet ships authored personality
    + Director-driven non-deterministic idle speech.
 
 2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
@@ -457,10 +467,14 @@ package-authored.
 3. **Agent integrations (shipped).** Harness ACP Completer (#433 2026-09-07)
    speaks to a spawned Harness as the session Completer. Named rows match the
    README preset table: claude, codex, copilot, cursor-agent, grok, goose,
-   opencode, hermes, and pi, plus a custom ACP command (#556 2026-09-08).
-   Verification: pi ACP #628 2026-09-11; grok #587 2026-09-09; codex #623
-   2026-09-14; cursor-agent #762 2026-09-16; goose #971 2026-09-24 (#989);
-   copilot #1017 2026-09-26, smoked fresh and resumed on copilot 1.0.88 (#1016).
+   opencode, hermes, pi, and antigravity, plus a custom ACP command (#556
+   2026-09-08). Verification: pi ACP #628 2026-09-11; grok #587 2026-09-09;
+   codex #623 2026-09-14; cursor-agent #762 2026-09-16; goose #971 2026-09-24
+   (#989); copilot #1017 2026-09-26, smoked fresh and resumed on copilot 1.0.88
+   (#1016); antigravity named+verified #1143 2026-09-28, Google's first-party
+   ACP server `agy_acp_server.par`, smoked fresh and resumed on agy_acp_server
+   1.2.1 (#604). README records that goose, copilot, codex, and antigravity
+   fetched Fidget's tool list (`mcp listed`) on a stock run.
    Pi's `initialize` advertises no HTTP MCP, and whether that attached session
    lists fidget's tools is unmeasured (#984, #1007, #1009). Settings can
    write a stable project `.mcp.json` that names the loopback variables for Pi
@@ -481,15 +495,15 @@ package-authored.
 
 1. **Character ecosystems (who controls the pack).** Desktop Mate: official SKUs
    vs *my* character; Mixed reviews + DLC/mod removal through 2026. VPet
-   Workshop-open is the actual ecosystem strength (98% of 51,678 reviews).
+   Workshop-open is the actual ecosystem strength (98% of 51,874 reviews).
    MateEngine: VRM + Workshop-open, free, the switching target after Desktop
-   Mate disabled mods (3,532 stars + 974 Steam reviews 97%). Shimeji-ee: 1000s
+   Mate disabled mods (3,709 stars + 1,032 Steam reviews 97%). Shimeji-ee: 1000s
    free packs, community folklore. OpenPets: openpets.dev catalog. fidget: eight
    Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
    authoring-time import, not a live gallery or first-party store.
 
 2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
-   evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,130 stars,
+   evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,246 stars,
    verifiable). MateEngine has built-in AI (QWEN 2.5 1.5b LLM), not BYO agent
    attach. fidget's Harness ACP Completer (#433 2026-09-07) + MCP server
    (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are shipped; #17 tracks polish/bugs.
@@ -506,39 +520,49 @@ package-authored.
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
   not ballistic Perch riding) OR unverified (no named fidget Harness row
   is in that state today; codex verified #623, pi verified ACP #628, grok verified
-  #587, cursor-agent verified #762, goose verified #971, copilot verified #1017).
+  #587, cursor-agent verified #762, goose verified #971, copilot verified #1017,
+  antigravity verified #1143).
 - **❌** = not found in cited sources. The fidget column was checked against
-  main on 2026-09-26; the other columns were not re-checked on this pass.
+  main on 2026-09-28; the other columns were re-checked this pass for stars,
+  Steam review counts, and OpenPets URLs.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
-  has Steam 974 reviews 97% + GitHub 3,532 stars.
+  has Steam 1,032 reviews 97% + GitHub 3,709 stars.
 
 ## Sources
 
 Capabilities marked ✅, ~, or ❌ for fidget are verified against docs/SPEC.md,
 DESIGN.md, README.md, ADR-0008, ADR-0026, the Director prompt
 (`app_instructions` in `crates/core/src/director/prompt.rs`), and `git log` on
-main at `7fee5fa1` as of September 26, 2026 (Director tool invitation #987;
+main at `3e0ffff2007d5d0cb7944cc9db10df156db04ea3` as of September 28, 2026
+(Director tool invitation #987;
 Pi handshake #1007/#1009, tool listing unmeasured #984, project MCP file #1019
 checked and not treated as a listing; Harness `goose` named+verified #971 / #989;
 `copilot` named+verified #1017, smoked #1016; `cursor-agent` MCP through its own
-config #1024; prior ACP: cursor-agent #762, grok #587, codex #623, pi #628).
+config #1024; `antigravity` named+verified #1143, Google first-party ACP
+`agy_acp_server.par`, smoked on agy_acp_server 1.2.1 #604, MCP listed on a stock
+run with goose, copilot, and codex; prior ACP: cursor-agent #762, grok #587,
+codex #623, pi #628).
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
-reviews Mixed 61% of 5,278; VPet-Simulator [App ID
-1920960](https://store.steampowered.com/app/1920960/VPetSimulator/) 51,678
+reviews Mixed 61% of 5,310, 41 DLC on the Steam `dlc` list, store copy still
+says Multi-Character Mode is "currently available only in the beta version";
+VPet-Simulator [App ID
+1920960](https://store.steampowered.com/app/1920960/VPetSimulator/) 51,874
 reviews 98% positive, SteamPulse metadata platforms `mac: false`, `linux: false`;
 MateEngine [App ID 3625270](https://store.steampowered.com/app/3625270/MateEngine/)
-974 reviews 97% positive Steambase July 2026), official sites
+1,032 reviews 97% positive as of 2026-09-28), official sites
 ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
 [desktoppet.app](https://desktoppet.app/) for Desktop Pet), GitHub repositories
-([alvinunreal/openpets](https://github.com/alvinunreal/openpets) 1,130 stars as
-of Sep 4 2026, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
+([OpenPetsHQ/openpets](https://github.com/OpenPetsHQ/openpets) 1,246 stars as
+of September 28, 2026; [alvinunreal/openpets](https://github.com/alvinunreal/openpets)
+is a compatibility release mirror, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
 [DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop),
-[shinyflvre/Mate-Engine](https://github.com/shinyflvre/Mate-Engine) 3,532 stars
-as of Sep 4 2026), OpenPets documentation
-([docs/architecture.md](https://github.com/alvinunreal/openpets/blob/main/docs/architecture.md),
-[docs/desktop.md](https://github.com/alvinunreal/openpets/blob/main/docs/desktop.md)),
+[shinyflvre/Mate-Engine](https://github.com/shinyflvre/Mate-Engine) 3,709 stars
+as of September 28, 2026), OpenPets documentation
+([docs/architecture.md](https://github.com/OpenPetsHQ/openpets/blob/main/docs/architecture.md),
+[docs/desktop.md](https://github.com/OpenPetsHQ/openpets/blob/main/docs/desktop.md),
+[docs/agent-integrations.md](https://github.com/OpenPetsHQ/openpets/blob/main/docs/agent-integrations.md)),
 MateEngine unofficial Linux port
 ([Marksonthegamer/Mate-Engine-Linux-Port](https://github.com/Marksonthegamer/Mate-Engine-Linux-Port)
 269 stars, issue #85 wontfix), Steam review sentiment (GameBrain, VaporLens
