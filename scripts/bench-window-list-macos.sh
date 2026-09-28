@@ -5,9 +5,10 @@
 # scenario, the same shape as bench-gpu-compositing-macos.sh.
 #
 # micro times the call from its own process against whatever is on the desktop
-# (scripts/bench-window-list-macos.swift) and needs no green light. idle and
-# riding launch fidget on the live desktop and flood it with windows, so they
-# refuse to run unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed.
+# (scripts/bench-window-list-macos.swift) and needs no green light. idle,
+# riding, sweep, and profile launch fidget on the live desktop, and all but
+# profile can flood it with windows, so they refuse to run unless
+# FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed.
 # The flood comes from scripts/window-flood-macos.swift (PR #1043); without
 # that file the added-window rows skip and say so.
 #
@@ -21,18 +22,24 @@ cd "$(dirname "$0")/.."
 
 seconds=15
 windows=100
+counts="0 50 100 150 200 250 300"
 out=""
 bin="${FIDGET_VERIFY_BIN:-target/debug/fidget}"
 scenario=""
 
 usage() {
   cat >&2 << EOF
-Usage: $0 <env|micro|idle|riding|matrix> [--seconds N] [--windows N] [--bin PATH] [--out DIR]
+Usage: $0 <env|micro|idle|riding|matrix|sweep|profile> [--seconds N] [--windows N] [--counts "N N ..."] [--bin PATH] [--out DIR]
 
 env and micro touch nothing on screen. idle and riding launch fidget and open
 windows, and need FIDGET_BENCH_GREEN_LIGHT=1. matrix runs idle and riding
 twice each: on the desktop as found, and with --windows flood windows added by
-scripts/window-flood-macos.swift, skipped when that file is absent. Per-call
+scripts/window-flood-macos.swift, skipped when that file is absent. sweep
+floods each of --counts in turn and records the microbench and an idle app
+sample at each, the input to scripts/plot-window-list-sweep.mjs. profile
+records an idle fidget with the Time Profiler for --seconds and reports the
+samples under SLWindowListCopyWindowInfo, the issue's Instruments view as
+text. Per-call
 timing of the running app needs sudo for dtrace.
 EOF
   exit 2
@@ -48,6 +55,10 @@ while [ $# -gt 0 ]; do
       windows="$2"
       shift 2
       ;;
+    --counts)
+      counts="$2"
+      shift 2
+      ;;
     --bin)
       bin="$2"
       shift 2
@@ -57,7 +68,7 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --help | -h) usage ;;
-    env | micro | idle | riding | matrix)
+    env | micro | idle | riding | matrix | sweep | profile)
       scenario="$1"
       shift
       ;;
@@ -142,6 +153,7 @@ sudo_cached=$SUDO_OK
 bin=$bin
 seconds=$seconds
 windows=$windows
+counts=$counts
 probe=pid\$target:SkyLight:SLWindowListCopyWindowInfo (CGWindowListCopyWindowInfo has no pid probe here)
 green_light=${FIDGET_BENCH_GREEN_LIGHT:-unset}
 EOF
@@ -283,6 +295,24 @@ print(int(sprite_x - width / 2), int(sprite_y + u["h"] / 4), int(width), 240)
 PY
 }
 
+# The microbench's `app` row with $1 flood windows added: the in-process
+# point of the scaling curve at that count.
+run_micro_at() {
+  local extra=$1
+  local name="sweep-micro+$extra"
+  add_flood_windows "$extra" "$out/$name.flood.log" || {
+    emit "$name" N/A N/A N/A N/A N/A "$ADD_REASON"
+    stop_props
+    return 0
+  }
+  sleep 2
+  swift scripts/bench-window-list-macos.swift --iterations 300 > "$out/$name.tsv"
+  awk -F'\t' '$1 == "app"' "$out/$name.tsv" | while IFS=$'\t' read -r _ count iters median p95 max per; do
+    emit "$name" "$count" N/A "$median" "$p95" "$max" "in-process, $iters iterations, ${per}us/window"
+  done
+  stop_props
+}
+
 run_idle() {
   local extra=$1
   local name="idle+$extra"
@@ -354,6 +384,73 @@ run_riding() {
   stop_props
 }
 
+demangle() {
+  local filt
+  filt=$(command -v llvm-cxxfilt || echo "$(brew --prefix 2> /dev/null)/opt/llvm/bin/llvm-cxxfilt")
+  if [ -x "$filt" ]; then "$filt"; else cat; fi
+}
+
+# Time Profiler samples count on-CPU time only, so the share here is CPU the
+# call burns, not the wall time dtrace measures while it waits on the window
+# server.
+run_profile() {
+  local log="$out/profile.log"
+  launch_app "$log"
+  if ! wait_state "$log" '(Grounded|Perched)'; then
+    echo "no Grounded or Perched frame; see $log" >&2
+    return 1
+  fi
+  sleep 2
+  echo "on-screen windows: $(on_screen_count)" > "$out/profile.txt"
+  xcrun xctrace record --template 'Time Profiler' --attach "$APP_PID" --time-limit "${seconds}s" \
+    --output "$out/profile.trace" > "$out/xctrace.log" 2>&1
+  stop_app
+  xcrun xctrace export --input "$out/profile.trace" \
+    --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' > "$out/time-profile.xml"
+  python3 - "$out/time-profile.xml" "$seconds" << 'PY' | demangle >> "$out/profile.txt"
+  cat "$out/profile.txt"
+import sys
+import xml.etree.ElementTree as ET
+from collections import Counter
+
+target = "SLWindowListCopyWindowInfo"
+root = ET.parse(sys.argv[1]).getroot()
+seconds = float(sys.argv[2])
+ids = {el.attrib["id"]: el for el in root.iter() if "id" in el.attrib}
+
+
+def res(el):
+    return ids[el.attrib["ref"]] if "ref" in el.attrib else el
+
+
+total = hit = 0.0
+threads = Counter()
+chains = Counter()
+for row in root.iter("row"):
+    bt = row.find("tagged-backtrace")
+    if bt is None:
+        continue
+    bt = res(bt)
+    inner = bt.find("backtrace")
+    names = [res(f).attrib.get("name", "?") for f in res(inner if inner is not None else bt).iter("frame")]
+    ms = int(res(row.find("weight")).text) / 1e6
+    total += ms
+    if target in names:
+        hit += ms
+        threads[res(row.find("thread")).attrib["fmt"].split(" (")[0]] += ms
+        chains[tuple(names[names.index(target):][:8])] += ms
+print(f"fidget on-CPU: {total:.0f} ms over {seconds:.0f} s ({100 * total / seconds / 1000:.1f}% of one core)")
+print(f"under {target}: {hit:.0f} ms ({100 * hit / total if total else 0:.1f}% of fidget's samples)")
+for name, ms in threads.most_common(3):
+    print(f"thread {name}: {ms:.0f} ms")
+if chains:
+    chain, ms = chains.most_common(1)[0]
+    print(f"heaviest stack, {ms:.0f} ms, callee first:")
+    for frame in chain:
+        print(f"  {frame}")
+PY
+}
+
 probe_host
 echo "scenario	windows	polls_hz	median_us	p95_us	max_us	notes" > "$out/rows.tsv"
 
@@ -369,6 +466,13 @@ case "$scenario" in
     run_idle "$windows"
     run_riding 0
     run_riding "$windows"
+    ;;
+  profile) run_profile ;;
+  sweep)
+    for n in $counts; do
+      run_micro_at "$n"
+      run_idle "$n"
+    done
     ;;
 esac
 

@@ -1,0 +1,13 @@
+on-screen windows: 47 (read by the microbench right after this recording)
+fidget on-CPU: 1510 ms over 15 s (10.1% of one core)
+under SLWindowListCopyWindowInfo: 84 ms (5.6% of fidget's samples)
+thread fidget: 84 ms
+heaviest stack, 84 ms, callee first:
+  SLWindowListCopyWindowInfo
+  objc2_core_graphics::generated::__CGWindow::CGWindowListCopyWindowInfo
+  fidget::platform::macos::window_source::walk_visible::<fidget_core::window_source::WindowRect, fidget::platform::macos::window_source::visible_windows::{closure#0}>
+  fidget::platform::macos::window_source::visible_windows
+  <fidget::platform::macos::window_source::MacosWindowSource as fidget_core::window_source::WindowSource>::read
+  <fidget::platform::macos::window_source::MacosWindowSource as fidget_core::window_source::WindowSource>::snapshot
+  <fidget_core::snapshot::SnapshotAssembler<fidget::platform::macos::window_source::MacosWindowSource>>::assemble
+  fidget::frame_loop::run_frame_loop::<fidget::platform::macos::window_source::MacosWindowSource>::{closure#0}

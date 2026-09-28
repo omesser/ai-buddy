@@ -1,0 +1,15 @@
+scenario	windows	polls_hz	median_us	p95_us	max_us	notes
+sweep-micro+0	46	N/A	415.9	469.4	2024.8	in-process, 300 iterations, 9.04us/window
+idle+0	51	9.80	1058	2929	8394	pointer left alone. dtrace 147 calls over 15s
+sweep-micro+50	97	N/A	1281.9	3374.6	8206.8	in-process, 300 iterations, 13.22us/window
+idle+50	101	9.80	1049	2714	4206	pointer left alone. dtrace 147 calls over 15s
+sweep-micro+100	147	N/A	1967.0	3334.8	8972.2	in-process, 300 iterations, 13.38us/window
+idle+100	151	9.80	3211	5496	15261	pointer left alone. dtrace 147 calls over 15s
+sweep-micro+150	197	N/A	2518.9	4265.0	11831.3	in-process, 300 iterations, 12.79us/window
+idle+150	201	9.80	2596	7466	22290	pointer left alone. dtrace 147 calls over 15s
+sweep-micro+200	247	N/A	3173.7	5345.0	30978.3	in-process, 300 iterations, 12.85us/window
+idle+200	251	9.87	3417	9082	38826	pointer left alone. dtrace 148 calls over 15s
+sweep-micro+250	297	N/A	3265.1	5242.7	30339.7	in-process, 300 iterations, 10.99us/window
+idle+250	301	9.80	4065	10717	30277	pointer left alone. dtrace 147 calls over 15s
+sweep-micro+300	347	N/A	2676.2	5636.4	34210.5	in-process, 300 iterations, 7.71us/window
+idle+300	351	9.87	4706	14561	39195	pointer left alone. dtrace 148 calls over 15s

@@ -291,6 +291,26 @@ The operator approved one `matrix --seconds 15 --windows 100` run. Every number 
 
 **Limits.** One machine, one desktop, one run of the gated matrix, on a debug build. The microbench times a separate process and the app's calls are 3.7 to 5.4 times slower, so the microbench alone understates the cost. The `all` row's spread across nine runs is wider than the `app` row's, so window-count scaling on a busy desktop needs more than one run per count. Not produced: the Instruments Time Profiler screenshot the issue asks for (the headless `xctrace` recording exists, but a screenshot needs Instruments on the screen) and a plotted curve.
 
+**Scaling curve (the app idle and the microbench, measured, one run, `target/debug` build, `346fe2a7`).** The operator approved one `sweep` run: `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-window-list-macos.sh sweep`, with `sudo -n` working for dtrace. It adds 0 to 300 flood windows in steps of 50. At each count it runs the microbench's `app` row (300 iterations) and then samples an idle fidget with dtrace for 15 s. The rows are in [`window-list-sweep-macos/rows.tsv`](./window-list-sweep-macos/rows.tsv), and `node scripts/plot-window-list-sweep.mjs rows.tsv scaling.svg` re-plots them.
+
+![Poll time against on-screen window count](./window-list-sweep-macos/scaling.svg)
+
+| Windows (app / micro) | App median µs | App p95 µs | App max µs | Micro median µs |
+|-----------------------|---------------|------------|------------|-----------------|
+| 51 / 46 | 1058 | 2929 | 8394 | 416 |
+| 101 / 97 | 1049 | 2714 | 4206 | 1282 |
+| 151 / 147 | 3211 | 5496 | 15261 | 1967 |
+| 201 / 197 | 2596 | 7466 | 22290 | 2519 |
+| 251 / 247 | 3417 | 9082 | 38826 | 3174 |
+| 301 / 297 | 4065 | 10717 | 30277 | 3265 |
+| 351 / 347 | 4706 | 14561 | 39195 | 2676 |
+
+Every app row polled at 9.80 to 9.87 Hz. Computed from the table, the app's median grows by about 12 µs per window from 51 to 351 windows, close to the matrix's 13 to 18 µs. The p95 grows faster, by about 39 µs per window, and reaches 14.6 ms at 351 windows. The max passes one 16.7 ms frame from 201 windows on, at 22 to 39 ms. Idle only polls every 100 ms, so each such poll stalls one tick, not every tick. Whether the stalled tick drops a presented frame is not measured. Riding makes the same call up to six times as often (inferred from the poll intervals), so at 300 or more windows its p95 would sit near a whole frame. That is a guess, since the sweep did not ride.
+
+In this run the app's median was 0.8 to 2.5 times the microbench's at the same count, not the matrix's 3.7 to 5.4 times. At about 100 windows the app was the faster of the two. The microbench's own curve flattens from 247 windows and drops at 347. Why it drops is not measured.
+
+**Time Profiler (measured, one 15 s recording, 47 windows read by the microbench right after it).** `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-window-list-macos.sh profile` attaches `xctrace` with the Time Profiler template to an idle fidget. It then reduces the exported call tree to the samples under `SLWindowListCopyWindowInfo` and demangles the names with Homebrew's `llvm-cxxfilt` when it is installed. The report is [`window-list-sweep-macos/time-profile.txt`](./window-list-sweep-macos/time-profile.txt), and it stands in for the issue's screenshot. fidget used 1510 ms of CPU in 15 s, 10.1% of one core. The call accounted for 84 ms of that, 5.6%. All of it was on the thread named `fidget`, under `run_frame_loop` → `SnapshotAssembler::assemble` → `WindowSource::snapshot` → `WindowSource::read` → `visible_windows` → `walk_visible`, so that thread is the frame loop's (inferred from the stack). The Time Profiler counts only on-CPU samples. Those 84 ms (5.6 ms a second) are less than the roughly 10 ms a second of wall time computed from the sweep's 51-window row (1058 µs median × 9.8 Hz). dtrace's wall time also counts the time the call waits on the window server (inferred from the two tools' definitions).
+
 ## Click-through mask (issue #428)
 
 See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed X11 measurements.
