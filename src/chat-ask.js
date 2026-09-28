@@ -116,3 +116,13 @@ export function elicitSays(form) {
   const message = clamp(flat(form?.message ?? ""), DETAIL_LIMIT);
   return message || "The Harness asked a question without saying what for.";
 }
+
+// A form's answers, in order, with Decline last because the protocol treats
+// it as a valid answer. A URL form's one yes is opening its link. A null
+// `value` is Decline.
+export function elicitChoices(form) {
+  const choices = form?.url
+    ? [{ name: "Open", value: "open", url: form.url }]
+    : (form?.options ?? []).map((option) => ({ name: option.name || option.value, value: option.value }));
+  return [...choices, { name: "Decline", value: null }];
+}

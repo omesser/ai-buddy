@@ -2,7 +2,7 @@
 // fidget rather than by whatever answers (ADR-0018). Like the overlay it
 // holds no authoritative state; the Shell owns the session behind it.
 
-import { elicitSays } from "./chat-ask.js";
+import { elicitChoices, elicitSays } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
 import { mountChatAppearance } from "./chat-appearance.js";
 import { canAnswer, drawInline, landingCopy } from "./chat-connect.js";
@@ -311,8 +311,8 @@ function lowerCaret() {
   }
 }
 
-// One `elicitation/create` form. Options are the schema's first enum; Decline
-// is always offered, because the protocol treats it as a valid answer.
+// One `elicitation/create` form. Options are the schema's first enum, or for
+// a URL form the link itself, drawn in full so the user can check it.
 function elicited(form) {
   if (asks.has(form.request)) {
     return null;
@@ -322,37 +322,31 @@ function elicited(form) {
   label.textContent = `${them} · asks`;
   const body = el("said");
   body.textContent = elicitSays(form);
+  if (form.url) {
+    const link = el("ask-code", "code");
+    link.textContent = form.url;
+    body.append(link);
+  }
   const buttons = el("options");
-  for (const option of form.options ?? []) {
+  for (const choice of elicitChoices(form)) {
     const button = el("", "button");
     button.type = "button";
-    button.textContent = option.name || option.value;
-    button.dataset.option = option.value;
+    button.textContent = choice.name;
+    button.dataset.option = choice.value ?? "decline";
     button.addEventListener("click", () => {
       for (const other of buttons.querySelectorAll("button")) {
         other.disabled = true;
       }
-      invoke("elicitation_answer", { request: form.request, value: option.value }).catch((why) => {
-        console.error("chat: the answer did not reach the Harness:", why);
-        note("That answer did not get through.");
-      });
+      const opened = choice.url ? invoke("open_link", { url: choice.url }) : Promise.resolve();
+      opened
+        .then(() => invoke("elicitation_answer", { request: form.request, value: choice.value }))
+        .catch((why) => {
+          console.error("chat: the answer did not reach the Harness:", why);
+          note("That answer did not get through.");
+        });
     });
     buttons.append(button);
   }
-  const decline = el("", "button");
-  decline.type = "button";
-  decline.textContent = "Decline";
-  decline.dataset.option = "decline";
-  decline.addEventListener("click", () => {
-    for (const other of buttons.querySelectorAll("button")) {
-      other.disabled = true;
-    }
-    invoke("elicitation_answer", { request: form.request, value: null }).catch((why) => {
-      console.error("chat: the answer did not reach the Harness:", why);
-      note("That answer did not get through.");
-    });
-  });
-  buttons.append(decline);
   body.append(buttons);
   row.append(label, body);
   asks.set(form.request, buttons);
