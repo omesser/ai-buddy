@@ -189,31 +189,8 @@ const FOOT_PIXELS: usize = 3;
 
 /// The canvas size and alpha channel of one frame PNG, row-major.
 fn frame_alpha(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
-    let mut reader = png::Decoder::new(Cursor::new(bytes))
-        .read_info()
-        .expect("every frame is a PNG");
-
-    let info = reader.info();
-    let color_type = info.color_type;
-    let bit_depth = info.bit_depth;
-    let (width, height) = (info.width as usize, info.height as usize);
-    assert_eq!(color_type, png::ColorType::Rgba, "frames carry alpha");
-    assert_eq!(
-        bit_depth,
-        png::BitDepth::Eight,
-        "frames are 8 bits a channel"
-    );
-
-    let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
-    let frame = reader.next_frame(&mut buf).expect("frame decodes");
-    let alpha = buf[..frame.buffer_size()]
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|pixel| pixel[3])
-        .collect();
-
-    (width, height, alpha)
+    let (width, height, pixels) = frame_rgba(bytes);
+    (width, height, pixels.iter().map(|p| p[3]).collect())
 }
 
 /// The first and last rows carrying visible pixels, and how many the last row
@@ -405,6 +382,12 @@ fn frame_rgba(bytes: &[u8]) -> (usize, usize, Vec<[u8; 4]>) {
         .expect("every frame is a PNG");
     let info = reader.info();
     let (width, height) = (info.width as usize, info.height as usize);
+    assert_eq!(info.color_type, png::ColorType::Rgba, "frames carry alpha");
+    assert_eq!(
+        info.bit_depth,
+        png::BitDepth::Eight,
+        "frames are 8 bits a channel"
+    );
     let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
     let frame = reader.next_frame(&mut buf).expect("frame decodes");
     let pixels = buf[..frame.buffer_size()]
