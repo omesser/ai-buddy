@@ -420,7 +420,7 @@ pub fn open_url(url: &str) -> Result<(), String> {
 
 /// The URL to hand over, or why this one is not handed over.
 /// Split from `open_url` so policy can be tested without launching a browser.
-fn openable(url: &str) -> Result<String, String> {
+pub(crate) fn openable(url: &str) -> Result<String, String> {
     let parsed = url::Url::parse(url).map_err(|why| format!("not a URL: {why}"))?;
     if !OPENABLE.contains(&parsed.scheme()) {
         return Err(format!("a {} link does not open", parsed.scheme()));
