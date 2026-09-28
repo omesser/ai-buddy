@@ -27,6 +27,21 @@ scripts/scenarios/thinking-row.sh --go target/debug/fidget target/debug/deps/fid
 
 The exit code is the verdict: 0 passed, 1 failed, 2 printed the header.
 
+## codex-sign-in-link
+
+`codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,
+because the URL elicitation under test is codex-acp's own. It needs a ChatGPT
+account, the network, and you at the keyboard: the terminal prompts each click.
+It takes only the app binary:
+
+```sh
+scripts/scenarios/codex-sign-in-link.sh --go target/debug/fidget
+```
+
+codex runs against a fresh `CODEX_HOME` with file credential storage, so your
+`~/.codex` and your keychain stay untouched. The run deletes that directory on
+exit, and the tokens with it.
+
 ## The header
 
 The comment block at the top of each scenario, one field per line:
@@ -45,7 +60,7 @@ The comment block at the top of each scenario, one field per line:
 - Isolated `HOME` under the evidence directory, so a run never reads or writes
   the owner's settings.
 - A fixture Harness from `src-tauri/src/harness.rs`, never a real one and never
-  a stub agent script.
+  a stub agent script. `codex-sign-in-link.sh` is the one exception, below.
 - Kill what the run started on exit, and nothing else.
 - Assert and exit non-zero. A count printed for someone to read is not a check.
 
