@@ -2551,10 +2551,12 @@ mod tests {
     /// codex-acp's MCP startup shape: a session-scoped link, unprompted.
     /// `mcp-link` sends it right after `session/new`, and `mcp-link-turn`
     /// inside the first turn, which is where a slow MCP server's lands.
-    fn mcp_link(session: &str) {
+    /// `mcp-link-tool` scopes it to a tool call, which blocks that turn.
+    fn mcp_link(session: &str, tool_call: Option<&str>) {
         say(
             json!({"jsonrpc": "2.0", "id": 102, "method": "elicitation/create", "params": {
                 "sessionId": session,
+                "toolCallId": tool_call,
                 "mode": "url",
                 "elicitationId": "mcp-1",
                 "url": "https://example.test/oauth",
@@ -2653,12 +2655,12 @@ mod tests {
                         };
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
                         if script == "mcp-link" || script == "mcp-link-complete-turn" {
-                            mcp_link(&session);
+                            mcp_link(&session, None);
                         }
                         // The user signs in some other way, so the Harness
                         // says the link is done. The first names no form.
                         if script == "mcp-link-complete" {
-                            mcp_link(&session);
+                            mcp_link(&session, None);
                             for link in ["nope", "mcp-1"] {
                                 say(
                                     json!({"jsonrpc": "2.0", "method": "elicitation/complete", "params": {
@@ -2834,9 +2836,14 @@ mod tests {
                             record(count, "replied");
                         }
                         "mcp-link-turn" if prompts == 1 => {
-                            mcp_link(&session);
+                            mcp_link(&session, None);
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
+                        }
+                        // A tool call's own sign-in: the turn holds until it is answered.
+                        "mcp-link-tool" => {
+                            mcp_link(&session, Some("call-1"));
+                            pending_prompt = Some(id);
                         }
                         // The link was held between turns; the user finishes
                         // it elsewhere while this turn runs.
@@ -2912,6 +2919,10 @@ mod tests {
                         .and_then(Value::as_str)
                         .unwrap_or("?");
                     record(count, &format!("elicit-mcp:{action}"));
+                    if let Some(id) = pending_prompt.take() {
+                        chunk(&session, "Hello");
+                        stop(&id, "end_turn");
+                    }
                 }
                 None if id == json!(100) => {
                     let action = message
@@ -4906,6 +4917,26 @@ mod tests {
             assert_eq!(fx.settled(), (form.request, Some("decline".to_string())));
             session.shutdown();
         }
+    }
+
+    /// A link from a tool call blocks its turn, so it does not wait: Chat opens
+    /// for it as for a permission ask, and the answer finishes the turn.
+    #[test]
+    fn a_tool_call_link_does_not_wait_and_its_answer_finishes_the_turn() {
+        let (fx, session) = Fixture::new("mcp-link-tool");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        let form = fx.form();
+        assert_eq!(form.url.as_deref(), Some("https://example.test/oauth"));
+        assert!(!form.waits);
+        session.answer_elicitation(&form.request, ElicitationAnswer::Decline);
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("Hello")));
+        assert!(fx.wait_for("elicit-mcp:decline", 1));
+        assert_eq!(fx.settled(), (form.request, Some("decline".to_string())));
+        session.shutdown();
     }
 
     /// `elicitation/complete` for a held link retires its row as an answer

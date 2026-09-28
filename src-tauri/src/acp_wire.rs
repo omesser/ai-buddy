@@ -247,8 +247,9 @@ pub struct ElicitationForm {
     /// user opened it; the Harness learns the rest on its own side.
     pub url: Option<String>,
     /// A link Fidget did not ask for, such as an MCP server's sign-in after
-    /// `session/new`. It waits in Chat rather than opening it. Only a link
-    /// that arrives during Fidget's own `authenticate` counts as asked for.
+    /// `session/new`. It waits in Chat rather than opening it. A link that
+    /// arrives during Fidget's own `authenticate`, or that a tool call blocks
+    /// on, opens Chat instead.
     #[serde(skip)]
     pub waits: bool,
 }
@@ -1430,6 +1431,12 @@ fn outlives_turn(request: &CreateElicitationRequest) -> bool {
         if matches!(&link.scope, ElicitationScope::Session(scope) if scope.tool_call_id.is_none()))
 }
 
+/// A link tied to a tool call, which blocks its turn until answered.
+fn on_tool_call(request: &CreateElicitationRequest) -> bool {
+    matches!(&request.mode, ElicitationMode::Url(link)
+        if matches!(&link.scope, ElicitationScope::Session(scope) if scope.tool_call_id.is_some()))
+}
+
 /// A form the Harness asked, held open and handed on to Chat. `signing_in` is
 /// whether Fidget's own `authenticate` is in flight.
 fn hold_form(
@@ -1440,7 +1447,7 @@ fn hold_form(
     on_event: &OnEvent,
 ) {
     let mut form = elicitation_form(request, responder.id().to_string());
-    form.waits = form.url.is_some() && !signing_in;
+    form.waits = form.url.is_some() && !signing_in && !on_tool_call(request);
     let link = match &request.mode {
         ElicitationMode::Url(link) => Some(link.elicitation_id.clone()),
         _ => None,

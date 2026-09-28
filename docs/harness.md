@@ -237,7 +237,7 @@ The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the ro
 
 It is not narrowed per Harness. A Harness already runs code as the user, so a link lets it do nothing new. What the link adds is a gate: Chat draws the URL in full, as `open_link` will open it, and nothing opens until the user clicks Open. `open_link` refuses any scheme but `http`, `https` and `mailto`.
 
-Only a link that arrives during Fidget's own `authenticate` opens Chat. Any other link, such as an MCP server's after `session/new`, waits in Chat: the next Chat to open draws it, and nothing takes focus. A link scoped to the session and no tool call belongs to the session, so the turn it lands in does not cancel it.
+Two kinds of link open Chat: one that arrives during Fidget's own `authenticate`, and one scoped to a tool call. A tool call's link blocks its turn, so it behaves like a permission ask: Chat opens for it unless Do Not Disturb is on, and then it waits in Chat as an ask does. Any other link, such as an MCP server's after `session/new`, waits in Chat: the next Chat to open draws it, and nothing takes focus. A link scoped to the session and no tool call belongs to the session, so the turn it lands in does not cancel it.
 
 `elicitation/complete` retires a held link's row, as an answer does, and sends nothing back. The user finished the flow somewhere else. An `elicitationId` no held link carries is ignored.
 

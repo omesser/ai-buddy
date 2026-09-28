@@ -181,7 +181,7 @@ struct Pending {
 
 impl Pending {
     /// Keep `form` for the next Chat to open, and say whether to open one for
-    /// it now. A link Fidget did not ask for waits, as Do Not Disturb does.
+    /// it now. A link that waits opens nothing, as Do Not Disturb does.
     fn hold_form(&mut self, form: &harness::ElicitationForm, shut: bool, dnd: bool) -> bool {
         self.forms.push(form.clone());
         shut && !form.waits && !dnd && !std::mem::replace(&mut self.opened, true)
@@ -4089,6 +4089,27 @@ mod tests {
         let mut quiet = Pending::default();
         assert!(!quiet.hold_form(&link("10", false), true, true));
         assert!(!quiet.hold_form(&link("11", false), false, false));
+    }
+
+    /// A tool call's link does not wait (`acp_wire`), so it opens Chat as a
+    /// permission ask does, and Do Not Disturb holds it as it holds an ask.
+    /// A session link still waits either way.
+    #[test]
+    fn a_tool_call_link_opens_chat_unless_do_not_disturb_and_a_session_link_waits() {
+        let tool_call = link("12", false);
+        let session = link("13", true);
+
+        let mut pending = Pending::default();
+        assert!(pending.hold_form(&tool_call, true, false));
+
+        let mut quiet = Pending::default();
+        assert!(!quiet.hold_form(&tool_call, true, true));
+        assert!(!quiet.opened);
+        assert_eq!(quiet.forms.len(), 1);
+
+        let mut idle = Pending::default();
+        assert!(!idle.hold_form(&session, true, false));
+        assert!(!idle.opened);
     }
 
     /// Sync commands run on the main thread. These two must stay async so a
