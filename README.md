@@ -12,9 +12,9 @@
 
 ---
 
-A desktop mascot that lives on your screen — and acts in character.
+A small animated Character that lives on your desktop, backed by the coding agent you already use.
 
-Pick a Character with an authored personality. The Director chooses idle Behaviors and short spoken lines to match. It also perches on windows, reacts to gestures, and stays out of your way while you work.
+It walks along the tops of your windows, naps now and then, and lets you pick it up and throw it. Double-click it to chat with Claude, Codex, Cursor, or any [Harness](#harness-support) that speaks ACP. The answer comes back as speech and a Behavior, and the agent can do real work on your machine. With no Harness attached it still has a life of its own, and it never reads your screen.
 
 <p align="center">
   <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
