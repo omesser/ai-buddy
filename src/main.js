@@ -344,6 +344,25 @@ function attachQuickMessage(view, id) {
   field.disabled = true;
   field.autocomplete = "off";
   field.setAttribute("aria-label", "Quick message");
+  // Only where a click off the art lands. Elsewhere the sentence stays text.
+  let link = null;
+  if (clickableOffArt) {
+    link = document.createElement("button");
+    link.type = "button";
+    link.className = "quick-message-connect";
+    link.textContent = "Connect an AI to talk to me";
+    link.hidden = true;
+    const swallow = (event) => event.stopPropagation();
+    link.addEventListener("pointerdown", swallow);
+    link.addEventListener("pointerup", swallow);
+    link.addEventListener("click", (event) => {
+      event.stopPropagation();
+      view.quickMachine.summon();
+      window.__TAURI__.core.invoke("overlay_open_chat", { id }).catch((err) => {
+        console.error("overlay_open_chat", err);
+      });
+    });
+  }
   const send = document.createElement("button");
   send.type = "button";
   send.className = "quick-message-send";
@@ -357,7 +376,9 @@ function attachQuickMessage(view, id) {
   point.setAttribute("fill", "#14171e");
   icon.append(point);
   send.append(icon);
-  row.append(mirror, field);
+  // Before the field, so the sibling rule in main.css can hide the
+  // placeholder that would otherwise draw under the link.
+  row.append(mirror, ...(link ? [link] : []), field);
   quick.append(row, send);
   stage.append(quick);
 
@@ -395,7 +416,7 @@ function attachQuickMessage(view, id) {
     },
   });
   view.quickMachine = machine;
-  view.quickGate = { field, send, machine };
+  view.quickGate = { field, send, link, machine };
   view.quickMirror.textContent = "\u200b";
   paintQuickGate(view, null);
   refreshQuickGate(view, id);

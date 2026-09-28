@@ -4,17 +4,24 @@
 import { placeBubble } from "./bubble.js";
 import { canAnswer, composerPlaceholder } from "./chat-connect.js";
 
-// Ready keeps this pill's own prompt. Unavailable uses the Chat composer's
-// sentence, including before the first opening arrives, so the two surfaces
-// cannot disagree about why nothing will answer.
+// The pill is not Chat, so "Nothing can answer yet" left a first-run user
+// with no next step. Every unavailable state is fixed in Chat's landing, so
+// the pill names the fix and links there. A Harness still starting clears on
+// its own, and keeps Chat's sentence so the two surfaces agree on the wait.
+export function quickMessageConnects(opening) {
+  return !canAnswer(opening) && !opening?.harness?.initializing;
+}
+
 export function quickMessagePrompt(opening) {
   if (canAnswer(opening)) return "talk to me";
+  if (quickMessageConnects(opening)) return "Connect an AI to talk to me";
   return composerPlaceholder(opening);
 }
 
 // `field` and `send` are the overlay's controls. `machine` is this module.
 // One opening, the same one Chat paints from.
-export function applyQuickMessageGate({ field, send, machine }, opening) {
+// `link` is absent where the overlay cannot take a click off the art.
+export function applyQuickMessageGate({ field, send, link, machine }, opening) {
   const ready = canAnswer(opening);
   // Enable before the machine claims the caret. focus() on a still-disabled
   // field is dropped, and the pill would thaw with nowhere to type.
@@ -22,6 +29,7 @@ export function applyQuickMessageGate({ field, send, machine }, opening) {
   send.disabled = !ready;
   field.placeholder = quickMessagePrompt(opening);
   field.setAttribute("aria-label", ready ? "Quick message" : field.placeholder);
+  if (link) link.hidden = !quickMessageConnects(opening);
   machine.setAvailable(ready);
 }
 

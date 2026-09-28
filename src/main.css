@@ -285,6 +285,30 @@ body {
   -webkit-user-select: text;
 }
 
+.quick-message-connect {
+  grid-area: 1 / 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  color: var(--shared-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.quick-message-connect[hidden] {
+  display: none;
+}
+
+.quick-message-connect:not([hidden]) ~ .quick-message-field {
+  visibility: hidden;
+}
+
 .quick-message-field::placeholder {
   color: #8b93a7;
 }
