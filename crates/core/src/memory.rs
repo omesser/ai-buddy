@@ -266,32 +266,6 @@ fn one_line(text: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    /// A directory of our own under the system temp dir, removed when the test
-    /// ends. A handful of lines rather than a dev-dependency.
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(label: &str) -> Self {
-            static NEXT: AtomicU32 = AtomicU32::new(0);
-            let unique = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir()
-                .join(format!("fidget-{label}-{}-{unique}", std::process::id()));
-            fs::create_dir_all(&dir).expect("temp dir is creatable");
-            Self(dir)
-        }
-
-        fn join(&self, name: &str) -> PathBuf {
-            self.0.join(name)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     #[test]
     fn memory_lives_in_the_user_data_dir() {
@@ -319,8 +293,8 @@ mod tests {
 
     #[test]
     fn a_remembered_fact_round_trips_through_the_file() {
-        let dir = TempDir::new("round-trip");
-        let manifest = MemoryManifest::new(dir.join("memory.md"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let manifest = MemoryManifest::new(dir.path().join("memory.md"));
 
         manifest
             .remember("Facts", "Oded's cat is called Simba")
@@ -341,8 +315,8 @@ mod tests {
     /// same manifest, never re-created, has to see it.
     #[test]
     fn an_external_edit_is_picked_up_without_restarting() {
-        let dir = TempDir::new("external-edit");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         let manifest = MemoryManifest::new(&path);
 
         manifest
@@ -377,8 +351,8 @@ Typed by me, before fidget ever ran.
 
 - Dark mode, always
 ";
-        let dir = TempDir::new("hand-written");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         fs::write(&path, hand_written).expect("the user writes the file first");
         let manifest = MemoryManifest::new(&path);
 
@@ -423,8 +397,8 @@ Some notes I typed at the top, under no heading at all.
 
 ###   preferences
 - Dark mode, always";
-        let dir = TempDir::new("malformed");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         fs::write(&path, malformed).expect("the user writes the file first");
         let manifest = MemoryManifest::new(&path);
 
@@ -454,8 +428,8 @@ Some notes I typed at the top, under no heading at all.
 
     #[test]
     fn wipe_writes_a_backup_before_clearing() {
-        let dir = TempDir::new("wipe");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         let manifest = MemoryManifest::new(&path);
         manifest
             .remember("Facts", "Oded's cat is called Simba")
@@ -498,8 +472,8 @@ Some notes I typed at the top, under no heading at all.
     /// back, so remembering hands back the line it recorded.
     #[test]
     fn remembering_reports_the_line_it_recorded() {
-        let dir = TempDir::new("visible-write");
-        let manifest = MemoryManifest::new(dir.join("memory.md"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let manifest = MemoryManifest::new(dir.path().join("memory.md"));
 
         let recorded = manifest
             .remember("Facts", "Oded's cat is called Simba")
@@ -519,8 +493,8 @@ Some notes I typed at the top, under no heading at all.
     /// into it. A fact spanning lines must not become structure of its own.
     #[test]
     fn a_fact_cannot_forge_a_heading() {
-        let dir = TempDir::new("forged-heading");
-        let manifest = MemoryManifest::new(dir.join("memory.md"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let manifest = MemoryManifest::new(dir.path().join("memory.md"));
 
         let recorded = manifest
             .remember(
@@ -546,8 +520,8 @@ Some notes I typed at the top, under no heading at all.
     /// raw would open a fresh duplicate section on every write.
     #[test]
     fn a_heading_that_needs_normalizing_still_finds_its_own_section() {
-        let dir = TempDir::new("repeat-heading");
-        let manifest = MemoryManifest::new(dir.join("memory.md"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let manifest = MemoryManifest::new(dir.path().join("memory.md"));
 
         manifest
             .remember("Daily  Facts", "Oded's cat is called Simba")
@@ -572,8 +546,8 @@ Some notes I typed at the top, under no heading at all.
     /// bullet with nothing after it in front of them.
     #[test]
     fn a_fact_or_heading_with_nothing_in_it_is_refused() {
-        let dir = TempDir::new("empty-fact");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         let manifest = MemoryManifest::new(&path);
 
         let refused = manifest
@@ -620,15 +594,15 @@ Some notes I typed at the top, under no heading at all.
     /// a second name for the old file is how a test can tell which one happened.
     #[test]
     fn a_write_replaces_memory_rather_than_writing_over_it_in_place() {
-        let dir = TempDir::new("atomic-write");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         let manifest = MemoryManifest::new(&path);
         manifest
             .remember("Facts", "Oded's cat is called Simba")
             .expect("remembering writes");
         let before = manifest.recall().expect("recall reads back");
 
-        let same_file = dir.join("still-the-old-one.md");
+        let same_file = dir.path().join("still-the-old-one.md");
         fs::hard_link(&path, &same_file).expect("a second name for the same file");
         manifest
             .remember("Facts", "Simba is ginger")
@@ -674,8 +648,8 @@ Some notes I typed at the top, under no heading at all.
     fn a_write_keeps_the_permissions_the_user_set() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = TempDir::new("permissions");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         let manifest = MemoryManifest::new(&path);
         manifest
             .remember("Facts", "Oded's cat is called Simba")
@@ -706,8 +680,8 @@ Some notes I typed at the top, under no heading at all.
     fn a_backup_keeps_the_permissions_the_user_set() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = TempDir::new("backup-permissions");
-        let path = dir.join("memory.md");
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let path = dir.path().join("memory.md");
         let manifest = MemoryManifest::new(&path);
         manifest
             .remember("Facts", "Oded's cat is called Simba")
@@ -735,8 +709,8 @@ Some notes I typed at the top, under no heading at all.
     /// an extension at all. The backup still has to be findable beside it.
     #[test]
     fn a_backup_is_named_after_memory_even_without_an_extension() {
-        let dir = TempDir::new("backup-name");
-        let manifest = MemoryManifest::new(dir.join("notes"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let manifest = MemoryManifest::new(dir.path().join("notes"));
         manifest
             .remember("Facts", "Oded's cat is called Simba")
             .expect("remembering writes");
@@ -765,8 +739,8 @@ Some notes I typed at the top, under no heading at all.
     /// `remember` reported and the file does not hold is a lie to the user.
     #[test]
     fn concurrent_remembers_all_land() {
-        let dir = TempDir::new("concurrent");
-        let manifest = &MemoryManifest::new(dir.join("memory.md"));
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
+        let manifest = &MemoryManifest::new(dir.path().join("memory.md"));
 
         std::thread::scope(|scope| {
             for writer in 0..4 {

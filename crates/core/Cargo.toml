@@ -22,3 +22,6 @@ dirs = "7"
 # window-server binding; Windows is out of v1 and does not use this.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

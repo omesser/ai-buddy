@@ -267,33 +267,6 @@ mod tests {
     use super::*;
     use crate::window_source::{Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry};
     use serde_json::json;
-    use std::fs;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(label: &str) -> Self {
-            static NEXT: AtomicU32 = AtomicU32::new(0);
-            let unique = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!(
-                "fidget-dispatch-{label}-{}-{unique}",
-                std::process::id()
-            ));
-            fs::create_dir_all(&dir).expect("temp dir is creatable");
-            Self(dir)
-        }
-
-        fn join(&self, name: &str) -> PathBuf {
-            self.0.join(name)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     fn window(owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
@@ -311,13 +284,13 @@ mod tests {
     }
 
     fn test_context<'a>(
-        temp: &TempDir,
+        temp: &tempfile::TempDir,
         source: &'a FakeWindowSource,
         roster: &'a [InstanceInfo],
     ) -> DispatchContext<'a> {
         DispatchContext {
             window_source: source,
-            memory_path: temp.join("memory.md"),
+            memory_path: temp.path().join("memory.md"),
             denylist: DenyList::default(),
             roster,
             expression: None,
@@ -345,7 +318,7 @@ mod tests {
 
     #[test]
     fn dispatch_list_windows_returns_list_windows_result() {
-        let temp = TempDir::new("list-windows");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![window("Terminal", 10.0, 20.0, 800.0, 600.0)]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -359,7 +332,7 @@ mod tests {
 
     #[test]
     fn dispatch_describe_screen_returns_describe_screen_result() {
-        let temp = TempDir::new("describe");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![window("Safari", 30.0, 40.0, 1200.0, 800.0)]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -375,8 +348,8 @@ mod tests {
 
     #[test]
     fn dispatch_recall_returns_recall_result() {
-        let temp = TempDir::new("recall");
-        let memory = MemoryManifest::new(temp.join("memory.md"));
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let memory = MemoryManifest::new(temp.path().join("memory.md"));
         memory
             .remember("Facts", "The user likes coffee")
             .expect("remembering writes");
@@ -393,7 +366,7 @@ mod tests {
 
     #[test]
     fn dispatch_remember_returns_remember_result() {
-        let temp = TempDir::new("remember");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -405,7 +378,7 @@ mod tests {
 
     #[test]
     fn dispatch_list_instances_returns_list_instances_result() {
-        let temp = TempDir::new("list-instances");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let roster = [
             InstanceInfo {
                 id: "inst-1".to_string(),
@@ -430,7 +403,7 @@ mod tests {
 
     #[test]
     fn dispatch_unknown_tool_returns_error() {
-        let temp = TempDir::new("unknown");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -445,7 +418,7 @@ mod tests {
 
     #[test]
     fn dispatch_with_invalid_arguments_returns_error() {
-        let temp = TempDir::new("bad-args");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -491,7 +464,7 @@ mod tests {
 
     #[test]
     fn dispatch_list_windows_applies_denylist() {
-        let temp = TempDir::new("denylist-list");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let denylist = DenyList {
             excluded_applications: vec!["1Password".to_string()],
             filter_password_fields: true,
@@ -513,7 +486,7 @@ mod tests {
 
     #[test]
     fn dispatch_describe_screen_applies_denylist() {
-        let temp = TempDir::new("denylist-describe");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let denylist = DenyList {
             excluded_applications: vec!["1Password".to_string()],
             filter_password_fields: true,
@@ -537,7 +510,7 @@ mod tests {
 
     #[test]
     fn dispatch_list_instances_with_empty_roster_returns_empty_list() {
-        let temp = TempDir::new("empty-roster");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -550,7 +523,7 @@ mod tests {
 
     #[test]
     fn list_windows_and_describe_screen_apply_denylist_consistently() {
-        let temp = TempDir::new("denylist-consistency");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let denylist = DenyList {
             excluded_applications: vec!["Keychain Access".to_string(), "1Password".to_string()],
             filter_password_fields: true,
@@ -716,7 +689,7 @@ mod tests {
             }
         }
 
-        let temp = TempDir::new("reuse-handle");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let (roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
@@ -731,7 +704,7 @@ mod tests {
         let mut expression = SharedRoster(Rc::clone(&shared));
         let mut context = DispatchContext {
             window_source: &source,
-            memory_path: temp.join("memory.md"),
+            memory_path: temp.path().join("memory.md"),
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut expression),
@@ -763,7 +736,7 @@ mod tests {
 
     #[test]
     fn speak_with_one_instance_enqueues_dialogue_and_plays_talk() {
-        let temp = TempDir::new("speak-expression");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
@@ -775,7 +748,7 @@ mod tests {
 
         let mut context = DispatchContext {
             window_source: &source,
-            memory_path: temp.join("memory.md"),
+            memory_path: temp.path().join("memory.md"),
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut roster),
@@ -800,7 +773,7 @@ mod tests {
 
     #[test]
     fn play_behavior_with_one_instance_delivers_the_proposal_to_the_engine() {
-        let temp = TempDir::new("behavior-expression");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
@@ -812,7 +785,7 @@ mod tests {
 
         let mut context = DispatchContext {
             window_source: &source,
-            memory_path: temp.join("memory.md"),
+            memory_path: temp.path().join("memory.md"),
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut roster),
@@ -836,7 +809,7 @@ mod tests {
 
     #[test]
     fn omitted_instance_id_with_several_instances_is_failure() {
-        let temp = TempDir::new("multi-instance");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let infos = [
             InstanceInfo {
@@ -863,7 +836,7 @@ mod tests {
 
     #[test]
     fn unknown_instance_id_is_failure() {
-        let temp = TempDir::new("unknown-instance");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let infos = [InstanceInfo {
             id: "known-instance".to_string(),
@@ -886,7 +859,7 @@ mod tests {
     /// against nothing at all.
     #[test]
     fn an_empty_roster_fails_and_says_no_instance_is_running() {
-        let temp = TempDir::new("empty-roster");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -911,7 +884,7 @@ mod tests {
     /// Break: empty message or behavior reporting success, or becoming DispatchError.
     #[test]
     fn empty_message_and_empty_behavior_keep_the_existing_failure_shape() {
-        let temp = TempDir::new("empty-inputs");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
@@ -933,7 +906,7 @@ mod tests {
     /// populated roster must not be enough to claim the Expression landed.
     #[test]
     fn a_roster_without_a_handle_fails_and_says_there_is_no_connection() {
-        let temp = TempDir::new("no-handle");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let infos = [InstanceInfo {
             id: "instance-1".to_string(),
@@ -961,7 +934,7 @@ mod tests {
     /// snapshot, so the Instance it names can retire before the enqueue.
     #[test]
     fn a_retired_instance_fails_and_says_it_is_no_longer_running() {
-        let temp = TempDir::new("retired-instance");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
 
         // The snapshot still names an Instance the live Roster no longer holds.
@@ -973,7 +946,7 @@ mod tests {
 
         let mut context = DispatchContext {
             window_source: &source,
-            memory_path: temp.join("memory.md"),
+            memory_path: temp.path().join("memory.md"),
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut live),
@@ -991,7 +964,7 @@ mod tests {
 
     #[test]
     fn an_undeclared_behavior_is_still_enqueued_and_the_engine_refuses() {
-        let temp = TempDir::new("undeclared-behavior");
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
@@ -1003,7 +976,7 @@ mod tests {
 
         let mut context = DispatchContext {
             window_source: &source,
-            memory_path: temp.join("memory.md"),
+            memory_path: temp.path().join("memory.md"),
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut roster),
