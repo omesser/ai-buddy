@@ -1,6 +1,6 @@
 # One consent gates window titles and application names
 
-**Supersedes:** two clauses of [ADR-0031](./0031-drop-capture-tiers.md). Its
+**Amends:** two clauses of [ADR-0031](./0031-drop-capture-tiers.md). Its
 decision to drop the Capture tiers stands as written.
 
 ## Context
