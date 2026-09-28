@@ -16,11 +16,12 @@ use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction,
     ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
-    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema, EnvVariable, Error,
-    ErrorCode, HttpHeader, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
-    McpServerHttp, McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
-    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
+    ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema,
+    ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
+    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
+    SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -242,6 +243,9 @@ pub struct ElicitationForm {
     /// no multiple-choice field, so Decline is the only answer Chat can send.
     pub field: String,
     pub options: Vec<ElicitationChoice>,
+    /// A URL-mode form's link, untrusted like `message`. Accept means the
+    /// user opened it; the Harness learns the rest on its own side.
+    pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -439,7 +443,9 @@ fn initialize_request() -> InitializeRequest {
         .client_info(Implementation::new("fidget", env!("CARGO_PKG_VERSION")))
         .client_capabilities(
             ClientCapabilities::new().elicitation(
-                ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
+                ElicitationCapabilities::new()
+                    .form(ElicitationFormCapabilities::new())
+                    .url(ElicitationUrlCapabilities::new()),
             ),
         )
 }
@@ -852,6 +858,9 @@ async fn serve(
     on_event: &OnEvent,
 ) {
     let mut auth: Option<InflightAuth<'_>> = None;
+    // Forms asked between turns, as a sign-in link is during `authenticate`.
+    // A turn keeps its own, so each is cancelled with what it belongs to.
+    let mut forms: Vec<PendingElicit> = Vec::new();
     loop {
         enum Step {
             Auth(Result<(), String>),
@@ -876,9 +885,15 @@ async fn serve(
                     Some(command) => Step::Command(command),
                     None => Step::Stop,
                 },
-                // History replayed by `session/load`, and anything said between
-                // turns. Not ours to keep.
-                _ = incoming.recv() => continue,
+                message = incoming.recv() => match message {
+                    Some(Incoming::Elicit(request, responder)) => {
+                        hold_form(&mut forms, &request, responder, on_event);
+                        continue;
+                    }
+                    // History replayed by `session/load`, and anything said
+                    // between turns. Not ours to keep.
+                    _ => continue,
+                },
                 () = cx.incoming_closed() => Step::Stop,
             }
         };
@@ -893,6 +908,10 @@ async fn serve(
                 if let Some((_, reply)) = auth.take() {
                     let _ = reply.send(outcome);
                 }
+                cancel_forms(&mut forms, on_event);
+            }
+            Step::Command(Msg::AnswerElicitation { request, answer }) => {
+                answer_form(&mut forms, request, answer, on_event)
             }
             Step::Command(Msg::Authenticate { method_id, reply }) => {
                 if auth.is_some() {
@@ -949,7 +968,7 @@ async fn serve(
             }
             // No turn is running, so there is no ask to answer and nothing to
             // cancel.
-            Step::Command(Msg::Cancel | Msg::Answer { .. } | Msg::AnswerElicitation { .. }) => {}
+            Step::Command(Msg::Cancel | Msg::Answer { .. }) => {}
             Step::Command(Msg::Shutdown) => {
                 if let Some((_, reply)) = auth.take() {
                     let _ = reply.send(Err("harness exited".to_string()));
@@ -958,6 +977,7 @@ async fn serve(
             }
         }
     }
+    cancel_forms(&mut forms, on_event);
 }
 
 /// One `McpChoice` in the protocol's own words.
@@ -1072,12 +1092,7 @@ async fn turn(
                     on_event(Event::Permission(ask));
                 }
                 Some(Incoming::Elicit(request, responder)) => {
-                    let form = elicitation_form(&request, responder.id().to_string());
-                    forms.push(PendingElicit {
-                        form: form.clone(),
-                        responder,
-                    });
-                    on_event(Event::Elicitation(form));
+                    hold_form(&mut forms, &request, responder, on_event)
                 }
                 None => {
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
@@ -1121,16 +1136,7 @@ async fn turn(
                     }
                 }
                 Some(Msg::AnswerElicitation { request, answer }) => {
-                    if let Some(at) = forms.iter().position(|pending| pending.form.request == request)
-                    {
-                        let pending = forms.remove(at);
-                        let option = match &answer {
-                            ElicitationAnswer::Accept(value) => Some(value.clone()),
-                            ElicitationAnswer::Decline => Some("decline".to_string()),
-                        };
-                        let _ = pending.responder.respond(elicitation_response(&pending.form, answer));
-                        on_event(Event::PermissionSettled { request, option });
-                    }
+                    answer_form(&mut forms, request, answer, on_event)
                 }
                 Some(Msg::Prompt { reply, .. }) => {
                     let _ = reply.send(Progress::Done(Err(TurnError::Busy)));
@@ -1212,16 +1218,21 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
     }
 }
 
-/// One form, as Chat can draw it. URL and unknown modes keep the message and
-/// no options, so Decline is the only answer; we advertised form, not url.
+/// One form, as Chat can draw it. An unknown mode keeps the message and no
+/// options, so Decline is the only answer.
 fn elicitation_form(request: &CreateElicitationRequest, id: String) -> ElicitationForm {
     let (field, options) = match &request.mode {
         ElicitationMode::Form(form) => first_choice_field(&form.requested_schema.properties),
         _ => (String::new(), Vec::new()),
     };
+    let url = match &request.mode {
+        ElicitationMode::Url(link) => Some(link.url.clone()),
+        _ => None,
+    };
     ElicitationForm {
         request: id,
         message: request.message.clone(),
+        url,
         field,
         options,
     }
@@ -1266,6 +1277,9 @@ fn elicitation_response(
 ) -> CreateElicitationResponse {
     let allowed = |value: &str| form.options.iter().any(|option| option.value == value);
     match answer {
+        ElicitationAnswer::Accept(_) if form.url.is_some() => CreateElicitationResponse::new(
+            ElicitationAction::Accept(ElicitationAcceptAction::new()),
+        ),
         ElicitationAnswer::Accept(value) if !form.field.is_empty() && allowed(&value) => {
             let mut content = BTreeMap::new();
             content.insert(form.field.clone(), ElicitationContentValue::from(value));
@@ -1355,6 +1369,59 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
     }
 }
 
+/// A form the Harness asked, held open and handed on to Chat.
+fn hold_form(
+    forms: &mut Vec<PendingElicit>,
+    request: &CreateElicitationRequest,
+    responder: Responder<CreateElicitationResponse>,
+    on_event: &OnEvent,
+) {
+    let form = elicitation_form(request, responder.id().to_string());
+    forms.push(PendingElicit {
+        form: form.clone(),
+        responder,
+    });
+    on_event(Event::Elicitation(form));
+}
+
+/// The user's answer to the open form it names, if that form is still open.
+fn answer_form(
+    forms: &mut Vec<PendingElicit>,
+    request: String,
+    answer: ElicitationAnswer,
+    on_event: &OnEvent,
+) {
+    let Some(at) = forms
+        .iter()
+        .position(|pending| pending.form.request == request)
+    else {
+        return;
+    };
+    let pending = forms.remove(at);
+    let option = match &answer {
+        ElicitationAnswer::Accept(value) => Some(value.clone()),
+        ElicitationAnswer::Decline => Some("decline".to_string()),
+    };
+    let _ = pending
+        .responder
+        .respond(elicitation_response(&pending.form, answer));
+    on_event(Event::PermissionSettled { request, option });
+}
+
+/// Every open form, answered with the protocol's `cancel`.
+fn cancel_forms(forms: &mut Vec<PendingElicit>, on_event: &OnEvent) {
+    for pending in forms.drain(..) {
+        let request = pending.form.request;
+        let _ = pending
+            .responder
+            .respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
+        on_event(Event::PermissionSettled {
+            request,
+            option: None,
+        });
+    }
+}
+
 /// Close out what this side was holding for a turn that is over.
 /// Open questions get the protocol-mandated `cancelled` reply. The empty
 /// thought says the turn stopped thinking; the plan goes dark.
@@ -1374,16 +1441,7 @@ fn end_turn(
             option: None,
         });
     }
-    for pending in forms.drain(..) {
-        let request = pending.form.request;
-        let _ = pending
-            .responder
-            .respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
-        on_event(Event::PermissionSettled {
-            request,
-            option: None,
-        });
-    }
+    cancel_forms(forms, on_event);
     if !thought.is_empty() {
         thought.clear();
         on_event(Event::Thought {

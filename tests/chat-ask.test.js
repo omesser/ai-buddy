@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { askSays, elicitSays } from "../src/chat-ask.js";
+import { askSays, elicitChoices, elicitSays } from "../src/chat-ask.js";
 
 // One ask, as the Shell serializes it.
 const ask = {
@@ -254,5 +254,38 @@ test("a kind is not enough on its own, and a path is", () => {
   assert.equal(
     askText({ ...ask, title: null, kind: "edit", locations: ["/a.rs"] }),
     "edit · /a.rs",
+  );
+});
+
+test("a form offers its options and then Decline", () => {
+  assert.deepEqual(
+    elicitChoices({
+      request: "43",
+      message: "Which?",
+      field: "strategy",
+      options: [{ value: "balanced", name: "Balanced" }, { value: "aggressive", name: "" }],
+      url: null,
+    }),
+    [
+      { name: "Balanced", value: "balanced" },
+      { name: "aggressive", value: "aggressive" },
+      { name: "Decline", value: null },
+    ],
+  );
+});
+
+test("a URL form offers to open its link, or Decline", () => {
+  assert.deepEqual(
+    elicitChoices({
+      request: "44",
+      message: "Enter ABCD-1234 on the sign-in page.",
+      field: "",
+      options: [],
+      url: "https://example.test/device?code=ABCD-1234",
+    }),
+    [
+      { name: "Open", value: "open", url: "https://example.test/device?code=ABCD-1234" },
+      { name: "Decline", value: null },
+    ],
   );
 });

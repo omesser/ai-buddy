@@ -2560,6 +2560,7 @@ mod tests {
         }
         let mut session = "fresh-id".to_string();
         let mut pending_prompt: Option<Value> = None;
+        let mut pending_auth: Option<Value> = None;
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
@@ -2608,9 +2609,8 @@ mod tests {
                     // `authenticate` is Ok and changes nothing.
                     let refuse = match script {
                         "auth" => recorded(count, "new") == 1,
-                        "auth-sign-in" | "stall-sign-in" | "stall-authenticate" => {
-                            recorded(count, "authenticate") == 0
-                        }
+                        "auth-sign-in" | "auth-sign-in-link" | "stall-sign-in"
+                        | "stall-authenticate" => recorded(count, "authenticate") == 0,
                         "auth-sign-in-noop" => true,
                         _ => false,
                     };
@@ -2642,6 +2642,19 @@ mod tests {
                             thread::sleep(SURFACE_STALL);
                             say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                         });
+                    } else if script == "auth-sign-in-link" {
+                        // codex-acp's device-code shape: the code rides in a
+                        // URL elicitation, and `authenticate` waits on it.
+                        say(
+                            json!({"jsonrpc": "2.0", "id": 101, "method": "elicitation/create", "params": {
+                                "requestId": &id,
+                                "mode": "url",
+                                "elicitationId": "device-1",
+                                "url": "https://example.test/device?code=ABCD-1234",
+                                "message": "Enter ABCD-1234 on the sign-in page.",
+                            }}),
+                        );
+                        pending_auth = Some(id);
                     } else {
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                     }
@@ -2820,6 +2833,22 @@ mod tests {
                         chunk(&session, &format!("ok:{option}"));
                         if let Some(id) = pending_prompt.take() {
                             stop(&id, "end_turn");
+                        }
+                    }
+                }
+                None if id == json!(101) => {
+                    let action = message
+                        .pointer("/result/action")
+                        .and_then(Value::as_str)
+                        .unwrap_or("?");
+                    record(count, &format!("elicit-url:{action}"));
+                    if let Some(id) = pending_auth.take() {
+                        if action == "accept" {
+                            say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+                        } else {
+                            say(
+                                json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "sign-in was declined"}}),
+                            );
                         }
                     }
                 }
@@ -4239,13 +4268,13 @@ mod tests {
     }
 
     #[test]
-    fn initialize_payload_advertises_form_elicitation() {
+    fn initialize_payload_advertises_form_and_url_elicitation() {
         let (fx, session) = Fixture::new("hello");
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let params = fx.initialize_params();
         assert_eq!(
             params["clientCapabilities"]["elicitation"],
-            json!({"form": {}})
+            json!({"form": {}, "url": {}})
         );
         session.shutdown();
     }
@@ -4751,6 +4780,44 @@ mod tests {
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         session.shutdown();
+    }
+
+    /// A Harness that signs in through a link hands it over mid-`authenticate`,
+    /// before any session exists. Chat gets the link and the code in it, and
+    /// the user's Open or Decline is what `authenticate` waits on.
+    #[test]
+    fn a_sign_in_link_reaches_chat_and_the_answer_finishes_authenticate() {
+        for (answer, option, action, signed_in) in [
+            (
+                ElicitationAnswer::Accept("open".into()),
+                "open",
+                "accept",
+                true,
+            ),
+            (ElicitationAnswer::Decline, "decline", "decline", false),
+        ] {
+            let (fx, session) = Fixture::new("auth-sign-in-link");
+            let session = Arc::new(session);
+            assert!(session.complete(&asking("hi")).is_err());
+            fx.attach_settled();
+            let worker = {
+                let session = Arc::clone(&session);
+                thread::spawn(move || session.sign_in("fake", "buddy-1", "bmo", false))
+            };
+            let form = fx.form();
+            assert_eq!(
+                form.url.as_deref(),
+                Some("https://example.test/device?code=ABCD-1234")
+            );
+            assert_eq!(form.message, "Enter ABCD-1234 on the sign-in page.");
+            assert!(form.options.is_empty());
+            session.answer_elicitation(&form.request, answer);
+            assert_eq!(fx.settled(), (form.request, Some(option.to_string())));
+            assert_eq!(worker.join().unwrap().is_ok(), signed_in, "{action}");
+            assert!(fx.wait_for(&format!("elicit-url:{action}"), 1));
+            assert_eq!(fx.count("new"), 1 + usize::from(signed_in), "{action}");
+            session.shutdown();
+        }
     }
 
     /// The attach path's translation, on the turn path (#991). The session
