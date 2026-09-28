@@ -848,6 +848,13 @@ struct PendingElicit {
     responder: Responder<CreateElicitationResponse>,
 }
 
+/// What `serve` lends a turn: both channels, and the forms that outlive it.
+struct Serving<'a> {
+    rx: &'a mut mpsc::UnboundedReceiver<Msg>,
+    incoming: &'a mut mpsc::UnboundedReceiver<Incoming>,
+    held: &'a mut Vec<PendingElicit>,
+}
+
 type InflightAuth<'a> = (
     Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>,
     sync_mpsc::Sender<Result<(), String>>,
@@ -958,17 +965,12 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
-                let outcome = turn(
-                    cx,
-                    &id,
-                    &mut rx,
-                    &mut incoming,
-                    &text,
-                    &reply,
-                    &mut forms,
-                    on_event,
-                )
-                .await;
+                let serving = Serving {
+                    rx: &mut rx,
+                    incoming: &mut incoming,
+                    held: &mut forms,
+                };
+                let outcome = turn(cx, &id, serving, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
                 let _ = reply.send(Progress::Done(outcome));
                 if lost {
@@ -1060,17 +1062,15 @@ async fn open(
 /// One prompt turn. Chunks accumulate, other updates become `Event`s, and a
 /// permission request is held open until `Answer` or `Cancel`.
 /// "The turn finished" is read here, not on an idle `state_update` from ACP v2.
-#[allow(clippy::too_many_arguments)]
 async fn turn(
     cx: &ConnectionTo<Agent>,
     session: &SessionId,
-    rx: &mut mpsc::UnboundedReceiver<Msg>,
-    incoming: &mut mpsc::UnboundedReceiver<Incoming>,
+    serving: Serving<'_>,
     text: &str,
     reply: &sync_mpsc::Sender<Progress>,
-    held: &mut Vec<PendingElicit>,
     on_event: &OnEvent,
 ) -> Result<Reply, TurnError> {
+    let Serving { rx, incoming, held } = serving;
     let sent = cx.send_request(PromptRequest::new(
         session.clone(),
         vec![ContentBlock::Text(TextContent::new(text.to_string()))],
