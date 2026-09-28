@@ -379,94 +379,94 @@ mod tests {
         });
     }
 
-    #[test]
-    fn an_exported_effort_outranks_the_file() {
-        model::tests::with_env(None, None, None, || {
-            let file = Settings {
-                director_reasoning_effort: "medium".to_string(),
-                ..Settings::default()
-            };
-            std::env::set_var(model::REASONING_EFFORT, "xhigh");
-            seed(&file);
-            std::env::remove_var(model::REASONING_EFFORT);
-            assert_eq!(director_reasoning_effort(), Some("xhigh".to_string()));
-
-            seed(&file);
-            assert_eq!(director_reasoning_effort(), Some("medium".to_string()));
-            seed(&Settings::default());
-        });
+    /// One knob's `(env var, file setter, reader, file value, env value)`.
+    /// Every non-boolean knob shares this precedence, so the loop below
+    /// runs the same steps per row instead of repeating a test per knob.
+    struct Precedence {
+        var: &'static str,
+        set_file: fn(&str) -> Settings,
+        read: fn() -> Option<String>,
+        file_value: &'static str,
+        env_value: &'static str,
     }
 
-    /// The Harness knobs answer to the same precedence as the Completer limits,
-    /// so a CI job exporting either does not have to know a settings file exists.
+    const PRECEDENCE: &[Precedence] = &[
+        Precedence {
+            var: harness::AUTH_RETRY_SECS,
+            set_file: |v| Settings {
+                harness_auth_retry_secs: v.to_string(),
+                ..Settings::default()
+            },
+            read: || harness_auth_retry_secs().map(|secs| secs.to_string()),
+            file_value: "5",
+            env_value: "1",
+        },
+        Precedence {
+            var: harness::TURN_TIMEOUT_SECS,
+            set_file: |v| Settings {
+                harness_turn_timeout_secs: v.to_string(),
+                ..Settings::default()
+            },
+            read: || harness_turn_timeout_secs().map(|secs| secs.to_string()),
+            file_value: "45",
+            env_value: "90",
+        },
+        Precedence {
+            var: harness::MCP_BIN,
+            set_file: |v| Settings {
+                mcp_bin: v.to_string(),
+                ..Settings::default()
+            },
+            read: || mcp_bin().map(|path| path.display().to_string()),
+            file_value: "/tmp/from-the-file",
+            env_value: "/tmp/from-the-env",
+        },
+        Precedence {
+            var: model::REASONING_EFFORT,
+            set_file: |v| Settings {
+                director_reasoning_effort: v.to_string(),
+                ..Settings::default()
+            },
+            read: director_reasoning_effort,
+            file_value: "medium",
+            env_value: "xhigh",
+        },
+    ];
+
     #[test]
-    fn an_exported_auth_retry_outranks_the_file() {
-        model::tests::with_env(None, None, None, || {
-            seed(&Settings::default());
-            assert_eq!(harness_auth_retry_secs(), None, "blank is unset");
+    fn an_exported_variable_outranks_the_file() {
+        for row in PRECEDENCE {
+            model::tests::with_env(None, None, None, || {
+                seed(&Settings::default());
+                assert_eq!((row.read)(), None, "blank is unset: {}", row.var);
 
-            seed(&Settings {
-                harness_auth_retry_secs: "5".to_string(),
-                ..Settings::default()
+                let file = (row.set_file)(row.file_value);
+                seed(&file);
+                assert_eq!(
+                    (row.read)(),
+                    Some(row.file_value.to_string()),
+                    "the file wins with no variable set: {}",
+                    row.var
+                );
+
+                std::env::set_var(row.var, row.env_value);
+                seed(&file);
+                std::env::remove_var(row.var);
+                assert_eq!(
+                    (row.read)(),
+                    Some(row.env_value.to_string()),
+                    "exported {} wins",
+                    row.var
+                );
+
+                seed(&file);
+                assert_eq!(
+                    (row.read)(),
+                    Some(row.file_value.to_string()),
+                    "the file returns once the variable is gone: {}",
+                    row.var
+                );
             });
-            assert_eq!(harness_auth_retry_secs(), Some(5));
-
-            std::env::set_var(harness::AUTH_RETRY_SECS, "1");
-            seed(&Settings {
-                harness_auth_retry_secs: "5".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(harness_auth_retry_secs(), Some(1));
-
-            std::env::remove_var(harness::AUTH_RETRY_SECS);
-        });
-    }
-
-    /// Same precedence as auth retry: the export wins over the file.
-    #[test]
-    fn an_exported_harness_turn_timeout_outranks_the_file() {
-        model::tests::with_env(None, None, None, || {
-            seed(&Settings::default());
-            assert_eq!(harness_turn_timeout_secs(), None, "blank is unset");
-
-            seed(&Settings {
-                harness_turn_timeout_secs: "45".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(harness_turn_timeout_secs(), Some(45));
-
-            std::env::set_var(harness::TURN_TIMEOUT_SECS, "90");
-            seed(&Settings {
-                harness_turn_timeout_secs: "45".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(harness_turn_timeout_secs(), Some(90));
-
-            std::env::remove_var(harness::TURN_TIMEOUT_SECS);
-        });
-    }
-
-    /// A path rather than a number, so blank is the only unset there is.
-    #[test]
-    fn an_exported_mcp_bin_outranks_the_file() {
-        model::tests::with_env(None, None, None, || {
-            seed(&Settings::default());
-            assert_eq!(mcp_bin(), None, "blank is unset");
-
-            seed(&Settings {
-                mcp_bin: "/tmp/from-the-file".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(mcp_bin(), Some(PathBuf::from("/tmp/from-the-file")));
-
-            std::env::set_var(harness::MCP_BIN, "/tmp/from-the-env");
-            seed(&Settings {
-                mcp_bin: "/tmp/from-the-file".to_string(),
-                ..Settings::default()
-            });
-            assert_eq!(mcp_bin(), Some(PathBuf::from("/tmp/from-the-env")));
-
-            std::env::remove_var(harness::MCP_BIN);
-        });
+        }
     }
 }
