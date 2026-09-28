@@ -2,6 +2,8 @@
 //! does not. Hidden sleeps so XI2 cannot wake the loop. Visible Idle keeps
 //! `recv` for hit-test and gesture. DND stays visible and quiet.
 
+use std::time::Duration;
+
 use crate::engine::{Frame, State};
 
 /// How the frame loop should wait for the next tick.
@@ -31,6 +33,11 @@ pub fn mode(frame: &Frame, visible: bool, behavior_playing: bool) -> ScheduleMod
         }
         State::Asleep => ScheduleMode::Idle,
     }
+}
+
+/// How long an Active tick sleeps once its work is done.
+pub fn active_wait(tick: Duration, _worked: Duration) -> Duration {
+    tick
 }
 
 #[cfg(test)]
