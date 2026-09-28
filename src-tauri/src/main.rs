@@ -607,7 +607,7 @@ enum SettingsEventPayload {
     Press {
         press: String,
         #[serde(default)]
-        draft: Option<DirectorDraftWire>,
+        draft: Option<AiDraftWire>,
         /// New reads the name and Character beside it from here (#875).
         #[serde(default)]
         fields: std::collections::HashMap<String, String>,
@@ -631,7 +631,7 @@ struct PickFills {
 /// Values the webview holds for batched AI rows. Apply reads these from the
 /// controls rather than saving each edit as it happens.
 #[derive(serde::Deserialize, Debug, Default)]
-struct DirectorDraftWire {
+struct AiDraftWire {
     #[serde(default)]
     director: Option<bool>,
     #[serde(default)]
@@ -861,7 +861,7 @@ mod settings_event_tests {
         assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
     }
 
-    /// `DirectorDraft` carries neither the name nor the Character, so they
+    /// `AiDraft` carries neither the name nor the Character, so they
     /// ride the Composite's own fields. #875.
     #[test]
     fn new_spawns_under_the_name_and_character_the_page_shows() {
@@ -1137,14 +1137,14 @@ fn settings_event_blocking(
                 id: set_bool,
                 value,
             },
-            settings::DirectorDraft::live(&view, &description),
+            settings::AiDraft::live(&view, &description),
         ),
         SettingsEventPayload::SetText { set_text, value } => (
             controller::Event::SetText {
                 id: set_text,
                 value,
             },
-            settings::DirectorDraft::live(&view, &description),
+            settings::AiDraft::live(&view, &description),
         ),
         SettingsEventPayload::Press {
             press,
@@ -1152,7 +1152,7 @@ fn settings_event_blocking(
             fields,
         } => {
             pressed = fields;
-            let mut draft = settings::DirectorDraft::live(&view, &description);
+            let mut draft = settings::AiDraft::live(&view, &description);
             if let Some(wire) = wire {
                 if let Some(value) = wire.director {
                     draft.director = value;
@@ -1206,7 +1206,7 @@ fn settings_event_blocking(
             fills: None,
         } => (
             controller::Event::Pick { id: pick, value },
-            settings::DirectorDraft::live(&view, &description),
+            settings::AiDraft::live(&view, &description),
         ),
         SettingsEventPayload::Pick {
             pick,
@@ -1232,7 +1232,7 @@ fn settings_event_blocking(
                     value,
                     current,
                 },
-                settings::DirectorDraft::live(&view, &description),
+                settings::AiDraft::live(&view, &description),
             )
         }
         SettingsEventPayload::Dismiss { dismiss, value } => {

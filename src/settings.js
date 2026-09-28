@@ -275,7 +275,7 @@ function drawRow(row, values, emit, stage) {
             const payload = { press: control.id, fields: typed() };
             if (control.id === "director_apply") {
               const root = button.closest('[role="tabpanel"]') ?? button.getRootNode();
-              payload.draft = directorDraft(root);
+              payload.draft = aiDraft(root);
             }
             emit(payload);
           });
@@ -315,7 +315,7 @@ function rowValue(root, id) {
   return control ? control.value : "";
 }
 
-function directorDraft(root) {
+function aiDraft(root) {
   return {
     director: rowChecked(root, "director"),
     proactive: rowChecked(root, "proactive"),
@@ -429,14 +429,16 @@ export function processResponse(response) {
 }
 
 // A tab switch redraws from the snapshot, so edits must stay in the draft
-// keyed by row id until Apply or Cancel.
-export function foldDraft(draft, outcome) {
+// keyed by row id until Apply or Cancel. A preview counts only while its pick
+// is still the staged one, so a late answer after Cancel or a newer pick is
+// dropped.
+export function foldDraft(draft, outcome, payload) {
   if (!outcome || outcome === true) return draft;
   if (outcome.reset) return {};
   const next = { ...draft };
   if (outcome.clearKey) delete next.director_api_key;
   if (outcome.fill) next[outcome.fill.id] = outcome.fill.value;
-  if (outcome.preview) Object.assign(next, outcome.preview);
+  if (outcome.preview && draft.byo_harness === payload?.value) Object.assign(next, outcome.preview);
   return next;
 }
 
@@ -614,7 +616,7 @@ if (typeof document !== "undefined") {
     try {
       const outcome = await handleEvent(payload);
       await early;
-      draft = foldDraft(draft, outcome);
+      draft = foldDraft(draft, outcome, payload);
       if (outcome?.reset) feedback = pressFeedback(payload.press, staged, currentValues);
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();

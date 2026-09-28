@@ -3,7 +3,7 @@
 //! `form.rs` draws the form; this returns the `Outcome` for a row id and value.
 
 use crate::settings::form::{FormDescription, RowOperation};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsView};
+use crate::settings::{AiDraft, SettingsPatch, SettingsView};
 
 /// What the surface reports a user did, by row id.
 ///
@@ -46,7 +46,7 @@ pub enum Outcome {
     /// about comes back undone on the next switch.
     Apply(SettingsPatch),
     /// Apply's two halves: write the patch if there is one, and only then take
-    /// the Director tab back to live state. A locked Keychain fails the write,
+    /// the AI tab back to live state. A locked Keychain fails the write,
     /// and resetting anyway would discard an edit nothing saved (#279).
     Commit(Option<SettingsPatch>),
     /// Back to live state, writing nothing.
@@ -66,10 +66,10 @@ pub enum Outcome {
     Run(RowOperation),
 }
 
-/// `draft` is the Director tab as the surface holds it, and carries the
+/// `draft` is the AI tab as the surface holds it, and carries the
 /// `FormDescription` every decision here is taken against — the caller's, so
 /// the row lookup and the frozen rule answer from one description.
-pub fn handle(event: &Event, draft: &DirectorDraft<'_>, view: &SettingsView) -> Outcome {
+pub fn handle(event: &Event, draft: &AiDraft<'_>, view: &SettingsView) -> Outcome {
     let description = draft.description;
     match event {
         Event::SetBool { id, value } => match description.bool_write(id) {
@@ -134,9 +134,9 @@ fn shortcut(description: &FormDescription, id: &str, value: &str, current: &str)
     Outcome::Fill {
         id: shortcut.row,
         value,
-        // A batched row stages: the four Director rows only apply together, so
-        // Apply is what reaches the file. An unbatched one has no Apply beside
-        // it and saves here. #279.
+        // A batched row stages until Apply, which saves the AI switches, wake
+        // interval, registration Harness, endpoint, and source together. An
+        // unbatched row has no Apply and saves here. #279.
         patch: if description.batched(shortcut.row) {
             None
         } else {
@@ -167,7 +167,7 @@ mod tests {
     const BASE_URL: &str = "https://api.openai.com";
     const MODEL: &str = "gpt-4o-mini";
 
-    /// The Director tab's live state: a saved Base URL and Model, no key.
+    /// The AI tab's live state: a saved Base URL and Model, no key.
     fn director_view() -> SettingsView {
         SettingsView::from_parts(
             &Settings {
@@ -185,15 +185,15 @@ mod tests {
     }
 
     /// A window that has drawn itself from `view` and has not been typed into.
-    fn drawn<'a>(view: &SettingsView, description: &'a FormDescription) -> DirectorDraft<'a> {
-        DirectorDraft::live(view, description)
+    fn drawn<'a>(view: &SettingsView, description: &'a FormDescription) -> AiDraft<'a> {
+        AiDraft::live(view, description)
     }
 
     fn press(id: &str) -> Event {
         Event::Press { id: id.into() }
     }
 
-    /// Apply on an untouched Director tab must write nothing: a window that
+    /// Apply on an untouched AI tab must write nothing: a window that
     /// reads its own blank fields back as an edit would wipe the saved Base URL
     /// and Model.
     #[test]
@@ -210,13 +210,13 @@ mod tests {
 
     /// Clearing a field is a real edit, so the controller cannot tell an
     /// untouched tab from a cleared one. Only a window that draws before it
-    /// reads itself back can; do not put a blank guard in `DirectorDraft::edit`.
+    /// reads itself back can; do not put a blank guard in `AiDraft::edit`.
     #[test]
     fn a_blank_field_is_an_edit_not_an_untouched_row() {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let blank = DirectorDraft {
+            let blank = AiDraft {
                 base_url: String::new(),
                 model: String::new(),
                 ..drawn(&view, &description)
@@ -236,7 +236,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let typed = DirectorDraft {
+            let typed = AiDraft {
                 base_url: "https://api.x.ai".into(),
                 ..drawn(&view, &description)
             };
@@ -256,7 +256,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let typed = DirectorDraft {
+            let typed = AiDraft {
                 model: "grok-4.6".into(),
                 ..drawn(&view, &description)
             };
@@ -419,7 +419,7 @@ mod tests {
                 };
                 assert_eq!(handle(&event, &live, &view), Outcome::Nothing, "{id}");
             }
-            let toggled = DirectorDraft {
+            let toggled = AiDraft {
                 director: !view.director_enabled,
                 ..drawn(&view, &description)
             };
@@ -449,7 +449,7 @@ mod tests {
         model::tests::with_env(None, None, None, || {
             let view = director_view();
             let description = form::describe();
-            let typed = DirectorDraft {
+            let typed = AiDraft {
                 base_url: "https://half.typed".into(),
                 ..drawn(&view, &description)
             };
@@ -476,7 +476,7 @@ mod tests {
                 handle(&event, &drawn(&view, &description), &view),
                 Outcome::Nothing,
             );
-            let typed = DirectorDraft {
+            let typed = AiDraft {
                 harness: "Harness · opencode".into(),
                 ..drawn(&view, &description)
             };

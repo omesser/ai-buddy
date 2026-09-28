@@ -445,7 +445,7 @@ test("a secure row takes its placeholder from the key status beside it", () => {
   assert.equal(key.attributes.placeholder, "Set: \u20264f2a");
 });
 
-// `SettingsSession::spawn` takes a Character and a name, and `DirectorDraft`
+// `SettingsSession::spawn` takes a Character and a name, and `AiDraft`
 // carries neither. #875.
 test("New carries the name typed beside it and the Character it shows", () => {
   const emitted = [];
@@ -484,7 +484,7 @@ test("the controls are the platform's own elements", () => {
   assert.match(source, /type: "checkbox"/, "a checkbox is an input, not a styled div");
   assert.match(source, /type: "password"/, "a secure field is an input, not a masked text box");
   assert.doesNotMatch(source, /role: "(button|checkbox|combobox|textbox)"/, "no element wears a role it is not");
-  assert.match(source, /payload\.draft = directorDraft/, "Apply sends the widget draft");
+  assert.match(source, /payload\.draft = aiDraft/, "Apply sends the widget draft");
 });
 
 // Two stylesheets on one window, and the second one wins: the prefix is what
