@@ -5,6 +5,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { applyChatUiClass, normalizeChatUi } from "../src/chat-ui-class.js";
+
 // Real DOMTokenList-like implementation for testing
 class TestClassList {
   constructor() {
@@ -32,19 +34,6 @@ class TestClassList {
   toString() {
     return this._classes.join(" ");
   }
-}
-
-// Production implementations copied for behavior testing.
-// These define the contract; chat.js must match.
-function normalizeChatUi(value) {
-  const allowed = ["minimal", "terminal", "glass"];
-  return allowed.includes(value) ? value : "minimal";
-}
-
-function applyChatUiClass(root, design) {
-  const chatUi = normalizeChatUi(design);
-  root.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
-  root.classList.add(`chat-ui-${chatUi}`);
 }
 
 // Create a test root element with real classList behavior

@@ -5,10 +5,10 @@
 import { elicitSays } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
 import { mountChatAppearance } from "./chat-appearance.js";
-import { canAnswer, drawInline, landingCopy } from "./chat-connect.js";
+import { canAnswer, composerPlaceholder, drawInline, landingCopy } from "./chat-connect.js";
 import { createNamesNotice } from "./chat-names-hint.js";
-import { composerPlaceholder } from "./chat-placeholder.js";
 import { planSteps } from "./chat-plan.js";
+import { applyChatUiClass } from "./chat-ui-class.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
@@ -361,27 +361,7 @@ function elicited(form) {
   return row;
 }
 
-// Allowlist known Chat UI designs; map unknowns to Minimal so arbitrary
-// strings from settings or events cannot become class names.
-function normalizeChatUi(value) {
-  const allowed = ["minimal", "terminal", "glass"];
-  return allowed.includes(value) ? value : "minimal";
-}
-
-// Apply a Chat UI design to the root element, removing all others first.
-// Exported for testing.
-function applyChatUiClass(root, design) {
-  const chatUi = normalizeChatUi(design);
-  root.classList.remove("chat-ui-minimal", "chat-ui-terminal", "chat-ui-glass");
-  root.classList.add(`chat-ui-${chatUi}`);
-}
-
 const applyChatAppearance = mountChatAppearance(document.documentElement);
-
-// Make applyChatUiClass available for tests
-if (typeof window !== "undefined") {
-  window.__chatUiHelpers = { applyChatUiClass, normalizeChatUi };
-}
 
 // Whether anything can answer, and what to say when nothing can. Ready is
 // `canAnswer`: configured is not enough when the launcher is missing or the
