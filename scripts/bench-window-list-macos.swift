@@ -1,15 +1,6 @@
-// What one window-list poll costs, measured outside fidget against whatever
-// is on the desktop right now. Opens nothing and moves nothing, so it needs no
-// green light. Each row times CGWindowListCopyWindowInfo plus the per-entry
-// decode src-tauri/src/platform/macos/window_source.rs does (bounds, number,
-// layer, and the owner name once Screen Recording consent is usable).
-//
-// Rows: `app-call` is the bare call with fidget's options (OnScreenOnly |
-// ExcludeDesktopElements), `app` adds the decode fidget does without names,
-// `app-names` is that call on the consent-on path, `all` swaps in the
-// every-window option, which lists every Space and is the one free way to get
-// a second window count out of the same desktop.
-// Usage: swift scripts/bench-window-list-macos.swift [--iterations N] [--warmup N]
+// One window-list poll's cost on the current desktop; opens nothing. Rows: `app-call`
+// bare call, `app` adds window_source.rs's decode, `app-names` names, `all` every
+// Space. Usage: swift scripts/bench-window-list-macos.swift [--iterations N] [--warmup N]
 
 import CoreGraphics
 import Foundation

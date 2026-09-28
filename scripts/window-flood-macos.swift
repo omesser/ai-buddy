@@ -1,16 +1,5 @@
-// LOAD GENERATOR. Floods the main display with `count` real, titled windows,
-// cascaded over whatever is on screen, so a bench can measure what a large
-// window list costs. It covers the screen for as long as it runs.
-//
-// Refuses to start unless FIDGET_BENCH_GREEN_LIGHT=1, the switch the bench
-// scripts already use, because the person at the machine has to agree to lose
-// the screen first. Capped at 300 windows so a typo cannot bury the display.
-//
-// The windows are 30% opaque, ignore the mouse, never take focus, and quit
-// after quit-after-secs (default 180, 1-3600), so an interrupted run leaves
-// none behind. Prints one JSON line: how many it opened, how many of those the
-// window server lists on screen (after a brief settle wait), and the
-// on-screen total.
+// LOAD GENERATOR: covers the main display with `count` titled windows. Needs
+// FIDGET_BENCH_GREEN_LIGHT=1; capped at 300 and quits after quit-after-secs.
 // Usage: FIDGET_BENCH_GREEN_LIGHT=1 swift scripts/window-flood-macos.swift count [quit-after-secs]
 
 import AppKit
@@ -48,10 +37,8 @@ app.setActivationPolicy(.accessory)
 
 let bounds = CGDisplayBounds(CGMainDisplayID())
 let size = NSSize(width: 160, height: 100)
-// A cascade that wraps, so every window is on screen whatever the count.
-// Past one screenful (count > columns*rows) windows stack on top of each
-// other; that overlap is intentional, since a stacked window still appears
-// in the on-screen list this bench measures.
+// A cascade that wraps. Past one screenful windows stack on each other, which
+// is fine: a stacked window still appears in the on-screen list.
 let columns = max(1, Int((bounds.width - size.width) / 24))
 let rows = max(1, Int((bounds.height - size.height) / 24))
 var windows: [NSWindow] = []
@@ -70,10 +57,8 @@ for i in 0..<count {
 }
 
 let ours = Set(windows.map { $0.windowNumber })
-// Bounded settle wait: at most settleStep * settleSteps (2s), well inside the
-// bench's 10s wait for a stdout line starting with `{`. Near 300 windows the
-// window server can lag creation, so poll instead of a single fixed sleep;
-// `listedDeadlineHit` says honestly whether the count still fell short.
+// Near 300 windows the window server lags creation, so poll. At most 2s, well
+// inside the bench's 10s wait for the JSON line.
 let settleStep = 0.05
 let settleSteps = 40
 var onScreen: [[String: Any]] = []

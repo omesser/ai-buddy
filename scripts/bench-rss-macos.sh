@@ -1,21 +1,11 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running fidget, macOS only. RSS lives in more
-# than one process: WKWebView's XPC helpers are children of launchd, not of the
-# app, so this diffs the set of WebKit helpers before and after launch.
+# Sample a running fidget's resident set, macOS only. WKWebView helpers are
+# launchd's children, so this diffs WebKit helpers before and after launch.
 # Usage: scripts/bench-rss-macos.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/fidget, waits `settle` seconds, samples every
-#   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
-#   and each process's peak physical footprint, then stops the app.
-#   Default is a brief smoke (settle ~3s, sample ~10s). --research soaks for
-#   300s + 300s: a launch peaks near twice its steady state and takes about
-#   five minutes to come down.
-#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
-#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
 
-# RSS alone does not compare two runs: a busy machine reclaims pages from an
-# idle character. Peak physical footprint only ever rises, so compare scenarios on
-# it and read the RSS series for shape. Record roster, display count and what
-# the sprite was doing beside the number (docs/research/memory-rss-and-multi-monitor.md).
+# Compare runs on peak physical footprint, which only rises; RSS drops as a busy
+# machine reclaims an idle character's pages. Note roster, displays and sprite
+# state beside the number (docs/research/memory-rss-and-multi-monitor.md).
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

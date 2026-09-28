@@ -1,19 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034  # scripts/lib/sync-exclusions.sh reads EXCLUDED; shellcheck can't follow a dynamic source path without -x
-# Keep the vendored Matt Pocock engineering skills in `.agents/skills/` current.
-#
-#   scripts/sync-mattpocock.sh            regenerate the index
-#   scripts/sync-mattpocock.sh --fetch    re-vendor from upstream first
-#
-# The sibling of `scripts/sync-pstack.sh`, and deliberately the same shape.
-# `.agents/skills/` is one flat directory shared by two vendored sets and this
-# repository's own skills, so each sync has to know exactly which names are its
-# own. `UPSTREAM.json` records them, and gates deletion, so a skill this
-# repository owns survives an upstream that has never heard of it.
-#
-# This script does not create the `.claude` and `.cursor` symlinks.
-# `scripts/sync-pstack.sh` does, they are committed, and
-# `tests/skills-layout.test.js` fails when one breaks. One owner is enough.
+# Keep the vendored Matt Pocock skills in `.agents/skills/` current; `--fetch`
+# re-vendors from upstream first. `UPSTREAM.json` records this sync's names and
+# gates deletion. `scripts/sync-pstack.sh` owns the `.claude`/`.cursor` symlinks.
 
 set -euo pipefail
 
@@ -28,19 +17,15 @@ SKILLS=.agents/skills
 META=.agents/mattpocock/UPSTREAM.json
 PSTACK_META=.agents/pstack/UPSTREAM.json
 
-# Names upstream ships that this sync deliberately does not vendor, one
-# `name|reason` per line. The same list drives the skip and the `excluded`
-# block written into the lock file, so the behaviour and the record of it
-# cannot drift apart. Keep reasons free of double quotes; they are written
-# into JSON verbatim.
+# Names upstream ships that this sync does not vendor, one `name|reason` per
+# line. It drives both the skip and the lock file's `excluded` block. Reasons
+# go into JSON verbatim, so no double quotes.
 EXCLUDED='ask-matt|Policy. A router over the whole upstream set, including the four groups this repository does not vendor, so most of what it offers is not here. docs/agents/picking-work.md decides what to work on.
 setup-matt-pocock-skills|Already run here, and a re-run only does damage. It scaffolds docs/agents/issue-tracker.md, docs/agents/triage-labels.md and docs/agents/domain.md plus the Agent skills block in AGENTS.md; all four exist and have been hand-edited since. Its step 4 also prefers CLAUDE.md, which here only points at AGENTS.md, so a re-run would write a second Agent skills block into the file that does nothing else. See docs/agents/vendored-skills.md.'
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/sync-exclusions.sh"
 
-# The owned names of either lock file, one per line. A missing file owns
-# nothing, which is the bootstrap case: the very first `--fetch` has no lock
-# file yet, and owning nothing is exactly right — it may delete nothing.
+# A missing lock file owns nothing, so the first `--fetch` deletes nothing.
 owned_names() {
   [ -f "$1" ] || return 0
   awk '
@@ -52,15 +37,9 @@ owned_names() {
 
 mine() { owned_names "$META"; }
 
-# Names this sync must never write and never delete: everything pstack owns,
-# plus every directory in `.agents/skills` that neither lock file claims, which
-# is by definition one this repository wrote itself.
-#
-# Computed rather than hand-listed. A hand-listed exclusion only covers the
-# collision someone already noticed; this covers the one upstream adds next
-# year. The collision that exists today is `tdd`, and it is settled the other
-# way: `scripts/sync-pstack.sh` excludes it, so pstack no longer claims the
-# name and nothing here reserves it.
+# Names this sync must never write or delete: everything pstack owns, plus any
+# directory neither lock file claims, which this repository wrote. Computed
+# rather than hand-listed, so it also covers a collision upstream adds later.
 reserved_names() {
   local pstack_owned
   pstack_owned=$(owned_names "$PSTACK_META" | sort)
@@ -83,17 +62,12 @@ if [ "${1:-}" = "--fetch" ]; then
   up=$tmp/skills/$SUBPATH
 
   before=$(mine | sort)
-  # What upstream ships is what gets vendored: this listing drives the rsync
-  # below, and the lock file's list is a record of the last sync rather than a
-  # whitelist gating this one. That is why `EXCLUDED` has to exist — dropping a
-  # name from the lock file would not keep it out, it would just be rsynced back
-  # over ours on the next fetch and re-listed.
+  # Upstream's listing drives the rsync; the lock file only records the last
+  # sync. Dropping a name from the lock file would not keep it out, which is
+  # what `EXCLUDED` is for.
   upstream=$(find "$up" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
   reserved=$(reserved_names)
 
-  # Everything upstream ships, less the policy exclusion, less any name that is
-  # already somebody else's. Announce a skipped collision: silence here would
-  # mean a skill quietly missing from the index with no reason recorded.
   candidates=$(comm -23 <(echo "$upstream") <(excluded_names))
   after=$(comm -23 <(echo "$candidates") <(echo "$reserved"))
   comm -12 <(echo "$candidates") <(echo "$reserved") | while read -r clash; do
@@ -101,8 +75,8 @@ if [ "${1:-}" = "--fetch" ]; then
     echo "skipping $clash (name already owned by pstack or by this repository)"
   done
 
-  # Dropped upstream. Only names this script put there are eligible, so neither
-  # a pstack skill nor a repo-owned one can be removed by an upstream deletion.
+  # Only names this script owned are eligible, so a pstack or repo-owned skill
+  # is never removed here.
   comm -23 <(echo "$before") <(echo "$after") | while read -r gone; do
     [ -n "$gone" ] || continue
     echo "removing $gone (gone from upstream, excluded, or now reserved)"
@@ -118,9 +92,7 @@ if [ "${1:-}" = "--fetch" ]; then
 
   sha=$(git -C "$tmp/skills" rev-parse HEAD)
 
-  # Written without jq, like the pstack sync: the fields wanted are one
-  # `git rev-parse` and a directory listing, and this has to run on a bare
-  # macOS checkout too.
+  # Without jq, so this runs on a bare macOS checkout.
   {
     echo '{'
     echo '  "_warning": "Generated by scripts/sync-mattpocock.sh and .github/workflows/mattpocock-skills-sync.yml. Do not hand-edit.",'
@@ -144,9 +116,8 @@ if [ "${1:-}" = "--fetch" ]; then
   } > "$META"
 fi
 
-# The index. An agent cannot invoke a skill it cannot see, and reading every
-# SKILL.md on the chance one fits is what this file exists to avoid. One line
-# each, from the frontmatter `description`.
+# The index: one line per skill from its frontmatter `description`, so an agent
+# can find a skill without reading every SKILL.md.
 {
   echo "# Matt Pocock engineering skills"
   echo
@@ -160,8 +131,7 @@ fi
   echo
   while read -r name; do
     [ -n "$name" ] || continue
-    # Some descriptions are quoted on one line, others are bare, and a folded
-    # block scalar has to be joined back up.
+    # A folded block scalar (`>-`) continues on indented lines; join them.
     desc=$(awk '
       /^description:/ {
         sub(/^description:[ \t]*/, "")

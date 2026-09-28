@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
-# Sample the resident set of a running fidget, Linux only. WebKitGTK helpers,
-# if any, are children of the main process, so the process tree at launch is
-# the app.
-# Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/fidget, waits `settle` seconds, samples every
-#   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
-#   and each process's peak RSS (VmHWM), then stops the app.
-#   Default is a brief smoke (settle ~3s, sample ~10s); --research soaks 300s + 300s.
-#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
-#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
+# Sample a running fidget's resident set, Linux only; WebKitGTK helpers are its
+# children. Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N]
+# [--interval N] [--out FILE] [--research]. Env reaches the app; set HOME to scratch.
 
 # RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
 # Compare scenarios on VmHWM and read the RSS series for shape, and record the
@@ -53,7 +46,6 @@ for _ in $(seq 30); do
 done
 displays=$(sed -n 's/^overlay: \([0-9]*\) display.*/\1/p' "$log" | head -1)
 if [ -z "$displays" ]; then
-  # Check if the app failed to start (e.g., no DISPLAY)
   if grep -qi "error\|failed\|cannot" "$log" 2> /dev/null; then
     echo "app failed to start; see $log" >&2
     cat "$log" >&2
@@ -67,14 +59,12 @@ sleep 2 # Give helpers time to spawn
 children=$(pgrep -P "$app" 2> /dev/null || true)
 pids=$(echo "$app" | cat - <(echo "$children") | tr '\n' ' ' | xargs)
 
-# Count distinct pids for diagnostics
 pid_count=$(echo "$pids" | wc -w)
 
 echo "displays: $displays   main pid: $app   total processes: $pid_count"
 echo "pids: $pids"
 echo "settling ${settle}s, then sampling ${seconds}s every ${interval}s -> $out"
 
-# Log process tree for forensics
 ps -p "$app" -o pid,ppid,comm,args 2> /dev/null || true
 for child in $children; do
   ps -p "$child" -o pid,ppid,comm,args 2> /dev/null || true
@@ -85,7 +75,6 @@ printf 'epoch\ttotal_kb\t%s\n' "$(echo "$pids" | tr ' ' '\t')" > "$out"
 
 end=$(($(date +%s) + seconds))
 while [ "$(date +%s)" -lt "$end" ]; do
-  # Read RSS from /proc/[pid]/status. Dead processes produce no line.
   rss=""
   for pid in $pids; do
     if [ -f "/proc/$pid/status" ]; then
@@ -110,7 +99,6 @@ awk -F'\t' 'NR > 1 {print $2}' "$out" | sort -n |
         n, t[0] / 1024, t[int(n / 2)] / 1024, t[n - 1] / 1024
     }'
 
-# Per process, using VmHWM (peak RSS) from /proc/[pid]/status
 column=3
 for pid in $pids; do
   comm=$(ps -p "$pid" -o comm= 2> /dev/null | xargs || echo "gone")

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034  # scripts/lib/sync-exclusions.sh reads EXCLUDED; shellcheck can't follow a dynamic source path without -x
-# Keep the vendored pstack skills in `.agents/skills/` current.
-#
-#   scripts/sync-pstack.sh            regenerate the index and the symlinks
-#   scripts/sync-pstack.sh --fetch    re-vendor from upstream first
+# Keep the vendored pstack skills, index and symlinks in `.agents/skills/`
+# current; `--fetch` re-vendors from upstream first.
 
 # `.agents/skills/` mixes vendored skills with repo-owned ones. `UPSTREAM.json`
 # records which names came from upstream and gates only deletion, so a skill
@@ -23,19 +21,13 @@ cd "$root"
 SKILLS=.agents/skills
 META=.agents/pstack/UPSTREAM.json
 
-# Names upstream ships that this sync deliberately does not vendor, one
-# `name|reason` per line. The same list drives the skip and the `excluded`
-# block written into the lock file, so the behaviour and the record of it
-# cannot drift apart. Keep reasons free of double quotes; they are written
-# into JSON verbatim.
-#
-# This narrows what the sync owns. It never widens it: an excluded name is one
-# this script stops claiming, so it also stops being eligible for deletion.
+# Names upstream ships that this sync does not vendor, one `name|reason` per
+# line. It drives both the skip and the lock file's `excluded` block. Reasons
+# go into JSON verbatim, so no double quotes.
 EXCLUDED='tdd|Collision. The Matt Pocock engineering set ships a tdd too, and its implement skill calls it by name, so that one wins. .agents/skills is flat and holds one of the two. See .agents/mattpocock/UPSTREAM.json.'
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/sync-exclusions.sh"
 
-# The vendored names, one per line, read back out of the lock file.
 vendored_names() {
   awk '
     /"skills": \[/ { inlist = 1; next }
@@ -56,16 +48,12 @@ if [ "${1:-}" = "--fetch" ]; then
   up=$tmp/plugins/pstack
 
   before=$(vendored_names | sort)
-  # What upstream ships is what gets vendored: this listing drives the rsync
-  # below, and the lock file's list is a record of the last sync rather than a
-  # whitelist gating this one. That is why `EXCLUDED` has to exist — dropping a
-  # name from the lock file would not keep it out, it would just be rsynced back
-  # over ours on the next fetch and re-listed.
+  # Upstream's listing drives the rsync; the lock file only records the last
+  # sync. Dropping a name from the lock file would not keep it out, which is
+  # what `EXCLUDED` is for.
   shipped=$(find "$up/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
   after=$(comm -23 <(echo "$shipped") <(excluded_names))
 
-  # Announce a skipped name rather than letting it vanish from the index with
-  # no reason recorded.
   comm -12 <(echo "$shipped") <(excluded_names) | while read -r skipped; do
     [ -n "$skipped" ] || continue
     echo "skipping $skipped (excluded; see the excluded block in $META)"
@@ -91,9 +79,7 @@ if [ "${1:-}" = "--fetch" ]; then
   rsync -a --delete "$up/agents/" .agents/agents/
   cp "$up/LICENSE" .agents/pstack/LICENSE
 
-  # Written without jq: the fields wanted are one `git rev-parse`, one line of
-  # plugin.json and a directory listing, and this has to run on a bare macOS
-  # checkout too.
+  # Without jq, so this runs on a bare macOS checkout.
   sha=$(git -C "$tmp/plugins" rev-parse HEAD)
   version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$up/.cursor-plugin/plugin.json")
 
@@ -121,9 +107,8 @@ if [ "${1:-}" = "--fetch" ]; then
   } > "$META"
 fi
 
-# The index. An agent cannot invoke a skill it cannot see, and 47 SKILL.md
-# files are too many to read on the chance one fits. One line each, from the
-# frontmatter `description`.
+# The index: one line per skill from its frontmatter `description`, so an agent
+# can find a skill without reading every SKILL.md.
 {
   echo "# pstack skills"
   echo
@@ -136,8 +121,7 @@ fi
   echo
   while read -r name; do
     [ -n "$name" ] || continue
-    # Most descriptions are one quoted line; `make-bot-ui` folds its over
-    # three, so the indented continuation has to be joined back up.
+    # A folded block scalar (`>-`) continues on indented lines; join them.
     desc=$(awk '
       /^description:/ {
         sub(/^description:[ \t]*/, "")

@@ -3,19 +3,9 @@
 # fidget binary, per scenario. A reviewer reruns this directly rather than
 # trusting a number in a doc.
 
-# Needs: sudo (powermetrics), swift (the chat and hidden props), and the env
-# below: FIDGET_TRACE_FRAMES so the log proves what the sprite was doing,
-# FIDGET_DIRECTOR_API_KEY so a worktree build skips the Keychain prompt.
-# Usage:
-#   scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden \
-#     [--duration SECS] [--out DIR]
-#   scripts/bench-wakeups-macos.sh --scenario baseline [--duration SECS] [--out DIR]
-# idle: launch, settle, sample; the frame log splits the sample by animation.
-# chat: launch, double-click the sprite via scripts/click-cursor.swift (shared
-#   with crates/verify; do not fork it), confirm Summon, sample with chat open.
-# hidden: launch, cover the main display with scripts/fullscreen-window.swift
-#   so the fullscreen-frontmost rule fires, confirm `presence: hidden`, sample.
-# baseline: launch nothing; refuses to sample while any fidget is running.
+# Needs sudo (powermetrics), swift, FIDGET_TRACE_FRAMES and FIDGET_DIRECTOR_API_KEY.
+# Usage: scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden
+#   [--duration SECS] [--out DIR]; --scenario baseline launches nothing.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

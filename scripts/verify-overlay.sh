@@ -3,9 +3,6 @@
 # Not a cargo test: every check needs a real desktop, window server and running
 # app, so it is slow, macOS-only, and cannot run in CI.
 
-# A click passing through, and typing surviving a click on the sprite, still
-# need a human: docs/DEVELOPMENT.md has the checklist.
-
 # Usage: scripts/verify-overlay.sh [--keep]
 #   --keep   leave the app running afterwards, with tracing on
 
@@ -19,15 +16,14 @@ cd "$(dirname "$0")/.." || exit 1
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
 
-# Exact-path match, mirroring crates/verify/src/gesture.rs's stray_pid: this
-# checkout's absolute binary path names only the instance this script starts,
-# never another worktree's. Launching through $BIN_PATH puts that path in argv.
+# Exact-path match, as in crates/verify/src/gesture.rs's stray_pid: this
+# checkout's binary path names only the instance this script starts.
 BIN_PATH="$(pwd)/target/debug/fidget"
 stray_pid() { pgrep -f "$BIN_PATH" 2> /dev/null | head -1; }
 
-# An orphaned overlay is always-on-top with no window controls, so an
-# interrupted run must not leave one. --keep opts out for the app, never the
-# prop window. Kills the pid this script launched, never a path pattern.
+# An orphaned always-on-top overlay has no controls; --keep spares only the
+# app, killed by its pid. Props go by pattern: the trap is set before any of
+# them starts.
 trap 'pkill -f perch-window.swift 2> /dev/null;
       [ "$KEEP" = "1" ] || [ -z "${APP_PID:-}" ] || kill "$APP_PID" 2> /dev/null' EXIT INT TERM
 
@@ -47,7 +43,6 @@ await() { # $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
   return 1
 }
 
-# Diagnoses why frames were not traced when the app started and opened overlays.
 diagnose_no_frames() { # $1=log file
   local log="$1"
   echo "  (the sprite never perched - the checks below will say so)"
@@ -101,11 +96,9 @@ room = u["h"] / 2
 width = min(1200.0, u["w"])
 left = int(sprite_x - width / 2)
 
-# The Perch: halfway from the sprite to the floor, and wide enough around the
-# sprite that it is over the window and has somewhere to fall from.
+# The Perch.
 print(left, int(sprite_y + room / 2), int(width), 240)
-# The furniture: between the sprite's start and that Perch, so the sprite falls
-# through it on the way down and the trace says whether it stopped.
+# The furniture, between the sprite and the Perch, so the sprite falls through it.
 print(left, int(sprite_y + room / 6), int(width), 120)
 PY
 )
@@ -147,7 +140,6 @@ FIDGET_TRACE_HITTEST=1 FIDGET_TRACE_FRAMES=1 \
   "$BIN_PATH" > "$OUT/app.log" 2>&1 &
 APP_PID=$!
 
-# Wait for the startup line rather than sleeping a guessed interval.
 for _ in $(seq 1 60); do
   grep -q '^overlay:' "$OUT/app.log" 2> /dev/null && break
   kill -0 "$APP_PID" 2> /dev/null || {
@@ -250,7 +242,6 @@ else:
 check(bool(under_test) and not buried,
       "the Perch stays in front of every other window", detail)
 
-# The first step the prop took once the sprite was already perched on it.
 step = first(lambda s: landed and s["at_ms"] > landed[0], steps[1:])
 if step is None:
     check(False, "the prop window stepped down while the sprite was perched")
@@ -271,7 +262,6 @@ check(dropped is not None and dropped[0] - closed_ms <= POLL_MS + SLACK_MS,
       "a window that closes drops the sprite within about one poll interval",
       f"{dropped[0] - closed_ms:.0f}ms" if dropped else "never dropped")
 
-# At rest means not moving: the same position, frame after frame.
 tail = frames[-10:]
 check(all(f[2:] == tail[0][2:] for f in tail) and tail[-1][1] in ("Grounded", "Perched"),
       "and comes to rest again",
@@ -304,8 +294,7 @@ else:
           "the sprite falls straight through it",
           "it was still falling below that edge")
 
-# And the real furniture, whatever this desktop happens to have running: the
-# menu bar, the Dock, the status items, Notification Centre.
+# The desktop's own furniture: menu bar, Dock, status items, Notification Centre.
 furniture = json.load(open(f"{out}/desktop.json"))["elevated"]
 stood_on = [w for w in furniture
             for f in frames
@@ -323,9 +312,8 @@ STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"fidget"' > "$OUT/lsappinfo.txt"
 
-# No crop of the sprite: whether the capture shows it depends on the
-# capturable setting (visible by default; FIDGET_CAPTURABLE=0 hides it).
-# Eyeball the art instead.
+# No crop of the sprite: whether a capture shows it depends on
+# FIDGET_CAPTURABLE. Eyeball the art instead.
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
 for i in $(seq 1 "$DISPLAY_COUNT"); do
@@ -469,12 +457,10 @@ HIT_FAILED=0
 if [ -z "$SPRITE_AT" ]; then
   echo "  SKIP  the app never reported where the sprite is"
 else
-  # 32x32 art at scale 4 is 128 points. Half of that puts the cursor at the
-  # sprite's centre, which is drawn; offset 0 is its top-left corner, which is
-  # not.
+  # Half the art's size is its centre, which is drawn; offset 0 is its
+  # top-left corner, which is not.
   probe $(($(echo "$SPRITE_AT" | cut -d' ' -f3) / 2)) "cursor over drawn pixels swallows clicks" "HIT"
   probe 0 "cursor over transparent pixels passes clicks through" "miss"
-  # Put the cursor back where the human left it.
   # shellcheck disable=SC2086  # an x and a y, deliberately split
   swift scripts/warp-cursor.swift $BEFORE > /dev/null
 fi
@@ -495,8 +481,7 @@ await "$OUT/fling.log" '^\{' 40 || {
   exit 1
 }
 
-# Stops the Perch run's own app (this is our recorded pid, not a stray) so
-# the Grip run gets a clean log of its own.
+# Our recorded pid, not a stray: the Grip run gets a clean log of its own.
 kill "$APP_PID" 2> /dev/null
 wait "$APP_PID" 2> /dev/null
 FIDGET_TRACE_FRAMES=1 "$BIN_PATH" > "$OUT/grip.log" 2>&1 &

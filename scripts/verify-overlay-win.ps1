@@ -1,19 +1,7 @@
 #!/usr/bin/env pwsh
-# Windows Spatial e2e - twin of verify-overlay-x11.sh
-#
-# Places a Notepad perch on the secondary display, grabs the character on the
-# primary, drops it 80px above the title bar, and asserts Perched, no focus
-# steal, and WS_EX_NOACTIVATE. WDA_EXCLUDEFROMCAPTURE only appears when
-# capture exclusion is on (off by default per ADR-0024), so its absence warns
-# rather than fails.
-#
-# Usage:
-#   .\scripts\verify-overlay-win.ps1
-#   $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\verify-overlay-win.ps1
-#   $env:FIDGET_TRACE_HITTEST=1 .\scripts\verify-overlay-win.ps1
-#
-# Expects a built debug binary (does not cargo build - pair with VsDevCmd).
-# Dual-display required. Logs under .verify/win-<stamp>/.
+# Windows Spatial e2e, twin of verify-overlay-x11.sh. Dual display and a built
+# binary ($env:FIDGET_VERIFY_BIN overrides). Missing WDA_EXCLUDEFROMCAPTURE only
+# warns: capture exclusion is off by default (ADR-0024). Logs under .verify/.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

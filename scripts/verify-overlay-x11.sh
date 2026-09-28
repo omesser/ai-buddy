@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Verify X11 overlay functional parity: Perch, ride, drop, Poke, EWMH states.
-# Xvfb has no window manager, and _NET_CLIENT_LIST (so Perches) comes from one.
-# The Perch window has to exist before the app does, as in verify-overlay.sh.
-# xprop exits 0 even when a property is missing (`not found.`), so a property
-# check cannot be the process status.
+# X11 overlay parity: Perch, ride, drop, Poke, EWMH states. The Perch window
+# predates the app, as in verify-overlay.sh. xprop exits 0 on a missing property.
 # Run with: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-overlay-x11.sh
 
 set -euo pipefail

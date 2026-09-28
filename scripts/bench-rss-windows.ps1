@@ -1,13 +1,6 @@
-# Sample the resident set of a running fidget, Windows only. WebView2 is
-# Chromium, so it spawns GPU, Network and Renderer processes; every
-# msedgewebview2.exe that appears after launch is attributed to the app.
+# Sample a running fidget's resident set, Windows only. WebView2 is multi-process,
+# so every msedgewebview2.exe that appears after launch counts as the app's.
 # Usage: scripts\bench-rss-windows.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]
-#   Launches target\debug\fidget.exe, waits Settle seconds, samples every
-#   Interval for Seconds, writes one TSV row per sample, prints min/median/max
-#   and each process's peak working set, then stops the app.
-#   Default is a brief smoke (settle ~3s, sample ~10s); -Research soaks 300s + 300s.
-#   Environment reaches the app unchanged: FIDGET_INSTANCES picks the roster,
-#   FIDGET_CHARACTERS the packages. Set HOME to a scratch directory.
 
 # WorkingSet alone does not compare two runs on a busy machine; PeakWorkingSet
 # only ever rises. Compare scenarios on it and read the WorkingSet series for
@@ -42,14 +35,12 @@ if ($Out -eq "") {
 $log = "$Out.app.log"
 $errLog = "$Out.app.err.log"
 
-# Note WebView2 processes before launch. msedgewebview2.exe is the helper.
 $beforeEdge = Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
 
-# Launch the app; overlay signal is on stderr, so capture both logs separately
+# The overlay line is on stderr.
 $process = Start-Process -FilePath ".\$bin" -PassThru -RedirectStandardOutput $log -RedirectStandardError $errLog -WindowStyle Hidden
 $app = $process.Id
 
-# Cleanup function
 function Stop-App {
     try {
         Stop-Process -Id $app -Force -ErrorAction SilentlyContinue
@@ -58,12 +49,10 @@ function Stop-App {
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Stop-App } | Out-Null
 trap { Stop-App; break }
 
-# Wait for overlay initialization (signal is on stderr)
 $overlayReported = $false
 $displays = 0
 for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
-    # Check stderr for overlay signal
     if (Test-Path $errLog) {
         $errContent = Get-Content $errLog -ErrorAction SilentlyContinue
         $match = $errContent | Select-String -Pattern 'overlay: (\d+) display'
@@ -73,7 +62,6 @@ for ($i = 0; $i -lt 30; $i++) {
             break
         }
     }
-    # Check both logs for startup failures
     foreach ($logFile in @($log, $errLog)) {
         if (Test-Path $logFile) {
             $content = Get-Content $logFile -ErrorAction SilentlyContinue
@@ -92,12 +80,10 @@ if (-not $overlayReported) {
     exit 1
 }
 
-# Find all msedgewebview2 processes that appeared after launch
 Start-Sleep -Seconds 2  # Give helpers time to spawn
 $afterEdge = Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
 $edgeHelpers = $afterEdge | Where-Object { $_ -notin $beforeEdge }
 
-# Combine main process and helpers
 $pids = @($app) + $edgeHelpers
 $pidCount = $pids.Count
 
@@ -105,7 +91,6 @@ Write-Host "displays: $displays   main pid: $app   total processes: $pidCount"
 Write-Host "pids: $($pids -join ' ')"
 Write-Host "settling ${Settle}s, then sampling ${Seconds}s every ${Interval}s -> $Out"
 
-# Log process tree for forensics
 foreach ($procId in $pids) {
     try {
         $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
@@ -115,7 +100,6 @@ foreach ($procId in $pids) {
 
 Start-Sleep -Seconds $Settle
 
-# Write TSV header
 $header = "epoch`ttotal_kb`t$($pids -join "`t")"
 $header | Out-File -FilePath $Out -Encoding UTF8
 
@@ -136,7 +120,6 @@ while ((Get-Date) -lt $endTime) {
     Start-Sleep -Seconds $Interval
 }
 
-# Calculate statistics
 $data = Import-Csv -Path $Out -Delimiter "`t" | Select-Object -Skip 0
 $totals = $data | ForEach-Object { [int]$_.total_kb }
 $sorted = $totals | Sort-Object
@@ -146,7 +129,6 @@ $max = [math]::Round($sorted[-1] / 1024)
 
 Write-Host "`ntotal   samples: $($sorted.Count)   min: $min MB   median: $median MB   max: $max MB"
 
-# Per-process statistics
 foreach ($procId in $pids) {
     try {
         $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
@@ -154,7 +136,6 @@ foreach ($procId in $pids) {
         $peakWS = [math]::Round($proc.PeakWorkingSet64 / 1MB)
 
         # The TSV column name is the pid.
-        # Calculate median RSS from TSV (column name is the pid)
         $pidRss = $data | ForEach-Object {
             if ($_.PSObject.Properties.Name -contains $procId.ToString()) {
                 [int]$_.$($procId.ToString())

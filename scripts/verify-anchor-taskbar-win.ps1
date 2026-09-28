@@ -1,14 +1,7 @@
 #!/usr/bin/env pwsh
-# Windows anchor taskbar smoke test (#767)
-#
-# Verifies the Settings window does NOT auto-open on startup (Q1), and DOES
-# open when the anchor HWND receives a WM_ACTIVATE with WA_CLICKACTIVE (Q2).
-#
-# Usage:
-#   .\scripts\verify-anchor-taskbar-win.ps1
-#   $env:FIDGET_VERIFY_BIN="path\to\fidget.exe" .\scripts\verify-anchor-taskbar-win.ps1
-#
-# Expects a built debug binary (does not cargo build). Logs under .verify/anchor-taskbar-win-<stamp>/.
+# Windows anchor taskbar smoke: Settings stays closed at startup (Q1) and opens
+# on a WA_CLICKACTIVE to the anchor (Q2). Needs a built binary; override with
+# $env:FIDGET_VERIFY_BIN. Logs under .verify/anchor-taskbar-win-<stamp>/.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -69,11 +62,10 @@ $Bin = if ($env:FIDGET_VERIFY_BIN) { $env:FIDGET_VERIFY_BIN } else { Join-Path $
 if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with cargo first, or set FIDGET_VERIFY_BIN" }
 Pass "Binary ready: $Bin"
 
-# Kill any existing fidget processes
 Get-Process -Name "fidget" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-# Launch fidget without FIDGET_OPEN_SETTINGS (should not auto-open Settings)
+# FIDGET_OPEN_SETTINGS would open Settings on startup and void Q1.
 $env:FIDGET_CHARACTER = "buddy-bot"
 Remove-Item Env:FIDGET_OPEN_SETTINGS -ErrorAction SilentlyContinue
 
@@ -88,11 +80,9 @@ $null = $script:AppProc.Start()
 $appPid = [uint32]$script:AppProc.Id
 Info "Launched fidget (PID=$appPid)"
 
-# Wait ~8s for startup to settle
 Start-Sleep -Milliseconds 8000
 Info "Startup settled"
 
-# Q1: Assert Settings window does NOT exist
 function Find-SettingsHwnd($windows) {
   foreach ($hwnd in $windows) {
     $cls = New-Object System.Text.StringBuilder(256)
@@ -114,7 +104,6 @@ if ($settingsHwnd -ne [IntPtr]::Zero) {
 }
 Pass "Q1 PASS: No Settings window auto-opened on startup"
 
-# Q2: Find the anchor HWND (small window ~136x39 or width 50-200, height 20-80)
 Info "Searching for anchor HWND (small window, same process)..."
 $anchorHwnd = [IntPtr]::Zero
 $windows = [AnchorVerify]::FindWindowsByPid($appPid)
@@ -123,7 +112,6 @@ foreach ($hwnd in $windows) {
   if ([AnchorVerify]::GetWindowRect($hwnd, [ref]$rect)) {
     $w = $rect.Right - $rect.Left
     $h = $rect.Bottom - $rect.Top
-    # Anchor is a tiny window: width 50-200, height 20-80
     if ($w -ge 50 -and $w -le 200 -and $h -ge 20 -and $h -le 80) {
       $sb = New-Object System.Text.StringBuilder(256)
       [AnchorVerify]::GetClassName($hwnd, $sb, 256) | Out-Null
@@ -140,7 +128,6 @@ if ($anchorHwnd -eq [IntPtr]::Zero) {
 }
 Pass "Found anchor HWND: $anchorHwnd"
 
-# Q2: Send WM_ACTIVATE with WA_CLICKACTIVE (2) to the anchor
 Info "Sending PostMessageW(anchor, WM_ACTIVATE, WA_CLICKACTIVE=2, 0)..."
 $wParam = [IntPtr]([AnchorVerify]::WA_CLICKACTIVE)
 $result = [AnchorVerify]::PostMessage($anchorHwnd, [AnchorVerify]::WM_ACTIVATE, $wParam, [IntPtr]::Zero)
@@ -149,10 +136,8 @@ if (-not $result) {
 }
 Pass "PostMessage succeeded"
 
-# Wait ~1s for Settings to open
 Start-Sleep -Milliseconds 1000
 
-# Assert Settings window now exists
 $windows = [AnchorVerify]::FindWindowsByPid($appPid)
 $settingsHwnd = Find-SettingsHwnd $windows
 
@@ -161,7 +146,6 @@ if ($settingsHwnd -eq [IntPtr]::Zero) {
 }
 Pass "Q2 PASS: Settings window opened after WM_ACTIVATE with WA_CLICKACTIVE"
 
-# Clean up
 if ($script:AppProc -and -not $script:AppProc.HasExited) {
   Stop-Process -Id $script:AppProc.Id -Force -ErrorAction SilentlyContinue
 }

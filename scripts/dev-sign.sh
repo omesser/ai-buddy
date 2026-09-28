@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
-# Sign a local macOS build with a stable identity, so the Keychain stops asking
-# at every launch: the linker's ad-hoc signature changes cdhash every build, and
-# the Keychain ACL pins that hash; a certificate's ACL names the identity instead.
-# The certificate is self-signed, created here on first run, and trusted by
-# nothing else; Gatekeeper does not accept it. Imported with `-A`, so any local
-# process can sign as it, which is why this script is for development alone.
-# Usage: scripts/dev-sign.sh [path]
-#   Signs target/debug/fidget unless given another binary or .app bundle.
-#   Cargo replaces the signature on every build, so this runs after each one:
-#
-#     cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
-#
-# A key saved before the first signed run keeps its old ACL. Clear it in
-# Settings and save it once more from a signed build to stop the prompts.
+# Run after each build: scripts/dev-sign.sh [binary or .app, default target/debug/fidget]
+# A stable self-signed identity stops Keychain prompts (ad-hoc cdhash changes every
+# build). Development only (`-A`). A key saved before the first signed run: re-save it.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

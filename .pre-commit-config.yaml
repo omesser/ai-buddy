@@ -1,8 +1,4 @@
 # Run `pre-commit install` once after cloning.
-#
-# The Rust hooks at the bottom are local rather than pulled from a hook repo:
-# this crate's manifest lives in src-tauri/, not at the root, and the published
-# Rust hooks all assume a root Cargo.toml.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -12,33 +8,15 @@ repos:
       - id: check-vcs-permalinks
       - id: forbid-new-submodules
 
-    # Common errors
-    #
-    # The vendored pstack files are byte-identical to upstream on purpose, so
-    # a formatter that rewrites them puts the weekly sync pull request
-    # permanently out of step with `cursor/plugins`.
-    #
-    # `.agents/skills/` mixes vendored skills with ours, so the exclude cannot
-    # name the directory: `verify-fidget` is this repository's and stays
-    # linted, which is what the lookahead protects. `.agents/pstack/` holds
-    # generated or upstream files except `UPSTREAM.json`, which is ours to read
-    # and benefits from `check-json`.
-    #
-    # `src/vendor/marked.esm.js` is byte-for-byte what npm published, which is
-    # the only thing that makes its pinned hash checkable. A fixer that rewrites
-    # one line takes that away.
-    #
-    # The anchor covers the generated and binary paths too — any `Cargo.lock`,
-    # `.png`, `.b64`, `branding/_b64/parts/` — so one value serves all six
-    # sites that skip this set. None of them holds anything worth linting.
+    # Common errors. `*vendored` keeps fixers off byte-identical upstream files
+    # (vendored skills, marked.esm.js's pinned hash) and generated or binary
+    # paths. The lookahead keeps our own `verify-fidget` linted.
       - id: end-of-file-fixer
         exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-fidget/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored
-      # ast-grep takes one rule per YAML document, so its rule and test files
-      # are `---`-separated streams. The flag only stops the count being
-      # policed; every document is still parsed.
+      # ast-grep rule and test files are `---`-separated streams.
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-json
@@ -52,17 +30,9 @@ repos:
         args: [--fix=lf]
         exclude: *vendored
 
-  # The hooks that must see every file, in their own repo block at the same
-  # `rev`. Third-party content refreshed by a bot is exactly what a secret
-  # scanner is for, and an oversized file is worth catching wherever it lands.
-  #
-  # The split keeps these three clear of a sweeping edit to the aliased block
-  # above; it cannot do more than that, because `exclude` is a per-hook key and
-  # pre-commit has no repo-level switch that would forbid one here.
-  # `tests/pre-commit-scans-everything.test.js` is what holds the line.
-  #
-  # Same repo and rev, so pre-commit reuses the one cached environment rather
-  # than installing a second copy.
+  # Hooks that must see every file, vendored ones included, in their own
+  # block so an edit to the excludes above cannot reach them.
+  # `tests/pre-commit-scans-everything.test.js` holds the line.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -82,14 +52,8 @@ repos:
         args: ["--ignore-words-list=crate,crates,static,statics,sigit"]
         exclude: *vendored
 
-  # Comment block ceiling, from `scripts/ast-grep/rules/`. tree-sitter reads
-  # each language's real grammar, so Swift and the next language to arrive are
-  # understood rather than falling through a prefix table the way #804's
-  # hand-rolled hook did. `ast-grep-rule-tests` is what keeps the rules from
-  # going quietly vacuous: every rule carries a snippet it must reject.
-  #
-  # `--skip-snapshot-tests` because a 21-line block's snapshot is 21 labels of
-  # noise; the valid/invalid verdict is the whole assertion.
+  # Comment block ceiling, from `scripts/ast-grep/rules/`. Snapshot tests are
+  # skipped: the valid/invalid verdict is the whole assertion.
   - repo: https://github.com/boidolr/ast-grep-pre-commit
     rev: 0.45.3
     hooks:
@@ -101,12 +65,8 @@ repos:
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
     hooks:
-      # `language-formatters-pre-commit-hooks` asks for `toml-sort>=0.22.0` with
-      # no upper bound, and toml-sort in turn floats `tomlkit`. The two disagree
-      # about inline-table spacing — `{version = "1"}` against
-      # `{ version = "1" }` — so an unpinned CI runner reformats files a
-      # developer's cached environment considers already formatted, and the
-      # branch goes red on files it never touched. Pin both. #688.
+      # Pinned: floating toml-sort and tomlkit versions disagree on
+      # inline-table spacing, so CI reformats files a local env passes.
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
         additional_dependencies: ["toml-sort==0.24.4", "tomlkit==0.15.1"]
@@ -129,19 +89,14 @@ repos:
     hooks:
       - id: psscriptanalyzer-check
         name: PSScriptAnalyzer
-        # Runs when pwsh is available; skips cleanly otherwise.
-        # A Darwin pwsh Abort trap / FileLoadException is the same skip:
-        # ubuntu-latest still runs the real lint.
+        # Skips without pwsh, or when Darwin pwsh crashes; Linux CI lints.
         entry: scripts/hooks/psscriptanalyzer.sh
         language: system
         files: \.ps1$
-        # A syntax fault is graded ParseError, not Error, so `Error` alone
-        # passed a .ps1 that does not parse. #493. Encoding is a Warning and
-        # stays out — the hook below holds that policy.
+        # The script gates Error and ParseError (a syntax fault). Encoding is a
+        # Warning; the hook below holds that policy.
 
-      # Separate from the analyzer because it cannot hold this policy: its
-      # non-ASCII rule prescribes adding a BOM, and a BOM is itself three
-      # non-ASCII bytes. #392, #418.
+      # Not the analyzer's rule: it prescribes a BOM, itself non-ASCII.
       - id: powershell-ascii-only
         name: PowerShell scripts are ASCII-only
         language: pygrep
@@ -155,10 +110,7 @@ repos:
       - id: swiftc-typecheck
         name: swiftc typecheck (macOS only)
         # One file at a time: top-level code is only legal in a single-file
-        # compilation, and these are scripts, not a module.
-        #
-        # swiftc ships with Xcode, so this genuinely cannot run elsewhere —
-        # unlike the clippy split above, no restructuring makes it portable.
+        # compilation.
         entry: bash -c 'if [ "$(uname -s)" != Darwin ]; then echo "skipped - swiftc ships with Xcode"; exit 0; fi; for f in "$@"; do swiftc -typecheck "$f" || exit 1; done' --
         language: system
         types: [swift]
@@ -174,11 +126,8 @@ repos:
         types: [rust]
         pass_filenames: false
 
-      # An ADR's number is how one decision cites another — `docs/agents/domain.md`
-      # asks for "Contradicts ADR-0007", and source comments cite bare numbers
-      # too. Two files sharing one made that string ambiguous twice before
-      # anyone noticed, both times because two branches picked the next number
-      # in parallel. #354.
+      # Parallel branches pick the same next ADR number, and a citation like
+      # "ADR-0007" becomes ambiguous.
       - id: adr-numbers-unique
         name: ADR numbers are unique
         entry: bash -c 'twice=$(ls docs/adr | grep -oE "^[0-9]{4}" | sort | uniq -d); if [ -n "$twice" ]; then echo "ADR number used more than once - $twice"; exit 1; fi' --
@@ -186,16 +135,8 @@ repos:
         files: ^docs/adr/
         pass_filenames: false
 
-      # One workspace clippy — same shape as the Windows CI job. A single
-      # invocation is harder to forget a new member on, and cargo names the
-      # crate in diagnostics. Split per-package hooks used to exist so a
-      # failure named the crate in the pre-commit UI; that tax grew with every
-      # member (core / mcp-server / verify / shell) and a docs-only SKIP list.
-      #
-      # Still ungated for the shell on purpose (#321): workspace clippy must
-      # link `fidget` on this machine so `platform/x11` / linux arms get
-      # `-D warnings`. A missing window-layer library fails here instead of a
-      # skip claiming the crate was checked.
+      # Ungated on purpose (#321): a missing window-layer library fails here
+      # rather than a skip claiming the shell was checked.
       - id: cargo-clippy
         name: cargo clippy (workspace)
         entry: cargo clippy --workspace --all-targets --

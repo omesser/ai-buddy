@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# The pure checks in verify-settings-keyboard-webview.sh against fixtures (#854):
-# the focus-sequence comparison must reject reordered, duplicate-label and
-# unlabeled controls, a tab still must exist with a focused control, and a
-# <select> must change value. No app, no Accessibility grant.
+# The pure checks in verify-settings-keyboard-webview.sh against fixtures
+# (#854). No app, no Accessibility grant.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -39,9 +37,8 @@ expect() {
 }
 
 # Dump columns: role|title|value|placeholder|enabled|settable|focusable. The
-# chrome above the AXWebArea is focusable and is still not a tab stop, and the
-# two AXGroup rows differ only in that column, which is the live shape: WebKit
-# reports an empty <pre tabindex="0"> and a layout wrapper under the same role.
+# chrome above the AXWebArea is focusable but not a tab stop, and the two
+# AXGroup rows differ only in focusable, as WebKit reports them live.
 cat > "$TEMP_DIR/dump.txt" << 'EOF'
 AXWindow:AXStandardWindow|Settings|||||
 AXButton:AXCloseButton||||true|false|false

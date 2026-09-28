@@ -8,11 +8,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  # Read is all either job spends the token on: the checkout, and the shfmt
-  # step's query for a release on mvdan/sh. changed-files diffs the checked-out
-  # `.git` rather than the pull request API, so it wants no `pull-requests`
-  # scope, and the two cache steps authenticate to the cache service with the
-  # runner's own token. Nothing here writes a comment, a commit or a deployment.
+  # The token only checks out and queries mvdan/sh releases. changed-files
+  # diffs the local `.git`, so it needs no `pull-requests` scope.
   contents: read
 
 concurrency:
@@ -21,21 +18,11 @@ concurrency:
   cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
-  # One job, both platforms. The differences between them are tool installation
-  # and two hooks that guard themselves on uname — not what gets checked, so
-  # they do not warrant separate job definitions.
-  #
-  # The whole workspace is built and tested on Linux as well as macOS. The shell
-  # is a Tauri app, so on Linux it needs GTK and WebKit development headers, but
-  # nothing in this repository is macOS-only at the source level: platform.rs
-  # carries a non-macOS arm for every decision. A review of this branch found
-  # that arm had silently rotted, and nothing caught it because the shell was
-  # built on one platform only. This is that gap closed.
+  # One job, both platforms: they differ only in tool installation. Linux is
+  # built too because platform.rs carries a non-macOS arm for every decision.
   checks:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     strategy:
-      # One platform failing should still report the other, since the whole
-      # point is telling them apart.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -50,19 +37,9 @@ jobs:
 
       - name: Find what this run changed
         id: changed
-        # A pull request that edits only Markdown was installing Rust, apt and a
-        # cargo cache to run tests nothing in its diff could reach. #54, #63,
-        # #67 and #68 each paid for a two-platform build to check prose.
-        #
-        # `files_ignore` is an allowlist of what is not code, rather than a list
-        # of the extensions that are: a file type nobody anticipated counts as
-        # code until someone says otherwise. That makes this workflow code too,
-        # so a change to the detection cannot switch itself off.
-        #
-        # Pinned to a commit rather than a tag, which the other actions here are
-        # not. This one was compromised in March 2025 (CVE-2025-30066): its tags
-        # were repointed at a commit that wrote runner memory, secrets included,
-        # into the build log. A tag is a moving target and a commit is not.
+        # `files_ignore` lists what is not code, so an unanticipated file type,
+        # this workflow included, counts as code and cannot switch itself off.
+        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
         uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         continue-on-error: true
         with:
@@ -72,15 +49,8 @@ jobs:
 
       - name: Decide whether this run touches code
         id: changes
-        # One path reaches `code=false`: a pull request where the action ran
-        # and every changed file was ignored. Everything else runs in full,
-        # because a wasted minute costs far less than a check that quietly
-        # stopped running.
-        #
-        # That covers an action that breaks, since the step above is
-        # `continue-on-error` and its outcome is checked here. It also covers
-        # workflow_dispatch, which is asked for deliberately, and push to main,
-        # where the merged state is what ships and is verified once.
+        # Fails open: only a pull request whose changed files were all ignored
+        # skips. A broken changed-files step, a dispatch or a push runs in full.
         env:
           ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
           OUTCOME: ${{ steps.changed.outcome }}
@@ -99,13 +69,7 @@ jobs:
           python-version: '3.12'
 
       - name: Set up Node
-        # Node runs the renderer's unit tests and nothing else. The front end is
-        # static files Tauri embeds, so no Node is involved in a build.
-        #
-        # Any Node will do: package.json declares the renderer ESM, so nothing
-        # here depends on the module-syntax detection that only newer releases
-        # do unflagged. Named anyway, so the dependency is visible rather than
-        # inherited from whatever the runner image happens to carry.
+        # Only for the renderer tests. The front end is static files Tauri embeds.
         if: steps.changes.outputs.code == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -121,26 +85,13 @@ jobs:
         with:
           workspaces: .
           key: ${{ matrix.os }}
-          # Save the target directory even when the job goes red. A pull
-          # request that fails clippy is exactly the one about to be pushed
-          # again, and without this every one of those pushes starts from a
-          # cold cache — the slowest run this workflow has.
+          # A red run is the one about to be pushed again; keep its cache warm.
           cache-on-failure: true
 
       - name: Install shfmt
-        # Resolve the asset with jq rather than a regex over the JSON. POSIX ERE
-        # leaves stacked quantifiers undefined, so `.+?` is not lazy: it reads as
-        # a greedy `.+` followed by an optional `?` and matches from the first
-        # "https://" in the payload to the last "linux_amd64", about 7KB of JSON.
-        #
-        # The asset comes from uname rather than a hardcoded pair, so a runner
-        # changing architecture picks the right binary instead of the wrong one.
-        #
-        # Authenticated, because unauthenticated api.github.com allows 60 calls
-        # an hour per source address and hosted runners share theirs. Strangers
-        # spend the budget, the query answers 403 at random, and the job dies.
-        # GITHUB_TOKEN reads a public repository's releases and lifts the limit
-        # into the thousands.
+        # jq, not a regex: POSIX ERE has no lazy `.+?`, so a regex over the JSON
+        # matches kilobytes. Authenticated, because hosted runners share the
+        # 60-an-hour anonymous API limit and the query 403s at random.
         if: steps.changes.outputs.code == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -157,8 +108,6 @@ jobs:
             https://api.github.com/repos/mvdan/sh/releases/latest \
             | jq -r --arg asset "$asset" \
               '.assets[] | select(.name | endswith($asset)) | .browser_download_url')
-          # An empty url here means the query succeeded and matched nothing, so
-          # say that rather than leaving curl to complain about a blank argument.
           if [ -z "$url" ]; then
             echo "no shfmt release asset ending in $asset"; exit 1
           fi
@@ -167,38 +116,19 @@ jobs:
           shfmt --version
 
       - name: Install shellcheck
-        # macOS only. Linux gets shellcheck from the apt step below, because two
-        # steps calling apt meant two `apt-get update` runs a few seconds apart,
-        # and the second one refreshes lists that are already current.
+        # Linux gets shellcheck from the apt step below, so apt updates once.
         if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
         run: brew install shellcheck
 
       - name: Install the Linux system packages
-        # Only Linux needs the Tauri libraries: macOS has WebKit in the system
-        # already. Without them the shell crate cannot link, which is why the
-        # shell used to be built on macOS alone.
-        #
-        # Not cached. The download is a fraction of this step — most of it is
-        # dpkg unpacking the WebKit headers, which a cache would still have to
-        # do, and restoring a /usr tree out from under dpkg trades a reliable
-        # install for an unreliable one.
-        #
-        # gnome-keyring brings the Secret Service daemon that KeyringStore tests
-        # reach. dbus-run-session is already present.
+        # Not cached: most of the time is dpkg unpacking, which a cache would
+        # still do, and restoring /usr under dpkg is unreliable. gnome-keyring
+        # is the Secret Service the KeyringStore tests reach.
         if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
         run: |
-          # The runner image ships Google's Chrome apt source, and nothing
-          # installed below comes from it. When that mirror serves an
-          # inconsistent index, `apt-get update` exits 100 and the whole Linux
-          # job goes red for a reason no pull request can fix or reproduce —
-          # which is exactly what happened repo-wide, `main` included, on
-          # 2026-09-09.
-          #
-          # Matched by the URL it carries, not by filename: the image has used
-          # `google-chrome.list` and, since the deb822 move, `.sources`, and a
-          # name that drifts again would silently stop matching. `rm -v`
-          # leaves the removal in the log, so a future failure here is not
-          # mistaken for this one.
+          # Drop the image's Chrome apt source: nothing below needs it, and a bad
+          # index there fails `apt-get update`. Matched by URL because its file
+          # name has changed before.
           sudo find /etc/apt/sources.list.d -type f \
             -exec grep -lE 'dl\.google\.com' {} + 2>/dev/null \
             | sudo xargs -r rm -vf
@@ -208,38 +138,17 @@ jobs:
             libayatana-appindicator3-dev shellcheck gnome-keyring
 
       - name: Cache the pre-commit hook environments
-        # The dominant cost of the step below. pre-commit clones every hook repo
-        # and builds a virtualenv per language, three of them here, which is
-        # around twenty seconds of the run and most of what the pre-commit step
-        # spends on macOS.
-        #
-        # The key covers everything the environments are built from: the config
-        # names the repos, their revisions, and codespell's extra dependency, so
-        # editing it rebuilds them. pythonLocation carries the patch version
-        # actions/setup-python resolved, and a virtualenv points at the exact
-        # interpreter that made it — pinning '3.12' is not enough, because a new
-        # patch release lands in a new directory and leaves the cached
-        # environments pointing at one that is gone.
-        #
-        # No restore-keys. A near-miss would restore environments for a config
-        # that no longer applies and then save them again forever; a config
-        # change is rare enough to pay for in full.
+        # pythonLocation carries the patch version, which a virtualenv is bound
+        # to; '3.12' alone would restore envs pointing at a missing interpreter.
+        # No restore-keys: a near-miss would restore a stale config's envs.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit
-        # The one step that runs hooks of every kind, so a docs-only run cannot
-        # simply be skipped: the whitespace, encoding, YAML/JSON/TOML and
-        # codespell hooks are exactly what such a change needs checking against.
-        # SKIP takes only the hooks whose toolchain the steps above just
-        # declined to install, so what drops out is what could not have run.
-        #
-        # Still no SKIP list by platform. The hooks that need macOS test uname
-        # themselves and exit cleanly elsewhere, printing why — pre-commit has
-        # no platform key, and naming them here would hide that from anyone
-        # running the hooks locally.
+        # Runs on docs-only changes too; SKIP drops only the hooks whose
+        # toolchain was not installed. macOS-only hooks check uname themselves.
         env:
           SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy,shfmt,shellcheck' || '' }}
         run: |
@@ -247,11 +156,8 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
 
       - name: Core crate reaches no platform binding
-        # The property the crate split exists to guarantee.
-        #
-        # --target all, not the host: a dependency behind
-        # [target.'cfg(target_os = "macos")'.dependencies] is invisible to a
-        # host-only tree, which is exactly how it would come back.
+        # --target all: a cfg(target_os)-gated dependency is invisible to a
+        # host-only tree.
         if: steps.changes.outputs.code == 'true'
         run: |
           tree=$(cargo tree -p fidget-core --target all)
@@ -260,11 +166,7 @@ jobs:
           fi
 
       - name: Rust tests
-        # --doc as well as --all-targets: --all-targets excludes doctests, so a
-        # `///` example would otherwise never run anywhere.
-        #
-        # Linux wraps cargo test under dbus-run-session with gnome-keyring
-        # started, so KeyringStore tests reach Secret Service.
+        # --doc too: --all-targets skips doctests.
         if: steps.changes.outputs.code == 'true'
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -283,25 +185,12 @@ jobs:
           RUNNER_OS: ${{ runner.os }}
 
       - name: Renderer tests
-        # A step of its own, so a failure names the language it came from rather
-        # than sending the reader into a Rust log to find a JavaScript assertion.
-        # It runs here rather than as a pre-commit hook because every hook in
-        # this repo is a formatter, a linter or a typecheck, and cargo test is
-        # not one of them either.
-        #
-        # An explicit glob, not `--test tests/`: Node 24 reads a bare directory
-        # as a test file and fails with MODULE_NOT_FOUND, where Node 20 recursed
-        # into it. Naming the files leaves nothing for a release to reinterpret.
-        #
-        # Pillow is only for tests/readme-gifs.test.js. setup-python does not
-        # ship it, and the GIF check is the one that imports it.
+        # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
+        # Pillow is for tests/readme-gifs.test.js.
         if: steps.changes.outputs.code == 'true'
         run: |
           pip install pillow
           node --test tests/*.test.js
-
-      # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
-      # and a logged-in desktop session, which no runner has.
 
   # Own job: Windows cannot run the shfmt/shellcheck/apt path `checks` uses.
   # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
@@ -319,7 +208,6 @@ jobs:
 
       - name: Find what this run changed
         id: changed
-        # Same pin as `checks` (CVE-2025-30066).
         uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         continue-on-error: true
         with:
@@ -368,9 +256,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
-        # --doc: --all-targets skips doctests. bash because a Windows runner
-        # defaults to pwsh, which ignores a failing command and takes the last
-        # exit code, so the empty --doc run hid a failed --all-targets (#768).
+        # bash, not the default pwsh, which takes the last command's exit code
+        # and let a passing --doc hide a failed --all-targets.
         if: steps.gate.outputs.run_tests == 'true'
         shell: bash
         run: |

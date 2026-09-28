@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
-# What fidget's window-list poll costs on macOS (#427): how often the frame
-# loop calls CGWindowListCopyWindowInfo idle (10 Hz) and riding (60 Hz), what
-# each call takes, and how that grows with the window count. One TSV row per
-# scenario, the same shape as bench-gpu-compositing-macos.sh.
-#
-# micro times the call from its own process against whatever is on the desktop
-# (scripts/bench-window-list-macos.swift) and needs no green light. idle,
-# riding, sweep, and profile launch fidget on the live desktop, and all but
-# profile can flood it with windows, so they refuse to run unless
-# FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed.
-# The flood comes from scripts/window-flood-macos.swift (PR #1043); without
-# that file the added-window rows skip and say so.
-#
-# The per-call numbers for a running fidget come from dtrace on SkyLight's
-# SLWindowListCopyWindowInfo: on macOS 26 CoreGraphics forwards to it and the
-# pid provider has no CGWindowListCopyWindowInfo probe to offer. That needs
+# fidget's window-list poll cost on macOS (#427): call rate idle (10 Hz) and
+# riding (60 Hz), per-call time, growth with window count. usage() lists
+# scenarios; all but env and micro need FIDGET_BENCH_GREEN_LIGHT=1.
+
+# Per-call numbers come from dtrace on SkyLight's SLWindowListCopyWindowInfo:
+# on macOS 26 the pid provider has no CGWindowListCopyWindowInfo probe. Needs
 # sudo; run `sudo -v` first for an unattended run.
 
 set -euo pipefail

@@ -1,11 +1,6 @@
-// The #183 Stage 1 probe: one mouse-only, listen-only session tap, created
-// once, and the four facts around it printed as key=value lines. Built into
-// a throwaway .app by spike-183-input-monitoring.sh so TCC attributes the
-// tap to that bundle and not to the terminal.
-//
-// Usage: spike-183-tap <full|no-motion>
-//   full       the six types input_events.rs MOUSE_EVENTS holds
-//   no-motion  the same without mouseMoved
+// #183 Stage 1 probe: one mouse-only, listen-only session tap; prints key=value facts.
+// Run from spike-183-input-monitoring.sh's throwaway .app so TCC blames that bundle.
+// Usage: spike-183-tap <full|no-motion>: MOUSE_EVENTS' six types, or without mouseMoved.
 
 import CoreGraphics
 import Foundation

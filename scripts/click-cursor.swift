@@ -1,8 +1,6 @@
-// Posts one or two real left-button clicks at a point in top-left-origin
-// points, warping the cursor there first. CGEventPost feeds the HID stream the
-// window server tracks, so the app's pointer reader sees them as physical clicks.
-// Usage: swift scripts/click-cursor.swift x y [clicks]
-//   clicks: 1 (default, Poke) or 2 (Summon).
+// Posts one or two real left clicks at a top-left-origin point, warping there
+// first. CGEventPost feeds the HID stream, so the app sees physical clicks.
+// Usage: swift scripts/click-cursor.swift x y [clicks]  (1 = Poke, 2 = Summon)
 
 import AppKit
 

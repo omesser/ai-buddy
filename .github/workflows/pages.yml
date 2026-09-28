@@ -1,23 +1,8 @@
 name: Pages
 
-# The published site is an allowlist, not a directory. `docs/` holds research
-# notes, agent instructions and pull request screenshots; serving all of it to
-# make one page reachable would put every one of those on a crawlable URL. So
-# the Assemble step names each file it publishes, and a page nobody added to
-# that list is not on the internet.
-#
-# The unit of that list is a file, or a generator. #289's Character gallery
-# needs a few hundred PNGs, too many to name as reviewed lines, so the step
-# names `scripts/make-character-gallery.py` and the script decides what ships:
-# it copies only the frames a Character Manifest names, only PNGs, only from
-# inside their own package. The guarantee moves from a reviewed line in a diff
-# to a reviewed script, on purpose (ADR-0011) — and the Verify step below
-# still checks the outcome, since everything the allowlist exists to keep off
-# a crawlable URL is Markdown.
-#
-# Source is GitHub Actions rather than a branch, so there is no `gh-pages`
-# branch to keep in step with `main` — the deployment is this workflow's
-# artifact, built from the commit being deployed.
+# The site is an allowlist, not `docs/`, which also holds notes and agent
+# instructions. Assemble names each file or a generator that picks its own
+# files (ADR-0011).
 
 on:
   push:
@@ -25,35 +10,25 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Read-only by default. The Pages token lives on `deploy` alone, because
-# `build` now runs pull request code and nothing it does needs to write.
+# `build` runs pull request code; only `deploy` gets the Pages token.
 permissions:
   contents: read
 
 jobs:
-  # Everything that can fail because of what is in the repository, split out so
-  # it runs on a pull request too. Building the site only on a push to `main`
-  # meant a manifest, a page or the generator could break the deploy and nobody
-  # would find out until it was already on `main`.
+  # Split out so a pull request catches a broken site before `main` does.
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # tomllib, which the gallery generator reads the manifests with, is 3.11
-      # and later. Pinned rather than taken from the runner image so the build
-      # does not change under us when that image does.
+      # The generators need tomllib (3.11+).
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
       - name: Assemble the site
-        # Flat: the landing page is the site root and every other page sits
-        # beside it, so a link is `/cues.html` rather than a path that has to
-        # mirror wherever the file happens to live in the repository. The
-        # gallery's art is the one exception, under `_site/characters/`,
-        # because a page cannot reference a few hundred frames without a
-        # directory to put them in.
+        # Flat, so a link is `/cues.html`; only generated art sits under
+        # `_site/characters/`.
         run: |
           mkdir -p _site
           cp docs/design/index.html _site/index.html
@@ -68,10 +43,8 @@ jobs:
           python3 scripts/make-expression-page.py --out _site
 
       - name: Verify nothing but a page or its art reached _site
-        # The generator is trusted to enumerate; this is not trusted to be
-        # right. Every file the allowlist exists to keep off a crawlable URL
-        # is Markdown, so an extension check catches the failure that matters
-        # even if a generator one day walks a directory it should not.
+        # What the allowlist keeps off the web is Markdown, so an extension
+        # check catches a generator that walks too far.
         run: |
           stray=$(find _site -type f ! \( -name '*.html' -o -name '*.css' \
             -o -name '*.js' -o -name '*.png' -o -name '*.svg' \))
@@ -82,16 +55,13 @@ jobs:
           fi
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      # Packaging the artifact is part of what a pull request checks: it tars
-      # `_site`, and it is the step that would reject something `find` above
-      # does not look at, such as a symlink out of the tree.
+      # Runs on pull requests too: packaging rejects what `find` misses, such
+      # as a symlink out of the tree.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
 
-  # Nothing here reads the repository, so nothing here can be checked early.
-  # It is skipped on a pull request, which is also what keeps a fork's run away
-  # from the `github-pages` environment.
+  # Skipped on pull requests, which keeps forks away from `github-pages`.
   deploy:
     needs: build
     if: github.event_name != 'pull_request'
@@ -99,14 +69,12 @@ jobs:
     permissions:
       contents: read
       pages: write
-      # Deploying to Pages is an OIDC exchange, so the job mints a token.
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
-    # One deployment at a time, and never cancel one in flight: a cancelled
-    # deploy can leave the site on the half-uploaded artifact. Scoped to this
-    # job so a pull request's build never queues behind a deploy.
+    # Never cancel a deploy in flight: it can leave a half-uploaded site.
+    # Job-scoped so a pull request's build never queues behind one.
     concurrency:
       group: pages
       cancel-in-progress: false

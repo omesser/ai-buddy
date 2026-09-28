@@ -867,12 +867,9 @@ def emit(pet, out, validate=True, stand=None):
                 ]
         unions = {a: union_bbox(spec["frames"]) for a, spec in animations.items()}
 
-    # A uniform per-Character canvas. Frames register to their animation's first
-    # frame (a generated sheet's per-cell jitter becomes body wobble if kept),
-    # then the animation plants its collective baseline on the canvas bottom,
-    # where the shell anchors art. Per-frame planting jerks the body when feet
-    # tuck mid-stride, so only an outlier past FLOAT_TOLERANCE grounds itself.
-    # A spec marked `registered` trusts its own positions and skips this.
+    # One canvas per Character: frames register to their animation's first frame,
+    # then the animation's shared baseline sits on the canvas bottom. Per-frame
+    # planting jerks tucked feet, so only an outlier past FLOAT_TOLERANCE grounds.
     FLOAT_TOLERANCE = 6
     metrics = {}
     for animation, spec in animations.items():

@@ -1,22 +1,7 @@
 ---
-# Comment blocks stay at or under 20 lines. #804, #744, #812.
-#
-# Two shapes, because a comment block is two different trees. A `/* */` or
-# `<!-- -->` block is one node, so the ceiling is a newline count over its
-# text. A run of `//` or `#` lines is N sibling nodes, so the ceiling is a
-# chain of `follows` relations that matches the 21st line in a run. The
-# `line-N` utils below are that chain, one rung per line; ast-grep's rule
-# language has no repetition operator, so the rungs are written out.
-#
-# Rust `//!` module documentation is exempt. It documents the module rather
-# than a line of code, #744's slices review it file by file, and #807 left
-# `crates/core/src/character.rs` at 65 lines on purpose. `///` item docs are
-# not exempt.
-#
-# 20 is deliberately loose: it is what the tree passes today. Tightening is
-# its own pull request.
-#
-# TOML and PowerShell are absent because ast-grep does not parse them.
+# Comment blocks stay at or under 20 lines, what the tree passes today; tightening
+# is its own pull request. A `//` or `#` run is sibling nodes and ast-grep has no
+# repetition operator, so the `line-N` rungs are written out.
 id: comment-block-ceiling-rust
 language: rust
 severity: error

@@ -320,9 +320,6 @@ def nim_animations():
     }
 
 
-# --------------------------------------------------------------------------
-
-
 def colours(animations):
     return {px[y][x] for frames in animations.values() for px in frames for y in range(SIZE) for x in range(SIZE)}
 

@@ -52,9 +52,8 @@ EXPORTS = (
     "export const THINKING_MIN_HOLD_MS",
 )
 
-# The page speaks and it idles; it does not walk, fall or sleep, so it asks
-# the manifest for the two strips it plays and leaves the other nine to the
-# gallery, which is the page whose subject is the whole Required set.
+# The page only speaks and idles, so it reads those two strips and leaves the
+# rest of the Required set to the gallery.
 SPRITE_PACKAGE = "buddy-bot"
 SPRITE_ANIMATIONS = ("idle", "talk")
 

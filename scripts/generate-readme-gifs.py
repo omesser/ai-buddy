@@ -9,12 +9,9 @@ from pathlib import Path
 
 from PIL import Image
 
-# GIF has one transparent color and no partial coverage. Pillow keeps a
-# semi-transparent pixel as an opaque palette entry, so a white edge sample
-# at alpha 1 is a white speck on a dark page. 64 clears that speck. Nim's
-# foot shadow is alpha 76 and the showcase GIF already paints it; a higher
-# cut would delete it. Pupils are opaque #000, so the cut is on alpha,
-# never on black.
+# GIF has no partial alpha and Pillow turns a faint pixel into an opaque speck,
+# so 64 drops edge samples. Nim's foot shadow is alpha 76, so a higher cut
+# deletes it. The cut is on alpha, never on black: pupils are opaque #000.
 ALPHA_CUTOFF = 64
 
 # Brighter than the shell's own edge. The check ignores pixels the source

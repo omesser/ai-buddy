@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Rename lever for the product name. Re-run from the repo root:
-//   node scripts/rename-to-fidget.mjs inventory [scripts/rename-inventory.tsv]
-//   node scripts/rename-to-fidget.mjs apply
-//   node scripts/rename-to-fidget.mjs verify
-//
-// Three roles, applied in table order. The script is the classification.
-// Product display is Fidget. Product slug is fidget. The on-screen companion
-// is character. A GitHub repo coordinate is omesser/fidget.
+// Rename lever for the product name, from the repo root:
+//   node scripts/rename-to-fidget.mjs inventory [tsv] | apply | verify
+// Roles: display Fidget, slug fidget, companion character; omesser/fidget is kept.
 
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, rmdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -69,7 +64,7 @@ const EXACT = [
   ['"productName": "ai-buddy"', '"productName": "Fidget"', "product-display"],
   ["<title>ai-buddy", "<title>Fidget", "product-display"],
   ['.tooltip("ai-buddy")', '.tooltip("Fidget")', "product-display"],
-  // A bundle directory is a filename. The original was lowercase `ai-buddy.app`.
+  // A bundle directory is a filename.
   ["ai-buddy.app", "fidget.app", "product-slug"],
   // Consent fallbacks are the name macOS and the settings pane show.
   ['"ai-buddy".into()', '"Fidget".into()', "product-display"],

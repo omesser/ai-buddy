@@ -40,9 +40,6 @@ def parse_samples(text, process, pid=None):
         m = SAMPLE_RE.search(block)
         if not m:
             continue
-        # powermetrics prints local time with a zone offset it does not name
-        # portably; strptime with %z handles "+0300" but not "+03:00", so
-        # normalize.
         ts_raw = re.sub(r"([+-]\d{2}):?(\d{2})$", r"\1\2", m.group(1))
         try:
             ts = datetime.strptime(ts_raw, "%a %b %d %H:%M:%S %Y %z")
