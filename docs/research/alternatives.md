@@ -48,7 +48,7 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 
 | Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Harness integrations (ACP Completer) | ✅ (claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Harness integrations (ACP Completer) | ✅ (claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi/antigravity named+verified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | MCP server (fidget-side tools) | ✅ (loopback HTTP + stdio fallback) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | AI chat integration | ✅ (Summon chat surface shipped; #17 tracks polish/bugs) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
 | BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
@@ -425,8 +425,8 @@ for something, the Director prompt invites using the tools available
 Director proposes a Behavior name and
 optional spoken line; Static weights when no Completer is configured, HTTP
 Completer stand-in with API key/local server, Harness ACP Completer shipped
-(#433 2026-09-07, named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi rows + custom ACP
-command per #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26). Each Instance has its own Director and
+(#433 2026-09-07, named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi/antigravity rows + custom ACP
+command per #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26; antigravity verified #1143 2026-09-28). Each Instance has its own Director and
 seed — two of the same Character don't move or speak in lockstep. Each Instance
 has its own user-authored Instance Prompt layer (#531 2026-09-08, ADR-0012)
 strengthening multi-instance personality differentiation; personality.txt remains
@@ -446,8 +446,8 @@ package-authored.
    wake falls back to Static. Engine keeps the sprite alive while the model
    thinks. Static weights when no Completer configured; HTTP Completer stand-in
    with API key/local server; Harness ACP Completer shipped (#433 2026-09-07,
-   named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi rows + custom ACP command per
-   #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26). No other desktop pet ships authored personality
+   named claude/codex/copilot/cursor-agent/grok/goose/opencode/hermes/pi/antigravity rows + custom ACP command per
+   #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26; antigravity verified #1143 2026-09-28). No other desktop pet ships authored personality
    + Director-driven non-deterministic idle speech.
 
 2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
@@ -457,10 +457,12 @@ package-authored.
 3. **Agent integrations (shipped).** Harness ACP Completer (#433 2026-09-07)
    speaks to a spawned Harness as the session Completer. Named rows match the
    README preset table: claude, codex, copilot, cursor-agent, grok, goose,
-   opencode, hermes, and pi, plus a custom ACP command (#556 2026-09-08).
+   opencode, hermes, pi, and antigravity, plus a custom ACP command (#556 2026-09-08).
    Verification: pi ACP #628 2026-09-11; grok #587 2026-09-09; codex #623
    2026-09-14; cursor-agent #762 2026-09-16; goose #971 2026-09-24 (#989);
-   copilot #1017 2026-09-26, smoked fresh and resumed on copilot 1.0.88 (#1016).
+   copilot #1017 2026-09-26, smoked fresh and resumed on copilot 1.0.88 (#1016);
+   antigravity #1143 (agy_acp_server 1.2.1, #604), smoked fresh and resumed, MCP
+   listed on stock probe.
    Pi's `initialize` advertises no HTTP MCP, and whether that attached session
    lists fidget's tools is unmeasured (#984, #1007, #1009). Settings can
    write a stable project `.mcp.json` that names the loopback variables for Pi
@@ -506,9 +508,9 @@ package-authored.
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
   not ballistic Perch riding) OR unverified (no named fidget Harness row
   is in that state today; codex verified #623, pi verified ACP #628, grok verified
-  #587, cursor-agent verified #762, goose verified #971, copilot verified #1017).
+  #587, cursor-agent verified #762, goose verified #971, copilot verified #1017, antigravity verified #1143).
 - **❌** = not found in cited sources. The fidget column was checked against
-  main on 2026-09-26; the other columns were not re-checked on this pass.
+  main on 2026-09-28; the other columns were not re-checked on this pass.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
   has Steam 974 reviews 97% + GitHub 3,532 stars.
@@ -518,10 +520,11 @@ package-authored.
 Capabilities marked ✅, ~, or ❌ for fidget are verified against docs/SPEC.md,
 DESIGN.md, README.md, ADR-0008, ADR-0026, the Director prompt
 (`app_instructions` in `crates/core/src/director/prompt.rs`), and `git log` on
-main at `7fee5fa1` as of September 26, 2026 (Director tool invitation #987;
+main at `3e0ffff2` as of September 28, 2026 (Director tool invitation #987;
 Pi handshake #1007/#1009, tool listing unmeasured #984, project MCP file #1019
 checked and not treated as a listing; Harness `goose` named+verified #971 / #989;
-`copilot` named+verified #1017, smoked #1016; `cursor-agent` MCP through its own
+`copilot` named+verified #1017, smoked #1016; `antigravity` named+verified #1143
+(#604), smoked fresh/resumed; `cursor-agent` MCP through its own
 config #1024; prior ACP: cursor-agent #762, grok #587, codex #623, pi #628).
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
