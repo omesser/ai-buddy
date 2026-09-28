@@ -1851,6 +1851,8 @@ struct ChatHarness {
     /// Settings already names it (#659). Chat used to drop it and say
     /// `not running` (#726).
     missing: Option<String>,
+    /// The page that installs `missing`, from the table Settings names it from.
+    install: Option<String>,
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     initializing: bool,
     /// Why a launcher that was there gave no wire. The one field here that
@@ -1865,6 +1867,11 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
         alive: attached.alive,
         session: attached.session_id.clone(),
         missing: attached.missing.clone(),
+        install: attached
+            .missing
+            .as_deref()
+            .and_then(harness::install_page)
+            .map(|(_, url)| url.to_string()),
         initializing: attached.initializing,
         failed: attached.failed.clone(),
     })
@@ -4281,6 +4288,7 @@ mod tests {
             .expect("the opening carries the attachment");
         assert_eq!(harness.name, "codex");
         assert_eq!(harness.missing.as_deref(), Some("npx"));
+        assert_eq!(harness.install.as_deref(), Some("https://nodejs.org/"));
         assert!(!harness.alive);
     }
 

@@ -1988,19 +1988,27 @@ fn not_authenticated(command: &str) -> String {
 /// the only fix is one the user makes outside the app, the same shape as
 /// `not_authenticated` and for the same reason.
 fn not_installed(command: &str) -> String {
-    let install_hint = match command {
-        "npx" => " Install Node.js from https://nodejs.org/.",
-        "hermes" => " Install Hermes from https://hermes-agent.nousresearch.com/.",
+    let install_hint = install_page(command)
+        .map(|(product, url)| format!(" Install {product} from {url}."))
+        .unwrap_or_default();
+    format!("`{command}` is not installed; Fidget does not bundle a Harness.{install_hint}")
+}
+
+/// The product a launcher belongs to and the page that installs it. The one
+/// table Chat, Settings and the wake all name it from (ADR-0035).
+pub(crate) fn install_page(command: &str) -> Option<(&'static str, &'static str)> {
+    Some(match command {
+        "npx" => ("Node.js", "https://nodejs.org/"),
+        "hermes" => ("Hermes", "https://hermes-agent.nousresearch.com/"),
         // The ACP registry still names https://block.github.io/goose/, which
         // now redirects to goose-docs.ai. The install page is the CLI instructions.
-        "goose" => " Install Goose from https://goose-docs.ai/docs/getting-started/installation/.",
-        "copilot" => " Install GitHub Copilot CLI from https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli.",
-        "cursor-agent" => " Install Cursor from https://www.cursor.com/.",
-        "grok" => " Install Grok from https://x.ai/.",
-        "opencode" => " Install OpenCode from https://opencode.ai/.",
-        _ => "",
-    };
-    format!("`{command}` is not installed; Fidget does not bundle a Harness.{install_hint}")
+        "goose" => ("Goose", "https://goose-docs.ai/docs/getting-started/installation/"),
+        "copilot" => ("GitHub Copilot CLI", "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli"),
+        "cursor-agent" => ("Cursor", "https://www.cursor.com/"),
+        "grok" => ("Grok", "https://x.ai/"),
+        "opencode" => ("OpenCode", "https://opencode.ai/"),
+        _ => return None,
+    })
 }
 
 /// The command that logs the user in. The table outranks the handshake,
