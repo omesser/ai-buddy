@@ -12,8 +12,7 @@ with a doc header. The container is all that changes: the loader still walks
 the parsed document itself, rejects every declaration it does not know, and
 reports every mistake in one pass in Character-Manifest terms, and the `when`
 condition stays this project's own small trigger language inside a TOML
-string. Parsing is `toml_edit` with the `parse` feature only — no serde,
-whose derive-generated errors would replace the author-facing ones.
+string. No serde: derive-generated errors would replace the author-facing ones.
 
 The `x y then z` Behavior micro-syntax is absorbed: `play` is a list of
 Primitives and `then` a key of its own, because a list is the natural TOML
@@ -36,8 +35,6 @@ decision — integer scaling of true pixel art — stands as written.
 
 Manifests gain editor support and a specification someone else maintains, and
 duplicate declarations become the parser's problem rather than this module's.
-Core takes its second dependency after `png`: `toml_edit` and its six
-transitive crates — all of which the workspace lock already carried through
-the Tauri shell, so the workspace builds nothing it did not build before. Rejections name the offending declaration by name rather
+Rejections name the offending declaration by name rather
 than by line; syntax errors still carry the line, because a file that is not
 TOML has no declarations to name.

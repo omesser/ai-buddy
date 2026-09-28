@@ -2,55 +2,41 @@
 
 ## Context
 
-Verification today is a sprawl of platform scripts (`scripts/verify-overlay.sh`,
-`verify-overlay-x11.sh`, `verify-overlay-win.ps1`, settings/harness probes, …)
-plus a project-local `verify-fidget` skill that wraps them in bash helpers.
-Agents and humans must know which dialect and which path to run; Summon and a
-single cross-platform command line are still holes. Language
-unification of the *leaves* (Swift / `xdotool` / Win32) is not the job — those
-probes are where the OS truth lives. The job is one discoverable entry that
-orchestrates them.
+Verification was a sprawl of platform scripts (`scripts/verify-overlay.sh`,
+`verify-overlay-x11.sh`, `verify-overlay-win.ps1`, settings and harness probes)
+plus a skill that wrapped them in bash helpers. Agents and humans had to know
+which dialect to run, and Summon had no cross-platform command at all.
 
-Milestone **V1** needs this tool polished: agents and CI should not touch raw
-`scripts/verify-*` for the paths the CLI owns, poke and summon must be
-provable through that entry on real platforms, and CI should invoke the CLI
-where the runner can support overlay. A minimal umbrella that only wraps
-`doctor`/`units`/`overlay` is the first stepping stone, not the V1 bar.
+Unifying the language of the leaves (Swift, `xdotool`, Win32) is not the job.
+Those probes are where the OS truth lives. The job is one discoverable entry
+that orchestrates them.
 
 ## Decision
 
-1. **Workspace binary crate `fidget-verify`.** Invoked as
-   `cargo run -p fidget-verify -- <subcommand>`. Not an `fidget verify …`
-   app subcommand (Release stays free of harness weight) and not a second
-   toolchain (no Python verify CLI).
-2. **Orchestration first.** The CLI owns evidence roots, doctor, units,
-   platform dispatch, exit contract, and (over time) gesture subcommands. OS
-   probes may remain platform scripts until a leaf is wrong enough to rewrite.
-3. **Evidence.** Default under `$TMPDIR/fidget-verify-$RUN_ID/evidence`
-   (survives cleanup); `--evidence-dir` overrides. Cleanup never deletes
-   evidence.
-4. **Skill cutover.** After the crate exists, the `verify-fidget` skill
-   calls only this CLI; duplicate bash helpers go away. Feature map stays.
-5. **V1 definition of done (not stone 0).** Agents need not call
-   `scripts/verify-*` for CLI-owned paths; `poke` and `summon` are first-class
-   and proven on at least one real platform each; CI runs through the CLI on
-   ubuntu/mac/windows where overlay is runnable. Settings/harness/capturable
-   as CLI-native may trail unless V1 product surface demands those proofs.
+1. **A workspace binary crate, `fidget-verify`.** Run as
+   `cargo run -p fidget-verify -- <subcommand>`. Not an app subcommand, so the
+   Release binary carries no verification weight. Not a second toolchain, so no
+   Python verify CLI.
+2. **Orchestration first.** The CLI owns evidence roots, doctor, units, platform
+   dispatch, the exit contract, and gesture subcommands. OS probes may stay
+   platform scripts until a leaf is wrong enough to rewrite.
+3. **Evidence survives cleanup.** It defaults under the temp directory, and
+   `--evidence-dir` overrides it.
+4. **The `verify-fidget` skill calls only this CLI.** Duplicate bash helpers go
+   away.
 
 ## Consequences
 
-- One `cargo` entry for agents and CI; platform differences hide behind
+- One `cargo` entry for agents and CI. Platform differences hide behind
   subcommands.
-- Stepping stones (roadmap issue): (0) umbrella crate + `doctor`/`units`/
-  `overlay`/`cleanup`, (1) skill cutover, (2) `poke`/`summon`, (3) stable exit
-  codes + optional `--json`, (4) CI through CLI, (5) coverage polish / skip
-  semantics, (6) leaf shrinkage only where it pays.
-- Reversing means agents back to dialect-specific scripts and a skill that
+- Agents do not call `scripts/verify-*` for paths the CLI owns.
+- Reversing means agents go back to dialect-specific scripts and a skill that
   re-wraps them.
 
 ## Alternatives considered
 
-- **Python verify CLI.** Faster glue, but a second runtime for a Rust-first
-  repo; OS probes still shell out.
-- **Keep scripts + skill only.** Zero rewrite; discovery and Summon gaps stay.
-- **Verify as app subcommand.** Couples Release binary to harness concerns.
+- **Python verify CLI.** Faster glue, but a second runtime in a Rust-first repo,
+  and OS probes still shell out.
+- **Keep scripts and the skill only.** No rewrite. Discovery and Summon gaps
+  stay.
+- **Verify as an app subcommand.** Couples the Release binary to verification.

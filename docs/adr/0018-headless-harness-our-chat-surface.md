@@ -44,9 +44,3 @@ everyone who declines.
 
 Reversing this means writing a terminal host and giving up the turn-completion
 signal, or keeping ACP and accepting two conversations.
-
-## Supersedes
-
-This decision supersedes [ADR-0010](./0010-headless-harness-our-chat-surface.md),
-which recorded the same choice alongside implementation detail that belongs
-elsewhere.

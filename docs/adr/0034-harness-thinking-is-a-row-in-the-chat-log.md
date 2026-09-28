@@ -1,6 +1,6 @@
 # A Harness's thinking is a row in the Chat log, kept like a reply
 
-**Supersedes:** [ADR-0025](./0025-harness-thinking-is-transient-not-logged.md).
+**Supersedes:** [ADR-0025](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0025-harness-thinking-is-transient-not-logged.md) (removed).
 
 ## Context
 

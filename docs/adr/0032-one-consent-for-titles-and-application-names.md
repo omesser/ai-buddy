@@ -11,8 +11,8 @@ either way, and so does the frontmost application's name, which a different
 call supplies. Decline, and the character still knows Signal and Tor Browser are
 running. What you turned off is knowing which window is which.
 
-Nothing ever argued for that split. It arrived with ADR-0005's Free tier,
-ADR-0031 carried it forward, and `CONTEXT.md` and `docs/SPEC.md` restate it.
+Nothing ever argued for that split. It arrived with the first sensing
+decision's Free tier, ADR-0031 carried it forward, and `CONTEXT.md` and `docs/SPEC.md` restate it.
 ADR-0031 contradicts itself as a result. It lists the frontmost application
 name in a tier it defines as needing no permissions, and says Screen Recording
 is never requested while the consent catalog requests it to read titles.
@@ -80,5 +80,5 @@ project's choice, not the operating system's. #975 records the judgment.
 ## References
 
 - ADR-0031: [Free sensing only; Capture tiers are dropped](./0031-drop-capture-tiers.md), two clauses superseded here
-- ADR-0005: [Tiered sensing](./0005-sensing-posture.md), where the Free tier's "no permissions" definition began
+- ADR-0005: [Tiered sensing](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0005-sensing-posture.md) (removed), where the Free tier's "no permissions" definition began
 - #975 (the decision), #965 (the hint blocked on it), #888 (the settings row copy this revisits)

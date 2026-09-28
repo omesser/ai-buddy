@@ -20,8 +20,8 @@ ask the first one.
 
 Asking means finding the app's port and its token. The token is 32 fresh bytes
 per app run held in memory, and a token another local user can read is that
-user's ability to move the character, so ADR-0010's credential rules apply as much
-to ours as to a Harness's: it may not reach a log, a trace, or a file.
+user's ability to move the character, so it may not reach a log, a trace, or a
+file.
 
 ## Decision
 
@@ -44,8 +44,8 @@ spawns the shim. A file would have to be owner-only, in a directory that is
 also owner-only, survive a crash without going stale, and be cleaned up on
 exit; the environment needs none of that, and the token still dies with the app
 run. The MCP server entry is already the app's own to fill — this sets nothing
-of the user's and touches no vendor credential, so ADR-0010's rule 4 is
-untouched.
+of the user's and touches no vendor credential
+([ADR-0018](./0018-headless-harness-our-chat-surface.md)).
 
 **A shim with nothing to dial answers an error, never a success.** An unset
 variable, a refused connection, a rejected token and an answer too large or too

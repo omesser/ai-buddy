@@ -40,9 +40,3 @@ mirror. The degraded path stays a supported mode rather than an error.
 
 Reversing this means writing a spatial layer against protocols that withhold
 two of its inputs and accepting that it cannot place itself on GNOME.
-
-## Supersedes
-
-This decision supersedes the first half of
-[ADR-0014](./0014-x11-lane-no-native-wayland.md), which combined the X11-only
-lane with the GTK3 acceptance into one record.

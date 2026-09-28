@@ -27,10 +27,8 @@ operated, and github.com can only give you a still or a paragraph.
 
 ## The pages
 
-Three, flat: the index, `cues.html`, and #289's Character gallery. Flat still
-holds at five, because grouping five entries adds a level of navigation and
-removes none. A fourth page is not commissioned; one exists when a design
-question arrives that has to be heard or operated before it can be answered.
+The site is flat. A page exists when a design question arrives that has to be
+heard or operated before it can be answered.
 
 The gallery is Generated and shows every Character this project can publish.
 That is not the same as every installed Character: a package whose art carries
@@ -90,15 +88,5 @@ implements. `src/cue.js` still ports that frozen page, so the two can still
 drift — the copy-the-Shell exit stays open if a later change needs the live
 keyframes instead of the proposal.
 
-The gallery needs a script under `scripts/` and the allowlist change above; this
-decision builds neither. #289 has stated the wrong Character count twice, which
-is the Generated rule argued in one line.
-
 Reversing this means allowing a Described page, and accepting that each one
 drifts from the code it describes with nothing to catch it.
-
----
-
-**2026-09-14**: Issue #388 resolved. MekaRamen (Yeoh Kher En), creator of the
-Sketchfab model from which Timber Wolf's frames were derived, granted permission
-for use in fidget. The character is no longer withheld from the gallery.

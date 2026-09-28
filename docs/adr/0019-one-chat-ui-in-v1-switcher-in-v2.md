@@ -39,9 +39,3 @@ of its own.
 
 Reversing this means shipping the chat surface with its colors inline and
 revisiting modularity once a second design is wanted.
-
-## Supersedes
-
-This decision supersedes [ADR-0013](./0013-one-chat-ui-in-v1-switcher-in-v2.md),
-which recorded the same choice alongside implementation detail that belongs
-elsewhere.

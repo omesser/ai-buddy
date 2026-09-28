@@ -32,9 +32,3 @@ acceptance: a RustSec advisory naming a vulnerability, or Tauri shipping a GTK4
 Linux backend.
 
 Advisory inventory is in `docs/research/gtk3-pin.md`.
-
-## Supersedes
-
-This decision supersedes the second half of
-[ADR-0014](./0014-x11-lane-no-native-wayland.md), which combined the GTK3
-acceptance with the X11-only lane into one record.

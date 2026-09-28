@@ -1,6 +1,6 @@
 # Settings is one webview on the Chat surface's tokens
 
-**Status:** Accepted. Step 9 shipped; the three native renderers are gone.
+**Status:** Accepted.
 
 ## Context
 
@@ -11,12 +11,9 @@ Settings has been three native renderers of one form description:
 tree had no JavaScript surface at all, and it was the right call then: native
 was the only credible option.
 
-ADR-0010 then chose a webview for the Chat surface, and gave as its reason that
-"Settings already priced the alternative: 1046 and 913 lines of hand-written
-AppKit and GTK for a form of checkboxes, and the Windows third is still
-unwritten". Those files are 2036 and 1559 lines now, the Windows third is 2896,
-and `scripts/verify-settings-macos.sh`, `scripts/ax-settings.swift` and
-`scripts/verify-settings-win.ps1` add 1034 lines that exist only because a
+The Chat surface then chose a webview (ADR-0018), partly because Settings had
+already priced the native alternative. The native renderers kept growing, to
+6491 lines, plus about 1000 lines of verify scripts that existed only because a
 native window cannot be asserted on from `node --test`.
 
 Every classifiable Settings bug of the last two months was a renderer bug —
@@ -56,9 +53,7 @@ Accessibility, and a `controls(tab, view)` function returns the same flat
 `{role, id, label, value, frozen}` list `ax-settings.swift dump` reads today, so
 the AX assertions become node tests.
 
-The three native renderers and the three verify scripts are deleted once the
-webview covers every tab, one live smoke per platform exists, and keyboard-only
-operation is checked.
+The three native renderers and their verify scripts are deleted.
 
 ## Considered Options
 
@@ -85,12 +80,4 @@ operation is checked.
 - Accessibility changes modality — a web area inside a window rather than
   native controls — but not presence, provided the HTML stays semantic. The
   live check is a condition of deleting the native renderers, not a follow-up.
-- Two implementations are alive until Step 9. The default is the webview on
-  every platform. `FIDGET_SETTINGS_NATIVE=1` opens a native renderer.
-  `FIDGET_SETTINGS_WEBVIEW=1` still selects the webview. Both on: native.
-  Native stays frozen to bug fixes. Step 9 deletes the three renderers and
-  both flags. This ADR is not Accepted until that delete lands.
-- ADR-0010's stance on the stack holds: no build step, no dependency.
-  TypeScript is #692 and unaffected.
-- `move_drag.rs` and the Win32 hit-test tests go with the renderers; alt-drag
-  is `startDragging()` under `core:window:allow-start-dragging`.
+- The Chat surface's stance on the stack holds: no build step, no dependency.

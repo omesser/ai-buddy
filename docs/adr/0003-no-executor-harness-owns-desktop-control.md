@@ -17,13 +17,6 @@ days later. The Harness now genuinely brings its own executor, so we do not writ
 
 ## Consequences
 
-The capability is a research preview. It needs macOS, a Pro or Max plan (not
-Team or Enterprise), and claude.ai auth. An interactive session is required, so
-the capability is not available in non-interactive mode with the `-p` flag. The
-Agent SDK that `claude-agent-acp` runs uses stream-json print mode, so the
-interactive gate bears on attach. Under the ACP attach path the Functional
-Layer is unavailable on every plan. #508 is the only route being evaluated.
-
 It is not portable across Harnesses. Other vendors follow the API pattern — actions out,
 client executes — so "BYO Harness" does not imply "any Harness can drive the desktop." A
 Harness without an executor can still chat and sense.
@@ -31,9 +24,6 @@ Harness without an executor can still chat and sense.
 Action permissions belong to the Harness, which runs its own consent dialogs. fidget
 owns consent for sensing only and must not duplicate them; two dialogs for one click
 teaches users to click through both.
-
-fidget learns what the Harness is doing by observing the screen it already samples,
-not by parsing the Harness's output.
 
 A `CGEvent` executor stays on the shelf as the answer if the subscription gate proves
 fatal. It is not built on spec.

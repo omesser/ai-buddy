@@ -218,7 +218,7 @@ _Avoid_: Backend, provider, model
 The session trait the Director role uses to answer Character Prompts, filled by
 either HTTP chat-completions or an attached Harness over ACP
 ([ADR-0008](./docs/adr/0008-one-harness-session.md),
-[ADR-0017](./docs/adr/0017-acp-client-over-the-official-sdk-and-supported-harnesses.md)).
+[ADR-0022](./docs/adr/0022-acp-client-over-official-sdk-and-named-harnesses.md)).
 Director is the role; Completer is the umbrella trait both fills implement.
 When no Harness is attached, the HTTP Completer streams chat-completions (first
 token arrives long before the reply; a dropped call stops the host generating
@@ -271,7 +271,7 @@ Dropped. Fidget never takes screenshots, never analyzes screen pixels, and
 never embeds OCR or vision models for desktop content awareness. Agents that
 need pixel access or desktop control use harness-native computer use (Cursor
 Cloud Agents, Codex Computer Use plugin, Hermes computer_use toolset) or attach
-an MCP server like cua-driver. ADR-0031 supersedes ADR-0005.
+an MCP server like cua-driver. ADR-0031.
 _Avoid_: Saying these are "upcoming" or "deferred"
 
 ### Interaction verbs
@@ -341,7 +341,7 @@ _Avoid_: Reasoning pane, thoughts, chain of thought, transcript, thought strip
 The window a Summon opens: where the user types to the attached Harness and
 reads the answers too long for a Speech bubble. Belongs to the Character
 Instance that was Summoned, and is drawn by Fidget rather than by the
-Harness. #17, ADR-0010.
+Harness. #17, ADR-0018.
 _Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
 design, not the window)
 
@@ -354,7 +354,7 @@ the overlay draws by itself — a Character's art never, and the Speech bubble
 only the opaque panel tokens in `src/chat-shared.css` that the default Chat UI
 and the overlay both import (#441, #456, #545) — and is not the light or dark
 theme the operating system supplies. v1 ships one and no switcher. #355, #348,
-ADR-0013.
+ADR-0019.
 _Avoid_: Look, theme, skin, style, variant, design
 
 ### The published site

@@ -15,5 +15,4 @@ licence to keep adding one.
 ## Consequences
 
 Every Character Package, shipped or loaded, must declare `hold`. A package that
-does not is rejected by name. Settings for the ride-acceleration gate wait on
-#18; until then `RIDE_ACCELERATION` is the knob.
+does not is rejected by name.
