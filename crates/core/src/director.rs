@@ -135,7 +135,7 @@ pub struct WakeRequest {
 }
 
 /// What kind of moment a wake is, which is what decides whether it may take
-/// the call its Instance already has on the wire (ADR-0033). A property of
+/// the call its Instance already has on the wire (ADR-0016). A property of
 /// the event, so a new `Happened` cannot compile until someone classes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Claim {
@@ -174,7 +174,7 @@ pub trait Completer {
 
     /// Whether this Completer has a question out to the user on `instance`'s
     /// turn, so that turn is waiting on a person rather than on a model
-    /// (ADR-0033). An HTTP endpoint has no way to ask, hence the default.
+    /// (ADR-0016). An HTTP endpoint has no way to ask, hence the default.
     fn awaiting_user(&self, _instance: &str) -> bool {
         false
     }

@@ -1540,7 +1540,7 @@ pub(crate) fn run_frame_loop(
                             let cell = director::happened_cell(&context.happened);
                             match slots.wake(&live.id, Arc::clone(model), context) {
                                 // The call on the wire is the truer one
-                                // (ADR-0033). This wake is dropped, not queued:
+                                // (ADR-0016). This wake is dropped, not queued:
                                 // the bookkeeping above has already spent it.
                                 completer::Woke::Dropped => false,
                                 // A touch the character cannot answer yet points at

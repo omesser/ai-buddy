@@ -163,7 +163,7 @@ function createView(id) {
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
     },
-    // The question waiting in Chat (ADR-0033). The last word is the control;
+    // The question waiting in Chat (ADR-0016). The last word is the control;
     // where the overlay cannot take that click it is plain text, and Summon
     // still opens Chat.
     showAsk() {
