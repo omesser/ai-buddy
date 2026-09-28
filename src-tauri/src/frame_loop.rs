@@ -70,6 +70,12 @@ pub(crate) fn run_frame_loop(
             settings: mut director,
             inspect,
         } = director_run;
+        // Track whether we need to emit "something can answer now" after the
+        // first successful wake. Set when `first_connection` is true (going from
+        // not configured to configured), cleared after the first successful wake
+        // or if configuration is lost. The bug: emitting it immediately on Retarget
+        // shows the banner even when harness spawn will fail moments later.
+        let mut pending_first_connection_message = false;
         let FrameExtras {
             settings,
             settings_path,
@@ -640,11 +646,17 @@ pub(crate) fn run_frame_loop(
                         // starting here is the first one rather than a
                         // replacement. Read before `config` is rebuilt.
                         let first_connection = !config.configured && configured;
+                        let lost_configuration = config.configured && !configured;
                         director = settings;
                         config = model::config_from(&director);
                         config.enabled = enabled;
                         config.proactive_allowed = proactive_allowed;
                         config.configured = configured;
+                        // If we lost configuration, clear the pending message since
+                        // nothing can answer anymore.
+                        if lost_configuration {
+                            pending_first_connection_message = false;
+                        }
                         if let Ok(mut inspect) = inspect.lock() {
                             inspect.enabled = config.enabled;
                             inspect.configured = config.configured;
@@ -675,15 +687,19 @@ pub(crate) fn run_frame_loop(
                                 &director,
                                 configured,
                             );
-                            session_log::new_session(
-                                &app,
-                                &live.id,
-                                if first_connection {
-                                    "something can answer now"
-                                } else {
-                                    "settings changed what answers"
-                                },
-                            );
+                            // On first connection, defer the "something can answer now"
+                            // message until after the first successful wake. Otherwise
+                            // the banner appears even when harness spawn fails moments
+                            // later, scrolling the chat away from the connection error.
+                            if first_connection {
+                                pending_first_connection_message = true;
+                            } else {
+                                session_log::new_session(
+                                    &app,
+                                    &live.id,
+                                    "settings changed what answers",
+                                );
+                            }
                         }
                     }
                     SettingsOp::ReloadChat => reload_chat = true,
@@ -1567,6 +1583,17 @@ pub(crate) fn run_frame_loop(
                                     }
                                     live.chat_turn = chat_turn;
                                     live.happened_last = Some(cell);
+                                    // The first successful wake after first connection proves
+                                    // the completer works. Emit the deferred "something can
+                                    // answer now" message now that we know it's true.
+                                    if pending_first_connection_message {
+                                        session_log::new_session(
+                                            &app,
+                                            &live.id,
+                                            "something can answer now",
+                                        );
+                                        pending_first_connection_message = false;
+                                    }
                                     was_addressed
                                 }
                             }
