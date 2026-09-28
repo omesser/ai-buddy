@@ -106,6 +106,39 @@ test("a batched row reports each edit through stage and writes nothing on blur",
   assert.deepEqual(emitted, [], "a batched row never writes on blur (#663)");
 });
 
+test("AI switches and wake interval wait for Apply and can be discarded", () => {
+  const emitted = [];
+  let draft = {};
+  const control = draw(MODEL_API.values, (payload) => emitted.push(payload), (id, value) => {
+    draft[id] = value;
+  });
+  const director = control.row("director").children[0].children[0];
+  director.checked = false;
+  director.handlers.change();
+  const proactive = control.row("proactive").children[0].children[0];
+  proactive.checked = false;
+  proactive.handlers.change();
+  const piMcp = control.row("pi_project_mcp").children[0].children[0];
+  piMcp.checked = false;
+  piMcp.handlers.change();
+  const wake = control("director_wake_secs");
+  wake.value = "240";
+  wake.handlers.input();
+  wake.handlers.blur?.();
+
+  assert.deepEqual(emitted, []);
+  assert.deepEqual(draft, {
+    director: false,
+    proactive: false,
+    pi_project_mcp: false,
+    director_wake_secs: "240",
+  });
+  assert.equal(draw({ ...MODEL_API.values, ...draft }).row("director").children[0].children[0].checked, false);
+  draft = foldDraft(draft, { reset: true });
+  assert.equal(draw({ ...MODEL_API.values, ...draft }).row("director").children[0].children[0].checked, true);
+  assert.equal(draw({ ...MODEL_API.values, ...draft })("director_wake_secs").value, "180");
+});
+
 test("a batched row draws the draft it is handed, the key field included", () => {
   const control = draw({ ...MODEL_API.values, director_model: "gpt-5", director_api_key: "sk-draft" });
 
