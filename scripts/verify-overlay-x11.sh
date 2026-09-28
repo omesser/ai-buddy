@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/x11.sh
-source "$SCRIPT_DIR/lib/x11.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -31,7 +31,9 @@ if ! has_supporting_wm; then
   command -v openbox > /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
   log_info "Starting openbox (Xvfb has no window manager)..."
   openbox --replace > /dev/null 2> "$OUT/openbox.err" &
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_PID=$!
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
   for _ in $(seq 1 40); do
     has_supporting_wm && break
@@ -44,7 +46,9 @@ trap cleanup EXIT
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
 ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_W=$((ROOT_W / 2))
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_H=$((ROOT_H / 2))
 # Halfway from the spawn (display centre) to the floor, and wide enough that a
 # short walk before the ride still leaves the sprite over the Perch.

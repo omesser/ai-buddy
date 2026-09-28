@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/x11.sh
-source "$SCRIPT_DIR/lib/x11.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -36,7 +36,9 @@ if ! has_supporting_wm; then
   command -v openbox > /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
   log_info "Starting openbox (Xvfb has no window manager)..."
   openbox --replace > /dev/null 2> "$OUT/openbox.err" &
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_PID=$!
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
   for _ in $(seq 1 40); do
     has_supporting_wm && break
@@ -85,7 +87,9 @@ kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
 ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_W=$((ROOT_W / 2))
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_H=$((ROOT_H / 2))
 
 find_settings_window() {
