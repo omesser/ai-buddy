@@ -149,7 +149,7 @@ function popup(row, values, frozen) {
   return select;
 }
 
-function drawRow(row, values, emit, stage) {
+function drawRow(row, values, emit, stage, tab) {
   switch (row.type) {
     case "Checkbox": {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
@@ -275,7 +275,7 @@ function drawRow(row, values, emit, stage) {
             const payload = { press: control.id, fields: typed() };
             if (control.id === "director_apply") {
               const root = button.closest('[role="tabpanel"]') ?? button.getRootNode();
-              payload.draft = aiDraft(root, values);
+              payload.draft = aiDraft(root, tab, values);
             }
             emit(payload);
           });
@@ -315,22 +315,18 @@ function rowValue(root, id) {
   return control ? control.value : "";
 }
 
-// A cleared key draws as a blank field, and Rust reads a blank field as
+// Apply sends every row the form marks batched, so a new one needs no entry
+// here. A cleared key draws as a blank field, and Rust reads a blank field as
 // untouched, so the staged delete rides along as its own flag.
-function aiDraft(root, values) {
-  return {
-    director: rowChecked(root, "director"),
-    proactive: rowChecked(root, "proactive"),
-    pi_project_mcp: rowChecked(root, "pi_project_mcp"),
-    director_wake_secs: rowValue(root, "director_wake_secs"),
-    byo_harness: rowValue(root, "byo_harness"),
-    director_base_url: rowValue(root, "director_base_url"),
-    director_model: rowValue(root, "director_model"),
-    director_api_key: rowValue(root, "director_api_key"),
-    harness: rowValue(root, "harness"),
-    harness_command: rowValue(root, "harness_command"),
-    clear_key: values.clear_key === true,
-  };
+function aiDraft(root, tab, values) {
+  const rows = tab.sections.flatMap((section) => section.rows);
+  const draft = Object.fromEntries(
+    rows
+      .filter((row) => row.batched || row.type === "SecureField")
+      .map((row) => [row.id, row.type === "Checkbox" ? rowChecked(root, row.id) : rowValue(root, row.id)]),
+  );
+  draft.clear_key = values.clear_key === true;
+  return draft;
 }
 
 function rowChecked(root, id) {
@@ -380,12 +376,12 @@ export function render(root, tab, values, emit = () => {}, stage = () => {}) {
     for (const row of section.rows) {
       if (row.type === "Composite" && row.id === "director_actions") {
         if (footer) {
-          footer.append(drawRow(row, values, emit, stage));
+          footer.append(drawRow(row, values, emit, stage, tab));
         } else {
-          node.append(drawRow(row, values, emit, stage));
+          node.append(drawRow(row, values, emit, stage, tab));
         }
       } else {
-        node.append(drawRow(row, values, emit, stage));
+        node.append(drawRow(row, values, emit, stage, tab));
       }
     }
     root.append(node);
