@@ -101,9 +101,18 @@ test("quick-message showcase matches the overlay", () => {
   assert.match(js, /DRAG_DISMISS_PX = 4/);
   assert.match(cues, /HOVER_DELAY_MS = 2500/);
   assert.match(cues, /DRAG_DISMISS_PX = 4/);
-  assert.match(main, /placeholder = "talk to me"/);
+  assert.match(js, /return "talk to me"/);
   assert.match(cues, /placeholder="talk to me"/);
   assert.match(bubble, /placeholder="talk to me"/);
+  assert.match(cues, /id="quick-message-frozen"/);
+  assert.match(bubble, /id="quick-message-frozen"/);
+  assert.match(cues, /disabled placeholder="Nothing can answer yet"/);
+  assert.match(bubble, /disabled placeholder="Nothing can answer yet"/);
+  assert.match(bubble, /disabled placeholder="Starting Hermes…"/);
+  assert.match(cues, /#2c3340/);
+  assert.match(bubble, /#2c3340/);
+  assert.match(cues, /\.quick-message-send:disabled \{[^}]*background:\s*#2c3340/s);
+  assert.match(bubble, /\.quick-message-send:disabled \{[^}]*background:\s*#2c3340/s);
   assert.match(main, /M2\.2 1\.4 L10\.2 6 L2\.2 10\.6/);
   assert.match(cues, /M2\.2 1\.4 L10\.2 6 L2\.2 10\.6/);
   assert.match(bubble, /M2\.2 1\.4 L10\.2 6 L2\.2 10\.6/);
@@ -158,6 +167,7 @@ test("index names the quick-message on the cues and bubble pages", () => {
   assert.match(cues, /quick-message/);
   assert.match(bubble, /no tail/);
   assert.match(bubble, /talk to me/);
+  assert.match(bubble, /Nothing can answer yet/);
   assert.match(cls(cues), /Dated proposal/);
   assert.match(cls(cues), /#277/);
   assert.match(cls(bubble), /#441/);

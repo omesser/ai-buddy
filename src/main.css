@@ -289,6 +289,10 @@ body {
   color: #8b93a7;
 }
 
+.quick-message-field:disabled {
+  cursor: default;
+}
+
 .quick-message-send {
   flex: 0 0 auto;
   align-self: center;
@@ -312,6 +316,15 @@ body {
   height: 12px;
   margin-left: 1px;
   fill: #14171e;
+}
+
+.quick-message-send:disabled {
+  background: #2c3340;
+  cursor: default;
+}
+
+.quick-message-send:disabled svg {
+  fill: #8b93a7;
 }
 
 .sprite {
