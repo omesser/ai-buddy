@@ -31,7 +31,7 @@ pub(super) fn depth() -> u32 {
 }
 
 #[cfg(test)]
-pub(super) fn lock_tests() -> std::sync::MutexGuard<'static, ()> {
+pub(crate) fn lock_tests() -> std::sync::MutexGuard<'static, ()> {
     TEST_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())

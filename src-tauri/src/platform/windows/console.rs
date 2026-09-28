@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn spawned_children_can_be_kept_off_ctrl_c_and_this_process_turned_back_on() {
-        let _lock = super::super::ctrl_c::lock_tests();
+        let _lock = crate::platform::ctrl_c::lock_tests();
         let _restore = Restore;
         assert!(
             suppress_ctrl_c_for_children(),
@@ -97,7 +97,7 @@ mod tests {
         if std::env::var_os("FIDGET_CTRL_C_PROBE").is_some() {
             std::process::exit(inheritance_probe());
         }
-        let _lock = super::super::ctrl_c::lock_tests();
+        let _lock = crate::platform::ctrl_c::lock_tests();
         let exe = std::env::current_exe().expect("test binary");
         let filter = exact_filter(
             "a_child_spawned_during_suppress_inherits_ignore_and_a_later_one_does_not",
