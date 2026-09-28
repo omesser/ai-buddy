@@ -32,8 +32,8 @@ META=.agents/pstack/UPSTREAM.json
 # this script stops claiming, so it also stops being eligible for deletion.
 EXCLUDED='tdd|Collision. The Matt Pocock engineering set ships a tdd too, and its implement skill calls it by name, so that one wins. .agents/skills is flat and holds one of the two. See .agents/mattpocock/UPSTREAM.json.'
 
-# shellcheck source=scripts/sync-skills-exclusions.sh
-source "$(dirname "${BASH_SOURCE[0]}")/sync-skills-exclusions.sh"
+# shellcheck source=scripts/lib/sync-skills.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/sync-skills.sh"
 
 # The vendored names, one per line, read back out of the lock file.
 vendored_names() {
