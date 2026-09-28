@@ -607,6 +607,34 @@ function draw(now) {
     }
   }
   reportHotspots();
+  if (cadence) noteCadence(now);
+}
+
+// Null unless FIDGET_TRACE_CADENCE is on. Each display frame as Unix ms, with
+// whether it asked for the next one and the two arrivals it drew between, for
+// scripts/frame-cadence.mjs. Sent once a second, and only after a frame.
+let cadence = null;
+
+function noteCadence(now) {
+  // ponytail: the first Instance only, which is all the bench launches.
+  const view = views.values().next().value;
+  if (!view?.latest) return;
+  const origin = performance.timeOrigin;
+  cadence.push([
+    origin + now,
+    armed,
+    view.previous ? origin + view.previous.at : null,
+    origin + view.latest.at,
+  ]);
+  if (cadence.length === 1) setTimeout(flushCadence, 1000);
+}
+
+function flushCadence() {
+  const frames = cadence;
+  cadence = [];
+  window.__TAURI__.core.invoke("overlay_cadence", { frames }).catch((err) => {
+    console.error("overlay_cadence", err);
+  });
 }
 
 async function start() {
@@ -620,6 +648,11 @@ async function start() {
     );
   } catch (err) {
     console.error("overlay_hit_tests_hotspots", err);
+  }
+  try {
+    if (await window.__TAURI__.core.invoke("overlay_traces_cadence")) cadence = [];
+  } catch (err) {
+    console.error("overlay_traces_cadence", err);
   }
 
   // One overlay per display, each told every sprite in its own coordinates. A

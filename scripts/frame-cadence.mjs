@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+// Reduce a fidget log run under FIDGET_TRACE_FRAMES and FIDGET_TRACE_CADENCE
+// to the numbers #426 asks for. scripts/bench-frame-cadence-macos.sh writes the
+// log and calls this with its sample window.
+//
+// Usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS]
+
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { interpolate } from "../src/interpolate.js";
+
+const EDGES = [0, 10, 14, 18, 20, 25, 34, 50];
+// A 60 Hz frame is 16.7 ms, so a gap past 20 ms is a vsync the loop missed.
+const DROP_MS = 20;
+
+const round = (value, places) => Number(value.toFixed(places));
+const mean = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
+// Nearest rank, so every reported percentile is a value that was measured.
+const percentile = (sorted, p) => sorted[Math.ceil(p * sorted.length) - 1];
+const deltas = (times) => times.slice(1).map((at, i) => at - times[i]);
+
+function histogram(frameDeltas, tickDeltas) {
+  const bin = (value) => EDGES.findLastIndex((edge) => value >= edge);
+  return EDGES.map((edge, i) => ({
+    bin: i + 1 < EDGES.length ? `${edge}-${EDGES[i + 1]}` : `${edge}+`,
+    frames: frameDeltas.filter((d) => bin(d) === i).length,
+    ticks: tickDeltas.filter((d) => bin(d) === i).length,
+  }));
+}
+
+/**
+ * @param {string} log
+ * @param {{from?: number, to?: number}} window - Unix ms, inclusive
+ */
+export function analyze(log, { from = -Infinity, to = Infinity }) {
+  const inWindow = (at) => at >= from && at <= to;
+  const ticks = [];
+  const overlays = new Map();
+  for (const line of log.split("\n")) {
+    const [kind, ...fields] = line.split(" ");
+    if (kind === "frame:" && inWindow(Number(fields[0]))) ticks.push(Number(fields[0]));
+    if (kind !== "cadence:") continue;
+    const [label, now, rearmed, previous, latest] = fields;
+    if (!inWindow(Number(now))) continue;
+    if (!overlays.has(label)) overlays.set(label, []);
+    overlays.get(label).push({
+      now: Number(now),
+      rearmed: rearmed === "1",
+      previous: previous === "-" ? null : Number(previous),
+      latest: Number(latest),
+    });
+  }
+
+  // A frame after one that did not ask for it is the loop starting again on an
+  // arrival. The gap before it is time with nothing to draw, not a dropped frame.
+  const frameDeltas = [];
+  let restarts = 0;
+  const lags = [];
+  for (const frames of overlays.values()) {
+    frames.forEach((frame, i) => {
+      if (i > 0 && frames[i - 1].rearmed) frameDeltas.push(frame.now - frames[i - 1].now);
+      if (i > 0 && !frames[i - 1].rearmed) restarts++;
+      if (frame.previous === null) return;
+      // Interpolating the arrival times themselves gives the moment whose
+      // placement is on screen, by the renderer's own arithmetic.
+      const shown = interpolate(
+        { x: frame.previous, y: 0, at: frame.previous },
+        { x: frame.latest, y: 0, at: frame.latest },
+        frame.now,
+      ).x;
+      lags.push({
+        ms: frame.now - shown,
+        samples: (frame.now - shown) / (frame.latest - frame.previous),
+        held: shown === frame.latest,
+      });
+    });
+  }
+
+  const tickDeltas = deltas(ticks);
+  const byMs = lags.map((l) => l.ms).sort((a, b) => a - b);
+  const bySamples = lags.map((l) => l.samples).sort((a, b) => a - b);
+  return {
+    frames: [...overlays.values()].reduce((n, frames) => n + frames.length, 0),
+    fps: frameDeltas.length ? round(1000 / mean(frameDeltas), 1) : null,
+    drops: frameDeltas.filter((d) => d > DROP_MS).length,
+    restarts,
+    ticks: ticks.length,
+    tickHz: tickDeltas.length ? round(1000 / mean(tickDeltas), 1) : null,
+    lag: lags.length
+      ? {
+          p50Ms: round(percentile(byMs, 0.5), 1),
+          p95Ms: round(percentile(byMs, 0.95), 1),
+          p50Samples: round(percentile(bySamples, 0.5), 2),
+          p95Samples: round(percentile(bySamples, 0.95), 2),
+          held: lags.filter((l) => l.held).length,
+        }
+      : null,
+    histogram: histogram(frameDeltas, tickDeltas),
+  };
+}
+
+export function report(result) {
+  const na = (value, unit = "") => (value === null ? "N/A" : `${value}${unit}`);
+  const { lag } = result;
+  const rows = [
+    ["Display frames", result.frames],
+    ["Mean fps", na(result.fps)],
+    [`Dropped (>${DROP_MS} ms)`, result.drops],
+    ["Loop restarts", result.restarts],
+    ["Engine ticks", `${result.ticks} (${na(result.tickHz, " Hz")})`],
+    ["Interpolation lag p50", lag ? `${lag.p50Ms} ms (${lag.p50Samples} samples)` : "N/A"],
+    ["Interpolation lag p95", lag ? `${lag.p95Ms} ms (${lag.p95Samples} samples)` : "N/A"],
+    ["Frames held at the latest placement", lag ? lag.held : "N/A"],
+  ];
+  return [
+    "| Metric | Value |",
+    "|---|---|",
+    ...rows.map(([name, value]) => `| ${name} | ${value} |`),
+    "",
+    "| Delta ms | Display frames | Engine ticks |",
+    "|---|---|---|",
+    ...result.histogram.map((b) => `| ${b.bin} | ${b.frames} | ${b.ticks} |`),
+  ].join("\n");
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [path, ...args] = process.argv.slice(2);
+  if (!path) {
+    console.error("usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS]");
+    process.exit(2);
+  }
+  const flag = (name) => {
+    const i = args.indexOf(name);
+    return i === -1 ? undefined : Number(args[i + 1]);
+  };
+  const result = analyze(readFileSync(path, "utf8"), { from: flag("--from"), to: flag("--to") });
+  console.log(report(result));
+}
