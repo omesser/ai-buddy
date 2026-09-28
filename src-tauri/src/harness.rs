@@ -2553,16 +2553,17 @@ mod tests {
     /// inside the first turn, which is where a slow MCP server's lands.
     /// `mcp-link-tool` scopes it to a tool call, which blocks that turn.
     fn mcp_link(session: &str, tool_call: Option<&str>) {
-        say(
-            json!({"jsonrpc": "2.0", "id": 102, "method": "elicitation/create", "params": {
-                "sessionId": session,
-                "toolCallId": tool_call,
-                "mode": "url",
-                "elicitationId": "mcp-1",
-                "url": "https://example.test/oauth",
-                "message": "Authenticate with MCP server linear",
-            }}),
-        );
+        let mut link = json!({"jsonrpc": "2.0", "id": 102, "method": "elicitation/create", "params": {
+            "sessionId": session,
+            "mode": "url",
+            "elicitationId": "mcp-1",
+            "url": "https://example.test/oauth",
+            "message": "Authenticate with MCP server linear",
+        }});
+        if let Some(call) = tool_call {
+            link["params"]["toolCallId"] = json!(call);
+        }
+        say(link);
     }
 
     fn stop(id: &Value, reason: &str) {

@@ -4073,7 +4073,9 @@ mod tests {
     }
 
     /// A link nobody asked for opens nothing, and the next Chat's replay,
-    /// which reads `forms`, still draws it. A sign-in link opens Chat once.
+    /// which reads `forms`, still draws it. A link that does not wait, a
+    /// sign-in's or a tool call's, opens Chat once. Do Not Disturb holds it
+    /// for replay, as it holds a permission ask.
     #[test]
     fn an_unsolicited_link_waits_for_the_next_chat_and_a_sign_in_link_opens_it() {
         let mut pending = Pending::default();
@@ -4088,28 +4090,9 @@ mod tests {
 
         let mut quiet = Pending::default();
         assert!(!quiet.hold_form(&link("10", false), true, true));
-        assert!(!quiet.hold_form(&link("11", false), false, false));
-    }
-
-    /// A tool call's link does not wait (`acp_wire`), so it opens Chat as a
-    /// permission ask does, and Do Not Disturb holds it as it holds an ask.
-    /// A session link still waits either way.
-    #[test]
-    fn a_tool_call_link_opens_chat_unless_do_not_disturb_and_a_session_link_waits() {
-        let tool_call = link("12", false);
-        let session = link("13", true);
-
-        let mut pending = Pending::default();
-        assert!(pending.hold_form(&tool_call, true, false));
-
-        let mut quiet = Pending::default();
-        assert!(!quiet.hold_form(&tool_call, true, true));
         assert!(!quiet.opened);
         assert_eq!(quiet.forms.len(), 1);
-
-        let mut idle = Pending::default();
-        assert!(!idle.hold_form(&session, true, false));
-        assert!(!idle.opened);
+        assert!(!quiet.hold_form(&link("11", false), false, false));
     }
 
     /// Sync commands run on the main thread. These two must stay async so a
