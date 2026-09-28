@@ -134,6 +134,16 @@ impl Instance {
         self.engine.set_do_not_disturb(enabled)
     }
 
+    /// Where this Instance's feet are.
+    pub fn feet(&self) -> Point {
+        self.engine.feet()
+    }
+
+    /// Stand this Instance at `feet`, dropping any motion it had.
+    pub fn stand_at(&mut self, feet: Point) {
+        self.engine.stand_at(feet);
+    }
+
     /// Switch this Instance to another Character without moving it.
     pub fn retarget(&mut self, character: &Character) {
         self.character_name = character.name.clone();

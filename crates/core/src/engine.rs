@@ -7,6 +7,7 @@
 
 use crate::character::{Behavior, CursorReaction, Primitive};
 use crate::director::Seeded;
+use crate::overlay::{display_index_for, stands_on};
 pub use crate::window_source::{Rect, WindowId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -411,6 +412,125 @@ fn locomotion_allowed(bubble_visible: bool) -> bool {
     !bubble_visible
 }
 
+/// Where each sprite should stand to be on the display under `cursor`.
+/// `floors` are the usable frames at the same indexes as `monitors`, so the
+/// feet do not land behind the Dock.
+pub fn bring_landings(
+    feet: &[Point],
+    widths: &[f64],
+    monitors: &[Rect],
+    floors: &[Rect],
+    cursor: Point,
+) -> Option<Vec<Option<Point>>> {
+    let on = display_index_for((cursor.x, cursor.y), monitors)?;
+    let monitor = monitors[on];
+    let floor = floors.get(on).copied().unwrap_or(monitor);
+    let mut landings = vec![None; feet.len()];
+
+    let mut arrivals: Vec<usize> = feet
+        .iter()
+        .enumerate()
+        .filter(|(_, at)| !stands_on((at.x, at.y), &monitor))
+        .map(|(index, _)| index)
+        .collect();
+    if arrivals.is_empty() {
+        return Some(landings);
+    }
+    arrivals.sort_by(|&a, &b| feet[a].x.total_cmp(&feet[b].x).then(a.cmp(&b)));
+
+    let (left, right) = foot_bounds(&floor);
+    let spans: Vec<f64> = arrivals
+        .iter()
+        .map(|&index| sprite_span(widths.get(index).copied().unwrap_or(0.0)))
+        .collect();
+    // Centre the row on the cursor, then shift it until it sits inside the
+    // inset. A row wider than the display piles up at the far inset.
+    let between: f64 = spans.windows(2).map(|pair| (pair[0] + pair[1]) / 2.0).sum();
+    let mut start = cursor.x - between / 2.0;
+    let end = start + between;
+    if end > right {
+        start -= end - right;
+    }
+    if start < left {
+        start = left;
+    }
+    let mut xs = Vec::with_capacity(arrivals.len());
+    let mut x = start;
+    for (slot, span) in spans.iter().enumerate() {
+        xs.push(x.clamp(left, right));
+        if slot + 1 < spans.len() {
+            x += (span + spans[slot + 1]) / 2.0;
+        }
+    }
+    let stayers: Vec<(f64, f64)> = feet
+        .iter()
+        .enumerate()
+        .filter(|(_, at)| stands_on((at.x, at.y), &monitor))
+        .map(|(index, at)| (at.x, sprite_span(widths.get(index).copied().unwrap_or(0.0))))
+        .collect();
+    // A right-click lands on whoever is already here. Slide the arrivals off
+    // them; if the display cannot hold that, keep the overlap.
+    if let Some(shift) = shift_off_stayers(&xs, &spans, &stayers, left, right) {
+        for place in &mut xs {
+            *place += shift;
+        }
+    }
+    let y = floor.bottom();
+    for (slot, &index) in arrivals.iter().enumerate() {
+        landings[index] = Some(Point { x: xs[slot], y });
+    }
+    Some(landings)
+}
+
+fn sprite_span(width: f64) -> f64 {
+    if width > 0.0 {
+        width
+    } else {
+        EDGE_CLEARANCE
+    }
+}
+
+/// Inset by the edge clearance. A narrower display shrinks the inset until the sides meet.
+fn foot_bounds(floor: &Rect) -> (f64, f64) {
+    let inset = EDGE_CLEARANCE.min(floor.width.max(0.0) / 2.0);
+    (floor.x + inset, floor.x + floor.width.max(0.0) - inset)
+}
+
+/// How far to slide the row so it does not stand on someone already there.
+/// Right before left. `None` when no slide both fits and clears.
+fn shift_off_stayers(
+    xs: &[f64],
+    spans: &[f64],
+    stayers: &[(f64, f64)],
+    left: f64,
+    right: f64,
+) -> Option<f64> {
+    if stayers.is_empty() || row_clears(xs, spans, stayers) {
+        return Some(0.0);
+    }
+    let room = (right - left).max(0.0);
+    let mut delta = 1.0;
+    while delta <= room {
+        for shift in [delta, -delta] {
+            let moved: Vec<f64> = xs.iter().map(|x| x + shift).collect();
+            let inside = moved.iter().all(|x| *x >= left && *x <= right);
+            if inside && row_clears(&moved, spans, stayers) {
+                return Some(shift);
+            }
+        }
+        delta += 1.0;
+    }
+    None
+}
+
+fn row_clears(xs: &[f64], spans: &[f64], stayers: &[(f64, f64)]) -> bool {
+    xs.iter().zip(spans).all(|(x, span)| {
+        stayers
+            .iter()
+            .all(|(sx, sw)| (x - sx).abs() >= (span + sw) / 2.0)
+    })
+}
+
 impl Engine {
     /// A sprite placed at `position`, falling until the world says otherwise.
     pub fn new(position: Point) -> Self {
@@ -515,6 +635,33 @@ impl Engine {
 
     pub fn do_not_disturb(&self) -> bool {
         self.do_not_disturb
+    }
+
+    /// Where the sprite's feet are.
+    pub fn feet(&self) -> Point {
+        self.position
+    }
+
+    /// Stand the sprite at `feet` and drop the motion that would carry it off.
+    /// A walk, a perch and a fall all outlive the request, and an idle clock
+    /// already near sleep would nod off on the tick it arrived.
+    pub fn stand_at(&mut self, feet: Point) {
+        self.position = feet;
+        self.previous_position = feet;
+        self.previous_windows.clear();
+        self.velocity = Point::default();
+        self.state = State::Grounded;
+        self.animation = animation_for(State::Grounded);
+        self.animation_ms = 0;
+        self.idle_ms = 0;
+        self.perched_rest_ms = 0;
+        self.stop_playing();
+        self.last_perch = None;
+        self.hold_offset_x = 0.0;
+        self.rest_perch();
+        self.riding = false;
+        self.chase_ms = 0;
+        self.poke_cooldown_ms = 0;
     }
 
     /// Swap the Character this Engine is playing without moving the sprite.
@@ -6809,5 +6956,274 @@ mod tests {
         assert_eq!(refused.playing_primitive, None, "nothing is on screen");
         assert_eq!(refused.state, State::Asleep, "still asleep");
         assert_eq!(refused.position, resting_at, "and has not moved");
+    }
+
+    fn monitor(x: f64, y: f64, width: f64, height: f64) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// Two buddies on the primary, cursor on the second. Feet land on that
+    /// floor, 64 points in from a side, spaced by their width and centred
+    /// on the cursor. Left-to-right order follows where they stood.
+    #[test]
+    fn bring_landings_puts_every_sprite_on_the_cursor_display() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+        let feet = [
+            Point {
+                x: 400.0,
+                y: 1080.0,
+            },
+            Point {
+                x: 100.0,
+                y: 1080.0,
+            },
+        ];
+        let cursor = Point {
+            x: 2500.0,
+            y: 400.0,
+        };
+
+        assert_eq!(
+            bring_landings(
+                &feet,
+                &[128.0, 128.0],
+                &[primary, second],
+                &[primary, second],
+                cursor
+            ),
+            Some(vec![
+                Some(Point {
+                    x: 2564.0,
+                    y: 982.0
+                }),
+                Some(Point {
+                    x: 2436.0,
+                    y: 982.0
+                }),
+            ])
+        );
+    }
+
+    /// The cursor is on the buddy already here, which is where a right-click
+    /// lands. The one coming across stands beside them, not on top of them.
+    #[test]
+    fn bring_landings_does_not_drop_an_arrival_on_someone_already_there() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+        let feet = [
+            Point {
+                x: 2500.0,
+                y: 982.0,
+            },
+            Point {
+                x: 100.0,
+                y: 1080.0,
+            },
+        ];
+
+        assert_eq!(
+            bring_landings(
+                &feet,
+                &[128.0, 128.0],
+                &[primary, second],
+                &[primary, second],
+                Point {
+                    x: 2500.0,
+                    y: 400.0
+                },
+            ),
+            Some(vec![
+                None,
+                Some(Point {
+                    x: 2628.0,
+                    y: 982.0
+                })
+            ])
+        );
+    }
+
+    /// Feet on the upper floor are the lower display's top edge. The art hangs
+    /// above them, so a click on the lower display still has to bring them down.
+    #[test]
+    fn bring_landings_brings_a_sprite_down_off_the_upper_floor() {
+        let upper = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let lower = monitor(0.0, 1080.0, 1920.0, 1080.0);
+
+        assert_eq!(
+            bring_landings(
+                &[Point {
+                    x: 400.0,
+                    y: 1080.0
+                }],
+                &[128.0],
+                &[upper, lower],
+                &[upper, lower],
+                Point {
+                    x: 500.0,
+                    y: 1500.0
+                },
+            ),
+            Some(vec![Some(Point {
+                x: 500.0,
+                y: 2160.0
+            })])
+        );
+    }
+
+    /// Already standing there, including on the floor the display below
+    /// would claim. Moving them would be a jump the click did not ask for.
+    #[test]
+    fn bring_landings_leaves_a_sprite_already_on_that_display() {
+        let upper = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let lower = monitor(0.0, 1080.0, 1920.0, 1080.0);
+        let on_the_floor = [Point {
+            x: 400.0,
+            y: 1080.0,
+        }];
+        let perched = [Point {
+            x: 2500.0,
+            y: 400.0,
+        }];
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+        let cursor_on_second = Point {
+            x: 2500.0,
+            y: 400.0,
+        };
+
+        assert_eq!(
+            bring_landings(
+                &on_the_floor,
+                &[128.0],
+                &[upper, lower],
+                &[upper, lower],
+                Point { x: 500.0, y: 200.0 },
+            ),
+            Some(vec![None]),
+            "the upper floor is still the upper display"
+        );
+        assert_eq!(
+            bring_landings(
+                &perched,
+                &[128.0],
+                &[upper, second],
+                &[upper, second],
+                cursor_on_second,
+            ),
+            Some(vec![None])
+        );
+    }
+
+    /// The usable frame stops above the Dock. Feet go on that floor, not
+    /// on the full frame's bottom edge behind it.
+    #[test]
+    fn bring_landings_uses_the_usable_floor() {
+        let full = monitor(1920.0, 0.0, 1920.0, 1080.0);
+        let usable = monitor(1920.0, 25.0, 1920.0, 980.0);
+        let away = [Point { x: 100.0, y: 800.0 }];
+        let home = monitor(0.0, 0.0, 1920.0, 1080.0);
+
+        assert_eq!(
+            bring_landings(
+                &away,
+                &[128.0],
+                &[home, full],
+                &[home, usable],
+                Point {
+                    x: 2500.0,
+                    y: 100.0
+                },
+            ),
+            Some(vec![Some(Point {
+                x: 2500.0,
+                y: 1005.0
+            })])
+        );
+    }
+
+    /// Nothing contains the cursor. The nearest display is the one it is
+    /// brought to, and the feet stay inside that display.
+    #[test]
+    fn bring_landings_uses_the_nearest_display_when_the_cursor_is_in_a_gap() {
+        let left = monitor(0.0, 0.0, 1000.0, 800.0);
+        let right = monitor(1200.0, 0.0, 1000.0, 800.0);
+        let on_the_right = [Point {
+            x: 1500.0,
+            y: 800.0,
+        }];
+
+        assert_eq!(
+            bring_landings(
+                &on_the_right,
+                &[128.0],
+                &[left, right],
+                &[left, right],
+                Point {
+                    x: 1050.0,
+                    y: 400.0
+                },
+            ),
+            Some(vec![Some(Point { x: 936.0, y: 800.0 })])
+        );
+    }
+
+    #[test]
+    fn bring_landings_does_nothing_when_no_display_was_reported() {
+        assert_eq!(
+            bring_landings(
+                &[Point { x: 10.0, y: 10.0 }],
+                &[128.0],
+                &[],
+                &[],
+                Point { x: 10.0, y: 10.0 },
+            ),
+            None
+        );
+    }
+
+    /// A fall in progress is dropped. The next ticks stay on the point,
+    /// including when a window on that display could be mistaken for a perch.
+    #[test]
+    fn standing_on_a_display_survives_the_next_tick() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let there = Point {
+            x: 2500.0,
+            y: 800.0,
+        };
+        engine.stand_at(there);
+        let world = WorldSnapshot {
+            displays: vec![
+                one_display(),
+                Rect {
+                    x: 2000.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+            ],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 2200.0,
+                    y: 400.0,
+                    width: 400.0,
+                    height: 300.0,
+                },
+            )],
+            elapsed_ms: 16,
+            ..WorldSnapshot::default()
+        };
+
+        let frame = engine.tick(&world);
+        assert_eq!(frame.position, there);
+        assert_eq!(frame.state, State::Grounded);
+        assert_eq!(frame.velocity, Point::default());
+        let again = engine.tick(&world);
+        assert_eq!(again.position, there, "the next tick does not hop");
     }
 }
