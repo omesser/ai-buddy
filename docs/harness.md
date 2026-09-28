@@ -1,0 +1,294 @@
+# Harness Reference
+
+How Fidget talks to a Completer or a Harness at runtime, and the MCP server a Harness calls back into; contributor setup is in [DEVELOPMENT.md](./DEVELOPMENT.md).
+
+## Running with a Completer
+
+With no Director key, Static weights pick idle Behaviors from the Character's manifest. No model, no account, no permission. Connect a Completer for model-driven variety.
+
+### Quick Start
+
+OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`, selected by `FIDGET_DIRECTOR_BASE_URL=https://api.x.ai`. A full URL ending in `/chat/completions` or `/responses` is used as-is.
+
+```sh
+# OpenAI
+cd src-tauri
+FIDGET_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.openai.com \
+FIDGET_DIRECTOR_MODEL=gpt-4o-mini \
+cargo run
+
+# Anthropic (OpenAI-compatible /v1/chat/completions)
+cd src-tauri
+FIDGET_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.anthropic.com \
+FIDGET_DIRECTOR_MODEL=claude-haiku-4-5 \
+cargo run
+
+# xAI — get a key at https://console.x.ai
+cd src-tauri
+FIDGET_DIRECTOR_API_KEY="$XAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.x.ai \
+FIDGET_DIRECTOR_MODEL=grok-4.6 \
+cargo run
+
+# Ollama (local, no key)
+cd src-tauri
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
+cargo run
+```
+
+### Director Environment
+
+Switches read the same words as the trace variables. Any other value is a typo: the switch stays as Settings has it, and the launch prints a line naming the variable it ignored. An empty value is no override.
+
+| Variable | What it does |
+|---|---|
+| `FIDGET_DIRECTOR_API_KEY` | Required for a remote provider. For a local server, set it only when the server requires auth. Empty or unset with a remote URL means Static only. |
+| `FIDGET_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
+| `FIDGET_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
+| `FIDGET_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even with a key; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
+| `FIDGET_DIRECTOR_TIMEOUT_SECS` | Timeout for one HTTP Completer request, then Static. Default 30 seconds. Raise it for a cold local server. A Harness turn uses `FIDGET_HARNESS_TURN_TIMEOUT`. |
+| `FIDGET_DIRECTOR_MAX_TOKENS` | Ceiling on one HTTP Completer turn. A safeguard against a model that will not stop, not a reply-length budget. Default 1024, or 8192 once the endpoint has been seen to mark its thinking (#606). A value here outranks both. A Harness decides its own reply length. |
+| `FIDGET_DIRECTOR_BLANK` | Blank-AI mode, same as Settings → Development → "Blank AI". Empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract) and still sends the Instance Prompt. The Prompt tab marks emptied layers Empty. With no contract the reply is prose, spoken without acting unless the Instance Prompt asks otherwise. The Harness lane keeps a separate session for this mode. |
+| `FIDGET_DIRECTOR_REASONING_EFFORT` | Sent verbatim as `reasoning_effort` (chat-completions) or `reasoning.effort` (Responses). Overrides Settings → Development → "Reasoning effort". Default `low`, because sending nothing loses wakes on a local reasoning model at the turn ceiling. The picker offers `low`, `medium`, `high`; other values can be typed and are not validated. A host that refuses the field drops it for the session, and `FIDGET_TRACE_DIRECTOR` names the value. |
+| `FIDGET_HARNESS` | Attach a Harness as the Completer: `claude`, `codex`, `copilot`, `cursor-agent`, `goose`, `grok`, `hermes`, `opencode`, `pi`, or any command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in Chat with the command that fixes it. Set and empty is the kill switch (Off, whatever Settings saved). Unset falls through to Settings → AI → AI source. ADR-0022. |
+| `FIDGET_HARNESS_CWD` | The Harness's project directory: spawn `current_dir` and ACP `session/new` / `session/load` cwd. Empty means the data folder, not `$HOME`. Overrides Settings → Development → "Working directory". The session file and Action Log stay in the data folder. |
+| `FIDGET_HARNESS_TURN_TIMEOUT` | How long a Harness `session/prompt` may run before `session/cancel`, excluding time spent waiting on your answer to an ask, and restarted when you answer. Overrides Settings → Development → "Turn timeout, in seconds". Default 120. Read at attach. |
+| `FIDGET_HARNESS_AUTH_RETRY_SECS` | How long to leave a not-signed-in Harness before retrying `session/new`. Overrides Settings → Development → "Auth retry, in seconds". Default 60. Read at attach. |
+| `FIDGET_MCP_URL`, `FIDGET_MCP_TOKEN` | The app's loopback MCP endpoint and per-run bearer token. The app sets both on the stdio MCP entry it hands the Harness; with neither set the shim fails every call. Set them by hand to point the shim at a running app. Never written to a file or a log. ADR-0026. |
+| `FIDGET_MCP_BIN` | The stdio MCP server binary, when it is not beside the app. Overrides Settings → Development → "MCP server binary". Read at attach. See [MCP Server](#mcp-server) for the three stdio routes. |
+| `FIDGET_DIRECTOR_WAKE_SECS` | First proactive model-call wait. Overrides Settings → AI → "First wake, in seconds". Default 120. Each proactive call multiplies the wait by the Character's `[director]` `model_base ^ model_power` (default doubling), capped at two hours. Poke and Summon wake immediately. |
+
+### Settings and Keyring
+
+Settings → AI persists base URL, model, and first wake interval, and stores the API key in the OS secret store. Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory.
+
+- A working-directory edit respawns the Harness, so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach.
+- Editing the Completer source or HTTP endpoint retargets the running Director with no restart. The session in flight is dropped; a streaming call closes its connection, so the old host stops generating.
+- `cargo run` with the env vars unset uses the saved Completer. A field an env var owns shows its value, names the variable, and takes no edit.
+- An exported `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely.
+- Settings → Do Not Disturb → Sound mutes cue audio. On by default; off takes effect on the next frame. Do Not Disturb also silences cues and keeps the visual ones (#277). A machine that cannot start an audio context logs one webview console warning and plays the visual cue silently (#292).
+- The window moves with a modifier-drag on empty chrome: Command-drag on macOS, Super-drag on Linux, Alt-drag on Windows. Nothing in the UI names this.
+
+**Linux:** the key goes to Secret Service (GNOME Keyring, KWallet), or kernel keyutils when Secret Service is absent. Building the shell needs `libdbus-1-dev`. No packaged secret store is required.
+
+**macOS Keychain ACL:** a saved key's access list names the build that wrote it. An ad-hoc signature names it by a hash that every `cargo build` changes, so a rebuilt app costs two Keychain dialogs. `scripts/dev-sign.sh` signs with a stable identity instead. From the repo root:
+
+```sh
+cargo build -p fidget && scripts/dev-sign.sh && ./target/debug/fidget
+```
+
+A key saved before the first signed run keeps the old list: clear it in Settings and save it again. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those once more. Released builds are ad-hoc signed too, so updates prompt the same way until there is a Developer ID (#283).
+
+**Accessibility, Screen Recording, and Input Monitoring:** grant them in Settings → What the fidget can see. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as Fidget. Check the box, then turn that app on in Privacy & Security. Input Monitoring lets the mouse wake an idle sprite, so a poke lands at once instead of up to a second later. Without it the frame loop keeps its idle back-off. The tap starts within about a second of the grant, with no relaunch, and stops when you uncheck the box.
+
+### Local Model Servers
+
+The fidget wakes all day and every Poke is another wake, so a hosted API meters idling, and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the meter. On loopback it also keeps that context on the machine; a LAN box still receives it. "Local" means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name. A local base URL makes `FIDGET_DIRECTOR_API_KEY` optional.
+
+These servers speak `/v1/chat/completions`:
+
+| Server | Base URL | Model name | Auth | Tested |
+|---|---|---|---|---|
+| [Ollama](https://ollama.com) | `http://localhost:11434` | a tag: `gemma4`, `llama3.2:3b` | none by default | yes — `gemma4:latest`, 9.6 GB, on an Apple-silicon Mac |
+| [oMLX](https://github.com/jundot/omlx) | `http://localhost:8000` | a served model id | API key required | yes |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | `http://localhost:8080` | the gguf path, or `--alias` | optional `--api-key` | no |
+| [LM Studio](https://lmstudio.ai) | `http://localhost:1234` | the id shown in its server tab | optional | no |
+| [vLLM](https://docs.vllm.ai) | `http://localhost:8000` | the served model id | optional `--api-key` | no |
+| [MLX](https://github.com/ml-explore/mlx-examples) `mlx_lm.server` | `http://localhost:8080` | a Hugging Face repo id | none | no |
+
+**Ollama** (no auth):
+
+```sh
+ollama pull gemma4
+ollama serve
+
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
+cargo run
+```
+
+**oMLX** (requires API key):
+
+```sh
+omlx serve --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --api-key your-key-here
+
+FIDGET_DIRECTOR_API_KEY="$OMLX_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:8000 \
+FIDGET_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+cargo run --bin fidget
+```
+
+### Testing Connectivity
+
+`scripts/probe-model.sh` hits the Completer without starting the overlay: GET `/v1/models` (and `/v1/api-key` on xAI), then both POST paths. It reads the same env as `cargo run`, prints status and body, and never prints the key. It also reports whether the configured model is loaded.
+
+```sh
+FIDGET_DIRECTOR_API_KEY="$XAI_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=https://api.x.ai \
+FIDGET_DIRECTOR_MODEL=grok-4.6 \
+scripts/probe-model.sh
+
+# Ollama (no key)
+FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
+FIDGET_DIRECTOR_MODEL=gemma4 \
+scripts/probe-model.sh
+
+# oMLX (with key)
+FIDGET_DIRECTOR_API_KEY="$OMLX_API_KEY" \
+FIDGET_DIRECTOR_BASE_URL=http://localhost:8000 \
+FIDGET_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+scripts/probe-model.sh
+```
+
+The app runs the same check once at startup, in the background, and logs a miss:
+
+```
+director: http://localhost:11439 unreachable: Connection refused; staying on StaticDirector until it answers
+director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:latest
+```
+
+Neither line stops anything. A failed wake already falls back to Static.
+
+`scripts/probe-harness.sh` does the same for a Harness. It serves Fidget's MCP endpoint, spawns the Harness, prints what `initialize` advertised, runs one fixed prompt, and reports whether the reply parsed as a Behavior proposal and whether the Harness fetched the tool list. No overlay, and no credential printed: a Harness that is not signed in comes back as the command to run in your own terminal.
+
+```sh
+FIDGET_HARNESS=hermes scripts/probe-harness.sh
+```
+
+```
+probe-harness
+  harness      hermes
+  command      hermes acp
+  dir          /Users/you/Library/Application Support/fidget/probe
+  timeout      turn 20s, attach 20s
+
+attach
+  agent        hermes-agent
+  loadSession  true
+  mcp http     false
+  mcp          /path/fidget --mcp-stdio
+  authMethods  custom runtime credentials, Configure Hermes provider
+  session      33f5d650-5476-40c6-876b-cb04f14bfc27
+
+turn
+  prompt       Reply with exactly this one line and nothing else: Wave | Hello from the probe.
+  stop         end_turn
+  reply        Wave | Hello from the probe.
+  proposal     Wave | Hello from the probe.
+  mcp listed   yes, 1 tools/list request(s)
+```
+
+- `mcp` is what the session was handed. `mcp http` is why: `hermes` advertises no HTTP MCP on ACP `initialize`, so it gets the stdio server, which relays to the app (ADR-0026). A Harness that advertises HTTP MCP shows a `http://127.0.0.1:…/mcp` URL instead, never the token. The probe binds that listener itself before it attaches. A failed bind is reported in capitals under `mcp`, and then nothing it reports about tools holds.
+- `mcp listed` is whether the Harness asked for `tools/list`. A tool it calls is answered through the app's `dispatch` against an empty desktop and no Instances, so `speak` fails and `list_windows` is empty. Each call prints as `mcp call`.
+- Exit code: 2 means never asked (nothing configured, no binary, not signed in), 1 means asked and not answered, 0 means `end_turn`, a completed turn.
+- The `probe` folder keeps the session file and the Action Log away from a real install. Memory is not isolated: a `remember` during a probe writes the real `memory.md`.
+
+Dated transcripts belong on the issue that ran the probe. Update the README's [Harness Support](../README.md#harness-support) table when a row's command or user-visible session behavior changes, not when a probe is re-run.
+
+### Provider Details
+
+**Cursor API:** `CURSOR_API_KEY` is for the Cloud Agents API and SDKs, not a Completer. `https://api.cursor.com` has no `/v1/chat/completions`; a POST there is a 404 and Static takes over.
+
+**xAI keys:** a 403 is xAI refusing the key; a bad body is a 400. Keys are granted per endpoint in [console.x.ai](https://console.x.ai), and `/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that requires mTLS wants `https://mtls.api.x.ai`. The Completer retries chat-completions if Responses returns 403 or 404.
+
+**Streaming:** the Completer asks for `stream: true`. The Behavior name is the first line, so the fidget can start moving before the dialogue arrives. Closing a streaming connection also stops the generation, which a whole-reply request does not. A server that rejects the field, or ignores it, still works: the parser handles both shapes.
+
+### Proactive model calls
+
+Session calls stay quiet while the main display is asleep. Settings can turn the Director off, or keep it on with proactive calls disabled.
+
+A Character that should back off faster or slower than doubling says so:
+
+```toml
+[director]
+model_base = 3
+model_power = 1
+```
+
+### Reply Contract Measurements
+
+`measure_the_reply_contract_failure_rate` in `src-tauri/src/model.rs` measures how often a model breaks the reply contract. It is `#[ignore]`d and runs against a live server; its doc comment has the command and the `FIDGET_BENCH_*` knobs. The last published results are in the [README before #135](https://github.com/omesser/fidget/blob/f08c6edffaa4cbc310164a594fe4be889e22f9de/README.md#L438).
+
+## MCP Server
+
+Two transports, not to be conflated:
+
+1. **ACP** (Fidget ↔ Harness): always stdio. Fidget spawns the Harness and prompts it over newline-delimited JSON-RPC.
+2. **MCP** (Harness → Fidget): the Harness calls back so `speak`, sensing, and Memory reach the fidget.
+
+The README lists the [tools and resources](../README.md#harness--mcp).
+
+### How it works
+
+Dispatch lives in the running app (ADR-0023). `src-tauri/src/mcp_http.rs` serves the tools on `http://127.0.0.1:<random-port>/mcp` behind a per-run bearer token: 32 fresh bytes in memory, never on disk or in a log. It is thread-per-request with no async runtime, request/response only: no notifications, progress, sampling, SSE push, or prompts. If the bind fails at launch, the app runs without MCP (ADR-0023). The bind is loopback only, because the token authorizes moving the fidget (ADR-0023). The denylist applies to `list_windows`, `describe_screen`, and `fidget://windows`: it filters password managers and redacts password fields.
+
+The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the route:
+
+- **Advertised** → the Harness gets the loopback URL and token directly.
+- **Absent or false** → the Harness gets a stdio MCP server entry to spawn (ADR-0026). That binary is a stateless relay: it posts every JSON-RPC message to the app's endpoint, using `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from its environment. It is found as `FIDGET_MCP_BIN`, else a `fidget-mcp` sidecar beside the app, else the app binary itself (`fidget --mcp-stdio`).
+- **`cursor-agent`** ignores `mcpServers` entirely and loads servers only from an approved `.cursor/mcp.json` (#1020). It gets the loopback URL and token through that file.
+
+### Elicitation
+
+`initialize` declares both elicitation modes, `form` and `url`, to every Harness. With `url` declared, a Harness can hand Chat a link rather than open a browser itself. codex-acp offers its device-code sign-in only then. codex-acp and claude-agent-acp send an MCP server's OAuth link the same way; without `url` that server stays signed out.
+
+It is not narrowed per Harness. A Harness already runs code as the user, so a link lets it do nothing new. What the link adds is a gate: Chat draws the URL in full, as `open_link` will open it, and nothing opens until the user clicks Open. `open_link` refuses any scheme but `http`, `https` and `mailto`.
+
+### How `cursor-agent` is reached
+
+`src-tauri/src/cursor_mcp.rs`. `.cursor/mcp.json` is the only place to define a server (`cursor-agent mcp` has no `add`), and `cursor-agent mcp enable` is the only way to approve one. Approvals are read once per `cursor-agent` process, so before spawning `cursor-agent acp`, attach:
+
+1. Merges `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside existing servers. A file that does not parse is left alone and the attach continues without tools.
+2. `chmod 600` the file, because it holds a live credential. Windows has no mode bits here, so the file keeps the project directory's ACL.
+3. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
+
+URL and token are new every app run, so each attach rewrites and re-approves. Within one run the entry is unchanged and a re-attach costs only the spawn.
+
+Cursor appends each approval to `~/.cursor/projects/<slug>/mcp-approvals.json` and never prunes: about 31 bytes per app run. Detach does not call `cursor-agent mcp disable`, because that blocks the server from ever loading again.
+
+Detach removes our entry, and the file and directory if attach created them. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
+
+### Pointing a Harness you run yourself at Fidget
+
+An attached Harness needs no setup. A Harness you launch yourself gets nothing forwarded, so register the endpoint by hand, once per app launch:
+
+1. Start Fidget and open Settings.
+2. Under **Point a Harness you run yourself at Fidget**, pick the Harness.
+3. Copy the generated command (or JSON fragment, for Harnesses with no `mcp add`) and run or paste it as the instructions say. Hermes prompts for the token, so its row has a separate Copy for it.
+4. Reload or restart the Harness session. Claude Code and OpenCode read MCP config only at session start.
+
+The port is OS-assigned and the token is minted in memory at every launch (ADR-0018), so no document can carry the command, and a stale entry is a dead one. The generator (`byo_registration` in `src-tauri/src/settings.rs`) always hands out the loopback URL and token; the stdio relay plays no part here. The box is empty when the loopback bind failed.
+
+| Harness | What the generator emits | Where the entry lands | Standing |
+|---|---|---|---|
+| `claude` | `claude mcp remove` then `claude mcp add --transport http …` | `~/.claude.json`, keyed by working directory (local scope) | **verified by hand** |
+| `codex` | `export FIDGET_MCP_TOKEN=…` then `codex mcp add --url … --bearer-token-env-var` | `~/.codex/config.toml`, token stays in the environment | **verified by hand** |
+| `cursor-agent` | `mcpServers` JSON fragment, then `cursor-agent mcp enable fidget` | `.cursor/mcp.json` in the project | **verified by hand** |
+| `grok` | `grok mcp add … --transport http` with a header | `~/.grok/config.toml`, token in the file | **verified by hand** |
+| `hermes` | `hermes mcp add --url … --auth header`, token pasted at its prompt | `~/.hermes/config.yaml`, token in `~/.hermes/.env` | **verified by hand** |
+| `opencode` | `opencode mcp add --url … --header "Authorization=Bearer …"` | `~/.config/opencode/opencode.json`, token in the file | **verified by hand** |
+| `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **verified by hand** ‡ |
+| `copilot` | `copilot mcp remove` then `copilot mcp add --transport http …` with a header | `~/.copilot/mcp-config.json`, token in the file | **config generated, unverified** |
+
+**Verified by hand** means the box's output was run as given and that Harness's `speak` was recorded in the bubble on a real Mac (2026-09-21/22). **Config generated, unverified** means the shape was checked against the CLI (`copilot` 1.0.88; `remove` comes first because a second `add` fails) but no `speak` is recorded (#1016). A Harness the popup does not list (`custom`) gets the bare URL and token.
+
+‡ `pi` has no MCP client of its own; it needs an adapter plugin such as `pi-mcp-adapter` (verified on pi 0.85.1 with pi-mcp-adapter 2.36.0). The adapter connects lazily: a headless `pi -p` run must call `mcp({"connect": "fidget"})` first, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. The tool is reached through Pi's `mcp` proxy as `fidget_speak`. Whether an attached `pi-acp` session lists Fidget's tools is unmeasured (#984).
+
+**Traps:**
+
+- Every registration dies with the app. Under `opencode` a dead entry hangs `opencode run` at startup for minutes with no error; remove the entry or pass `--pure`.
+- `opencode` has no `mcp remove`. Edit `~/.config/opencode/opencode.json` by hand.
+- `hermes mcp remove` leaves `MCP_FIDGET_API_KEY` in `~/.hermes/.env`, so the next `hermes mcp add` skips the token prompt, reuses the dead token, and fails with `401 Unauthorized`. Delete that line before re-adding. Its `mcp add` and `mcp remove` also rewrite `config.yaml`, stripping comments and re-indenting.
+- `codex` needs the `export` in the same shell that launches `codex`. Sourcing it through a pipe leaves the tool unregistered.
+- `pi` needs its adapter told to connect. The fragment carries no `"lifecycle": "eager"`, so the server stays disconnected until asked.
+
+### Not served
+
+- **Pixels.** `describe_screen` is window metadata only; Fidget takes no screenshots and runs no OCR or vision ([ADR-0031](./adr/0031-drop-capture-tiers.md)). Agents that need pixels use Harness-native computer use or an MCP server like cua-driver.
+- **Input events.** No click, type, or mouse tools (ADR-0003). The Harness owns desktop control.
+- **Non-loopback MCP** (ADR-0023).
+
+Whether a Harness sets `mcpCapabilities.http` is the Harness's decision. Hermes speaks HTTP MCP as a client through its own `mcp_servers` config, a different axis from the ACP bit; a Hermes that set the bit would take the loopback path with no change here.

@@ -149,12 +149,12 @@ FIDGET_HARNESS=claude cargo run -p fidget   # names and standing below
 FIDGET_CHARACTER=nim cargo run -p fidget
 ```
 
-See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env vars, local model servers, keyring/secret store, and `probe-model.sh`.
+See [harness.md](./docs/harness.md) for provider details, Director env vars, local model servers, keyring/secret store, and `probe-model.sh`.
 
 ## Harness Support
 
 Which Harness you attach changes what Fidget can do with it.
-Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./docs/DEVELOPMENT.md)); the run itself lives on the issue that did it.
+Named rows are smoked with `scripts/probe-harness.sh` (see [harness.md](./docs/harness.md#testing-connectivity)); the run itself lives on the issue that did it.
 
 | Harness | Command | Standing |
 |---|---|---|
@@ -205,12 +205,12 @@ Session handling:
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](./docs/DEVELOPMENT.md#how-cursor-agent-is-reached)). `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose` and `copilot` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](./docs/harness.md#how-cursor-agent-is-reached)). `opencode`, `grok` and `copilot` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
 
-Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route footnote † describes. [DEVELOPMENT.md](./docs/DEVELOPMENT.md#mcp-server) has the transport details.
+Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route footnote † describes. [harness.md](./docs/harness.md#mcp-server) has the transport details.
 
 **Seven tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917):
 

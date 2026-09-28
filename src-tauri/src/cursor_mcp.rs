@@ -111,7 +111,7 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
 
 /// Owner-only, because the entry holds this run's bearer token. Windows has no
 /// mode bits to set here and the file keeps the project directory's ACL, which
-/// DEVELOPMENT.md names as the gap it is.
+/// docs/harness.md names as the gap it is.
 #[cfg(unix)]
 fn restrict(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;

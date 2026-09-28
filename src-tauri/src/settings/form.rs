@@ -564,7 +564,7 @@ pub const HARNESS_PRESETS: [&str; 9] = [
 /// than recalled (#465). Each entry is the host alone because
 /// `model::completions_url` adds `/v1` and the path.
 ///
-/// Two local servers `docs/DEVELOPMENT.md` lists are deliberately absent: vLLM
+/// Two local servers `docs/harness.md` lists are deliberately absent: vLLM
 /// answers on oMLX's 8000 and `mlx_lm.server` on llama.cpp's 8080, so a row for
 /// either would offer a second name for a URL already on the list. The field
 /// below takes both.
