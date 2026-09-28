@@ -22,7 +22,7 @@ func die(_ message: String) -> Never {
 
 guard args.count >= 2, let pid = pid_t(args[1]) else {
     die(
-        "usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move|key|type|focused|focus-window|menus|press-button> <pid> [args]"
+        "usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move|size|key|type|focused|focus-window|menus|press-button> <pid> [args]"
     )
 }
 
@@ -200,11 +200,12 @@ func menuWindows() -> [[String: AnyObject]] {
     }
 }
 
+func rectText(_ rect: CGRect) -> String {
+    "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))"
+}
+
 func printRect(_ rect: CGRect, extra: String = "") {
-    let suffix = extra.isEmpty ? "" : ",\(extra)"
-    print(
-        "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))\(suffix)"
-    )
+    print(rectText(rect) + (extra.isEmpty ? "" : ",\(extra)"))
 }
 
 /// Keys have to land in the Settings webview, not the terminal that posted them.
@@ -428,6 +429,20 @@ case "move":
         die("could not move Settings")
     }
 
+case "size":
+    guard args.count >= 5, let w = Double(args[3]), let h = Double(args[4]) else {
+        die("usage: ax-settings size <pid> <window title> <width> <height>")
+    }
+    guard let window = window(titled: args[2]) else { die("\(args[2]) is not open") }
+    var size = CGSize(width: w, height: h)
+    guard let value = AXValueCreate(.cgSize, &size),
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success,
+        let rect = frame(window)
+    else {
+        die("could not resize \(args[2])")
+    }
+    printRect(rect)
+
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
     guard let window = settingsWindow(), let rect = frame(window) else {
@@ -521,6 +536,8 @@ case "dump":
     // focusable, in tree order, which is render order, so section order is
     // assertable.
     let wanted = args.count >= 3 ? args[2] : "Settings"
+    // `frames` appends each element's x,y,w,h, for a layout assertion.
+    let withFrames = args.count >= 4 && args[3] == "frames"
     guard let window = settledWindow(titled: wanted) else { die("\(wanted) is not open") }
     func walk(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }
@@ -552,7 +569,8 @@ case "dump":
         let flat = { (s: String) in s.replacingOccurrences(of: "\n", with: "\\n") }
         print(
             "\(role)\(subrole.isEmpty ? "" : ":" + subrole)|\(flat(title))|\(flat(value))"
-                + "|\(flat(placeholder))|\(enabled)|\(settable)|\(focusable)")
+                + "|\(flat(placeholder))|\(enabled)|\(settable)|\(focusable)"
+                + (withFrames ? "|" + (frame(element).map(rectText) ?? "") : ""))
         for child in children(element) { walk(child, depth: depth + 1) }
     }
     walk(window, depth: 0)
