@@ -11,49 +11,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m'
-
-log_info() {
-  echo -e "${GREEN}[INFO]${NC} $*"
-}
-
-log_error() {
-  echo -e "${RED}[ERROR]${NC} $*"
-}
-
-fail() {
-  log_error "$@"
-  if [ -n "${TRACE_LOG:-}" ] && [ -f "$TRACE_LOG" ]; then
-    log_error "Last 40 lines of app log:"
-    tail -40 "$TRACE_LOG" >&2 || true
-  fi
-  if [ -n "${SETTINGS_ID:-}" ]; then
-    log_error "Settings xprop:"
-    xprop -id "$SETTINGS_ID" WM_NAME _NET_WM_STATE WM_CLASS 2>&1 | head -20 >&2 || true
-  fi
-  if [ -n "${OVERLAY_ID:-}" ]; then
-    log_error "Overlay xprop:"
-    xprop -id "$OVERLAY_ID" WM_NAME _NET_WM_STATE WM_CLASS 2>&1 | head -20 >&2 || true
-  fi
-  xprop -root _NET_CLIENT_LIST_STACKING 2>&1 >&2 || true
-  exit 1
-}
-
-await() {
-  local file="$1" pattern="$2" attempts="$3"
-  for _ in $(seq 1 "$attempts"); do
-    grep -qE "$pattern" "$file" 2> /dev/null && return 0
-    sleep 0.25
-  done
-  return 1
-}
-
-has_supporting_wm() {
-  xprop -root _NET_SUPPORTING_WM_CHECK 2> /dev/null | grep -q 'window id'
-}
+# shellcheck source=scripts/lib/x11.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -77,7 +36,9 @@ if ! has_supporting_wm; then
   command -v openbox > /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
   log_info "Starting openbox (Xvfb has no window manager)..."
   openbox --replace > /dev/null 2> "$OUT/openbox.err" &
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_PID=$!
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
   for _ in $(seq 1 40); do
     has_supporting_wm && break
@@ -86,15 +47,6 @@ if ! has_supporting_wm; then
   has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
 fi
 
-cleanup() {
-  log_info "Cleaning up..."
-  if [ -n "${APP_PID:-}" ]; then
-    kill "$APP_PID" 2> /dev/null || true
-  fi
-  if [ "$WM_STARTED" -eq 1 ] && [ -n "${WM_PID:-}" ]; then
-    kill "$WM_PID" 2> /dev/null || true
-  fi
-}
 trap cleanup EXIT
 
 BIN="${FIDGET_VERIFY_BIN:-}"
@@ -135,25 +87,10 @@ kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
 ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
-# GDK leaves 10x10 and ~200x200 placeholders with the same WM_CLASS. The
-# overlay covers the display.
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_W=$((ROOT_W / 2))
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_H=$((ROOT_H / 2))
-
-find_overlay_window() {
-  local id w h name
-  for id in $(xdotool search --class 'Fidget' 2> /dev/null || true); do
-    name=$(xprop -id "$id" WM_NAME 2> /dev/null || true)
-    echo "$name" | grep -q 'Settings' && continue
-    w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
-    h=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Height:/ {print $2; exit}')
-    if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge "$MIN_OVERLAY_W" ] && [ "$h" -ge "$MIN_OVERLAY_H" ]; then
-      echo "$id"
-      return 0
-    fi
-  done
-  return 1
-}
 
 find_settings_window() {
   local id name

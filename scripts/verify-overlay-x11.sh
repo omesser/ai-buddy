@@ -10,42 +10,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m'
-
-log_info() {
-  echo -e "${GREEN}[INFO]${NC} $*"
-}
-
-log_error() {
-  echo -e "${RED}[ERROR]${NC} $*"
-}
-
-fail() {
-  log_error "$@"
-  if [ -n "${TRACE_LOG:-}" ] && [ -f "$TRACE_LOG" ]; then
-    log_error "Last 40 lines of trace log:"
-    tail -40 "$TRACE_LOG" >&2 || true
-  fi
-  exit 1
-}
-
-# $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
-await() {
-  local file="$1" pattern="$2" attempts="$3"
-  local i
-  for i in $(seq 1 "$attempts"); do
-    grep -qE "$pattern" "$file" 2> /dev/null && return 0
-    sleep 0.25
-  done
-  return 1
-}
-
-has_supporting_wm() {
-  xprop -root _NET_SUPPORTING_WM_CHECK 2> /dev/null | grep -q 'window id'
-}
+# shellcheck source=scripts/lib/x11.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -65,7 +31,9 @@ if ! has_supporting_wm; then
   command -v openbox > /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
   log_info "Starting openbox (Xvfb has no window manager)..."
   openbox --replace > /dev/null 2> "$OUT/openbox.err" &
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_PID=$!
+  # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
   for _ in $(seq 1 40); do
     has_supporting_wm && break
@@ -74,22 +42,14 @@ if ! has_supporting_wm; then
   has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
 fi
 
-cleanup() {
-  log_info "Cleaning up..."
-  if [ -n "${APP_PID:-}" ]; then
-    kill "$APP_PID" 2> /dev/null || true
-  fi
-  if [ -n "${TEST_WINDOW_PID:-}" ]; then
-    kill "$TEST_WINDOW_PID" 2> /dev/null || true
-  fi
-  if [ "$WM_STARTED" -eq 1 ] && [ -n "${WM_PID:-}" ]; then
-    kill "$WM_PID" 2> /dev/null || true
-  fi
-}
 trap cleanup EXIT
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
 ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
+MIN_OVERLAY_W=$((ROOT_W / 2))
+# shellcheck disable=SC2034  # read by the sourced find_overlay_window()
+MIN_OVERLAY_H=$((ROOT_H / 2))
 # Halfway from the spawn (display centre) to the floor, and wide enough that a
 # short walk before the ride still leaves the sprite over the Perch.
 PERCH_Y=$((ROOT_H * 2 / 3))
@@ -123,21 +83,6 @@ APP_PID=$!
 
 await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
-
-# GDK leaves a 10x10 placeholder with the same WM_CLASS; the overlay is the
-# display-sized one. xdotool search order is creation order, so head -1 is the dummy.
-find_overlay_window() {
-  local id w h
-  for id in $(xdotool search --class 'Fidget' 2> /dev/null || true); do
-    w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
-    h=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Height:/ {print $2; exit}')
-    if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge 200 ] && [ "$h" -ge 200 ]; then
-      echo "$id"
-      return 0
-    fi
-  done
-  return 1
-}
 
 log_info "Waiting for overlay window..."
 WINDOW_ID=""
