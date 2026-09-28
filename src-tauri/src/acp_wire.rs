@@ -17,11 +17,12 @@ use agent_client_protocol::schema::v1::{
     CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
     CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
     ElicitationContentValue, ElicitationFormCapabilities, ElicitationId, ElicitationMode,
-    ElicitationPropertySchema, ElicitationScope, ElicitationUrlCapabilities, EnvVariable, Error,
-    ErrorCode, HttpHeader, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
-    McpServerHttp, McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
-    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
+    ElicitationPropertySchema, ElicitationScope, ElicitationSessionScope,
+    ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
+    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
+    SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -1427,14 +1428,23 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
 /// A link scoped to the session and no tool call, as an MCP server's sign-in
 /// after `session/new` is. It belongs to the session, not the turn it lands in.
 fn outlives_turn(request: &CreateElicitationRequest) -> bool {
-    matches!(&request.mode, ElicitationMode::Url(link)
-        if matches!(&link.scope, ElicitationScope::Session(scope) if scope.tool_call_id.is_none()))
+    session_link(request).is_some_and(|scope| scope.tool_call_id.is_none())
 }
 
 /// A link tied to a tool call, which blocks its turn until answered.
 fn on_tool_call(request: &CreateElicitationRequest) -> bool {
-    matches!(&request.mode, ElicitationMode::Url(link)
-        if matches!(&link.scope, ElicitationScope::Session(scope) if scope.tool_call_id.is_some()))
+    session_link(request).is_some_and(|scope| scope.tool_call_id.is_some())
+}
+
+/// The scope of a URL form tied to a session rather than a request.
+fn session_link(request: &CreateElicitationRequest) -> Option<&ElicitationSessionScope> {
+    match &request.mode {
+        ElicitationMode::Url(link) => match &link.scope {
+            ElicitationScope::Session(scope) => Some(scope),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// A form the Harness asked, held open and handed on to Chat. `signing_in` is
