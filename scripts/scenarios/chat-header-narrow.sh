@@ -21,6 +21,8 @@ if [ "${1:-}" != --go ]; then
 fi
 bin=${2:?usage: chat-header-narrow.sh --go <fidget binary> <fidget test binary>}
 test_bin=${3:?usage: chat-header-narrow.sh --go <fidget binary> <fidget test binary>}
+# Absolute: the Harness spawns in the data folder, so a relative path misses.
+test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
 root=$(cd "$(dirname "$0")/../.." && pwd)
 out="${TMPDIR:-/tmp}/fidget-scenario-chat-header-narrow-$(date +%Y%m%d-%H%M%S)"
 tools="${TMPDIR:-/tmp}/fidget-scenario-tools"
