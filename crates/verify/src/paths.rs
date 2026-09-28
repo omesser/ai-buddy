@@ -197,11 +197,15 @@ mod tests {
     }
 
     #[test]
-    fn every_overlay_script_is_in_the_tree() {
+    fn each_os_runs_its_own_overlay_script_and_it_is_in_the_tree() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for os in ["macos", "linux", "windows"] {
-            let script = overlay_script_for_os(os).expect("a supported OS has a script");
-            assert!(root.join(script).is_file(), "{script} is missing");
+        for (os, expected) in [
+            ("macos", "scripts/verify-overlay.sh"),
+            ("linux", "scripts/verify-overlay-x11.sh"),
+            ("windows", "scripts/verify-overlay-win.ps1"),
+        ] {
+            assert_eq!(overlay_script_for_os(os), Some(expected), "{os}");
+            assert!(root.join(expected).is_file(), "{expected} is missing");
         }
         assert_eq!(overlay_script_for_os("freebsd"), None);
     }

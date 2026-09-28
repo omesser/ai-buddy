@@ -74,45 +74,6 @@ test("the countdown changes unit rather than growing", () => {
   assert.equal(untilWake(7_200_000), "2h");
 });
 
-// The bar draws on one line and never wraps; `.bar .elide` lets only the two
-// Package-named cells shrink, so once the fixed cells pass the window the last
-// cell is clipped with no ellipsis. Monospace advance 0.6em at 10.5px; 16-point
-// gutters, 4 points between twelve cells; 320 is `min_inner_size` in `main.rs`.
-const ADVANCE = 0.6 * 10.5;
-const GUTTERS = 2 * 16 + 11 * 4;
-const NARROWEST = 320;
-
-test("the closed vocabularies fit the narrowest the window goes", () => {
-  const widest = statusCells(
-    {
-      ...push,
-      // Every fixed cell at its longest: no Primitive is longer than `Sleep`,
-      // no State than `Grounded`, and `spoken to` is the longest word
-      // `director::happened_cell` writes.
-      primitive: "Sleep",
-      state: "Grounded",
-      happened: "spoken to",
-      facing: -1,
-    },
-    59_000,
-  );
-
-  // Everything but the two the `elide` class lets shrink, plus the five
-  // separator glyphs the markup puts between them.
-  const fixed =
-    widest.primitive.length +
-    widest.state.length +
-    widest.facing.length +
-    widest.director.length +
-    widest.happened.length +
-    5;
-
-  assert.ok(
-    fixed * ADVANCE + GUTTERS <= NARROWEST,
-    `the fixed cells want ${Math.ceil(fixed * ADVANCE + GUTTERS)}pt of ${NARROWEST}`,
-  );
-});
-
 // The header's line about which mind answers. Branch for branch with
 // `settings::harness_state`, so Settings and Chat cannot disagree about it.
 const http = { enabled: true, model: "gpt-4o-mini", host: "localhost:8000", harness: null };

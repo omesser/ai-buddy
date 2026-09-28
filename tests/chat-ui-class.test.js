@@ -1,4 +1,4 @@
-// Behavior test for Chat UI class application (Architect Soft #1):
+// Behavior test for Chat UI class application:
 // - normalizeChatUi allowlists known designs and maps unknowns to minimal
 // - applyChatUiClass swaps DOM classes on reopen and live change
 

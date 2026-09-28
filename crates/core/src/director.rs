@@ -2310,7 +2310,11 @@ mod tests {
     }
 
     #[test]
-    fn parsing_keeps_the_case_for_the_declared_match() {
+    fn parsing_strips_a_trailing_colon_before_dialogue_and_keeps_the_case() {
+        let with_dialogue = parse_proposal("nap: | so sleepy...").expect("colon with dialogue");
+        assert_eq!(with_dialogue.behavior, "nap");
+        assert_eq!(with_dialogue.dialogue.as_deref(), Some("so sleepy..."));
+
         let upper = parse_proposal("Nap.").expect("case preserved before declared match");
         assert_eq!(upper.behavior, "Nap");
     }
