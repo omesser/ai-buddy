@@ -153,7 +153,6 @@ pub fn wanted(id: CapabilityId) -> bool {
 }
 
 /// Whether the capability is both wanted and granted. #912 gates on it.
-#[allow(dead_code)] // used in window_source implementations
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
