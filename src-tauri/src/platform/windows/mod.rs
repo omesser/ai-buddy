@@ -6,6 +6,7 @@
 
 #![cfg(not(unix))]
 
+mod console;
 mod overlay;
 mod pointer;
 mod process;
@@ -13,6 +14,7 @@ mod sensing;
 mod settings_raise;
 mod window_source;
 
+pub(super) use console::{restore_ctrl_c, suppress_ctrl_c_for_children};
 pub use overlay::{configure_overlay, read_mask_rebuild_stats, update_input_region};
 pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::WindowsActivitySource;

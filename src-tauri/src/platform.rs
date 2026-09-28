@@ -250,6 +250,37 @@ mod x11;
 #[cfg(not(unix))]
 mod windows;
 
+mod ctrl_c;
+
+/// Children spawned while this is held inherit "ignore Ctrl+C".
+/// Nested holds stay ignored until the last drop. This process listens
+/// again after that drop, so the quit handler still runs.
+pub(crate) struct SpawnedCtrlC;
+
+impl SpawnedCtrlC {
+    pub(crate) fn hold() -> Self {
+        if ctrl_c::enter() {
+            #[cfg(windows)]
+            if !windows::suppress_ctrl_c_for_children() {
+                eprintln!("quit: could not keep spawned processes off Ctrl+C");
+                let _ = ctrl_c::exit();
+            }
+        }
+        Self
+    }
+}
+
+impl Drop for SpawnedCtrlC {
+    fn drop(&mut self) {
+        if ctrl_c::exit() {
+            #[cfg(windows)]
+            if !windows::restore_ctrl_c() {
+                eprintln!("quit: could not listen for Ctrl+C again");
+            }
+        }
+    }
+}
+
 /// Whether an X server answers this process — a real X11 session, or XWayland
 /// proxying for a Wayland one. `WAYLAND_DISPLAY` is set even for XWayland
 /// clients; under XWayland the EWMH/XShape path works (#266).
@@ -1032,6 +1063,33 @@ fn exact_dock() -> Option<(Rect, DockSource)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A webview built after setup has to suppress again. The last drop is
+    /// what lets this process hear Ctrl+C, so the quit handler still runs.
+    #[test]
+    fn a_late_hold_suppresses_again_and_the_last_drop_releases() {
+        let _lock = ctrl_c::lock_tests();
+        assert_eq!(ctrl_c::depth(), 0, "a previous test left Ctrl+C suppressed");
+        let outer = SpawnedCtrlC::hold();
+        assert_eq!(ctrl_c::depth(), 1);
+        {
+            let inner = SpawnedCtrlC::hold();
+            assert_eq!(ctrl_c::depth(), 2);
+            drop(inner);
+            assert_eq!(ctrl_c::depth(), 1);
+        }
+        drop(outer);
+        assert_eq!(ctrl_c::depth(), 0);
+        let late = SpawnedCtrlC::hold();
+        assert_eq!(ctrl_c::depth(), 1);
+        drop(late);
+        assert_eq!(ctrl_c::depth(), 0);
+        assert!(
+            !ctrl_c::exit(),
+            "a restore with nothing held must leave the host listening"
+        );
+        assert_eq!(ctrl_c::depth(), 0);
+    }
 
     #[test]
     fn a_web_or_mail_link_opens() {

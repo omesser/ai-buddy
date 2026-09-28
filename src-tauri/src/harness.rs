@@ -1137,7 +1137,11 @@ impl Session {
     /// The child is in its own process group, so ending this process does not
     /// take it with us. `npx` does not reliably die on stdin EOF.
     pub fn shutdown(&self) {
-        self.wanted.store(false, Ordering::SeqCst);
+        // Ctrl+C and `RunEvent::Exit` both call this. The second returns
+        // before the reap: waiting out `REAP` again would stall the exit.
+        if !self.wanted.swap(false, Ordering::SeqCst) {
+            return;
+        }
         if let Some(installed) = self.cursor.lock().ok().and_then(|mut slot| slot.take()) {
             installed.remove();
         }
@@ -4056,6 +4060,30 @@ mod tests {
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("load"), 0, "the leftover id was applied");
         assert_eq!(fx.count("new"), 1);
+        session.shutdown();
+    }
+
+    /// Ctrl+C shuts the Harness down, then `RunEvent::Exit` does it again.
+    /// The second call must not wait out another reap.
+    #[test]
+    fn a_second_shutdown_does_not_reap_again() {
+        let (_fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        session.shutdown();
+        let again = Instant::now();
+        session.shutdown();
+        assert!(
+            again.elapsed() < Duration::from_millis(500),
+            "the second shutdown waited {:?} — that is another reap",
+            again.elapsed()
+        );
+    }
+
+    /// No child yet. Both calls return, and the second does not panic.
+    #[test]
+    fn shutdown_before_a_child_exists_is_repeatable() {
+        let (_fx, session) = Fixture::new("happy");
+        session.shutdown();
         session.shutdown();
     }
 
