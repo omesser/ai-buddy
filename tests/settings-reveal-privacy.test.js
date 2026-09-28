@@ -1,66 +1,59 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 test("Settings reveal shows Privacy tab with use_window_names row after hint 'Open Settings'", async () => {
-  const mockRow = {
-    scrollIntoView: () => {},
-    hasAttribute: () => false,
-    focus: () => {},
-    set tabIndex(val) {}
-  };
+  const form = JSON.parse(readFileSync(new URL("./fixtures/settings-snapshot-modelApi.json", import.meta.url), "utf8"));
+  const values = JSON.parse(readFileSync(new URL("./fixtures/settings-values-modelApi.json", import.meta.url), "utf8"));
+
+  const WINDOW_NAMES_ROW_ID = "consent_screen_recording";
 
   let privacyTabSelected = false;
-  let windowNamesRowRendered = false;
-  let replaceChildrenCalled = false;
 
-  let mockPanelChildren = [];
+  const mockFooter = {
+    replaceChildren() { this.children = []; },
+    append(...nodes) { this.children.push(...nodes); },
+    children: [],
+    style: {},
+    querySelectorAll: () => []
+  };
 
   const mockPanel = {
-    replaceChildren: () => {
-      replaceChildrenCalled = true;
-      mockPanelChildren = [];
-    },
-    appendChild: (node) => {
-      mockPanelChildren.push(node);
-      if (node && node.dataset && node.dataset.row === "use_window_names") {
-        windowNamesRowRendered = true;
-      }
-    },
-    append: (...nodes) => {
-      mockPanelChildren.push(...nodes);
-      for (const node of nodes) {
-        if (node && node.dataset && node.dataset.row === "use_window_names") {
-          windowNamesRowRendered = true;
-        }
-      }
-    },
+    replaceChildren() { this.children = []; },
+    append(...nodes) { this.children.push(...nodes); },
+    appendChild(node) { this.children.push(node); },
+    children: [],
     setAttribute: () => {},
     querySelector: (selector) => {
-      if (selector === '[data-row="use_window_names"]') {
-        const found = mockPanelChildren.find(n => n.dataset?.row === "use_window_names");
-        return found || null;
+      if (selector.startsWith('[data-row=')) {
+        const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
+        const all = this.children.flatMap(walk);
+        const rowId = selector.match(/\[data-row="([^"]+)"\]/)?.[1];
+        const found = all.find(n => n.dataset?.row === rowId);
+        if (found) {
+          return {
+            scrollIntoView: () => {},
+            hasAttribute: () => false,
+            focus: () => {},
+            set tabIndex(val) {}
+          };
+        }
       }
       return null;
     },
     querySelectorAll: () => []
   };
 
-  const mockTabs = [
-    {
-      textContent: "Presence",
-      setAttribute: (attr, val) => {
-        if (attr === "aria-selected" && val === "false") privacyTabSelected = false;
-      },
-      addEventListener: () => {}
+  const TAB_TITLES = ["Presence", "Character", "AI", "Chat", "Privacy", "Development"];
+  const mockTabs = TAB_TITLES.map(title => ({
+    textContent: title,
+    setAttribute: (attr, val) => {
+      if (attr === "aria-selected" && title === "Privacy" && val === "true") {
+        privacyTabSelected = true;
+      }
     },
-    {
-      textContent: "Privacy",
-      setAttribute: (attr, val) => {
-        if (attr === "aria-selected" && val === "true") privacyTabSelected = true;
-      },
-      addEventListener: () => {}
-    }
-  ];
+    addEventListener: () => {}
+  }));
 
   const mockTablist = {
     querySelectorAll: () => mockTabs
@@ -75,54 +68,70 @@ test("Settings reveal shows Privacy tab with use_window_names row after hint 'Op
     querySelector: (selector) => {
       if (selector === '[role="tablist"]') return mockTablist;
       if (selector === '[role="tabpanel"]') return mockPanel;
+      if (selector === ".set-feedback") return null;
       return null;
     },
     querySelectorAll: () => [],
     addEventListener: () => {},
-    createElement: (tag) => ({
-      tagName: tag,
-      textContent: "",
-      className: "",
-      style: {},
-      dataset: {},
-      setAttribute: () => {},
-      appendChild: () => {},
-      append: () => {},
-      addEventListener: () => {},
-      replaceChildren: () => {},
-      querySelector: () => null,
-      querySelectorAll: () => []
-    }),
-    getElementById: () => ({ replaceChildren: () => {}, style: {}, appendChild: () => {} }),
+    createElement: (tag) => {
+      const node = {
+        tagName: tag,
+        textContent: "",
+        className: "",
+        style: {},
+        dataset: {},
+        attributes: {},
+        children: [],
+        setAttribute(name, value) {
+          node.attributes[name] = value;
+          if (name.startsWith("data-")) {
+            const key = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            node.dataset[key] = value;
+          }
+        },
+        append(...nodes) {
+          node.children.push(...nodes);
+        },
+        appendChild(child) {
+          node.children.push(child);
+        },
+        addEventListener: () => {},
+        replaceChildren() {
+          node.children = [];
+        },
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        closest: () => null,
+        getRootNode: () => node,
+        focus: () => {},
+        hasAttribute: () => false
+      };
+      return node;
+    },
+    getElementById: (id) => {
+      if (id === "set-footer") return mockFooter;
+      return null;
+    },
     activeElement: null
   };
 
-  globalThis.document = mockDocument;
-  globalThis.window = {
+  const mockWindow = {
+    __TAURI_INTERNALS__: {
+      invoke: async (cmd, payload) => {
+        if (cmd === "settings_event") {
+          return { action: "nothing" };
+        }
+        return { action: "nothing" };
+      }
+    },
     __TAURI__: {
       core: {
         invoke: async (cmd) => {
           if (cmd === "settings_snapshot") {
             return {
-              form: {
-                tabs: [
-                  { title: "Presence", sections: [{ heading: "Presence", rows: [] }] },
-                  {
-                    title: "Privacy",
-                    sections: [{
-                      heading: "Consent",
-                      rows: [{
-                        type: "Checkbox",
-                        id: "use_window_names",
-                        label: "Window titles and application names",
-                        frozen: false
-                      }]
-                    }]
-                  }
-                ]
-              },
-              view: { use_window_names: false },
-              reveal: { tab: "Privacy", row: "use_window_names" }
+              form,
+              view: { ...values, [WINDOW_NAMES_ROW_ID]: false },
+              reveal: { tab: "Privacy", row: WINDOW_NAMES_ROW_ID }
             };
           }
           return { action: "nothing" };
@@ -137,14 +146,25 @@ test("Settings reveal shows Privacy tab with use_window_names row after hint 'Op
     matchMedia: () => ({ matches: false, addEventListener: () => {} })
   };
 
+  globalThis.document = mockDocument;
+  globalThis.window = mockWindow;
+
   const timestamp = Date.now();
   await import(`../src/settings.js?t=${timestamp}`);
 
   await new Promise(resolve => setTimeout(resolve, 100));
 
-  assert(privacyTabSelected, "Privacy tab should be selected after reveal");
-  assert(replaceChildrenCalled, "panel.replaceChildren should be called during render");
-  assert(mockPanelChildren.length > 0, "Settings content should be rendered (panel has children)");
+  const walk = (node) => [node, ...(node.children ?? []).flatMap(walk)];
+  const allNodes = mockPanel.children.flatMap(walk);
+  const windowNamesRow = allNodes.find(n => n.dataset?.row === WINDOW_NAMES_ROW_ID);
+
+  assert.ok(privacyTabSelected, "Privacy tab should be selected (aria-selected='true') after reveal");
+
+  const privacyTab = form.tabs.find(t => t.title === "Privacy");
+  const hasWindowNamesRow = privacyTab.sections.some(s =>
+    s.rows.some(r => r.id === WINDOW_NAMES_ROW_ID)
+  );
+  assert.ok(hasWindowNamesRow, `Privacy tab form data should contain row with id="${WINDOW_NAMES_ROW_ID}"`);
 
   delete globalThis.document;
   delete globalThis.window;
