@@ -23,7 +23,7 @@ Preconditions:
 - Doctor green for the lane.
 
 - **macOS Summon (preferred).** Run `cargo run -p fidget-verify -- summon`. Real double-click, asserts `verbs:.*Summon`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/summon/`.
-- **Summon verb (X11 hand-rolled).** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite feet `pos()` from the last `frame:` line. Click the body above the feet: `xdotool mousemove --sync $X $(($Y - 40))`, then `xdotool click --repeat 2 --delay 50 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$FIDGET_VERIFY_EVIDENCE/summon-chat/`.
+- **Summon verb (X11 hand-rolled).** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite feet `pos()` from the last `frame:` line. Click the body above the feet: `xdotool mousemove --sync $X $(($Y - 40))`, then `xdotool mousedown 1; sleep 0.12; xdotool mouseup 1; sleep 0.08; xdotool mousedown 1; sleep 0.12; xdotool mouseup 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$FIDGET_VERIFY_EVIDENCE/summon-chat/`.
 - **Chat window (interactive desktop).** After the double-click, observe a Chat window belonging to the fidget. Capture a screenshot with `FIDGET_CAPTURABLE=1` into evidence when the platform allows.
 - **Harness without sprite.** Chat Completer wiring without the overlay: `FIDGET_HARNESS=<name> scripts/probe-harness.sh` (exit `0` = end_turn). This does **not** prove Summon UI; record it as harness-only if used.
 - **Proof.** Require the Summon verb line for the gesture path. Treat Chat window visibility as a second observer when a GUI session exists.
@@ -32,5 +32,6 @@ Preconditions:
 
 - Existing `verify-overlay*.` scripts prove Poke, not Summon — do not mark Summon verified solely because overlay-x11 passed.
 - Double-click timing follows the OS interval; a slow second click becomes two Pokes.
+- On X11, each click of the double-click must be held across a couple of ~16ms polls (~120ms); short `click --repeat 2 --delay 50` usually yields a single Poke with no Summon.
 - Chat needs the Shell's windowing path; a crashed WebKit / missing display shows the verb without a usable Chat surface — report both observations.
 - On this project's Linux CI-style boxes, Summon UI may be unprovable while the verb remains provable under Xvfb+WM; say which half you proved.
