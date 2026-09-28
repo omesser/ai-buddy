@@ -1443,6 +1443,9 @@ fn build_overlay(
     label: &str,
     display: Rect,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // WebView2 spawned here inherits ignore Ctrl+C, including a display that
+    // arrives after the quit handler is already installed.
+    let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title("Fidget")
         .transparent(true)
@@ -1496,6 +1499,7 @@ fn build_chat(
     label: &str,
     title: &str,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
+    let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(420.0, 560.0)
@@ -1506,6 +1510,7 @@ fn build_chat(
 
 /// Build the Settings webview window.
 fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+    let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")
         .inner_size(600.0, 520.0)
@@ -2754,18 +2759,6 @@ fn quit_actions(orderly_platform: bool, already_quitting: bool) -> &'static [Qui
     }
 }
 
-/// Turns Ctrl+C back on when setup returns, including the error path.
-/// Children spawned while it was suppressed keep ignoring it.
-#[cfg(windows)]
-struct RestoreCtrlC;
-
-#[cfg(windows)]
-impl Drop for RestoreCtrlC {
-    fn drop(&mut self) {
-        platform::restore_ctrl_c();
-    }
-}
-
 /// Ctrl+C is not `RunEvent::Exit`. The Harness child is in its own process
 /// group so that signal does not dump inside Node; this then kills it.
 /// Isolation waits until the handler is installed, or a failed catch leaves a tree Ctrl+C cannot reap.
@@ -2773,7 +2766,7 @@ fn quit_harness_on_interrupt(app: tauri::AppHandle) {
     match ctrlc::set_handler(move || {
         let already = crate::harness::interrupt_already_quitting();
         for action in quit_actions(cfg!(windows), already) {
-            perform_quit_action(*action, &app);
+            perform_quit_action(*action, &mut AppQuit(&app));
         }
     }) {
         Ok(()) => crate::harness::own_interrupt(),
@@ -2783,13 +2776,61 @@ fn quit_harness_on_interrupt(app: tauri::AppHandle) {
     }
 }
 
-fn perform_quit_action(action: QuitAction, app: &tauri::AppHandle) {
+/// What [`perform_quit_action`] asks the host to do. Tests record the calls.
+/// `close_webview` is `Webview::close`. `close_window` exists only in tests,
+/// so a recording can show Ctrl+C did not take that path.
+trait QuitHost {
+    fn announce(&mut self);
+    fn shutdown_harness(&mut self);
+    fn close_webview(&mut self);
+    #[cfg(test)]
+    fn close_window(&mut self);
+    fn exit_event_loop(&mut self);
+    fn exit_process(&mut self);
+}
+
+fn perform_quit_action(action: QuitAction, host: &mut impl QuitHost) {
     match action {
-        QuitAction::Announce => eprintln!("quit"),
-        QuitAction::ShutdownHarness => crate::harness::shutdown(),
-        QuitAction::CloseWebviews => close_webviews_for_quit(app),
-        QuitAction::ExitEventLoop => app.exit(0),
-        QuitAction::ExitProcess => std::process::exit(0),
+        QuitAction::Announce => host.announce(),
+        QuitAction::ShutdownHarness => host.shutdown_harness(),
+        QuitAction::CloseWebviews => host.close_webview(),
+        QuitAction::ExitEventLoop => host.exit_event_loop(),
+        QuitAction::ExitProcess => host.exit_process(),
+    }
+}
+
+struct AppQuit<'a>(&'a tauri::AppHandle);
+
+impl QuitHost for AppQuit<'_> {
+    fn announce(&mut self) {
+        eprintln!("quit");
+    }
+
+    fn shutdown_harness(&mut self) {
+        crate::harness::shutdown();
+    }
+
+    fn close_webview(&mut self) {
+        close_webviews_for_quit(self.0);
+    }
+
+    #[cfg(test)]
+    fn close_window(&mut self) {
+        // Not what Ctrl+C calls. Window close destroys the parent HWND
+        // before `Controller::Close`, which is the 1411 path.
+        for (label, window) in self.0.webview_windows() {
+            if let Err(why) = window.close() {
+                eprintln!("quit: {label} window could not be closed: {why}");
+            }
+        }
+    }
+
+    fn exit_event_loop(&mut self) {
+        self.0.exit(0);
+    }
+
+    fn exit_process(&mut self) {
+        std::process::exit(0);
     }
 }
 
@@ -3343,6 +3384,7 @@ fn anchor_position_locked(flags: u32, nomove: u32) -> bool {
 /// registers event handlers.
 #[cfg(not(target_os = "macos"))]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
         .title("Fidget")
         .inner_size(1.0, 1.0)
@@ -3546,11 +3588,11 @@ fn main() {
             // On Windows and Linux, create a hidden anchor window that appears
             // in the taskbar/panel, matching the macOS Dock presence.
             // Clicking it opens Settings. Overlays stay off the taskbar.
+            // Held until the quit handler is installed, so a Ctrl+C in the
+            // gap between webviews cannot take the default ExitProcess path.
+            // Each build nests its own hold for a WebView created later.
             #[cfg(windows)]
-            let _restore_ctrl_c = RestoreCtrlC;
-            // WebView2's browser inherits this and so ignores the console Ctrl+C.
-            #[cfg(windows)]
-            platform::suppress_ctrl_c_for_children();
+            let spawned_ctrl_c = platform::SpawnedCtrlC::hold();
             #[cfg(not(target_os = "macos"))]
             build_anchor_window(app.handle())?;
 
@@ -3650,7 +3692,7 @@ fn main() {
             // Turning Ctrl+C back on does not reach that child. The handler
             // has to be in before the Harness leaves this process group.
             #[cfg(windows)]
-            platform::restore_ctrl_c();
+            drop(spawned_ctrl_c);
             quit_harness_on_interrupt(app.handle().clone());
             harness::attach(
                 harness::Target::from_settings(
@@ -4977,5 +5019,90 @@ mod tests {
     fn a_second_interrupt_exits_without_nesting_shutdown() {
         assert_eq!(quit_actions(false, true), &[QuitAction::ExitProcess]);
         assert_eq!(quit_actions(true, true), &[QuitAction::ExitProcess]);
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Recorded {
+        Announce,
+        ShutdownHarness,
+        CloseWebview,
+        CloseWindow,
+        ExitEventLoop,
+        ExitProcess,
+    }
+
+    #[derive(Default)]
+    struct Recording(Vec<Recorded>);
+
+    impl QuitHost for Recording {
+        fn announce(&mut self) {
+            self.0.push(Recorded::Announce);
+        }
+        fn shutdown_harness(&mut self) {
+            self.0.push(Recorded::ShutdownHarness);
+        }
+        fn close_webview(&mut self) {
+            self.0.push(Recorded::CloseWebview);
+        }
+        fn close_window(&mut self) {
+            self.0.push(Recorded::CloseWindow);
+        }
+        fn exit_event_loop(&mut self) {
+            self.0.push(Recorded::ExitEventLoop);
+        }
+        fn exit_process(&mut self) {
+            self.0.push(Recorded::ExitProcess);
+        }
+    }
+
+    /// The recorder has to be able to name a window close, or the quit test
+    /// could not tell that path from `Webview::close`.
+    #[test]
+    fn the_recorder_names_a_window_close_separately_from_a_webview_close() {
+        let mut host = Recording::default();
+        host.close_window();
+        host.close_webview();
+        assert_eq!(host.0, vec![Recorded::CloseWindow, Recorded::CloseWebview]);
+    }
+
+    fn recorded(orderly: bool, already: bool) -> Vec<Recorded> {
+        let mut host = Recording::default();
+        for action in quit_actions(orderly, already) {
+            perform_quit_action(*action, &mut host);
+        }
+        host.0
+    }
+
+    /// `CloseWebviews` is `Webview::close`. `ExitEventLoop` is `AppHandle::exit`.
+    /// Neither is `WebviewWindow::close`, and neither calls `process::exit`.
+    #[test]
+    fn perform_quit_action_closes_the_webview_then_exits_the_loop() {
+        assert_eq!(
+            recorded(true, false),
+            vec![
+                Recorded::Announce,
+                Recorded::ShutdownHarness,
+                Recorded::CloseWebview,
+                Recorded::ExitEventLoop,
+            ]
+        );
+    }
+
+    #[test]
+    fn perform_quit_action_on_unix_exits_the_process() {
+        assert_eq!(
+            recorded(false, false),
+            vec![
+                Recorded::Announce,
+                Recorded::ShutdownHarness,
+                Recorded::ExitProcess,
+            ]
+        );
+    }
+
+    #[test]
+    fn perform_quit_action_on_a_second_interrupt_only_exits_the_process() {
+        assert_eq!(recorded(false, true), vec![Recorded::ExitProcess]);
+        assert_eq!(recorded(true, true), vec![Recorded::ExitProcess]);
     }
 }
