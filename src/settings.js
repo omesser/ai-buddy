@@ -205,6 +205,7 @@ function drawRow(row, values, emit, stage) {
         select.addEventListener("change", () => {
           stage(row.id, select.value);
           if (row.id === "harness") revealPiMcp(select);
+          if (row.id === "byo_harness") emit({ pick: row.id, value: select.value });
         });
       } else {
         select.addEventListener("change", () => emit({ pick: row.id, value: select.value }));
@@ -321,6 +322,7 @@ function directorDraft(root) {
     proactive: rowChecked(root, "proactive"),
     pi_project_mcp: rowChecked(root, "pi_project_mcp"),
     director_wake_secs: rowValue(root, "director_wake_secs"),
+    byo_harness: rowValue(root, "byo_harness"),
     director_base_url: rowValue(root, "director_base_url"),
     director_model: rowValue(root, "director_model"),
     director_api_key: rowValue(root, "director_api_key"),
@@ -411,6 +413,12 @@ export function processResponse(response) {
       return { fill: { id: response.id, value: response.value } };
     case "clear_key":
       return { clearKey: true };
+    case "preview_byo":
+      return { preview: {
+        byo_snippet: response.snippet,
+        byo_steps: response.steps,
+        byo_token: response.token,
+      } };
     case "reset":
       return { reset: true };
     case "run":
@@ -429,6 +437,7 @@ export function foldDraft(draft, outcome) {
   const next = { ...draft };
   if (outcome.clearKey) delete next.director_api_key;
   if (outcome.fill) next[outcome.fill.id] = outcome.fill.value;
+  if (outcome.preview) Object.assign(next, outcome.preview);
   return next;
 }
 
@@ -555,6 +564,12 @@ if (typeof document !== "undefined") {
     draft[id] = value;
     feedback = null;
     document.querySelector(".set-feedback")?.remove();
+    if (id === "byo_harness") {
+      draft.byo_snippet = "";
+      draft.byo_steps = "";
+      draft.byo_token = "";
+      renderCurrentTab();
+    }
   }
 
   async function loadSnapshot() {
@@ -589,7 +604,7 @@ if (typeof document !== "undefined") {
     const writeText = (text) => navigator.clipboard.writeText(text);
     const hinted = copyRunForPress(payload);
     const early =
-      hinted !== undefined ? writeRunClipboard(hinted, currentValues, writeText) : Promise.resolve();
+      hinted !== undefined ? writeRunClipboard(hinted, { ...currentValues, ...draft }, writeText) : Promise.resolve();
     try {
       const outcome = await handleEvent(payload);
       await early;
@@ -599,7 +614,7 @@ if (typeof document !== "undefined") {
       }
       if (hinted !== undefined) {
         if (outcome) await loadSnapshot();
-      } else if (await applyEventOutcome(outcome, currentValues, writeText)) {
+      } else if (await applyEventOutcome(outcome, { ...currentValues, ...draft }, writeText)) {
         await loadSnapshot();
       }
     } catch (err) {

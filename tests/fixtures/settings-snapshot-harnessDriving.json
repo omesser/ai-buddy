@@ -305,7 +305,7 @@
               "id": "byo_harness",
               "label": "Harness",
               "writes": "ByoHarness",
-              "help": "Which Harness the box below is written for.",
+              "help": "Preview instructions for this Harness. Apply saves the choice; Cancel restores it.",
               "options": [
                 "claude",
                 "codex",
@@ -318,7 +318,7 @@
                 "pi"
               ],
               "frozen": false,
-              "batched": false,
+              "batched": true,
               "disclosure": null,
               "status": null
             },
@@ -472,7 +472,7 @@
                   "frozen": false
                 }
               ],
-              "help": "AI switches, wake interval, endpoint, and AI source take effect on Apply.",
+              "help": "Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.",
               "disclosure": null
             }
           ],

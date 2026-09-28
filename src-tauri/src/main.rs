@@ -641,6 +641,8 @@ struct DirectorDraftWire {
     #[serde(default)]
     director_wake_secs: Option<String>,
     #[serde(default)]
+    byo_harness: Option<String>,
+    #[serde(default)]
     director_base_url: Option<String>,
     #[serde(default)]
     director_model: Option<String>,
@@ -958,6 +960,20 @@ mod settings_event_tests {
     }
 
     #[test]
+    fn byo_preview_serializes_for_the_page() {
+        let response = SettingsEventResponse::PreviewByo {
+            snippet: "hermes mcp add fidget".into(),
+            steps: "Run the command.".into(),
+            token: "secret-token".into(),
+        };
+        let json = serde_json::to_value(response).expect("should serialize");
+        assert_eq!(json["action"], "preview_byo");
+        assert_eq!(json["snippet"], "hermes mcp add fidget");
+        assert_eq!(json["steps"], "Run the command.");
+        assert_eq!(json["token"], "secret-token");
+    }
+
+    #[test]
     fn response_run_uses_stable_wire_format() {
         use settings::form::RowOperation;
         let response = SettingsEventResponse::Run {
@@ -1073,10 +1089,20 @@ mod settings_event_tests {
 enum SettingsEventResponse {
     Nothing,
     Refresh,
-    Fill { id: String, value: String },
+    Fill {
+        id: String,
+        value: String,
+    },
+    PreviewByo {
+        snippet: String,
+        steps: String,
+        token: String,
+    },
     ClearKey,
     Reset,
-    Run { operation: String },
+    Run {
+        operation: String,
+    },
 }
 
 #[tauri::command]
@@ -1140,6 +1166,9 @@ fn settings_event_blocking(
                 if let Some(value) = wire.director_wake_secs {
                     draft.wake_secs = value;
                 }
+                if let Some(value) = wire.byo_harness {
+                    draft.byo_harness = value;
+                }
                 if let Some(value) = wire.director_base_url {
                     draft.base_url = value;
                 }
@@ -1158,6 +1187,18 @@ fn settings_event_blocking(
                 draft.clear_key = wire.clear_key;
             }
             (controller::Event::Press { id: press }, draft)
+        }
+        SettingsEventPayload::Pick {
+            pick,
+            value,
+            fills: None,
+        } if pick == settings::form::BYO_HARNESS_ID => {
+            let (snippet, steps, token) = settings::byo_rows(&value);
+            return Ok(SettingsEventResponse::PreviewByo {
+                snippet,
+                steps,
+                token,
+            });
         }
         SettingsEventPayload::Pick {
             pick,

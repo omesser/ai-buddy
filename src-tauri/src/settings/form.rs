@@ -149,10 +149,8 @@ pub enum FormRow {
         /// an exported variable owns the field, since `model::resolve` gives
         /// it the last word and would discard an edit made here (#272).
         frozen: bool,
-        /// Committed by Apply rather than on every blur.
-        ///
-        /// A partial endpoint or source edit would retarget the Completer and
-        /// drop session history before the user applies the batch.
+        /// Committed by Apply. A partial endpoint or source edit would retarget
+        /// the Completer and drop session history.
         batched: bool,
         /// Extended explanation behind progressive disclosure.
         disclosure: Option<String>,
@@ -978,7 +976,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "director_actions".to_string(),
-                    help: Some("AI switches, wake interval, endpoint, and AI source take effect on Apply.".to_string()),
+                    help: Some("Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.".to_string()),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
@@ -1114,10 +1112,10 @@ fn byo_section() -> FormSection {
                 id: BYO_HARNESS_ID.to_string(),
                 label: Some("Harness".to_string()),
                 writes: TextField::ByoHarness,
-                help: Some("Which Harness the box below is written for.".to_string()),
+                help: Some("Preview instructions for this Harness. Apply saves the choice; Cancel restores it.".to_string()),
                 options: HARNESS_PRESETS.map(str::to_string).to_vec(),
                 frozen: false,
-                batched: false,
+                batched: true,
                 disclosure: None,
                 status: None,
             },
@@ -2408,13 +2406,14 @@ mod tests {
             DIRECTOR_BASE_URL_ID,
             DIRECTOR_MODEL_ID,
             DIRECTOR_WAKE_SECS_ID,
+            BYO_HARNESS_ID,
             HARNESS_COMMAND_ID,
             HARNESS_ID,
         ];
         expected.sort_unstable();
         assert_eq!(batched, expected);
         assert!(!description.text_batched(CHARACTER_ID));
-        assert!(!description.text_batched(BYO_HARNESS_ID));
+        assert!(description.text_batched(BYO_HARNESS_ID));
     }
 
     /// Mute sits under Do Not Disturb because that is the heading a user

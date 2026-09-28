@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { foldDraft, pruneDraft, render } from "../src/settings.js";
+import { foldDraft, processResponse, pruneDraft, render } from "../src/settings.js";
 
 function snapshot(name) {
   const read = (kind) =>
@@ -142,6 +142,35 @@ test("a batched row draws the draft it is handed, the key field included", () =>
 
   assert.equal(control("director_model").value, "gpt-5");
   assert.equal(control("director_api_key").value, "sk-draft");
+});
+
+test("registration Harness previews without saving and Cancel restores the picker", () => {
+  const emitted = [];
+  let draft = {};
+  const control = draw(MODEL_API.values, (payload) => emitted.push(payload), (id, value) => {
+    draft[id] = value;
+  });
+  const picker = control("byo_harness");
+  picker.value = "hermes";
+  picker.handlers.change();
+
+  assert.deepEqual(emitted, [{ pick: "byo_harness", value: "hermes" }]);
+  assert.deepEqual(draft, { byo_harness: "hermes" });
+
+  const preview = processResponse({
+    action: "preview_byo",
+    snippet: "hermes mcp add fidget",
+    steps: "Run the command.",
+    token: "secret-token",
+  });
+  draft = foldDraft(draft, preview);
+  const shown = draw({ ...MODEL_API.values, ...draft });
+  assert.equal(shown("byo_harness").value, "hermes");
+  assert.equal(shown.row("byo_snippet").children[0].textContent, "hermes mcp add fidget");
+  assert.equal(shown.row("byo_token").children[0].textContent, "secret-token");
+
+  draft = foldDraft(draft, { reset: true });
+  assert.equal(draw({ ...MODEL_API.values, ...draft })("byo_harness").value, "claude");
 });
 
 // The regression in #995, as a tab switch does it: the page redraws the panel
