@@ -35,9 +35,11 @@ function histogram(frameDeltas, tickDeltas) {
 export function analyze(log, { from = -Infinity, to = Infinity }) {
   const inWindow = (at) => at >= from && at <= to;
   const ticks = [];
+  const placements = [];
   const overlays = new Map();
   for (const line of log.split("\n")) {
     const [kind, ...fields] = line.split(" ");
+    if (kind === "frame:") placements.push({ at: Number(fields[0]), pos: fields[2] });
     if (kind === "frame:" && inWindow(Number(fields[0]))) ticks.push(Number(fields[0]));
     if (kind !== "cadence:") continue;
     const [label, now, rearmed, previous, latest] = fields;
@@ -51,6 +53,11 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
     });
   }
 
+  // ponytail: an arrival reads the Engine position traced at or before it, by
+  // wall clock, for one Instance. A still sprite draws where it stands, so it
+  // has no lag to measure; counting it reports the 250 ms resend as lag.
+  const engineAt = (at) => placements.findLast((p) => p.at <= at)?.pos;
+
   // A frame after one that did not ask for it is the loop starting again on an
   // arrival. The gap before it is time with nothing to draw, not a dropped frame.
   const frameDeltas = [];
@@ -61,6 +68,7 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
       if (i > 0 && frames[i - 1].rearmed) frameDeltas.push(frame.now - frames[i - 1].now);
       if (i > 0 && !frames[i - 1].rearmed) restarts++;
       if (frame.previous === null) return;
+      if (engineAt(frame.previous) === engineAt(frame.latest)) return;
       // Interpolating the arrival times themselves gives the moment whose
       // placement is on screen, by the renderer's own arithmetic.
       const shown = interpolate(
@@ -108,9 +116,9 @@ export function report(result) {
     [`Dropped (>${DROP_MS} ms)`, result.drops],
     ["Loop restarts", result.restarts],
     ["Engine ticks", `${result.ticks} (${na(result.tickHz, " Hz")})`],
-    ["Interpolation lag p50", lag ? `${lag.p50Ms} ms (${lag.p50Samples} samples)` : "N/A"],
-    ["Interpolation lag p95", lag ? `${lag.p95Ms} ms (${lag.p95Samples} samples)` : "N/A"],
-    ["Frames held at the latest placement", lag ? lag.held : "N/A"],
+    ["Interpolation lag p50, moving", lag ? `${lag.p50Ms} ms (${lag.p50Samples} samples)` : "N/A"],
+    ["Interpolation lag p95, moving", lag ? `${lag.p95Ms} ms (${lag.p95Samples} samples)` : "N/A"],
+    ["Moving frames held at the latest placement", lag ? lag.held : "N/A"],
   ];
   return [
     "| Metric | Value |",

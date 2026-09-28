@@ -5,8 +5,8 @@
  * Interpolate between two placements at time `now`. The renderer draws one
  * sample behind: the sprite moves at a constant rate between samples instead
  * of jumping whenever one lands. Worth it because the Engine ticks at about
- * 44Hz with gaps of 16ms to 38ms, all longer than a 60Hz display frame; measure
- * again with `FIDGET_TRACE_FRAMES=1` before changing this.
+ * 53Hz with gaps of 14ms to 25ms, most longer than a 60Hz display frame; measure
+ * again with scripts/bench-frame-cadence-macos.sh before changing this.
  *
  * @param {{x: number, y: number, at: number}} previous
  * @param {{x: number, y: number, at: number}} latest

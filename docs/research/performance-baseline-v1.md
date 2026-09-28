@@ -329,4 +329,61 @@ See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed 
 _Pending._
 
 ## Frame cadence (issue #426)
-_Pending._
+
+### macOS
+
+Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh matrix --seconds 20 --bin target/release/fidget`. It launches fidget three times on the live desktop and sends no input. Measured at `b321bf98`, which includes `aa02d774` (an Active tick sleeps only the rest of its 16 ms).
+
+**Tools:**
+
+- `FIDGET_TRACE_CADENCE=1` makes the overlay log every display frame it draws: the rAF timestamp, whether it asked for the next frame, and the two arrivals it interpolated between. `FIDGET_TRACE_FRAMES=1` supplies the Engine ticks.
+- `scripts/frame-cadence.mjs` reduces a log window to the tables below. Interpolation lag runs `interpolate()` over the arrival times, so it uses the renderer's own arithmetic.
+- WebKit rounds `performance.now()` and rAF timestamps to 1 ms, so a frame delta reads as 16 or 17 ms, never 16.7.
+
+**Environment:** Mac15,7 (Apple M3 Pro, 12 cores), macOS 26.7 (25G229), two displays at 60 Hz, release build, BMO, Director off, 20 s per scenario. Load is one `yes` per core.
+
+| Scenario | Display frames | Mean fps | Drops (>20 ms) | Loop restarts | Engine ticks/s | Lag p50, moving | Lag p95, moving | Moving frames held |
+|---|---|---|---|---|---|---|---|---|
+| Idle perched | 108 | N/A | 0 | 107 | 53.0 | N/A | N/A | N/A |
+| Walking | 432 | 60.2 | 0 | 106 | 53.3 | 19 ms (1 sample) | 22 ms (1 sample) | 19 |
+| Walking + CPU load | 450 | 59.9 | 6 | 133 | 51.2 | 20 ms (1 sample) | 26 ms (1.19 samples) | 50 |
+
+Frame deltas count only consecutive frames where the first asked for the second. A frame the loop started again on an arrival is a restart, and the quiet gap before it is not a drop.
+
+| Delta ms | Walking frames | Walking ticks | Load frames | Load ticks | Idle ticks |
+|---|---|---|---|---|---|
+| 0-10 | 1 | 3 | 0 | 12 | 0 |
+| 10-14 | 1 | 8 | 11 | 35 | 11 |
+| 14-18 | 302 | 259 | 239 | 170 | 234 |
+| 18-20 | 20 | 348 | 54 | 233 | 331 |
+| 20-25 | 1 | 441 | 12 | 509 | 479 |
+| 25-34 | 0 | 7 | 0 | 66 | 5 |
+| 34-50 | 0 | 0 | 0 | 1 | 0 |
+
+**Against the design claim.**
+
+- **60 fps while moving: confirmed.** Walking holds 60.2 fps with no drops. Under full CPU load 6 of 316 deltas miss a vsync, and every one lands under 25 ms.
+- **Lag is one sample: confirmed.** The sprite is drawn one Engine tick behind, about 19 ms. Under load, p95 reaches 1.19 samples, because a late tick leaves the sprite held at the latest placement for a frame.
+- **"About 44 Hz, 16 to 38 ms" is out of date.** The Engine now ticks at 53 Hz. Idle and walking put 98% of tick gaps between 14 and 25 ms; load puts 89% there. The comment in `src/interpolate.js` now says so.
+
+**Why the Engine ticks at 53 Hz and not 60.** A 16 ms `sleep` on this machine returns after 20 ms. Measured in a separate process with `Time::HiRes::sleep`, 150 sleeps at each length:
+
+| Requested | p50 returned |
+|---|---|
+| 4 ms | 5.0 ms |
+| 8 ms | 10.0 ms |
+| 16 ms | 20.0 ms |
+| 32 ms | 36.6 ms |
+
+The overshoot is about a quarter of the request, capped near 5 ms, which fits macOS timer coalescing leeway. `active_wait` already subtracts the tick's own work, so the rest of the gap is the sleep itself. Idle perched ticks at the same rate because the frame loop stays Active there: a looping idle animation and sleep accrual both keep it on the 16 ms timer (#183).
+
+**Why an idle, still sprite redraws about 5 times a second.** Of the 108 idle frames:
+
+- 49 follow a change of idle animation frame. That is new art, and it needs a draw.
+- 59 follow `FRAME_RESEND` in `src-tauri/src/frame_loop.rs`, which sends an unchanged placement again every 250 ms. The overlay's `frame` listener asks for a display frame on every arrival, even one identical to the last, so each resend costs a rAF with nothing to draw.
+
+**Limits.**
+
+- One machine, 60 Hz panels. A ProMotion display would show 8.3 ms deltas.
+- Riding a moving window and crossing a display seam are not measured. Both need a person to drag a window or to steer where BMO walks.
+- The trace records the first Instance only.
