@@ -2,7 +2,7 @@
 
 > **Archival Note**: This is a historical pre-#599 research snapshot. For current
 > BYO harness registration, see the Settings BYO UI in the running application,
-> `DEVELOPMENT.md` for setup instructions, and
+> `docs/harness.md` for setup instructions, and
 > `docs/research/byo-harness-mcp-reload.md` for reconfiguration/reload guidance.
 
 Research for story 66 — "point any MCP-capable harness at fidget directly" —
