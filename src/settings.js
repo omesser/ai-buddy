@@ -735,7 +735,7 @@ if (typeof document !== "undefined") {
     loadSnapshot();
   }
 
-  function showError() {
+  function showTauriTimeoutError() {
     if (panel) {
       while (panel.firstChild) {
         panel.removeChild(panel.firstChild);
@@ -772,7 +772,7 @@ if (typeof document !== "undefined") {
 
       if (attempts >= maxAttempts) {
         clearInterval(pollTimer);
-        showError();
+        showTauriTimeoutError();
       }
     }, pollInterval);
   }
