@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  The window-names hint for omesser/ai-buddy#916: when a window read comes
+  The window-names hint for omesser/fidget#916: when a window read comes
   back nameless (no title, no owning application) because the one consent
   ADR-0032 puts over both is off, the character says so once, in three candidate
   shapes — a chat notice, a speech bubble, a menu-bar badge.
@@ -241,7 +241,7 @@
 <body>
 <div class="page">
   <header>
-    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a> · 2026-09-24 · hand-written and frozen, not a description of shipped behavior</p>
+    <p class="class">Dated proposal · <a href="https://github.com/omesser/fidget/issues/916">#916</a> · 2026-09-24 · hand-written and frozen, not a description of shipped behavior</p>
     <h1>Window Names Hint</h1>
     <p class="lede">Window titles and application names sit behind one consent (ADR-0032), off by default
       and off until the user turns it on. Many users never find the Settings row, so <code>list_windows</code>
@@ -305,7 +305,7 @@
         <div class="ln" style="width:74%"></div><div class="ln" style="width:48%"></div></div>
     </div>
     <div class="win" id="win-browser">
-      <div class="bar"><span class="lights"><i></i><i></i><i></i></span>#916 · omesser/ai-buddy</div>
+      <div class="bar"><span class="lights"><i></i><i></i><i></i></span>#916 · omesser/fidget</div>
       <div class="body"><div class="ln" style="width:70%"></div><div class="ln" style="width:88%"></div>
         <div class="ln" style="width:55%"></div></div>
     </div>
@@ -483,7 +483,7 @@ enum NamesHint {
   </table>
 
   <footer>
-    Frozen for <a href="https://github.com/omesser/ai-buddy/issues/916">#916</a>. The mock Settings row follows
+    Frozen for <a href="https://github.com/omesser/fidget/issues/916">#916</a>. The mock Settings row follows
     #979 and ADR-0032; everything else on this page is a proposal, not shipped behavior.
   </footer>
 </div>
@@ -497,7 +497,7 @@ const KEY = "fidget.window-names-hint.dismissed";
 // together (ADR-0032).
 const WINDOWS = [
   ["[22,52,300,168],  ", "Code", "platform.rs — Fidget"],
-  ["[150,132,300,150],", "Safari", "#916 · omesser/ai-buddy"],
+  ["[150,132,300,150],", "Safari", "#916 · omesser/fidget"],
   ["[70,250,250,120], ", "Terminal", "zsh — 80×24"],
 ];
 const TRIGGERS = {

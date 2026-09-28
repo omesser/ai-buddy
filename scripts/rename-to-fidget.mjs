@@ -6,7 +6,7 @@
 //
 // Three roles, applied in table order. The script is the classification.
 // Product display is Fidget. Product slug is fidget. The on-screen companion
-// is character. A GitHub repo coordinate stays ai-buddy.
+// is character. A GitHub repo coordinate is omesser/fidget.
 
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, rmdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -31,15 +31,15 @@ export const ALLOWLIST = new Set([
 
 // Longest forge coordinate first so a URL is one span, not a slash plus a slug.
 const FORGE = [
-  /https?:\/\/github\.com\/omesser\/ai-buddy\b/g,
-  /https?:\\\/\\\/github\\.com\\\/omesser\\\/ai-buddy\b/g,
-  /git@github\.com:omesser\/ai-buddy\b/g,
-  /github\\.com\\\/omesser\\\/ai-buddy\b/g,
-  /github\.com\/omesser\/ai-buddy\b/g,
-  /omesser\\.github\\.io\\\/ai-buddy\b/g,
-  /omesser\.github\.io\/ai-buddy\b/g,
-  /omesser\\\/ai-buddy\b/g,
-  /\bomesser\/ai-buddy\b/g,
+  /https?:\/\/github\.com\/omesser\/fidget\b/g,
+  /https?:\\\/\\\/github\\.com\\\/omesser\\\/fidget\b/g,
+  /git@github\.com:omesser\/fidget\b/g,
+  /github\\.com\\\/omesser\\\/fidget\b/g,
+  /github\.com\/omesser\/fidget\b/g,
+  /omesser\\.github\\.io\\\/fidget\b/g,
+  /omesser\.github\.io\/fidget\b/g,
+  /omesser\\\/fidget\b/g,
+  /\bomesser\/fidget\b/g,
 ];
 
 const CHARACTER_NAME = [/Buddy Bot/g, /buddy-bot/g];
@@ -328,10 +328,10 @@ function lowercasePathNames(line) {
 
 export function recase(text, rel) {
   const kind = fileKind(rel);
-  // The GitHub path stays omesser/ai-buddy. The local directory is the product slug.
+  // The clone URL is the forge slug. The directory argument is the product slug.
   const rewritten = text.replace(
     /git clone https:\/\/github\.com\/omesser\/ai-buddy\.git\ncd (?:Fidget|ai-buddy)\b/g,
-    "git clone https://github.com/omesser/ai-buddy.git fidget\ncd fidget",
+    "git clone https://github.com/omesser/fidget.git fidget\ncd fidget",
   );
   let fence = false;
   return rewritten.split("\n").map((line) => {

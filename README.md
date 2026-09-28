@@ -4,7 +4,7 @@
 
 <!-- Shields split on a single hyphen, so cursor-agent is cursor--agent in the URL. Each color is that harness's own hue, darkened until the white shield text stays readable. -->
 
-[![CI](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![CI](https://github.com/omesser/fidget/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/fidget/actions/workflows/tests.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 [![harness](https://img.shields.io/badge/harness-claude-C25B3A)](#harness-support) [![harness](https://img.shields.io/badge/harness-codex-0E8A6A)](#harness-support) [![harness](https://img.shields.io/badge/harness-cursor--agent-D04200)](#harness-support) [![harness](https://img.shields.io/badge/harness-hermes-5C5AD6)](#harness-support) [![harness](https://img.shields.io/badge/harness-opencode-005BBB)](#harness-support) [![harness](https://img.shields.io/badge/harness-pi-0C7EA8)](#harness-support) [![harness](https://img.shields.io/badge/harness-grok-2B2B2B)](#harness-support)
 
@@ -33,7 +33,7 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 
 ## See It
 
-Try [Fidget Cues](https://omesser.github.io/ai-buddy/cues.html) — gestures and physics on a draggable sprite in the browser.
+Try [Fidget Cues](https://omesser.github.io/fidget/cues.html) — gestures and physics on a draggable sprite in the browser.
 
 ## Interact
 
@@ -80,12 +80,12 @@ Characters are packages of art, personality, and tuning. Packaging details live 
 
 ## Install
 
-Download a build from [GitHub Releases](https://github.com/omesser/ai-buddy/releases).
+Download a build from [GitHub Releases](https://github.com/omesser/fidget/releases).
 
 Or clone and run from the repo root (macOS, Linux, Windows):
 
 ```sh
-git clone https://github.com/omesser/ai-buddy.git fidget
+git clone https://github.com/omesser/fidget.git fidget
 cd fidget
 cargo run -p fidget
 ```
@@ -96,7 +96,7 @@ Apple Silicon. The Release ships a `.dmg`. Open it and copy `fidget` to Applicat
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
 
-The same missing signature costs two Keychain dialogs at launch — "Fidget wants to use your confidential information stored in Fidget" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/ai-buddy/issues/283)).
+The same missing signature costs two Keychain dialogs at launch — "Fidget wants to use your confidential information stored in Fidget" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/fidget/issues/283)).
 
 ### Linux
 
@@ -275,11 +275,11 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 ## Developing
 
-**Want to help?** [Open issues](https://github.com/omesser/ai-buddy/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how Fidget compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
+**Want to help?** [Open issues](https://github.com/omesser/fidget/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how Fidget compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
 
 **Design and decisions:**
 - [CONTEXT.md](./CONTEXT.md) — vocabulary
-- [DESIGN.md](./DESIGN.md) — design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/ai-buddy/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/ai-buddy/issues/17) tracks what is left)
+- [DESIGN.md](./DESIGN.md) — design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/fidget/issues/17) tracks what is left)
 - [docs/SPEC.md](./docs/SPEC.md) — v1 scope
 - [docs/adr/](./docs/adr/) — ADRs
 
@@ -299,7 +299,7 @@ The Chat window's mind mark — the small brain beside what answers — is the
 under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and inlined as
 a path in `src/chat.html`. The licence asks for the credit; this is it.
 
-Character provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html). A package is prose, a manifest and art: the personality and the manifest — animations, Behaviors, Director and cursor tuning — are this project's work and MIT throughout. The art is not always ours. Some characters adapt art that declares no license, and each manifest names what it adapts and whose IP the character is.
+Character provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/fidget/characters.html). A package is prose, a manifest and art: the personality and the manifest — animations, Behaviors, Director and cursor tuning — are this project's work and MIT throughout. The art is not always ours. Some characters adapt art that declares no license, and each manifest names what it adapts and whose IP the character is.
 
 ## License
 

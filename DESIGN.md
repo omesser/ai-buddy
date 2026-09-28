@@ -10,7 +10,7 @@ is defined in [CONTEXT.md](./CONTEXT.md) and used precisely here.
 
 ## State
 
-Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+Early. Work is tracked as [GitHub issues](https://github.com/omesser/fidget/issues).
 
 Feature comparison versus six software desktop pet alternatives is in [docs/research/alternatives.md](./docs/research/alternatives.md).
 

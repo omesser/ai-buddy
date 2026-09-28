@@ -26,7 +26,7 @@ updates:
       # This block stops Dependabot from opening PRs for glib, and that is all
       # it does. The advisory stays open in the Security tab until someone
       # dismisses it there as tolerable risk, which is a manual step the repo
-      # owner still has to take. See omesser/ai-buddy#37.
+      # owner still has to take. See omesser/fidget#37.
       #
       # The bound is the revisit trigger, not decoration: only versions below
       # 0.20 are ignored, so the suppression lifts once 0.20 is reachable and

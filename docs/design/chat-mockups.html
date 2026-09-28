@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Three designs for the chat surface of omesser/ai-buddy#17, side by side, so
+  Three designs for the chat surface of omesser/fidget#17, side by side, so
   one of them can be picked. The conversation, the sprite art, the traces and
   the copy are lifted from docs/design/chat.html — the approved reference — and
   only the visual design differs between the three. Nothing here is wired into
@@ -597,12 +597,12 @@
 <body>
 <div class="page">
   <header>
-    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/339">#339</a> · 2026-09-05 · hand-written and frozen, not a description of shipped behavior</p>
+    <p class="class">Dated proposal · <a href="https://github.com/omesser/fidget/issues/339">#339</a> · 2026-09-05 · hand-written and frozen, not a description of shipped behavior</p>
     <h1>Chat Surface, Three Ways</h1>
     <p class="lede">One conversation drawn three ways, for #339. The copy is lifted from
       the #17 reference. The question this page
       exists to answer is which visual register the chat surface should be in — and only
-      that. <a href="https://github.com/omesser/ai-buddy/pull/324">The reference proposal</a> settled what the window draws
+      that. <a href="https://github.com/omesser/fidget/pull/324">The reference proposal</a> settled what the window draws
       and how it behaves; it is approved and workable, and it stays the direction unless
       one of these beats it. So the copy, the turn, the timings and the sprite here are
       that page's, unchanged. Switch variants mid-stream: the same live turn carries
@@ -610,7 +610,7 @@
   </header>
 
   <p class="note"><b>What all three share by decision, not by accident.</b>
-    <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
+    <a href="https://github.com/omesser/fidget/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
     binds the surface to four kinds of line and no fifth: the user's turns, the agent's
     text as it streams, tool calls as one-liners, and the forwarded
     <code>session/request_permission</code> prompt with the Harness's own choices. No diff
@@ -623,7 +623,7 @@
     and this Instance's own prompt editable below, empty by default. WHO labels carry a
     local <code>HH:mm</code> (#445), five characters on the same line as the name. The frozen text on
     this page is BMO's, quoted from <code>characters/bmo/personality.txt</code>. The tab is
-    a proposal, and its ADR is <a href="https://github.com/omesser/ai-buddy/pull/338">#338</a>;
+    a proposal, and its ADR is <a href="https://github.com/omesser/fidget/pull/338">#338</a>;
     what it is doing here is showing whether each design has room for a second pane at
     all.</p>
 
@@ -764,7 +764,7 @@ Everything is a game if you look at it right, and BMO would like to know the rul
     was no ACP client in the tree on the date above. Timings are the proposal, not the
     ceiling. This page wires nothing: it is three stylesheets over one window, and the
     window is <code>docs/design/chat.html</code>'s, proposed in
-    <a href="https://github.com/omesser/ai-buddy/pull/324">#324</a>.</p>
+    <a href="https://github.com/omesser/fidget/pull/324">#324</a>.</p>
 </div>
 
 <script>

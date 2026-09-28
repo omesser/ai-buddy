@@ -1,6 +1,6 @@
 # Every page on the published site is Generated or Dated
 
-Every page on `omesser.github.io/ai-buddy` is one of two classes. Nothing else
+Every page on `omesser.github.io/fidget` is one of two classes. Nothing else
 may exist.
 
 - A **Generated page** is built at deploy time by a script under `scripts/` from

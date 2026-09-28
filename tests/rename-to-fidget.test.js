@@ -3,14 +3,23 @@ import { test } from "node:test";
 
 import { classifyLine, failingHits, recase, transform, transformPath } from "../scripts/rename-to-fidget.mjs";
 
-test("forge coordinates stay the repo slug", () => {
-  const url = "https://github.com/omesser/ai-buddy/releases/latest/download/latest.json";
-  assert.equal(transform(url), url);
-  assert.equal(transform("git clone https://github.com/omesser/ai-buddy.git"), "git clone https://github.com/omesser/ai-buddy.git");
-  assert.equal(transform("See omesser/ai-buddy#37."), "See omesser/ai-buddy#37.");
+test("forge coordinates become the fidget repo slug", () => {
+  assert.equal(
+    transform("https://github.com/omesser/ai-buddy/releases/latest/download/latest.json"),
+    "https://github.com/omesser/fidget/releases/latest/download/latest.json",
+  );
+  assert.equal(
+    transform("git clone https://github.com/omesser/ai-buddy.git"),
+    "git clone https://github.com/omesser/fidget.git",
+  );
+  assert.equal(transform("See omesser/ai-buddy#37."), "See omesser/fidget#37.");
   assert.equal(
     transform("Try https://omesser.github.io/ai-buddy/cues.html"),
-    "Try https://omesser.github.io/ai-buddy/cues.html",
+    "Try https://omesser.github.io/fidget/cues.html",
+  );
+  assert.equal(
+    transform("https://github.com/omesser/fidget/issues/133"),
+    "https://github.com/omesser/fidget/issues/133",
   );
 });
 
@@ -40,7 +49,7 @@ test("product identifiers split display and slug", () => {
   assert.equal(transform("//! ai-buddy's overlay shell."), "//! Fidget's overlay shell.");
   assert.equal(
     transform('https:\\/\\/github\\.com\\/omesser\\/ai-buddy\\/issues\\/277'),
-    'https:\\/\\/github\\.com\\/omesser\\/ai-buddy\\/issues\\/277',
+    'https:\\/\\/github\\.com\\/omesser\\/fidget\\/issues\\/277',
   );
   assert.equal(transform("not an ai-buddy checkout"), "not a Fidget checkout");
   assert.equal(transform('"ai-buddy".into()'), '"Fidget".into()');
@@ -123,16 +132,21 @@ test("a transformed line has no product or companion residual", () => {
   assert.equal(transform(next), next);
 });
 
-test("a forge URL is not also counted as the companion word", () => {
-  const hits = classifyLine("https://github.com/omesser/ai-buddy/issues/133");
-  assert.ok(hits.length > 0);
-  assert.ok(hits.every((hit) => hit.role === "forge-slug"));
+test("a forge URL is not the companion word", () => {
+  assert.deepEqual(classifyLine("https://github.com/omesser/fidget/issues/133"), []);
+  const stale = classifyLine("https://github.com/omesser/ai-buddy/issues/133");
+  assert.ok(stale.some((hit) => hit.text === "ai-buddy" && hit.role === "product-slug"));
+  assert.ok(stale.every((hit) => hit.role !== "character-generic"));
+  assert.deepEqual(
+    failingHits("sample.md", "https://github.com/omesser/ai-buddy/issues/133", 1).map((hit) => hit.text),
+    ["ai-buddy"],
+  );
 });
 
 test("title case is only the product people see", () => {
   assert.equal(
     recase("git clone https://github.com/omesser/ai-buddy.git\ncd Fidget", "README.md"),
-    "git clone https://github.com/omesser/ai-buddy.git fidget\ncd fidget",
+    "git clone https://github.com/omesser/fidget.git fidget\ncd fidget",
   );
   assert.equal(recase("# Fidget\n\nFidget never reads pixels.", "README.md"), "# Fidget\n\nFidget never reads pixels.");
   assert.equal(recase("# Fidget\n\nFidget never reads pixels.", "docs/adr/0001-example.md"), "# Fidget\n\nFidget never reads pixels.".replace("Fidget never", "fidget never"));
@@ -185,6 +199,6 @@ test("the project board sentence does not keep the old title", () => {
   );
   assert.equal(
     transform("Issues sit on the **AI Buddy** project board (`omesser/ai-buddy`, project number `2`)."),
-    "Issues sit on the project board (`omesser/ai-buddy`, project number `2`).",
+    "Issues sit on the project board (`omesser/fidget`, project number `2`).",
   );
 });

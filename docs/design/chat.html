@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  The chat surface proposal for omesser/ai-buddy#17: the window a Summon opens,
+  The chat surface proposal for omesser/fidget#17: the window a Summon opens,
   drawn by Fidget rather than by the Harness (ADR-0010). Nothing here is
   wired into the app. The page exists so the shape and the copy can be argued
   with before src/ grows a window, and so the one claim the issue tests — the
@@ -260,10 +260,10 @@
 <body>
 <div class="page">
   <header>
-    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/17">#17</a> · 2026-09-04 · hand-written and frozen, not a description of shipped behavior</p>
+    <p class="class">Dated proposal · <a href="https://github.com/omesser/fidget/issues/17">#17</a> · 2026-09-04 · hand-written and frozen, not a description of shipped behavior</p>
     <h1>Fidget Chat</h1>
     <p class="lede">The chat surface a Summon opens, for #17. The question it exists to
-      answer: does a log-style chat this plain — the window <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
+      answer: does a log-style chat this plain — the window <a href="https://github.com/omesser/fidget/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
       allows and no more — carry a real Harness turn without becoming a workbench, and
       does it still look like the same app as the sprite beside it? Drive the three states
       below and judge the copy; every string here is up for argument.</p>
@@ -323,7 +323,7 @@
 
   <h2>Sensing, and whose rules it runs under</h2>
   <p class="note">The slow turn reaches the desktop before it answers, because a chat
-    message is the On-Demand tier's trigger: <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0005-sensing-posture.md">ADR-0005</a> defines that tier
+    message is the On-Demand tier's trigger: <a href="https://github.com/omesser/fidget/blob/main/docs/adr/0005-sensing-posture.md">ADR-0005</a> defines that tier
     as a Capture in direct response to a Poke, a call, or a chat message, and this window is
     where the message is typed. What it calls are the two sensing tools Fidget owns.
     <code>describe_screen</code> and <code>list_windows</code> return window metadata rather
@@ -332,7 +332,7 @@
     reach the Director, and the capability behind them is consented once in settings rather
     than per capture.</p>
   <p class="note"><b>The Harness's own computer use is not that.</b> Claude Code performs it
-    natively, and <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0003-no-executor-harness-owns-desktop-control.md">ADR-0003</a> is why Fidget posts no input events at all:
+    natively, and <a href="https://github.com/omesser/fidget/blob/main/docs/adr/0003-no-executor-harness-owns-desktop-control.md">ADR-0003</a> is why Fidget posts no input events at all:
     desktop control belongs to the Harness. Its screenshots and its clicks run under its own
     permissions and its own dialogs, through neither our denylist nor our Local Gate — we own
     consent for sensing only. Both kinds reach this log as the same shape of one-liner, which
@@ -410,7 +410,7 @@
   <p class="foot">The Harness here is a script and a timer — there was no ACP client in the
     tree on the date above. Timings are the proposal, not the ceiling: the seven-second turn, the streaming rate
     and the bubble's reading time are all knobs. Ported from
-    <a href="https://github.com/omesser/ai-buddy/blob/main/src/main.css">src/main.css</a>: the
+    <a href="https://github.com/omesser/fidget/blob/main/src/main.css">src/main.css</a>: the
     bubble, its tail, and the ink-on-white the window borrows.</p>
 </div>
 

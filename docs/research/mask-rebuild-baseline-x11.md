@@ -1,6 +1,6 @@
 # X11 Click-Through Mask Rebuild Baseline
 
-Benchmark for issue [#428](https://github.com/omesser/ai-buddy/issues/428): per-pixel cost of rebuilding the X11 input region (XShapeCombineMask) when the sprite animation frame changes.
+Benchmark for issue [#428](https://github.com/omesser/fidget/issues/428): per-pixel cost of rebuilding the X11 input region (XShapeCombineMask) when the sprite animation frame changes.
 
 ## Environment
 
