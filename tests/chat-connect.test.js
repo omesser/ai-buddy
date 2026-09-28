@@ -82,35 +82,17 @@ test("a missing first-party CLI names that binary, not npx", () => {
   }
 });
 
-test("a missing npx names nodejs.org install URL", () => {
-  for (const name of ["claude", "codex", "pi"]) {
-    const opening = npxOpening(name);
-    const copy = landingCopy(opening);
-    assert.match(copy.lede, /nodejs\.org/i, `${name} landing mentions nodejs.org`);
-  }
-});
-
-test("a missing first-party CLI names its install URL", () => {
-  const urls = {
-    hermes: "hermes-agent.nousresearch.com",
-    goose: "goose-docs.ai/docs/getting-started/installation",
-    copilot: "docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
-    "cursor-agent": "cursor.com",
-    grok: "x.ai",
-    opencode: "opencode.ai",
-  };
-  for (const [name, urlPart] of Object.entries(urls)) {
-    const opening = {
-      name: "bmo",
-      configured: true,
-      enabled: true,
-      harness_name: name,
-      harness: { name, session: null, alive: false, login: null, missing: name },
-    };
-    const copy = landingCopy(opening);
-    const regex = new RegExp(urlPart.replace(/\./g, "\\."), "i");
-    assert.match(copy.lede, regex, `${name} landing mentions ${urlPart}`);
-  }
+// The page comes from the Shell's table, which Settings names it from too.
+test("a missing launcher names the install page the opening carries, and only that", () => {
+  const opening = npxOpening("codex");
+  assert.equal(
+    landingCopy({ ...opening, harness: { ...opening.harness, install: "https://nodejs.org/" } }).lede,
+    "`npx` is not installed. Fidget does not bundle `npx`. Install from https://nodejs.org/. Then press Codex again, or pick a different Harness below.",
+  );
+  assert.equal(
+    landingCopy(opening).lede,
+    "`npx` is not installed. Fidget does not bundle `npx`. Then press Codex again, or pick a different Harness below.",
+  );
 });
 
 test("a named Harness that has not come up stays on the landing", () => {
@@ -288,7 +270,7 @@ test("code and a link in one sentence each keep their kind", () => {
     configured: true,
     enabled: true,
     harness_name: "codex",
-    harness: { name: "codex", session: null, alive: false, login: null, missing: "npx" },
+    harness: { name: "codex", session: null, alive: false, login: null, missing: "npx", install: "https://nodejs.org/" },
   });
   const kinds = inlineSegments(copy.lede).filter((s) => s.kind !== "text");
   assert.deepEqual(kinds, [

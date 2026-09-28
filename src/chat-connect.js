@@ -20,21 +20,6 @@ export function harnessDisplayName(opening) {
   return DISPLAY_NAMES[key] || key || "The Harness";
 }
 
-function installUrlFor(missing, harnessName) {
-  if (missing === "npx") {
-    return "https://nodejs.org/";
-  }
-  const urls = {
-    hermes: "https://hermes-agent.nousresearch.com/",
-    goose: "https://goose-docs.ai/docs/getting-started/installation/",
-    copilot: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
-    "cursor-agent": "https://www.cursor.com/",
-    grok: "https://x.ai/",
-    opencode: "https://opencode.ai/",
-  };
-  return urls[harnessName] || null;
-}
-
 // No login means no actions, even if `sign_in` is still on the opening.
 // `kind` is not a button. The shell already decided which methods are.
 export function loginPresentation(opening) {
@@ -132,8 +117,7 @@ export function landingCopy(opening) {
   }
 
   if (missing) {
-    const installUrl = installUrlFor(missing, harness?.name);
-    const installHint = installUrl ? ` Install from ${installUrl}.` : "";
+    const installHint = harness.install ? ` Install from ${harness.install}.` : "";
     return {
       title: `${name} needs \`${missing}\``,
       lede: `\`${missing}\` is not installed. Fidget does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,

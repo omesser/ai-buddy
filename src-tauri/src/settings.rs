@@ -374,9 +374,12 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             None if !attached.alive => match &attached.missing {
                 Some(command) => format!(
                     "`{command}` is not installed, so {} is not running and the AI runs on \
-                     static weights. Fidget does not bundle `{command}` - install it, or Model \
+                     static weights. Fidget does not bundle `{command}` - install it{}, or Model \
                      API above hands the HTTP endpoint back.",
-                    attached.name
+                    attached.name,
+                    crate::harness::install_page(command)
+                        .map(|(_, url)| format!(" from {url}"))
+                        .unwrap_or_default(),
                 ),
                 // #949: Apply starts the attach itself, and the handshake
                 // takes a second or two. "Set but not running" over that
@@ -5179,6 +5182,10 @@ mod tests {
         assert!(line.contains("not installed"), "got {line:?}");
         assert!(line.contains("`npx`"), "got {line:?}");
         assert!(line.contains("does not bundle `npx`"), "got {line:?}");
+        assert!(
+            line.contains("install it from https://nodejs.org/,"),
+            "Settings names the page Chat names, got {line:?}"
+        );
         assert!(
             !line.contains("bundle a Harness"),
             "should name the command, not 'a Harness', got {line:?}"

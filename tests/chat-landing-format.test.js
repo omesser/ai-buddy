@@ -165,7 +165,7 @@ test("a launcher that failed to start shows its commands as code", { skip, timeo
 });
 
 test("a missing launcher links its install page to the browser", { skip, timeout: 60000 }, () => {
-  const report = paint(opening({ missing: "npx" }));
+  const report = paint(opening({ missing: "npx", install: "https://nodejs.org/" }));
   assert.equal(report.title, "Codex needs npx");
   assert.deepEqual(report.titleCode, ["npx"]);
   assert.deepEqual(report.mindCode, ["npx"]);
