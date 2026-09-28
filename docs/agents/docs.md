@@ -6,7 +6,7 @@
 
 | Artifact | Holds | Mutable |
 |---|---|---|
-| `docs/adr/` | One hard-to-reverse decision + why + rejected alternatives | No (supersede, don't rewrite) |
+| `docs/adr/` | One hard-to-reverse decision + why + rejected alternatives | Decision no (supersede); wording yes (compaction) |
 | `docs/SPEC.md` | What v1 must do | Until the version cuts |
 | `DESIGN.md` | Product shape narrative | Evolves with product |
 | Issue / PR | Work, acceptance, verification | Yes |
@@ -52,6 +52,13 @@ Skip otherwise. An easy revert, an obvious choice, or no alternative considered 
 - How to run/test/reproduce — that is DEVELOPMENT or the README
 
 Mechanism stays fluid. Freeze architecture bets only.
+
+## Editing an ADR
+
+An editorial compaction that leaves the decision unchanged may edit an ADR in
+place. A changed decision gets a superseding ADR, and the superseded one is
+removed, leaving one `**Supersedes:** [ADR-NNNN](<link pinned to a commit>) (removed).`
+line in its successor.
 
 ## For agents
 

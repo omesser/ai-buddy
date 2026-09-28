@@ -1,5 +1,7 @@
 # The ACP client uses the official SDK and supported Harnesses are named
 
+**Supersedes:** [ADR-0017](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0017-acp-client-over-the-official-sdk-and-supported-harnesses.md) (removed).
+
 ## Context
 
 Agent Client Protocol (ACP) is how fidget talks to external agent harnesses.

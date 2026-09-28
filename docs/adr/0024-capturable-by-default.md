@@ -17,8 +17,8 @@ from captures should be a choice the user makes, not the default.
    shares", checked by default. It is a user choice, not a Development row.
 3. **Platforms that can exclude honour it.** macOS and Windows read the setting.
    Linux has no exclusion API and stays capturable.
-4. **The env override stays.** `FIDGET_CAPTURABLE` forces either state for verify
-   scripts, over the stored setting.
+4. **The environment override stays.** It forces either state for verification
+   and wins over the stored setting.
 
 ## Consequences
 

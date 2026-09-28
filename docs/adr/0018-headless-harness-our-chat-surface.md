@@ -1,5 +1,7 @@
 # The Harness runs headless and Fidget draws the chat surface
 
+**Supersedes:** [ADR-0010](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0010-headless-harness-our-chat-surface.md) (removed).
+
 ## Context
 
 Desktop agent harnesses ship with their own TUIs: Claude Code, Hermes, opencode,

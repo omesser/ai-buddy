@@ -353,8 +353,8 @@ window, and a Chat UI is one of the designs it can be drawn in. Reaches nothing
 the overlay draws by itself — a Character's art never, and the Speech bubble
 only the opaque panel tokens in `src/chat-shared.css` that the default Chat UI
 and the overlay both import (#441, #456, #545) — and is not the light or dark
-theme the operating system supplies. v1 ships one and no switcher. #355, #348,
-ADR-0019.
+theme the operating system supplies. The user picks one for the whole app in
+Settings. #355, #348, #1068, ADR-0036.
 _Avoid_: Look, theme, skin, style, variant, design
 
 ### The published site

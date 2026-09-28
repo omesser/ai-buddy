@@ -12,7 +12,7 @@ call supplies. Decline, and the character still knows Signal and Tor Browser are
 running. What you turned off is knowing which window is which.
 
 Nothing ever argued for that split. It arrived with the first sensing
-decision's Free tier, ADR-0031 carried it forward, and `CONTEXT.md` and `docs/SPEC.md` restate it.
+decision's Free tier, ADR-0031 carried it forward, and the glossary and the spec restate it.
 ADR-0031 contradicts itself as a result. It lists the frontmost application
 name in a tier it defines as needing no permissions, and says Screen Recording
 is never requested while the consent catalog requests it to read titles.

@@ -73,7 +73,7 @@ body {
 
 /* The way to the rest of a turn that did not fit. `data-more` is written only
    when the wrap truncated: a control on every line would make the bubble chrome
-   (ADR-0019). A word in the accent colour, not a filled button, for the same reason. */
+   (ADR-0036). A word in the accent colour, not a filled button, for the same reason. */
 
 .bubble:not([data-more]) .bubble-more {
   display: none;

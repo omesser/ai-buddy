@@ -1,5 +1,7 @@
 # One Linux build takes the X11 lane; there is no native Wayland lane
 
+**Supersedes:** the X11 half of [ADR-0014](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0014-x11-lane-no-native-wayland.md) (removed).
+
 ## Context
 
 Linux desktops split between X11 and Wayland session types. The spatial layer
