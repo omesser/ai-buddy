@@ -25,10 +25,9 @@ that holds the decisions this ADR is about. The ACP ecosystem itself publishes
 a protocol and adapters but no client UI. The scope cannot be delegated to a
 dependency, so it needs an edge written down instead of argued per feature.
 
-ADR-0018 already refused to host the Harness's own interface, and ADR-0025
-refused to keep its reasoning and fixed the strip that shows it. Neither says
-what the surface may draw of the rest of what the wire hands it, which is the
-question every one of these features asks.
+ADR-0018 already refused to host the Harness's own interface. It does not say
+what the surface may draw of what the wire hands it, which is the question
+every one of these features asks.
 
 ## Decision
 
@@ -80,16 +79,8 @@ failure this ADR exists to stop. Resource links in particular are a gap to
 close: fidget is meant for computer use and tool use, so rich media arrives on
 this wire as a matter of course.
 
-The thought trace is contested, and this ADR does not settle it. ADR-0025
-decided a thought is one transient line above the composer, replaced by the
-next, cleared at the end of the turn, kept by nothing, and named reasoning a
-reader scrolls back through as the workbench arriving by another door. The owner
-has since called that single line a degraded experience to reverse. Giving a
-thought more room than a strip means superseding or amending ADR-0025, which is
-a decision of its own and not this ADR's to take; #606 is where the thought
-strip is tracked and where that ADR gets written. Until then ADR-0025 stands as
-written and is known to be contested — this ADR is neither grounds to ignore it
-nor a reason to leave one clipped line alone.
+How the thought trace is drawn is
+[ADR-0034](./0034-harness-thinking-is-a-row-in-the-chat-log.md)'s.
 
 The surface draws less than the Harness's own TUI, and how much less is a live
 question rather than a settled one. What this ADR fixes is the reason: the

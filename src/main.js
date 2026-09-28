@@ -55,7 +55,7 @@ function createView(id) {
   }
   // The way out of a line that did not fit. Drawn only when the turn was
   // truncated, and clicked, never implied: opening the Chat surface stays a
-  // deliberate act (ADR-0019), so nothing here reacts to the line arriving.
+  // deliberate act (ADR-0036), so nothing here reacts to the line arriving.
   const more = document.createElement("button");
   more.type = "button";
   more.className = "bubble-more";

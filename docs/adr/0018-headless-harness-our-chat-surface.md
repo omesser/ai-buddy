@@ -1,5 +1,7 @@
 # The Harness runs headless and Fidget draws the chat surface
 
+**Supersedes:** [ADR-0010](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0010-headless-harness-our-chat-surface.md) (removed).
+
 ## Context
 
 Desktop agent harnesses ship with their own TUIs: Claude Code, Hermes, opencode,
@@ -44,9 +46,3 @@ everyone who declines.
 
 Reversing this means writing a terminal host and giving up the turn-completion
 signal, or keeping ACP and accepting two conversations.
-
-## Supersedes
-
-This decision supersedes [ADR-0010](./0010-headless-harness-our-chat-surface.md),
-which recorded the same choice alongside implementation detail that belongs
-elsewhere.

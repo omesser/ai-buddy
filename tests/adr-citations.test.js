@@ -1,6 +1,6 @@
 // #924: a comment citing a superseded ADR sends the reader to a document whose
 // first line tells them to go somewhere else, and they follow it because a
-// citation reads as authority. Markdown is exempt, since narrating a
+// citation reads as authority. A removed ADR sends them nowhere. Markdown is exempt, since narrating a
 // supersession is what prose is for, and `docs/design` pages are Dated
 // snapshots (ADR-0011) that must keep the link they shipped with.
 
@@ -11,7 +11,7 @@ import { test } from "node:test";
 
 const repo = new URL("..", import.meta.url);
 
-// Empty on purpose. A code citation of a superseded ADR fails this test.
+// Empty on purpose. A code citation of a superseded or removed ADR fails this test.
 // Markdown, `docs/` and `.agents/` stay exempt. Narrating a supersession is
 // what prose is for, and a Dated page keeps the link it shipped with.
 const KNOWN_STALE = {};
@@ -24,20 +24,20 @@ const tracked = (...args) =>
     .split("\0")
     .filter(Boolean);
 
-function supersededAdrs() {
+function liveAdrs() {
   const numbers = new Set();
   for (const path of tracked("docs/adr")) {
     const status = readFileSync(new URL(path, repo), "utf8").match(
       /^\*\*Status:\*\*\s*(.*)$/m,
     );
-    if (status && /^superseded/i.test(status[1])) {
+    if (!(status && /^superseded/i.test(status[1]))) {
       numbers.add(path.match(/\d{4}/)[0]);
     }
   }
   return numbers;
 }
 
-function citedStale(superseded) {
+function citedStale(live) {
   const counts = {};
   for (const path of tracked()) {
     const exempt =
@@ -52,19 +52,19 @@ function citedStale(superseded) {
       continue; // unreadable as text, so it holds no citation
     }
     const hits = text.match(/ADR[- ]?\d{4}|adr\/\d{4}-/g) ?? [];
-    const stale = hits.filter((hit) =>
-      superseded.has(hit.match(/\d{4}/)[0]),
+    const stale = hits.filter(
+      (hit) => !live.has(hit.match(/\d{4}/)[0]),
     ).length;
     if (stale) counts[path] = stale;
   }
   return counts;
 }
 
-test("no code cites a superseded ADR", () => {
-  const superseded = supersededAdrs();
-  assert.ok(superseded.size > 0, "the ADR status lines still parse");
+test("no code cites a superseded or removed ADR", () => {
+  const live = liveAdrs();
+  assert.ok(live.size > 0, "docs/adr still lists ADRs");
   assert.deepEqual(
-    citedStale(superseded),
+    citedStale(live),
     KNOWN_STALE,
     "a count that rose is a new stale citation; one that fell means KNOWN_STALE is behind",
   );

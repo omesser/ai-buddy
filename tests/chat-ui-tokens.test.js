@@ -1,4 +1,4 @@
-// ADR-0019's seam: a colour, font family or radius written outside a
+// ADR-0036's seam: a colour, font family or radius written outside a
 // `.chat-ui-*` block breaks it quietly, since the next design cannot recolour
 // it. `rgb()` and `rgba()` are checked too, or white tints would slip back in.
 

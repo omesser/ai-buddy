@@ -1,5 +1,7 @@
 # One Linux build takes the X11 lane; there is no native Wayland lane
 
+**Supersedes:** the X11 half of [ADR-0014](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0014-x11-lane-no-native-wayland.md) (removed).
+
 ## Context
 
 Linux desktops split between X11 and Wayland session types. The spatial layer
@@ -40,9 +42,3 @@ mirror. The degraded path stays a supported mode rather than an error.
 
 Reversing this means writing a spatial layer against protocols that withhold
 two of its inputs and accepting that it cannot place itself on GNOME.
-
-## Supersedes
-
-This decision supersedes the first half of
-[ADR-0014](./0014-x11-lane-no-native-wayland.md), which combined the X11-only
-lane with the GTK3 acceptance into one record.

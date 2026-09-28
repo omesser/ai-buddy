@@ -4,9 +4,7 @@
 
 ADR-0018 makes the attached Harness headless, and ADR-0022 makes fidget
 responsible for launching it. Neither decision says which project the
-Harness belongs to. Both dropped a working-directory sentence when they
-superseded their predecessors, as implementation detail that belongs
-elsewhere. This record is that elsewhere.
+Harness belongs to. This record does.
 
 For a Harness, the working directory is not launch bookkeeping. Claude looks
 up local-scope MCP servers and project-scope configuration against it. That
@@ -18,7 +16,7 @@ slice is missing. Because fidget starts the process, fidget chooses the
 project scope whose configuration the Harness sees.
 
 fidget currently uses its application data folder for that directory.
-Superseded ADR-0010 chose a non-project folder so the character is not flavoured
+An earlier decision chose a non-project folder so the character is not flavoured
 by a repository it was never asked about. The same choice is why local and
 project MCP servers and per-project opt-ins miss under attach. ACP does not
 suppress that configuration. The MCP entry fidget supplies (ADR-0023,
@@ -75,9 +73,8 @@ project configuration that no longer follows its working directory.
   local and project MCP servers and per-project opt-ins unavailable, so it
   is not a neutral default worth making permanent.
 - **Fold the rule into ADR-0018 or ADR-0022.** Those records own the Chat
-  surface and the ACP client. Both already dropped this sentence as
-  belonging elsewhere. Project scope has its own reversal and persistence
-  invariant, and the living records are immutable.
+  surface and the ACP client. Project scope has its own reversal and
+  persistence invariant.
 - **Treat the working directory as launch mechanism.** That description
   hides the behavior Harnesses assign to it and invites future changes to
   move project scope or app persistence without review.

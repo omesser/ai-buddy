@@ -1,5 +1,7 @@
 # The ACP client uses the official SDK and supported Harnesses are named
 
+**Supersedes:** [ADR-0017](https://github.com/omesser/fidget/blob/3d16d6fc5d9dc8222861a49c05ca68fc4b0053ce/docs/adr/0017-acp-client-over-the-official-sdk-and-supported-harnesses.md) (removed).
+
 ## Context
 
 Agent Client Protocol (ACP) is how fidget talks to external agent harnesses.
@@ -50,9 +52,9 @@ by a click there. A turn that times out sends `cancelled`, which is a
 withdrawal, not an answer.
 
 The client hands the session its own tool endpoint, and which endpoint that is
-belongs to [ADR-0023](./0023-app-dispatches-its-own-tools.md): a Harness that
-can use the app's own server reaches the live Instances, and one that cannot is
-answered by a stub.
+belongs to [ADR-0023](./0023-app-dispatches-its-own-tools.md) and
+[ADR-0026](./0026-stdio-mcp-is-a-shim-dialled-from-the-environment.md): either
+way the call reaches the live Instances.
 
 A protocol-compatible harness not yet named is reachable through the custom
 command and earns a named row once a turn has been smoked against it.
@@ -62,9 +64,3 @@ Antigravity (`agy`) speaks its own protocol rather than ACP, so it needs an
 adapter before any row (#604).
 Their always-approve or auto-approve flags are never passed by default — the
 Chat surface owns permissions.
-
-## Supersedes
-
-This decision supersedes [ADR-0017](./0017-acp-client-over-the-official-sdk-and-supported-harnesses.md),
-which recorded the same choice alongside implementation detail that belongs
-elsewhere.

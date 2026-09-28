@@ -22,10 +22,8 @@ over a local channel.
 behind a per-run bearer token, and hands that endpoint to any Harness whose
 handshake says it can use one.
 
-A Harness that cannot is given the stdio server instead, on the precedence that
-already existed. That path still answers from a stubbed context, so it reports
-success and changes nothing; the shim that would fix it is tracked as work, not
-as a decision.
+A Harness that cannot is given the stdio server instead, which relays to the
+same endpoint ([ADR-0026](./0026-stdio-mcp-is-a-shim-dialled-from-the-environment.md)).
 
 The shim was rejected as the first move for the same reason the stub failed:
 either way the dispatch has to happen inside the app, so serving directly is
@@ -42,10 +40,6 @@ refused to anything that presents a browser origin or a method other than the
 one it answers. A token that could be read from a log or a file would hand a
 local process the ability to move the character, so it is held in memory and passed
 in a header.
-
-Two Harnesses now behave differently through no fault of the user: one reaches
-the real Instances and one talks to stubs. Until the shim lands, an interface
-that claims a Harness has tools is claiming too much.
 
 Reversing this means accepting that tool calls cannot reach the Instances, which
 is the state this replaced.
