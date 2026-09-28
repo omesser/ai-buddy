@@ -864,7 +864,7 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  min-width: 0;
+  min-width: 12ch;
   font-family: var(--chat-mono);
   font-size: 11px;
   color: var(--chat-ink-3);
@@ -879,6 +879,13 @@ body {
   width: 14px;
   height: 14px;
   opacity: 0.9;
+}
+
+/* A launcher path has no space to wrap at, so its min-content would widen the
+   header past the window. Breaking anywhere drops that floor to one letter,
+   and .mind's min-width puts back about a word. */
+.mind-text {
+  overflow-wrap: anywhere;
 }
 
 /* Under the name, not beside it: the title row stays a single line so a hint
