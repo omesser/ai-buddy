@@ -27,6 +27,10 @@ scripts/scenarios/thinking-row.sh --go target/debug/fidget target/debug/deps/fid
 
 The exit code is the verdict: 0 passed, 1 failed, 2 printed the header.
 
+`chat-header-narrow.sh` takes the same two binaries. It resizes Chat to 420,
+360 and 320 points and checks that the header keeps one row and never scrolls
+sideways.
+
 ## codex-sign-in-link
 
 `codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,
