@@ -447,8 +447,7 @@ Fidget exposes an MCP server. Tool surface, by responsibility:
 There is no tool that posts mouse or keyboard events. Fidget ships no Executor. See
 [ADR-0003](./adr/0003-no-executor-harness-owns-desktop-control.md).
 
-A Harness is attached by user configuration. One first-party adapter ships so that the
-out-of-box path is not "install a harness first." Any MCP-capable harness can attach
+A Harness is attached by user configuration. Any MCP-capable harness can attach
 directly. No provider abstraction layer is built; MCP is that layer.
 
 Actions taken by the Harness are surfaced in the Action Log. Fidget adds no confirmation
