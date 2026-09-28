@@ -3271,7 +3271,7 @@ fn load_instances(
     Ok(instances)
 }
 
-/// A lone leftover default `{ character: "Timber Wolf", name: "bmo" }` takes
+/// A lone leftover default `{ character: "Timber Wolf", name: "buddy-bot" }` takes
 /// this Character's name before the overlay log prints it and before spawn
 /// persists it. Several Instances keep the names that tell them apart.
 fn follow_lone_default(

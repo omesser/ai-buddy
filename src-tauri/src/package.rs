@@ -55,7 +55,7 @@ pub const SEARCH_PATH_VAR: &str = "FIDGET_CHARACTERS";
 /// The Character a new user meets, when nothing has chosen another.
 ///
 /// Name order is not a decision: without this, adding a package that sorts earlier would silently replace the fidget everybody sees.
-pub const DEFAULT_CHARACTER: &str = "bmo";
+pub const DEFAULT_CHARACTER: &str = "buddy-bot";
 
 /// The environment variable that starts one named Character rather than the first one found.
 ///
@@ -805,16 +805,16 @@ mod tests {
         let candidates = vec![
             PathBuf::from("/characters/nim"),
             PathBuf::from("/characters/blip"),
-            PathBuf::from("/characters/bmo"),
+            PathBuf::from("/characters/buddy-bot"),
         ];
 
         assert_eq!(
-            preferring(candidates.clone(), "bmo").first(),
-            Some(&PathBuf::from("/characters/bmo")),
+            preferring(candidates.clone(), "buddy-bot").first(),
+            Some(&PathBuf::from("/characters/buddy-bot")),
             "the default is met first wherever it sorts"
         );
         assert_eq!(
-            preferring(candidates.clone(), "bmo").len(),
+            preferring(candidates.clone(), "buddy-bot").len(),
             candidates.len(),
             "and the rest stay behind it, so a default that will not load is not the end"
         );

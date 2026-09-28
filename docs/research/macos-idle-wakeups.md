@@ -331,7 +331,7 @@ machine and expect different figures.
 | OS | macOS 26.6.2 (25G83) |
 | Build | `target/release/fidget`, **release**, per branch, ad-hoc signed at its worktree path |
 | Director | `FIDGET_DIRECTOR=0` — `StaticDirector`, offline, no HTTP leaves the process |
-| Character | BMO (the default when none is set) |
+| Character | Buddy Bot (the default when none is set) |
 | Date | 2026-09-15 |
 | Control arm, written `main` below | `7a58e02f` — this issue's base, **before** #718 |
 | Treatment arm, written `#718` below | `9864d789` (`cursor/macos-idle-backoff-183-3b49`) |
