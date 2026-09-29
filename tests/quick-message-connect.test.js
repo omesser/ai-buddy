@@ -89,6 +89,7 @@ function press() {
       control: openChat.textContent,
       linkShown: !link.hidden,
       sendShown: !send.hidden && getComputedStyle(send).display !== "none",
+      oneLine: Math.abs(openChat.getBoundingClientRect().top - link.getBoundingClientRect().top) < 2,
     };
     const before = window.__invoked.length;
     const at = { bubbles: true, button: 0, pointerId: 1, isPrimary: true };
@@ -147,8 +148,9 @@ const skip = chrome ? false : "headless Chromium is not installed";
 
 test("a click on Open chat opens Chat, closes the pill, and is no Poke", { skip, timeout: 60000 }, () => {
   const report = press();
-  assert.equal(report.hint, "Connect an AI to talk to me");
+  assert.equal(report.hint, "No AI connected yet.");
   assert.equal(report.control, "Open chat");
+  assert.equal(report.oneLine, true, "the hint and Open chat share one line");
   assert.equal(report.linkShown, true);
   assert.equal(report.sendShown, false, "Send is hidden while the link is up");
   assert.deepEqual(report.clicks, [{ name: "overlay_open_chat", args: { id: "bmo" } }]);
