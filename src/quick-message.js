@@ -47,7 +47,7 @@ export function quickMessageMirror(text, prompt, available) {
 
 export const HOVER_DELAY_MS = 2500;
 
-// Auto-hide delay: 3 seconds of being away from both sprite and pill
+// Auto-hide: 3s continuous away from both sprite and pill. Re-entering resets.
 export const AUTO_HIDE_DELAY_MS = 3000;
 
 // A click that stays put is a poke. Past this, the same press is a drag.
@@ -160,6 +160,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     enterSprite() {
       if (disposed) return;
       overSprite = true;
+      cancelAutoHide();
       if (visible || hoverTimer !== null) return;
       hoverTimer = schedule(() => {
         hoverTimer = null;
