@@ -712,10 +712,11 @@ impl Session {
         }
     }
 
-    /// `initialize` and `session` methods get at least ten seconds whatever
-    /// the turn timeout is. `npx` starting Zed's adapter cold is slower than any reply.
+    /// `initialize` and `session` methods get at least a minute whatever the
+    /// turn budget is. A cold `npx` first run downloads the adapter and its CLI,
+    /// 12.5 to 18 s on a fast Mac and link (#1147); a minute leaves room for slower ones.
     fn attach_timeout(&self) -> Duration {
-        self.timeout.max(Duration::from_secs(10))
+        self.timeout.max(Duration::from_secs(60))
     }
 
     /// Where the Harness should be by the time the first wake arrives. Spawned
@@ -5372,6 +5373,29 @@ mod tests {
         );
         session.shutdown();
         let _ = fx.forwarded.recv_timeout(Duration::from_secs(5));
+    }
+
+    /// A turn budget shorter than the handshake stands in for a cold `npx`
+    /// start, which #1147 measured at up to 18 s against a 1 s turn budget.
+    #[test]
+    fn an_initialize_slower_than_the_turn_budget_still_attaches() {
+        let (fx, session) = Fixture::new("stall-initialize");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(1)));
+        assert!(
+            session.attach_timeout() > Duration::from_secs(18),
+            "a cold codex start would time out"
+        );
+        session.spawn_preflight();
+        assert!(matches!(
+            fx.forwarded.recv_timeout(Duration::from_secs(10)),
+            Ok(Forwarded::AttachSettled)
+        ));
+        let inspect = session.inspect();
+        assert_eq!(
+            (inspect.alive, inspect.initializing, inspect.failed),
+            (true, false, None)
+        );
+        session.shutdown();
     }
 
     #[test]
