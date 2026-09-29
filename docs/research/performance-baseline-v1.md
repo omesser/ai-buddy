@@ -332,7 +332,7 @@ _Pending._
 
 ### macOS
 
-Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh matrix --seconds 20 --bin target/release/fidget`. It launches fidget once per scenario on the live desktop and sends no input. Measured at `b321bf98`, which includes `aa02d774` (an Active tick sleeps only the rest of its 16 ms). Lag was re-derived from those logs by the analyzer at `a29b6673`, which counts only moving frames.
+Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh matrix --seconds 20 --bin target/release/fidget`. It launches fidget once per scenario on the live desktop and sends no input. Measured at `0eb84a3f`, this branch rebased onto `main` at `94b23feb`. That includes `aa02d774` (an Active tick sleeps only the rest of its 16 ms). The analyzer counts lag only on moving frames.
 
 **Tools:**
 
@@ -346,27 +346,30 @@ Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh mat
 
 | Scenario | Display frames | Mean fps | Drops (>20 ms) | Loop restarts | Engine ticks/s | Lag p50, moving | Lag p95, moving | Moving frames held |
 |---|---|---|---|---|---|---|---|---|
-| Idle perched | 108 | N/A | 0 | 107 | 53.0 | N/A | N/A | N/A |
-| Walking | 432 | 60.2 | 0 | 106 | 53.3 | 19 ms (1 sample) | 22 ms (1 sample) | 19 |
-| Walking + CPU load | 450 | 59.9 | 6 | 133 | 51.2 | 20 ms (1 sample) | 26 ms (1.19 samples) | 50 |
+| Idle perched | 83 | N/A | 0 | 82 | 53.8 | N/A | N/A | N/A |
+| Idle perched, `FIDGET_TRACE_FRAMES` off | 257 | 59.8 | 1 | 85 | 53.9 | N/A | N/A | N/A |
+| Walking | 440 | 59.9 | 1 | 103 | 53.9 | 19 ms (1 sample) | 22 ms (1 sample) | 21 |
+| Walking + CPU load | 385 | 59.9 | 5 | 97 | 50.8 | 20 ms (1 sample) | 28 ms (1.18 samples) | 42 |
+
+Engine ticks/s is the frame loop's own counter, so it reads the same with `FIDGET_TRACE_FRAMES` off.
 
 Frame deltas count only consecutive frames where the first asked for the second. A frame the loop started again on an arrival is a restart, and the quiet gap before it is not a drop. So mean fps describes the stretches the loop stayed armed, not frames over the window. The walking and load windows start at the first walk frame and run 20 s of wall time, so they also cover pauses between walks.
 
 | Delta ms | Walking frames | Walking ticks | Load frames | Load ticks | Idle ticks |
 |---|---|---|---|---|---|
-| 0-10 | 1 | 3 | 0 | 12 | 0 |
-| 10-14 | 1 | 8 | 11 | 35 | 11 |
-| 14-18 | 302 | 259 | 239 | 170 | 234 |
-| 18-20 | 20 | 348 | 54 | 233 | 331 |
-| 20-25 | 1 | 441 | 12 | 509 | 479 |
-| 25-34 | 0 | 7 | 0 | 66 | 5 |
-| 34-50 | 0 | 0 | 0 | 1 | 0 |
+| 0-10 | 0 | 0 | 0 | 13 | 0 |
+| 10-14 | 1 | 27 | 13 | 41 | 34 |
+| 14-18 | 314 | 304 | 218 | 169 | 300 |
+| 18-20 | 20 | 337 | 43 | 189 | 310 |
+| 20-25 | 0 | 408 | 13 | 527 | 432 |
+| 25-34 | 1 | 2 | 0 | 69 | 1 |
+| 34-50 | 0 | 0 | 0 | 10 | 0 |
 
 **Against the design claim.**
 
-- **60 fps while moving: confirmed.** Walking holds 60.2 fps with no drops. Under full CPU load 6 of 316 deltas miss a vsync, and every one lands under 25 ms.
-- **Lag is one sample: confirmed.** The sprite is drawn one Engine tick behind, about 19 ms. Under load, p95 reaches 1.19 samples, because a late tick leaves the sprite held at the latest placement for a frame.
-- **"About 44 Hz, 16 to 38 ms" is out of date.** The Engine now ticks at 53 Hz. Idle and walking put 98% of tick gaps between 14 and 25 ms; load puts 89% there. The comment in `src/interpolate.js` now says so.
+- **60 fps while moving: confirmed.** Walking holds 59.9 fps, with one delta of 25 to 34 ms. Under full CPU load 5 of 287 deltas miss a vsync, and every one lands under 25 ms.
+- **Lag is one sample: confirmed.** The sprite is drawn one Engine tick behind, about 19 ms. Under load, p95 reaches 1.18 samples, because a late tick leaves the sprite held at the latest placement for a frame.
+- **"About 44 Hz, 16 to 38 ms" is out of date.** The Engine now ticks at 53 Hz. Idle and walking put 97% of tick gaps between 14 and 25 ms; load puts 87% there. The comment in `src/interpolate.js` now says so.
 
 **Why the Engine ticks at 53 Hz and not 60.** A 16 ms `sleep` on this machine returns after 20 ms. Measured in a separate process with `Time::HiRes::sleep`, 150 sleeps at each length:
 
@@ -379,7 +382,11 @@ Frame deltas count only consecutive frames where the first asked for the second.
 
 The overshoot is about a quarter of the request, capped near 5 ms, which fits macOS timer coalescing leeway. `active_wait` already subtracts the tick's own work, so the rest of the gap is the sleep itself. Idle perched ticks at the same rate because the frame loop stays Active there: a looping idle animation and sleep accrual both keep it on the 16 ms timer (#183).
 
-**Why an idle, still sprite redraws about 5 times a second.** Of the 108 idle frames:
+**The frame trace does not slow the Engine.** Idle ticks at 53.8 Hz with `FIDGET_TRACE_FRAMES` on and 53.9 Hz with it off, by the loop's own counter. So the per-tick `frame:` print is not what holds the Engine under 60 Hz.
+
+The idle run with the trace off drew 257 display frames at 59.8 fps, where the traced idle run drew 83 with no armed stretch. This run does not explain the difference. It is one 20 s sample, and the idle animation it landed on may differ.
+
+**Why an idle, still sprite redraws about 5 times a second.** From the earlier run at `b321bf98`, of its 108 idle frames:
 
 - 49 follow a change of idle animation frame. That is new art, and it needs a draw.
 - 59 follow `FRAME_RESEND` in `src-tauri/src/frame_loop.rs`, which sends an unchanged placement again every 250 ms. The overlay's `frame` listener asks for a display frame on every arrival, even one identical to the last, so each resend costs a rAF with nothing to draw.
