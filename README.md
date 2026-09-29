@@ -10,7 +10,7 @@
 
 </div>
 
-# Fidget walks your windows and talks back
+# Fidget keeps you company while you vibe-code, and pitches in when you ask
 
 A little character that lives on your desktop. Pick it up, throw it, or let it nap.
 
