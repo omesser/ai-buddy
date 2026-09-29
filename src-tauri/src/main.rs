@@ -1508,6 +1508,13 @@ fn overlay_composing(instance: String) {
     platform::set_overlay_composing(Some(instance));
 }
 
+/// The overlay's quick message became visible or hidden. Empty means none.
+/// Read each tick, so movement freezes while the pill is up.
+#[tauri::command]
+fn overlay_qm_visible(instance: String) {
+    platform::set_overlay_qm_visible(Some(instance));
+}
+
 /// Same witness for the right button. Without it a right-click on the sprite
 /// is swallowed by the webview and the session poll never sees a Menu.
 #[tauri::command]
@@ -3678,6 +3685,7 @@ fn main() {
             overlay_primary,
             overlay_secondary,
             overlay_composing,
+            overlay_qm_visible,
             overlay_hotspots,
             overlay_hit_tests_hotspots,
             overlay_traces_cadence,

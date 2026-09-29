@@ -540,3 +540,28 @@ test("without a clickable link the pill still names the fix as text", () => {
   assert.equal(gate.field.disabled, true);
   assert.equal(gate.send.hidden, false, "with no link to stand in, Send keeps its place");
 });
+
+test("the overlay reports QM pill visibility to freeze movement", () => {
+  const js = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+
+  assert.match(
+    js,
+    /invoke\("overlay_qm_visible", \{ instance: id \}\)/,
+    "reports QM pill visibility state",
+  );
+  assert.match(
+    js,
+    /function reportQmVisible\(\) \{[\s\S]*?if \(view\.quickMachine\.visible\)[\s\S]*?\}/,
+    "reportQmVisible scans for visible QM pill",
+  );
+  assert.match(
+    js,
+    /reportComposing\(\);\s*reportQmVisible\(\);/,
+    "both typing and visibility are reported in syncQuick",
+  );
+  assert.match(
+    js,
+    /function removeView\(id\) \{[\s\S]*?reportComposing\(\);\s*reportQmVisible\(\);/,
+    "both reports clear when a view is removed",
+  );
+});

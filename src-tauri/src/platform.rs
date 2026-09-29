@@ -79,6 +79,21 @@ pub fn overlay_composing() -> Option<String> {
     OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
 }
 
+/// Which Instance has a visible quick message pill. A level, not an edge:
+/// the hold lasts as long as the pill is shown.
+static OVERLAY_QM_VISIBLE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Empty is none. The overlay sends "" when the pill hides.
+pub fn set_overlay_qm_visible(instance: Option<String>) {
+    if let Ok(mut slot) = OVERLAY_QM_VISIBLE.lock() {
+        *slot = instance.filter(|id| !id.is_empty());
+    }
+}
+
+pub fn overlay_qm_visible() -> Option<String> {
+    OVERLAY_QM_VISIBLE.lock().ok().and_then(|slot| slot.clone())
+}
+
 /// Which mouse buttons one tick found down. One type so X11 pays one
 /// XQueryPointer instead of two (#268), and so both consuming witness reads
 /// live in one place.
@@ -1169,6 +1184,14 @@ mod tests {
         assert_eq!(overlay_composing().as_deref(), Some("buddy-a"));
         set_overlay_composing(Some(String::new()));
         assert_eq!(overlay_composing(), None);
+    }
+
+    #[test]
+    fn qm_visible_names_one_instance_until_the_pill_hides() {
+        set_overlay_qm_visible(Some("buddy-b".to_string()));
+        assert_eq!(overlay_qm_visible().as_deref(), Some("buddy-b"));
+        set_overlay_qm_visible(Some(String::new()));
+        assert_eq!(overlay_qm_visible(), None);
     }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that

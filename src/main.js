@@ -235,6 +235,7 @@ function positionQuick(view, spriteRect) {
 }
 
 let reportedComposing = null;
+let reportedQmVisible = null;
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill
 // stays frozen until one says chat can answer.
@@ -283,6 +284,21 @@ function reportComposing() {
   });
 }
 
+function reportQmVisible() {
+  let id = "";
+  for (const [viewId, view] of views) {
+    if (view.quickMachine.visible) {
+      id = viewId;
+      break;
+    }
+  }
+  if (id === reportedQmVisible) return;
+  reportedQmVisible = id;
+  window.__TAURI__.core.invoke("overlay_qm_visible", { instance: id }).catch((err) => {
+    console.error("overlay_qm_visible", err);
+  });
+}
+
 function syncQuick(view) {
   const visible = view.quickMachine.visible;
   view.quick.classList.toggle("visible", visible);
@@ -303,6 +319,7 @@ function syncQuick(view) {
   );
   if (view.quickMachine.takeFocus()) view.quickField.focus();
   reportComposing();
+  reportQmVisible();
   if (!visible || !view.latest) {
     view.quickHotspot = null;
     reportHotspots();
@@ -493,6 +510,7 @@ function removeView(id) {
   // After the view is gone, so a scan cannot still name it. dispose already
   // dropped the caret; this is the report that clears a stale id.
   reportComposing();
+  reportQmVisible();
 }
 
 function drawView(view, now) {

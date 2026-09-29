@@ -147,7 +147,7 @@ pub struct WorldSnapshot {
     /// This Instance's quick message has the caret. Walk and chase stop;
     /// idle, sit and a perch in place do not.
     pub composing: bool,
-    /// Whether a speech bubble is showing. A resting stroll does not translate while it is.
+    /// Whether a speech bubble or QM pill is showing. A resting stroll does not translate while it is.
     pub bubble_visible: bool,
 }
 
@@ -3998,6 +3998,45 @@ mod tests {
             ..a_long_perch()
         });
         assert_eq!(resumed.position.x, halted.position.x + 12.0);
+    }
+
+    #[test]
+    fn a_walk_holds_still_while_qm_pill_is_visible_and_then_continues() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let started = engine.tick(&a_long_perch());
+        assert!(
+            started.position.x > 200.0,
+            "the stroll has started: {started:?}"
+        );
+
+        let held_x = started.position.x;
+        let held_animation_ms = started.animation_ms;
+        let tick_ms = 100u32;
+        let halt_ms = PRIMITIVE_MS + tick_ms;
+        let halt_ticks = halt_ms / tick_ms;
+        let mut halted = started;
+        for _ in 0..halt_ticks {
+            halted = engine.tick(&WorldSnapshot {
+                bubble_visible: true,
+                ..a_long_perch()
+            });
+        }
+
+        assert_eq!(halted.position.x, held_x, "QM pill visible: position held");
+        assert_eq!(halted.animation_ms, held_animation_ms + halt_ms, "animation continues");
+        assert_eq!(halted.velocity.x, 120.0, "velocity preserved");
+
+        let resumed = engine.tick(&WorldSnapshot {
+            bubble_visible: false,
+            ..a_long_perch()
+        });
+        assert_eq!(resumed.position.x, halted.position.x + 12.0, "movement resumes when pill hidden");
     }
 
     /// Both ends, because a walk that only ever goes one way would leave the
