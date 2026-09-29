@@ -5376,7 +5376,7 @@ mod tests {
     }
 
     /// A turn budget shorter than the handshake stands in for a cold `npx`
-    /// start, which #1147 measured at up to 18 s against a 1 s turn budget.
+    /// start. 18 s is the slowest cold start measured, codex's.
     #[test]
     fn an_initialize_slower_than_the_turn_budget_still_attaches() {
         let (fx, session) = Fixture::new("stall-initialize");
