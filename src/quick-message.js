@@ -47,6 +47,9 @@ export function quickMessageMirror(text, prompt, available) {
 
 export const HOVER_DELAY_MS = 2500;
 
+// Auto-hide delay: 3 seconds of being away from both sprite and pill
+export const AUTO_HIDE_DELAY_MS = 3000;
+
 // A click that stays put is a poke. Past this, the same press is a drag.
 export const DRAG_DISMISS_PX = 4;
 
@@ -61,7 +64,9 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let claimFocus = false;
   let disposed = false;
   let hoverTimer = null;
+  let autoHideTimer = null;
   let overSprite = false;
+  let overPill = false;
   let ready = available;
 
   function changed() {
@@ -74,8 +79,29 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     hoverTimer = null;
   }
 
+  function cancelAutoHide() {
+    if (autoHideTimer === null) return;
+    clear(autoHideTimer);
+    autoHideTimer = null;
+  }
+
+  function hasText() {
+    return text.trim().length > 0;
+  }
+
+  function startAutoHideIfNeeded() {
+    if (disposed || !visible || hasText() || overSprite || overPill) return;
+    if (autoHideTimer !== null) return;
+    autoHideTimer = schedule(() => {
+      autoHideTimer = null;
+      if (disposed || !visible || hasText() || overSprite || overPill) return;
+      hide();
+    }, AUTO_HIDE_DELAY_MS);
+  }
+
   function hide() {
     cancelHover();
+    cancelAutoHide();
     const was = visible;
     visible = false;
     focused = false;
@@ -143,8 +169,17 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     leaveSprite() {
       overSprite = false;
-      // Leaving never dismisses. It only abandons a dwell that has not fired.
       cancelHover();
+      startAutoHideIfNeeded();
+    },
+    enterPill() {
+      if (disposed) return;
+      overPill = true;
+      cancelAutoHide();
+    },
+    leavePill() {
+      overPill = false;
+      startAutoHideIfNeeded();
     },
     setAvailable(next) {
       if (disposed || next === ready) return;
@@ -164,6 +199,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     setText(value) {
       if (!ready) return;
       text = value;
+      if (hasText()) {
+        cancelAutoHide();
+      } else {
+        startAutoHideIfNeeded();
+      }
     },
     focus() {
       if (!ready || focused) return;
@@ -214,6 +254,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       // Tell the overlay while this Instance is still mapped. The composing
       // report scans views, and a removed one must not leave its caret held.
       cancelHover();
+      cancelAutoHide();
       text = "";
       visible = false;
       focused = false;
