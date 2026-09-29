@@ -113,7 +113,7 @@ test("clicking away during the dwell does not show the composer later", () => {
   assert.equal(qm.visible, false);
 });
 
-test("leaving after the pill is up does not dismiss it", () => {
+test("leaving after the pill is up does not dismiss it immediately", () => {
   const { qm, advance } = shown();
 
   qm.setText("hey");
@@ -122,6 +122,135 @@ test("leaving after the pill is up does not dismiss it", () => {
   assert.equal(qm.visible, true);
   assert.equal(qm.text, "hey");
   assert.equal(qm.typing, true);
+});
+
+test("pill auto-hides after 3s if empty and pointer leaves both sprite and pill", () => {
+  const { qm, advance } = shown();
+
+  // No text entered, leave sprite
+  qm.leaveSprite();
+  // Also leave pill
+  qm.leavePill();
+
+  // After 2.9s, still visible
+  advance(2900);
+  assert.equal(qm.visible, true, "pill stays visible before 3s");
+
+  // After 3s total, hides
+  advance(100);
+  assert.equal(qm.visible, false, "pill auto-hides after 3s continuous away");
+});
+
+test("auto-hide cancels if pointer re-enters sprite before 3s", () => {
+  const { qm, advance } = shown();
+
+  qm.leaveSprite();
+  qm.leavePill();
+  advance(2000);
+
+  // Re-enter sprite before 3s
+  qm.enterSprite();
+  advance(2000);
+
+  assert.equal(qm.visible, true, "pill stays visible when sprite re-entered");
+});
+
+test("re-entering sprite resets auto-hide timer to fresh 3s on next leave", () => {
+  const { qm, advance } = shown();
+
+  // Leave both, wait 2s (partial)
+  qm.leaveSprite();
+  qm.leavePill();
+  advance(2000);
+
+  // Re-enter sprite (cancels timer)
+  qm.enterSprite();
+
+  // Leave again - should start fresh 3s, not continue from 2s
+  qm.leaveSprite();
+  advance(2900);
+  assert.equal(qm.visible, true, "pill still visible at 2.9s of fresh timer");
+
+  advance(100);
+  assert.equal(qm.visible, false, "pill hides after fresh 3s from second leave");
+});
+
+test("auto-hide cancels if pointer re-enters pill before 3s", () => {
+  const { qm, advance } = shown();
+
+  qm.leaveSprite();
+  qm.leavePill();
+  advance(2000);
+
+  // Re-enter pill before 3s
+  qm.enterPill();
+  advance(2000);
+
+  assert.equal(qm.visible, true, "pill stays visible when pill re-entered");
+});
+
+test("auto-hide does not trigger if user has typed non-empty text", () => {
+  const { qm, advance } = shown();
+
+  qm.setText("hey");
+  qm.leaveSprite();
+  qm.leavePill();
+
+  // Even after 3s, should not auto-hide because text is present
+  advance(3000);
+  assert.equal(qm.visible, true, "pill with text does not auto-hide");
+  assert.equal(qm.text, "hey");
+});
+
+test("auto-hide treats whitespace-only as empty", () => {
+  const { qm, advance } = shown();
+
+  qm.setText("   ");
+  qm.leaveSprite();
+  qm.leavePill();
+
+  advance(3000);
+  assert.equal(qm.visible, false, "pill with only whitespace auto-hides");
+});
+
+test("auto-hide does not trigger if only sprite is left but pill is hovered", () => {
+  const { qm, advance } = shown();
+
+  // Simulate entering the pill (user moved from sprite to pill)
+  qm.enterPill();
+  qm.leaveSprite();
+
+  advance(3000);
+  assert.equal(qm.visible, true, "pill stays visible while hovered");
+});
+
+test("auto-hide does not trigger if only pill is left but sprite is hovered", () => {
+  const { qm, advance } = shown();
+
+  // Leave pill but not sprite (shouldn't happen in practice but test the logic)
+  qm.leavePill();
+  // Still on sprite
+
+  advance(3000);
+  assert.equal(qm.visible, true, "pill stays visible while sprite hovered");
+});
+
+test("existing dismiss paths still work with auto-hide feature", () => {
+  const { qm } = shown();
+
+  // outside dismiss
+  qm.outside();
+  assert.equal(qm.visible, false);
+
+  // Show again and test drag dismiss
+  const { qm: qm2 } = shown();
+  qm2.drag();
+  assert.equal(qm2.visible, false);
+
+  // Show again and test summon dismiss
+  const { qm: qm3 } = shown();
+  qm3.summon();
+  assert.equal(qm3.visible, false);
 });
 
 test("blurring the field keeps the pill and releases the typing hold", () => {

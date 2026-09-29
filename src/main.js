@@ -448,6 +448,8 @@ function attachQuickMessage(view, id) {
     refreshQuickGate(view, id);
   });
   view.sprite.addEventListener("pointerleave", () => machine.leaveSprite());
+  quick.addEventListener("pointerenter", () => machine.enterPill());
+  quick.addEventListener("pointerleave", () => machine.leavePill());
   field.addEventListener("focus", () => machine.focus());
   field.addEventListener("blur", () => machine.blur());
   field.addEventListener("input", () => {
