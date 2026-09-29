@@ -1526,7 +1526,7 @@ pub(crate) fn run_frame_loop(
                 let needs_active_for_sleep_accrual =
                     matches!(frame.state, State::Grounded | State::Perched);
 
-                any_moving |= needs_active_for_motion;
+                any_moving |= scheduler::moving(&frame);
                 if needs_active_for_motion
                     || needs_active_for_animation
                     || needs_active_for_sleep_accrual

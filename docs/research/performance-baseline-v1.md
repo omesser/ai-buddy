@@ -2,6 +2,8 @@
 
 Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/fidget/issues/423) for context and child benchmarks.
 
+Shipped since: #1156 replaced `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section.
+
 ## Linux (issue #432)
 
 **Environment:**
@@ -382,7 +384,7 @@ Frame deltas count only consecutive frames where the first asked for the second.
 
 The overshoot is about a quarter of the request, capped near 5 ms, which fits macOS timer coalescing leeway. `active_wait` already subtracts the tick's own work, so the rest of the gap is the sleep itself. Idle perched ticks at the same rate because the frame loop stays Active there: a looping idle animation and sleep accrual both keep it on the 16 ms timer (#183).
 
-**Rust's sleep overshoots the same way (#1156).** `crates/core/examples/sleep_overshoot.rs` times `std::thread::sleep` in-process, then runs `scheduler::next_tick` still and moving. Same Mac, release build, 2000 samples each, on `main` at `3bd3a617` plus the #1156 change:
+**Rust's sleep overshoots the same way (#1156).** `crates/core/examples/sleep_overshoot.rs` times `std::thread::sleep` in-process, then runs `scheduler::next_tick` still and moving. Same Mac, release build, 2000 samples each, on the #1156 branch cut from `main` at `3bd3a617`:
 
 | Measured | p50 | p90 | p99 | Rate |
 |---|---|---|---|---|
@@ -391,7 +393,7 @@ The overshoot is about a quarter of the request, capped near 5 ms, which fits ma
 | Still tick gap (counts from the wake) | 20.01 ms | 20.06 ms | 20.08 ms | 52.1 Hz |
 | Moving tick gap (counts from the deadline) | 15.99 ms | 18.15 ms | 19.82 ms | 62.5 Hz |
 
-Overshoot explains the 53 Hz: a wait counted from the wake adds each sleep's 4 ms lateness to every period. So a moving sprite now waits toward the last deadline, and the lateness shortens the next wait instead. A still one keeps counting from its wake, so a perched sprite wakes no more often than before (#183). Re-run with `cargo run --release -p fidget-core --example sleep_overshoot -- 2000`.
+Overshoot explains the 53 Hz: a wait counted from the wake adds each sleep's 4 ms lateness to every period. So a moving sprite (falling, dragged, climbing, riding, or with any velocity) now waits toward the last deadline, and the lateness shortens the next wait instead. A still sprite that stays Active for an idle animation or sleep accrual keeps 52 Hz on purpose, so a perched sprite wakes no more often than before (#183). Re-run with `cargo run --release -p fidget-core --example sleep_overshoot -- 2000`.
 
 **The frame trace does not slow the Engine.** Idle ticks at 53.8 Hz with `FIDGET_TRACE_FRAMES` on and 53.9 Hz with it off, by the loop's own counter. So the per-tick `frame:` print is not what holds the Engine under 60 Hz.
 

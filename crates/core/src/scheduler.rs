@@ -35,11 +35,20 @@ pub fn mode(frame: &Frame, visible: bool, behavior_playing: bool) -> ScheduleMod
     }
 }
 
-/// When the next Active tick is due. A moving tick counts from the last
-/// deadline, so a sleep that returns late (about 25% on macOS) shortens the
-/// next wait instead of stretching every period. A still tick counts from when
-/// it woke, which keeps a perched sprite's wakeups at the slower rate (#183).
-/// An overrun tick is due now, and the ticks it missed are dropped.
+/// Whether the sprite changes place this tick. A walk keeps its velocity after
+/// the Behavior that started it ends, so the Behavior name cannot say.
+pub fn moving(frame: &Frame) -> bool {
+    matches!(
+        frame.state,
+        State::Falling | State::Dragged | State::Climbing
+    ) || frame.velocity.x != 0.0
+        || frame.velocity.y != 0.0
+        || frame.riding
+}
+
+/// When the next Active tick is due. Moving counts from the last deadline, so a
+/// late sleep shortens the next wait; still counts from the wake, keeping a
+/// perched sprite's slower rate. A deadline a tick older than the wake is stale.
 pub fn next_tick(
     tick: Duration,
     last_deadline: Instant,
@@ -47,7 +56,11 @@ pub fn next_tick(
     now: Instant,
     moving: bool,
 ) -> Instant {
-    let from = if moving { last_deadline } else { woke };
+    let from = if moving && last_deadline + tick > woke {
+        last_deadline
+    } else {
+        woke
+    };
     (from + tick).max(now)
 }
 
@@ -92,7 +105,7 @@ mod tests {
         let t0 = Instant::now();
         let (deadline, woke, now) = (t0 + ms(16), t0 + ms(20), t0 + ms(21));
         let next = next_tick(ms(16), deadline, woke, now, false);
-        assert_eq!(next - now, ms(15), "no extra wakeups while perched (#183)");
+        assert_eq!(next - now, ms(15), "no extra wakeups while perched");
     }
 
     #[test]
@@ -103,6 +116,35 @@ mod tests {
         assert_eq!(next - now, ms(0));
         let after = next_tick(ms(16), next, now, now, true);
         assert_eq!(after - now, ms(16), "paced from the late tick, not a burst");
+    }
+
+    #[test]
+    fn a_moving_tick_after_an_idle_wait_counts_from_its_wake() {
+        let t0 = Instant::now();
+        let (deadline, woke, now) = (t0, t0 + ms(3000), t0 + ms(3001));
+        let next = next_tick(ms(16), deadline, woke, now, true);
+        assert_eq!(next - now, ms(15), "a stale deadline is not a tick owed");
+    }
+
+    #[test]
+    fn a_walk_that_outlives_its_behavior_is_still_moving() {
+        let mut frame = grounded_frame();
+        assert!(!moving(&frame), "standing still");
+        frame.playing_behavior = Some("talk".into());
+        assert!(!moving(&frame), "talking in place");
+        frame.playing_behavior = None;
+        frame.velocity.x = 40.0;
+        assert!(moving(&frame), "walking on its own velocity");
+    }
+
+    #[test]
+    fn a_ride_or_a_fall_is_moving() {
+        let mut frame = grounded_frame();
+        frame.riding = true;
+        assert!(moving(&frame));
+        frame.riding = false;
+        frame.state = State::Falling;
+        assert!(moving(&frame));
     }
 
     #[test]
