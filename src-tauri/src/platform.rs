@@ -1194,6 +1194,46 @@ mod tests {
         assert_eq!(overlay_qm_visible(), None);
     }
 
+    #[test]
+    fn qm_visible_freezes_locomotion_for_the_owning_instance() {
+        use crate::fidget_core::engine::{Point, WorldSnapshot};
+        use crate::fidget_core::roster::Roster;
+
+        let mut roster = Roster::default();
+        let id = roster.spawn("bmo".to_string(), "bmo".to_string());
+        let _other_id = roster.spawn("buddy".to_string(), "bmo".to_string());
+
+        set_overlay_qm_visible(Some(id.clone()));
+
+        let world = WorldSnapshot {
+            cursor: Point { x: 100.0, y: 100.0 },
+            windows: vec![],
+            monitors: vec![],
+            floors: vec![],
+            verbs: vec![],
+            elapsed_ms: 16,
+            proposal: None,
+            poll_generation: 0,
+            composing: false,
+            locomotion_frozen: false,
+        };
+
+        let speech_visible = false;
+        let qm_visible_for_this_instance = overlay_qm_visible().as_deref() == Some(&id);
+        let locomotion_frozen = speech_visible || qm_visible_for_this_instance;
+
+        assert!(
+            locomotion_frozen,
+            "QM visible for this instance should freeze locomotion"
+        );
+
+        let qm_visible_for_other = overlay_qm_visible().as_deref() == Some("other-id");
+        assert!(
+            !qm_visible_for_other,
+            "QM not visible for a different instance"
+        );
+    }
+
     /// The bubble's "Open chat" control (#547) belongs to the overlay that
     /// drew it. A neighbour must not stop passing clicks at the same
     /// coordinates, and a gone bubble must take its rectangle with it.

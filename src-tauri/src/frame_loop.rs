@@ -1419,7 +1419,7 @@ pub(crate) fn run_frame_loop(
                 world.proposal = proposal;
                 let speech_visible = live.speech.visible_at(std::time::Instant::now());
                 let qm_visible = platform::overlay_qm_visible().as_deref() == Some(live.id.as_str());
-                world.bubble_visible = speech_visible || qm_visible;
+                world.locomotion_frozen = speech_visible || qm_visible;
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;

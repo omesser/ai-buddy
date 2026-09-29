@@ -446,7 +446,7 @@ mod tests {
             proposal: None,
             poll_generation: 0,
             composing: false,
-            bubble_visible: false,
+            locomotion_frozen: false,
         }
     }
 
