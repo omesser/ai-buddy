@@ -104,7 +104,7 @@ if ($settingsHwnd -ne [IntPtr]::Zero) {
 }
 Pass "Q1 PASS: No Settings window auto-opened on startup"
 
-Info "Searching for anchor HWND (tiny window title=Fidget, same process)..."
+Info "Searching for anchor HWND (small window title=Fidget, same process)..."
 $anchorHwnd = [IntPtr]::Zero
 $windows = [AnchorVerify]::FindWindowsByPid($appPid)
 foreach ($hwnd in $windows) {
@@ -119,7 +119,7 @@ foreach ($hwnd in $windows) {
   if ([AnchorVerify]::GetWindowRect($hwnd, [ref]$rect)) {
     $w = $rect.Right - $rect.Left
     $h = $rect.Bottom - $rect.Top
-    if ($w -ge 1 -and $w -le 20 -and $h -ge 1 -and $h -le 20) {
+    if ($w -ge 50 -and $w -le 200 -and $h -ge 20 -and $h -le 80) {
       Info "Found anchor: hwnd=$hwnd, class=$className, title=$title, size=${w}x${h}"
       $anchorHwnd = $hwnd
       break
@@ -128,7 +128,7 @@ foreach ($hwnd in $windows) {
 }
 
 if ($anchorHwnd -eq [IntPtr]::Zero) {
-  Fail "Q2 FAIL: No anchor HWND found (expected title=Fidget, class=Tauri Window, size 1-20 x 1-20)"
+  Fail "Q2 FAIL: No anchor HWND found (expected title=Fidget, class=Tauri Window, size 50-200w x 20-80h)"
 }
 Pass "Found anchor HWND: $anchorHwnd"
 
