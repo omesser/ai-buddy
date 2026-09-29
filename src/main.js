@@ -709,7 +709,8 @@ async function start() {
           // Disturb decide; this only obeys.
           sound: payload.sound,
         };
-        // The same bytes the Shell compares before sending.
+        // One sprite's share of what the Shell compares before sending, so its
+        // resend of an unchanged Placement is unchanged here too.
         const told = JSON.stringify(placement);
         const changed = told !== view.told;
         view.told = told;

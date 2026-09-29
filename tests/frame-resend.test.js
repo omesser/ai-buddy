@@ -1,7 +1,5 @@
-// A resend of an unchanged placement asks for no display frame (#1155), and the
-// first placement a late listener hears is still drawn. Drives the real
-// src/index.html and main.js the way quick-message-connect.test.js does, and
-// counts requestAnimationFrame calls.
+// A resend of an unchanged placement asks for no display frame, and the first
+// placement a late listener hears is still drawn.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -104,7 +102,7 @@ function run() {
   const deliver = async (payload) => {
     await settle();
     const before = asks;
-    handlers.frame({ payload: JSON.parse(JSON.stringify(payload)) });
+    handlers.frame({ payload });
     const asked = asks - before;
     await settle();
     return asked;
@@ -158,7 +156,13 @@ function run() {
   );
   const match = result.stdout.match(/<pre id="probe"[^>]*>(.*?)<\/pre>/s);
   assert.ok(match, `the overlay did not report. ${result.stderr?.slice(-500) ?? ""}`);
-  return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  return JSON.parse(
+    match[1]
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">"),
+  );
 }
 
 const skip = chrome ? false : "headless Chromium is not installed";
