@@ -1,18 +1,18 @@
 <div align="center">
 
-# Fidget
-
 <!-- Shields split on a single hyphen, so cursor-agent is cursor--agent in the URL. Each color is that harness's own hue, darkened until the white shield text stays readable. -->
 
 [![CI](https://github.com/omesser/fidget/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/fidget/actions/workflows/tests.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 [![harness](https://img.shields.io/badge/harness-claude-C25B3A)](#harness-support) [![harness](https://img.shields.io/badge/harness-codex-0E8A6A)](#harness-support) [![harness](https://img.shields.io/badge/harness-cursor--agent-D04200)](#harness-support) [![harness](https://img.shields.io/badge/harness-hermes-5C5AD6)](#harness-support) [![harness](https://img.shields.io/badge/harness-opencode-005BBB)](#harness-support) [![harness](https://img.shields.io/badge/harness-pi-0C7EA8)](#harness-support) [![harness](https://img.shields.io/badge/harness-grok-2B2B2B)](#harness-support) [![harness](https://img.shields.io/badge/harness-copilot-57606A)](#harness-support) [![harness](https://img.shields.io/badge/harness-goose-B83800)](#harness-support) [![harness](https://img.shields.io/badge/harness-antigravity-C5221F)](#harness-support)
 
+<img src="./branding/banner.jpg" width="100%" alt="Fidget, a desktop pet: a small round robot with headphone ears sitting on a desk in front of a monitor" />
+
 </div>
 
----
+# Fidget walks your windows and talks back
 
-A little character that lives on your desktop. It walks the tops of your windows, naps, and lets you pick it up and throw it.
+A little character that lives on your desktop. Pick it up, throw it, or let it nap.
 
 Talk to it, toss it around, and enjoy the company while your code compiles or that spreadsheet drags on. Each character has a personality and a life of its own. Put an AI agent behind it and it comes to life, and colors your desktop with its character.
 

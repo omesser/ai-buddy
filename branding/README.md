@@ -9,6 +9,11 @@ the change rather than take the diff's word for it.
 
 ## Structure
 
+### `banner.jpg`
+README banner, 2000×667 JPEG, 87 KB. Carries the product name and the
+"A Desktop Pet" tagline, so the README puts no heading above it. Checked in
+as delivered; do not recompress or resize.
+
 ### `logo-art/`
 Reference PNG assets:
 - `logo-512.png` — Product logo, 512×512 RGB, 153 KB. The source art
