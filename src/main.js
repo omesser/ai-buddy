@@ -111,6 +111,9 @@ function createView(id) {
     // ever shows a shimmer at the seam under a drag.
     previous: null,
     latest: null,
+    // The last placement heard, serialized. A resend repeats it byte for byte
+    // so a late listener hears `visible`; one already heard has nothing to draw.
+    told: null,
     // Which frame and size were last written to the element. Only the transform
     // changes per display frame; writing the same src sixty times a second
     // would ask the loader for art it already has.
@@ -574,8 +577,8 @@ function drawView(view, now) {
 // whatever the sprite was doing. The asking is what costs, and not in this
 // process: WebKit runs a CVDisplayLink per display in the host, for as long as
 // a page wants frames, and #741 measured those threads at half an idle character's
-// wakeups. Every arrival arms this again, so a placement is still drawn the
-// frame after it lands.
+// wakeups. Every arrival that says something new arms this again, so a placement
+// is still drawn the frame after it lands, and a resend of one is not.
 //
 // Arming is per display too. Every overlay hears about every Instance in its
 // own coordinates, so a Character on a seam stays whole, which also means a
@@ -698,16 +701,20 @@ async function start() {
         // overlay that just lost ownership drops its bubble once, on the change.
         if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideAllNow();
 
-        view.previous = view.latest;
-        view.latest = {
+        const placement = {
           ...sprite,
           visible: payload.visible,
           fade_ms: payload.fade_ms,
           // Whether a cue may be heard as well as seen. Settings and Do Not
           // Disturb decide; this only obeys.
           sound: payload.sound,
-          at: performance.now(),
         };
+        // The same bytes the Shell compares before sending.
+        const told = JSON.stringify(placement);
+        const changed = told !== view.told;
+        view.told = told;
+        view.previous = view.latest;
+        view.latest = { ...placement, at: performance.now() };
         // Dialogue rides one tick and `latest` keeps only the newest placement,
         // so an Engine outpacing the display would lose pulses before `draw`
         // read them. The machine latches the pulse here, where every delivery is seen.
@@ -718,7 +725,7 @@ async function start() {
         view.cues.event(view.latest);
         notePointerLeft(view);
 
-        if (needsFrame(view)) arm();
+        if (changed && needsFrame(view)) arm();
       });
 
       // An id that stopped arriving was dismissed, so its elements go. The Rust
