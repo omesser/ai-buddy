@@ -2,7 +2,7 @@
 //! does not. Hidden sleeps so XI2 cannot wake the loop. Visible Idle keeps
 //! `recv` for hit-test and gesture. DND stays visible and quiet.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::engine::{Frame, State};
 
@@ -35,11 +35,20 @@ pub fn mode(frame: &Frame, visible: bool, behavior_playing: bool) -> ScheduleMod
     }
 }
 
-/// How long an Active tick sleeps once its work is done: the rest of the tick,
-/// so the work counts against the period instead of adding to it. A tick that
-/// overran sleeps not at all and the loop runs as fast as its work allows.
-pub fn active_wait(tick: Duration, worked: Duration) -> Duration {
-    tick.saturating_sub(worked)
+/// When the next Active tick is due. A moving tick counts from the last
+/// deadline, so a sleep that returns late (about 25% on macOS) shortens the
+/// next wait instead of stretching every period. A still tick counts from when
+/// it woke, which keeps a perched sprite's wakeups at the slower rate (#183).
+/// An overrun tick is due now, and the ticks it missed are dropped.
+pub fn next_tick(
+    tick: Duration,
+    last_deadline: Instant,
+    woke: Instant,
+    now: Instant,
+    moving: bool,
+) -> Instant {
+    let from = if moving { last_deadline } else { woke };
+    (from + tick).max(now)
 }
 
 #[cfg(test)]
@@ -64,6 +73,36 @@ mod tests {
             cue: None,
             refused: None,
         }
+    }
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    #[test]
+    fn a_moving_tick_takes_the_last_sleeps_lateness_off_its_wait() {
+        let t0 = Instant::now();
+        let (deadline, woke, now) = (t0 + ms(16), t0 + ms(20), t0 + ms(21));
+        let next = next_tick(ms(16), deadline, woke, now, true);
+        assert_eq!(next - now, ms(11), "woke 4 ms late, worked 1 ms");
+    }
+
+    #[test]
+    fn a_still_tick_counts_its_period_from_when_it_woke() {
+        let t0 = Instant::now();
+        let (deadline, woke, now) = (t0 + ms(16), t0 + ms(20), t0 + ms(21));
+        let next = next_tick(ms(16), deadline, woke, now, false);
+        assert_eq!(next - now, ms(15), "no extra wakeups while perched (#183)");
+    }
+
+    #[test]
+    fn an_overrun_tick_runs_at_once_and_drops_the_ticks_it_missed() {
+        let t0 = Instant::now();
+        let (deadline, woke, now) = (t0 + ms(16), t0 + ms(20), t0 + ms(40));
+        let next = next_tick(ms(16), deadline, woke, now, true);
+        assert_eq!(next - now, ms(0));
+        let after = next_tick(ms(16), next, now, now, true);
+        assert_eq!(after - now, ms(16), "paced from the late tick, not a burst");
     }
 
     #[test]
