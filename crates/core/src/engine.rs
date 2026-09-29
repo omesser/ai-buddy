@@ -147,8 +147,8 @@ pub struct WorldSnapshot {
     /// This Instance's quick message has the caret. Walk and chase stop;
     /// idle, sit and a perch in place do not.
     pub composing: bool,
-    /// Whether a speech bubble is showing. A resting stroll does not translate while it is.
-    pub bubble_visible: bool,
+    /// Whether a speech bubble or QM pill is showing. A resting stroll does not translate while either is visible.
+    pub locomotion_frozen: bool,
 }
 
 /// Everything the renderer is told after one tick.
@@ -408,8 +408,8 @@ pub struct Engine {
     menu_held: bool,
 }
 
-fn locomotion_allowed(bubble_visible: bool) -> bool {
-    !bubble_visible
+fn locomotion_allowed(locomotion_frozen: bool) -> bool {
+    !locomotion_frozen
 }
 
 /// Where each sprite should stand to be on the display under `cursor`.
@@ -1256,7 +1256,7 @@ impl Engine {
                 if self.velocity.y < 0.0 {
                     return Some(Contact::Airborne);
                 }
-                let dx = if locomotion_allowed(snapshot.bubble_visible) {
+                let dx = if locomotion_allowed(snapshot.locomotion_frozen) {
                     self.velocity.x * dt
                 } else {
                     0.0
@@ -3984,7 +3984,7 @@ mod tests {
         let mut halted = started;
         for _ in 0..halt_ticks {
             halted = engine.tick(&WorldSnapshot {
-                bubble_visible: true,
+                locomotion_frozen: true,
                 ..a_long_perch()
             });
         }
@@ -3994,10 +3994,60 @@ mod tests {
         assert_eq!(halted.velocity.x, 120.0);
 
         let resumed = engine.tick(&WorldSnapshot {
-            bubble_visible: false,
+            locomotion_frozen: false,
             ..a_long_perch()
         });
         assert_eq!(resumed.position.x, halted.position.x + 12.0);
+    }
+
+    #[test]
+    fn a_walk_holds_still_while_locomotion_frozen_then_continues() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let started = engine.tick(&a_long_perch());
+        assert!(
+            started.position.x > 200.0,
+            "the stroll has started: {started:?}"
+        );
+
+        let held_x = started.position.x;
+        let held_animation_ms = started.animation_ms;
+        let tick_ms = 100u32;
+        let halt_ms = PRIMITIVE_MS + tick_ms;
+        let halt_ticks = halt_ms / tick_ms;
+        let mut halted = started;
+        for _ in 0..halt_ticks {
+            halted = engine.tick(&WorldSnapshot {
+                locomotion_frozen: true,
+                ..a_long_perch()
+            });
+        }
+
+        assert_eq!(
+            halted.position.x, held_x,
+            "locomotion frozen: position held"
+        );
+        assert_eq!(
+            halted.animation_ms,
+            held_animation_ms + halt_ms,
+            "animation continues"
+        );
+        assert_eq!(halted.velocity.x, 120.0, "velocity preserved");
+
+        let resumed = engine.tick(&WorldSnapshot {
+            locomotion_frozen: false,
+            ..a_long_perch()
+        });
+        assert_eq!(
+            resumed.position.x,
+            halted.position.x + 12.0,
+            "movement resumes when thawed"
+        );
     }
 
     /// Both ends, because a walk that only ever goes one way would leave the
@@ -6849,7 +6899,7 @@ mod tests {
             proposal: None,
             poll_generation: 0,
             composing: false,
-            bubble_visible: false,
+            locomotion_frozen: false,
         };
     }
 

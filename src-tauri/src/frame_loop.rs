@@ -1417,7 +1417,10 @@ pub(crate) fn run_frame_loop(
                     platform::overlay_composing().as_deref() == Some(live.id.as_str());
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.proposal = proposal;
-                world.bubble_visible = live.speech.visible_at(std::time::Instant::now());
+                let speech_visible = live.speech.visible_at(std::time::Instant::now());
+                let qm_visible =
+                    platform::overlay_qm_visible().as_deref() == Some(live.id.as_str());
+                world.locomotion_frozen = speech_visible || qm_visible;
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
