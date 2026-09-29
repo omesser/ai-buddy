@@ -30,6 +30,8 @@ export function applyQuickMessageGate({ field, send, link, machine }, opening) {
   field.placeholder = quickMessagePrompt(opening);
   field.setAttribute("aria-label", ready ? "Quick message" : field.placeholder);
   if (link) link.hidden = !quickMessageConnects(opening);
+  // A disabled Send beside the link would read as a second, dead control.
+  send.hidden = Boolean(link) && !link.hidden;
   machine.setAvailable(ready);
 }
 

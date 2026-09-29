@@ -345,24 +345,28 @@ function attachQuickMessage(view, id) {
   field.disabled = true;
   field.autocomplete = "off";
   field.setAttribute("aria-label", "Quick message");
-  // Only where a click off the art lands. Elsewhere the sentence stays text.
+  // Only where a click off the art lands. Elsewhere the hint stays text.
+  // A muted hint whose last words are the control, as the ask bubble does.
   let link = null;
   if (clickableOffArt) {
-    link = document.createElement("button");
-    link.type = "button";
+    link = document.createElement("span");
     link.className = "quick-message-connect";
-    link.textContent = CONNECT_PROMPT;
     link.hidden = true;
+    const openChat = document.createElement("button");
+    openChat.type = "button";
+    openChat.className = "quick-message-open";
+    openChat.textContent = "Open chat";
     const swallow = (event) => event.stopPropagation();
-    link.addEventListener("pointerdown", swallow);
-    link.addEventListener("pointerup", swallow);
-    link.addEventListener("click", (event) => {
+    openChat.addEventListener("pointerdown", swallow);
+    openChat.addEventListener("pointerup", swallow);
+    openChat.addEventListener("click", (event) => {
       event.stopPropagation();
       view.quickMachine.summon();
       window.__TAURI__.core.invoke("overlay_open_chat", { id }).catch((err) => {
         console.error("overlay_open_chat", err);
       });
     });
+    link.append(`${CONNECT_PROMPT} `, openChat);
   }
   const send = document.createElement("button");
   send.type = "button";
