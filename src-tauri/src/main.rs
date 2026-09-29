@@ -84,7 +84,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 /// step with `bundle.resources` in `tauri.conf.json`.
 const BUNDLED_CHARACTERS: &str = "characters";
 
-/// One turn of the frame loop: roughly 60Hz. A poll, not an event stream: a
+/// One turn of the frame loop: 62.5Hz while moving. A poll, not an event stream: a
 /// click-through window receives no mouse events, and the Engine advances on
 /// elapsed time.
 const ENGINE_TICK: Duration = Duration::from_millis(16);
