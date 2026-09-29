@@ -1523,6 +1523,32 @@ fn overlay_hit_tests_hotspots() -> bool {
     platform::hotspots_hit_tested()
 }
 
+/// `FIDGET_TRACE_CADENCE`, a bench switch rather than a Development row: the
+/// overlay records its display frames and the frame loop counts its ticks.
+pub(crate) fn tracing_cadence() -> bool {
+    model::env_switch("FIDGET_TRACE_CADENCE").unwrap_or(false)
+}
+
+/// Whether the overlay records its display frames for `overlay_cadence`.
+#[tauri::command]
+fn overlay_traces_cadence() -> bool {
+    tracing_cadence()
+}
+
+/// Display frames an overlay drew, in Unix ms: when it ran, whether it asked
+/// for another, and the two arrivals it drew between. For scripts/frame-cadence.mjs.
+#[tauri::command]
+fn overlay_cadence(window: tauri::Window, frames: Vec<(f64, bool, Option<f64>, f64)>) {
+    for (now, rearmed, previous, latest) in frames {
+        let previous = previous.map_or_else(|| "-".to_string(), |at| format!("{at:.3}"));
+        eprintln!(
+            "cadence: {} {now:.3} {} {previous} {latest:.3}",
+            window.label(),
+            u8::from(rearmed)
+        );
+    }
+}
+
 /// Where this overlay wants a click besides the art. The bubble's "Open chat"
 /// control sits above the head, outside the alpha mask; the renderer says
 /// where in its own coordinates and the frame loop converts.
@@ -3654,6 +3680,8 @@ fn main() {
             overlay_composing,
             overlay_hotspots,
             overlay_hit_tests_hotspots,
+            overlay_traces_cadence,
+            overlay_cadence,
             overlay_open_chat,
             chat_opening,
             chat_send,

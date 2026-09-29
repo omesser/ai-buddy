@@ -73,6 +73,7 @@ All off by default. Switches take `1`/`on`/`true`/`yes` or `0`/`off`/`false`/`no
 | `FIDGET_TRACE_FRAMES` | Engine frames per tick: `Grounded pos(x,y)`, `Dragged`, `Perched`, animation |
 | `FIDGET_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played or refused |
 | `FIDGET_TRACE_ENGINE` | Behavior, Primitive, Animation, and State changes |
+| `FIDGET_TRACE_CADENCE` | Bench-only, with no Settings row. The overlay's display frames as `cadence:` lines and the loop's tick count as `cadence-ticks:` once a second, for `scripts/bench-frame-cadence-macos.sh`. Read at launch only |
 | `FIDGET_TRACE_WINDOWS` | Windows only, set to any value: window count and the first 3 bounds on first read |
 | `FIDGET_CAPTURABLE` | `1` forces the overlay into screen captures, `0` excludes it. Overrides Settings → Presence → "Appear in screenshots and screen shares". For verify scripts and CI. |
 
