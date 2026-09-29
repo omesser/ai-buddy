@@ -128,7 +128,7 @@ foreach ($hwnd in $windows) {
 }
 
 if ($anchorHwnd -eq [IntPtr]::Zero) {
-  Fail "Q2 FAIL: No anchor HWND found (expected title=Fidget, class=Tauri Window, size 1-20 × 1-20)"
+  Fail "Q2 FAIL: No anchor HWND found (expected title=Fidget, class=Tauri Window, size 1-20 x 1-20)"
 }
 Pass "Found anchor HWND: $anchorHwnd"
 
