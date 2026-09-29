@@ -30,6 +30,14 @@ The owner decided the V1 shape on 2026-09-29:
 Fidget does not bundle Node.js, does not fetch or cache adapter packages
 itself, and does not pin adapter versions.
 
+**Why not pin.** Harness CLIs, their ACP adapters, Node.js and `npx` all
+release very often. A pin makes Fidget own those versions: someone has to
+notice each release, test it, and ship a Fidget update. And a user who updates
+their own CLI can land on a combination Fidget never tested. The goal is to
+take version management, and even version awareness, off both the user and
+Fidget as far as possible. Riding `@latest` leaves the versions with their
+owners.
+
 **Fidget pays for that in the user experience instead:**
 
 - A first run may take as long as the download. Nothing on the attach path
@@ -44,10 +52,10 @@ itself, and does not pin adapter versions.
 ## Rejected
 
 - **Pinned, integrity-checked adapter fetch.** It removes the cold `npx`
-  resolve and the silent upstream update. The cost: Fidget would own an adapter
-  release train, and a compatibility matrix against whichever CLI version each
-  user has installed. #1147 checked the pinned adapters only as far as
-  `initialize`, never a full session.
+  resolve and the silent upstream update. It is rejected for the version burden
+  above: Fidget would own an adapter release train, and a compatibility matrix
+  against whichever CLI version each user has installed. #1147 also checked the
+  pinned adapters only as far as `initialize`, never a full session.
 - **Bundling Node.js as a sidecar.** It fails ADR-0035's size test.
 - **Compiled adapters (Bun or Deno).** They are larger still. Bun also links
   LGPL-2 code statically.
