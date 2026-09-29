@@ -386,10 +386,12 @@ The overshoot is about a quarter of the request, capped near 5 ms, which fits ma
 
 The idle run with the trace off drew 257 display frames at 59.8 fps, where the traced idle run drew 83 with no armed stretch. This run does not explain the difference. It is one 20 s sample, and the idle animation it landed on may differ.
 
-**Why an idle, still sprite redraws about 5 times a second.** From the earlier run at `b321bf98`, of its 108 idle frames:
+**Why an idle, still sprite redraws about 4 times a second.** Of the 83 idle frames:
 
-- 49 follow a change of idle animation frame. That is new art, and it needs a draw.
-- 59 follow `FRAME_RESEND` in `src-tauri/src/frame_loop.rs`, which sends an unchanged placement again every 250 ms. The overlay's `frame` listener asks for a display frame on every arrival, even one identical to the last, so each resend costs a rAF with nothing to draw.
+- 22 follow a change of animation frame (sit, idle and talk). That is new art, and it needs a draw.
+- 61 follow `FRAME_RESEND` in `src-tauri/src/frame_loop.rs`, which sends an unchanged placement again every 250 ms. The overlay's `frame` listener asks for a display frame on every arrival, even one identical to the last, so each resend costs a rAF with nothing to draw.
+
+Each frame is matched to the Engine state traced at or before its latest arrival. It counts as new art when the state, placement or animation frame differs from the previous frame's, and as a resend when none of them does. The match crosses the same clocks as the moving gate above.
 
 **Limits.**
 
