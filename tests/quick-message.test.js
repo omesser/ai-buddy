@@ -316,7 +316,7 @@ function gateDouble() {
         this.labels[name] = value;
       },
     },
-    send: { disabled: false },
+    send: { disabled: false, hidden: false },
     link: { hidden: true },
     machine: {
       ready: true,
@@ -352,7 +352,8 @@ test("the gate disables the field and send from the same opening chat uses", () 
   assert.equal(frozen.send.disabled, true);
   assert.equal(frozen.field.placeholder, "Connect an AI to talk to me");
   assert.equal(frozen.field.labels["aria-label"], "Connect an AI to talk to me");
-  assert.equal(frozen.link.hidden, false, "the sentence is a link that opens Chat");
+  assert.equal(frozen.link.hidden, false, "the hint carries a link that opens Chat");
+  assert.equal(frozen.send.hidden, true, "Send leaves so the link is the pill's one control");
 
   const starting = gateDouble();
   applyQuickMessageGate(starting, {
@@ -366,6 +367,7 @@ test("the gate disables the field and send from the same opening chat uses", () 
   assert.equal(starting.send.disabled, true);
   assert.equal(starting.field.placeholder, "Starting Cursor…");
   assert.equal(starting.link.hidden, true);
+  assert.equal(starting.send.hidden, false);
 
   const ready = gateDouble();
   applyQuickMessageGate(ready, { name: "bmo", configured: true, enabled: true });
@@ -375,6 +377,7 @@ test("the gate disables the field and send from the same opening chat uses", () 
   assert.equal(ready.field.placeholder, "talk to me");
   assert.equal(ready.field.labels["aria-label"], "Quick message");
   assert.equal(ready.link.hidden, true);
+  assert.equal(ready.send.hidden, false);
 });
 
 test("Enter sends and Shift+Enter does not", () => {
@@ -535,4 +538,5 @@ test("without a clickable link the pill still names the fix as text", () => {
   applyQuickMessageGate(gate, { name: "bmo", configured: false, enabled: false });
   assert.equal(gate.field.placeholder, "Connect an AI to talk to me");
   assert.equal(gate.field.disabled, true);
+  assert.equal(gate.send.hidden, false, "with no link to stand in, Send keeps its place");
 });
