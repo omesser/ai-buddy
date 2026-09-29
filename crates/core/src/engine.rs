@@ -4028,15 +4028,26 @@ mod tests {
             });
         }
 
-        assert_eq!(halted.position.x, held_x, "locomotion frozen: position held");
-        assert_eq!(halted.animation_ms, held_animation_ms + halt_ms, "animation continues");
+        assert_eq!(
+            halted.position.x, held_x,
+            "locomotion frozen: position held"
+        );
+        assert_eq!(
+            halted.animation_ms,
+            held_animation_ms + halt_ms,
+            "animation continues"
+        );
         assert_eq!(halted.velocity.x, 120.0, "velocity preserved");
 
         let resumed = engine.tick(&WorldSnapshot {
             locomotion_frozen: false,
             ..a_long_perch()
         });
-        assert_eq!(resumed.position.x, halted.position.x + 12.0, "movement resumes when thawed");
+        assert_eq!(
+            resumed.position.x,
+            halted.position.x + 12.0,
+            "movement resumes when thawed"
+        );
     }
 
     /// Both ends, because a walk that only ever goes one way would leave the
