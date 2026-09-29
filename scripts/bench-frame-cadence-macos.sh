@@ -6,6 +6,8 @@
 #
 # idle: the sprite left alone. walking: sampled from the first walk frame.
 # load: walking with one `yes` per core running from launch.
+# idle-quiet: idle with FIDGET_TRACE_FRAMES off, so the loop's own tick
+#   counter says whether the per-tick `frame:` print slows the Engine.
 # Every scenario launches fidget on the live desktop, so it refuses to run
 # unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to it.
 
@@ -20,7 +22,7 @@ scenario=""
 
 usage() {
   cat >&2 << EOF
-Usage: $0 <idle|walking|load|matrix> [--seconds N] [--walk-timeout N] [--bin PATH] [--out DIR]
+Usage: $0 <idle|idle-quiet|walking|load|matrix> [--seconds N] [--walk-timeout N] [--bin PATH] [--out DIR]
 
 Every scenario launches fidget and needs FIDGET_BENCH_GREEN_LIGHT=1.
 EOF
@@ -46,7 +48,7 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --help | -h) usage ;;
-    idle | walking | load | matrix)
+    idle | idle-quiet | walking | load | matrix)
       scenario="$1"
       shift
       ;;
@@ -98,13 +100,13 @@ now_ms() {
 }
 
 launch_app() {
-  local log=$1
+  local log=$1 frames=$2
   # Scratch HOME so the bench does not write the user's settings. The API key
   # skips the Keychain read a worktree build would otherwise block on.
   SCRATCH_HOME=$(mktemp -d)
   FIDGET_DIRECTOR_API_KEY=bench-placeholder \
     FIDGET_DIRECTOR=0 \
-    FIDGET_TRACE_FRAMES=1 \
+    FIDGET_TRACE_FRAMES="$frames" \
     FIDGET_TRACE_CADENCE=1 \
     FIDGET_INSTANCES="${FIDGET_INSTANCES:-BMO}" \
     FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$PWD/characters}" \
@@ -142,15 +144,21 @@ run() {
       BURNERS+=($!)
     done
   fi
-  launch_app "$log"
-  if ! wait_landed "$log"; then
+  if [ "$name" = idle-quiet ]; then
+    launch_app "$log" 0
+    # No `frame:` lines to watch for a landing, so give the fall a fixed 5 s.
+    sleep 5
+  else
+    launch_app "$log" 1
+  fi
+  if [ "$name" != idle-quiet ] && ! wait_landed "$log"; then
     echo "$name: the sprite never landed; see $log" >&2
     stop_app
     stop_burners
     return 1
   fi
   sleep 2
-  if [ "$name" != idle ] && ! wait_walk "$log"; then
+  if [ "${name%-quiet}" != idle ] && ! wait_walk "$log"; then
     echo "$name: no walk frame within ${walk_timeout}s; see $log" >&2
     stop_app
     stop_burners
@@ -189,6 +197,7 @@ echo
 case "$scenario" in
   matrix)
     run idle
+    run idle-quiet
     run walking
     run load
     ;;

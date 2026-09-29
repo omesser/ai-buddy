@@ -1523,12 +1523,16 @@ fn overlay_hit_tests_hotspots() -> bool {
     platform::hotspots_hit_tested()
 }
 
-/// Whether the overlay records its display frames and sends them to
-/// `overlay_cadence`. Read from `FIDGET_TRACE_CADENCE` alone: a bench switch,
-/// not a Development row.
+/// `FIDGET_TRACE_CADENCE`, a bench switch rather than a Development row: the
+/// overlay records its display frames and the frame loop counts its ticks.
+pub(crate) fn tracing_cadence() -> bool {
+    model::env_switch("FIDGET_TRACE_CADENCE").unwrap_or(false)
+}
+
+/// Whether the overlay records its display frames for `overlay_cadence`.
 #[tauri::command]
 fn overlay_traces_cadence() -> bool {
-    model::env_switch("FIDGET_TRACE_CADENCE").unwrap_or(false)
+    tracing_cadence()
 }
 
 /// Display frames an overlay drew, in Unix ms: when it ran, whether it asked

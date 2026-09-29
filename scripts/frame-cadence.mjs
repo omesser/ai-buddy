@@ -28,6 +28,14 @@ function histogram(frameDeltas, tickDeltas) {
   }));
 }
 
+// Each count covers the second before its stamp, so the first one in the
+// window reaches back before it and is left out.
+function countedHz(counts) {
+  if (counts.length < 2) return null;
+  const ticks = counts.slice(1).reduce((n, c) => n + c.ticks, 0);
+  return round((ticks * 1000) / (counts.at(-1).at - counts[0].at), 1);
+}
+
 /**
  * @param {string} log
  * @param {{from?: number, to?: number}} window - Unix ms, inclusive
@@ -36,11 +44,15 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
   const inWindow = (at) => at >= from && at <= to;
   const ticks = [];
   const placements = [];
+  const counts = [];
   const overlays = new Map();
   for (const line of log.split("\n")) {
     const [kind, ...fields] = line.split(" ");
     if (kind === "frame:") placements.push({ at: Number(fields[0]), pos: fields[2] });
     if (kind === "frame:" && inWindow(Number(fields[0]))) ticks.push(Number(fields[0]));
+    if (kind === "cadence-ticks:" && inWindow(Number(fields[0]))) {
+      counts.push({ at: Number(fields[0]), ticks: Number(fields[1]) });
+    }
     if (kind !== "cadence:") continue;
     const [label, now, rearmed, previous, latest] = fields;
     if (!inWindow(Number(now))) continue;
@@ -94,6 +106,7 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
     restarts,
     ticks: ticks.length,
     tickHz: tickDeltas.length ? round(1000 / mean(tickDeltas), 1) : null,
+    countedHz: countedHz(counts),
     lag: lags.length
       ? {
           p50Ms: round(percentile(byMs, 0.5), 1),
@@ -116,6 +129,7 @@ export function report(result) {
     [`Dropped (>${DROP_MS} ms)`, result.drops],
     ["Loop restarts", result.restarts],
     ["Engine ticks", `${result.ticks} (${na(result.tickHz, " Hz")})`],
+    ["Engine ticks/s, loop counter", na(result.countedHz)],
     ["Interpolation lag p50, moving", lag ? `${lag.p50Ms} ms (${lag.p50Samples} samples)` : "N/A"],
     ["Interpolation lag p95, moving", lag ? `${lag.p95Ms} ms (${lag.p95Samples} samples)` : "N/A"],
     ["Moving frames held at the latest placement", lag ? lag.held : "N/A"],

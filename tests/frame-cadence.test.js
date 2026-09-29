@@ -5,7 +5,8 @@ import { analyze, report } from "../scripts/frame-cadence.mjs";
 // Five Engine ticks of a walk, one 40 ms late, and the display frames an overlay
 // drew across them: a quiet loop restarts on the late arrival, then misses a
 // vsync and holds the sprite at the latest placement. The sixth tick resends a
-// standing sprite 250 ms on, and a still sprite has no lag to measure.
+// standing sprite 250 ms on, and a still sprite has no lag to measure. The
+// loop's own counter reports 23 ticks over the last 400 ms.
 const log = [
   "cadence: overlay-0 900.000 1 880.000 890.000",
   "frame: 1000 Grounded pos(1,2) sprite(3,4) walk#0 BMO",
@@ -23,6 +24,9 @@ const log = [
   "cadence: overlay-0 1150.333 0 1050.000 1090.500",
   "frame: 1340 Grounded pos(5,2) sprite(3,4) walk#4 BMO",
   "cadence: overlay-0 1341.000 0 1090.500 1340.500",
+  "cadence-ticks: 1000 60",
+  "cadence-ticks: 1200 11",
+  "cadence-ticks: 1400 12",
   "frame: 2000 Grounded pos(1,2) sprite(3,4) walk#5 BMO",
 ].join("\n");
 
@@ -34,6 +38,7 @@ test("a window of the log reduces to cadence, drops, and interpolation lag", () 
     restarts: 2,
     ticks: 6,
     tickHz: 14.7,
+    countedHz: 57.5,
     lag: { p50Ms: 16.8, p95Ms: 59.8, p50Samples: 1, p95Samples: 1.48, held: 1 },
     histogram: [
       { bin: "0-10", frames: 0, ticks: 0 },
@@ -53,6 +58,7 @@ test("a window with no display frames says so rather than dividing by zero", () 
   assert.equal(idle.frames, 0);
   assert.equal(idle.fps, null);
   assert.equal(idle.lag, null);
+  assert.equal(idle.countedHz, null);
   assert.match(report(idle), /\| Display frames \| 0 \|/);
 });
 
@@ -62,4 +68,5 @@ test("the report is a Markdown table a baseline doc can paste", () => {
   assert.match(text, /\| Dropped \(>20 ms\) \| 1 \|/);
   assert.match(text, /\| Interpolation lag p50, moving \| 16\.8 ms \(1 samples\) \|/);
   assert.match(text, /\| 25-34 \| 1 \| 0 \|/);
+  assert.match(text, /\| Engine ticks\/s, loop counter \| 57\.5 \|/);
 });

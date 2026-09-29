@@ -173,6 +173,11 @@ pub(crate) fn run_frame_loop(
         let mut button_was_down = false;
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
+        // Counted apart from `frame:` lines, so the tick rate can be read with
+        // FIDGET_TRACE_FRAMES off and its per-tick print ruled out as the cause.
+        let counting_ticks = crate::tracing_cadence();
+        let mut counted_ticks: u32 = 0;
+        let mut counted_since = Instant::now();
         let mut last_tick = Instant::now();
         let mut turn_started = Instant::now();
         let mut time_since_launch = Duration::ZERO;
@@ -2190,6 +2195,17 @@ pub(crate) fn run_frame_loop(
             }
 
             ticks = ticks.wrapping_add(1);
+            if counting_ticks {
+                counted_ticks += 1;
+                if counted_since.elapsed() >= Duration::from_secs(1) {
+                    let at_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_or(0, |since| since.as_millis());
+                    eprintln!("cadence-ticks: {at_ms} {counted_ticks}");
+                    counted_ticks = 0;
+                    counted_since = Instant::now();
+                }
+            }
             if tracing && (flipped || ticks.is_multiple_of(120)) {
                 eprintln!(
                     "hit-test: cursor({:.0},{:.0}) scale {:.1} -> point({},{}) \
