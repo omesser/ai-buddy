@@ -1196,8 +1196,8 @@ mod tests {
 
     #[test]
     fn qm_visible_freezes_locomotion_for_the_owning_instance() {
-        use crate::fidget_core::engine::{Point, WorldSnapshot};
-        use crate::fidget_core::roster::Roster;
+        use fidget_core::engine::{Point, WorldSnapshot};
+        use fidget_core::roster::Roster;
 
         let mut roster = Roster::default();
         let id = roster.spawn("bmo".to_string(), "bmo".to_string());
