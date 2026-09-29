@@ -10,6 +10,7 @@ import {
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import {
+  CONNECT_HINT,
   applyQuickMessageGate,
   createQuickMessage,
   crossedDrag,
@@ -344,6 +345,29 @@ function attachQuickMessage(view, id) {
   field.disabled = true;
   field.autocomplete = "off";
   field.setAttribute("aria-label", "Quick message");
+  // Only where a click off the art lands. Elsewhere the hint stays text.
+  // A muted hint whose last words are the control, as the ask bubble does.
+  let link = null;
+  if (clickableOffArt) {
+    link = document.createElement("span");
+    link.className = "quick-message-connect";
+    link.hidden = true;
+    const openChat = document.createElement("button");
+    openChat.type = "button";
+    openChat.className = "quick-message-open";
+    openChat.textContent = "Open chat";
+    const swallow = (event) => event.stopPropagation();
+    openChat.addEventListener("pointerdown", swallow);
+    openChat.addEventListener("pointerup", swallow);
+    openChat.addEventListener("click", (event) => {
+      event.stopPropagation();
+      view.quickMachine.summon();
+      window.__TAURI__.core.invoke("overlay_open_chat", { id }).catch((err) => {
+        console.error("overlay_open_chat", err);
+      });
+    });
+    link.append(`${CONNECT_HINT} `, openChat);
+  }
   const send = document.createElement("button");
   send.type = "button";
   send.className = "quick-message-send";
@@ -357,7 +381,9 @@ function attachQuickMessage(view, id) {
   point.setAttribute("fill", "#14171e");
   icon.append(point);
   send.append(icon);
-  row.append(mirror, field);
+  // Before the field, so the sibling rule in main.css can hide the
+  // placeholder that would otherwise draw under the link.
+  row.append(mirror, ...(link ? [link] : []), field);
   quick.append(row, send);
   stage.append(quick);
 
@@ -395,7 +421,7 @@ function attachQuickMessage(view, id) {
     },
   });
   view.quickMachine = machine;
-  view.quickGate = { field, send, machine };
+  view.quickGate = { field, send, link, machine };
   view.quickMirror.textContent = "\u200b";
   paintQuickGate(view, null);
   refreshQuickGate(view, id);

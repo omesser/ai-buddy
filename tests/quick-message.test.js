@@ -12,6 +12,7 @@ import {
   createQuickMessage,
   crossedDrag,
   placeQuickMessage,
+  quickMessageConnects,
   quickMessageMirror,
   quickMessagePrompt,
 } from "../src/quick-message.js";
@@ -263,10 +264,15 @@ test("freezing clears a draft and thawing claims the caret", () => {
   assert.deepEqual(sent, ["hey"]);
 });
 
-test("the unavailable sentence is the one the chat composer shows", () => {
+test("the unavailable pill points at Chat instead of echoing its composer", () => {
   const off = { name: "bmo", configured: true, enabled: false };
-  assert.equal(quickMessagePrompt(off), "Nothing can answer yet");
-  assert.equal(quickMessagePrompt(null), "Nothing can answer yet");
+  assert.equal(quickMessagePrompt(off), "Connect an AI to talk to me");
+  assert.equal(quickMessagePrompt(null), "Connect an AI to talk to me");
+  assert.equal(quickMessageConnects(off), true);
+  assert.equal(quickMessageConnects(null), true);
+  const login = { name: "bmo", configured: true, enabled: true, login: "claude /login" };
+  assert.equal(quickMessagePrompt(login), "Connect an AI to talk to me");
+  assert.equal(quickMessageConnects(login), true);
 
   const starting = {
     name: "bmo",
@@ -276,6 +282,7 @@ test("the unavailable sentence is the one the chat composer shows", () => {
     harness: { name: "hermes", alive: false, initializing: true },
   };
   assert.equal(quickMessagePrompt(starting), "Starting Hermes…");
+  assert.equal(quickMessageConnects(starting), false, "a wait that ends on its own is not a link");
 
   const down = {
     name: "bmo",
@@ -284,13 +291,15 @@ test("the unavailable sentence is the one the chat composer shows", () => {
     harness_name: "hermes",
     harness: { name: "hermes", alive: false, session: null },
   };
-  assert.equal(quickMessagePrompt(down), "Nothing can answer yet");
+  assert.equal(quickMessagePrompt(down), "Connect an AI to talk to me");
+  assert.equal(quickMessageConnects(down), true);
 
   const ready = { name: "bmo", configured: true, enabled: true };
   assert.equal(quickMessagePrompt(ready), "talk to me");
+  assert.equal(quickMessageConnects(ready), false);
   assert.equal(
-    quickMessageMirror("", "Nothing can answer yet", false),
-    "Nothing can answer yet\u200b",
+    quickMessageMirror("", "Connect an AI to talk to me", false),
+    "Connect an AI to talk to me\u200b",
     "the frozen pill reserves the sentence, or overflow clips it",
   );
   assert.equal(quickMessageMirror("", "talk to me", true), "\u200b");
@@ -307,7 +316,8 @@ function gateDouble() {
         this.labels[name] = value;
       },
     },
-    send: { disabled: false },
+    send: { disabled: false, hidden: false },
+    link: { hidden: true },
     machine: {
       ready: true,
       setAvailable(value) {
@@ -326,10 +336,10 @@ test("a draft does not hide the unavailable sentence when the pill freezes", () 
   applyQuickMessageGate(gate, { name: "bmo", configured: true, enabled: false });
 
   assert.equal(qm.text, "");
-  assert.equal(gate.field.placeholder, "Nothing can answer yet");
+  assert.equal(gate.field.placeholder, "Connect an AI to talk to me");
   assert.equal(
     quickMessageMirror(qm.text, gate.field.placeholder, qm.available),
-    "Nothing can answer yet\u200b",
+    "Connect an AI to talk to me\u200b",
     "leftover draft text would hide the sentence the placeholder is showing",
   );
 });
@@ -340,8 +350,10 @@ test("the gate disables the field and send from the same opening chat uses", () 
   assert.equal(frozen.machine.ready, false);
   assert.equal(frozen.field.disabled, true);
   assert.equal(frozen.send.disabled, true);
-  assert.equal(frozen.field.placeholder, "Nothing can answer yet");
-  assert.equal(frozen.field.labels["aria-label"], "Nothing can answer yet");
+  assert.equal(frozen.field.placeholder, "Connect an AI to talk to me");
+  assert.equal(frozen.field.labels["aria-label"], "Connect an AI to talk to me");
+  assert.equal(frozen.link.hidden, false, "the hint carries a link that opens Chat");
+  assert.equal(frozen.send.hidden, true, "Send leaves so the link is the pill's one control");
 
   const starting = gateDouble();
   applyQuickMessageGate(starting, {
@@ -354,6 +366,8 @@ test("the gate disables the field and send from the same opening chat uses", () 
   assert.equal(starting.field.disabled, true);
   assert.equal(starting.send.disabled, true);
   assert.equal(starting.field.placeholder, "Starting Cursor…");
+  assert.equal(starting.link.hidden, true);
+  assert.equal(starting.send.hidden, false);
 
   const ready = gateDouble();
   applyQuickMessageGate(ready, { name: "bmo", configured: true, enabled: true });
@@ -362,6 +376,8 @@ test("the gate disables the field and send from the same opening chat uses", () 
   assert.equal(ready.send.disabled, false);
   assert.equal(ready.field.placeholder, "talk to me");
   assert.equal(ready.field.labels["aria-label"], "Quick message");
+  assert.equal(ready.link.hidden, true);
+  assert.equal(ready.send.hidden, false);
 });
 
 test("Enter sends and Shift+Enter does not", () => {
@@ -514,4 +530,13 @@ test("the overlay autofocuses, dismisses on the locked gestures, and reports typ
     /function notePointerLeft\(view\) \{\s*if \(!view\.quickMachine\.visible\) return;/,
     "a leave during the 2.5s dwell has to cancel the timer",
   );
+});
+
+test("without a clickable link the pill still names the fix as text", () => {
+  const gate = gateDouble();
+  gate.link = null;
+  applyQuickMessageGate(gate, { name: "bmo", configured: false, enabled: false });
+  assert.equal(gate.field.placeholder, "Connect an AI to talk to me");
+  assert.equal(gate.field.disabled, true);
+  assert.equal(gate.send.hidden, false, "with no link to stand in, Send keeps its place");
 });
