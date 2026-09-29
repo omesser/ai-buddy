@@ -10,7 +10,7 @@ import {
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import {
-  CONNECT_PROMPT,
+  CONNECT_HINT,
   applyQuickMessageGate,
   createQuickMessage,
   crossedDrag,
@@ -366,7 +366,7 @@ function attachQuickMessage(view, id) {
         console.error("overlay_open_chat", err);
       });
     });
-    link.append(`${CONNECT_PROMPT} `, openChat);
+    link.append(`${CONNECT_HINT} `, openChat);
   }
   const send = document.createElement("button");
   send.type = "button";
