@@ -7,8 +7,8 @@ presets launch, and what Fidget owes the user for that choice.
 ## Context
 
 The `claude`, `codex` and `pi` presets run their ACP adapters through
-`npx -y <adapter>@latest`. [#1147](https://github.com/omesser/fidget/pull/1147)
-weighed every way off `npx`:
+`npx -y <adapter>@latest`. [Running the npx presets without npx](../research/harness-without-npx.md)
+(#1147) weighed every way off `npx`:
 
 - None of the three adapters ships a native binary today.
 - A cold first run downloads the adapter and a second copy of its CLI: 12 to
