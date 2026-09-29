@@ -1196,27 +1196,8 @@ mod tests {
 
     #[test]
     fn qm_visible_freezes_locomotion_for_the_owning_instance() {
-        use fidget_core::engine::{Point, WorldSnapshot};
-        use fidget_core::roster::Roster;
-
-        let mut roster = Roster::default();
-        let id = roster.spawn("bmo".to_string(), "bmo".to_string());
-        let _other_id = roster.spawn("buddy".to_string(), "bmo".to_string());
-
+        let id = "bmo-instance".to_string();
         set_overlay_qm_visible(Some(id.clone()));
-
-        let world = WorldSnapshot {
-            cursor: Point { x: 100.0, y: 100.0 },
-            windows: vec![],
-            monitors: vec![],
-            floors: vec![],
-            verbs: vec![],
-            elapsed_ms: 16,
-            proposal: None,
-            poll_generation: 0,
-            composing: false,
-            locomotion_frozen: false,
-        };
 
         let speech_visible = false;
         let qm_visible_for_this_instance = overlay_qm_visible().as_deref() == Some(&id);
@@ -1232,6 +1213,8 @@ mod tests {
             !qm_visible_for_other,
             "QM not visible for a different instance"
         );
+
+        set_overlay_qm_visible(None);
     }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that
