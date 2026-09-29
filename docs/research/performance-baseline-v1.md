@@ -395,7 +395,17 @@ The overshoot is about a quarter of the request, capped near 5 ms. That is consi
 
 Overshoot explains the 53 Hz: a wait counted from the wake adds each sleep's 4 ms lateness to every period. So a moving sprite (falling, dragged, climbing, riding, or with any velocity) now waits toward the last deadline, and the lateness shortens the next wait instead. A still sprite that stays Active for an idle animation or sleep accrual keeps 52 Hz on purpose, so a perched sprite wakes no more often than before (#183).
 
-Moving ticks now run at 62.5 Hz, the rate of the 16 ms `ENGINE_TICK` period, not exactly 60 Hz. The deadline fixes the average rate, not the per-tick jitter: moving gaps still reach 18 ms at p90. A precise platform timer is #1168. The app bench above has not been re-run with this change. Re-run with `cargo run --release -p fidget-core --example sleep_overshoot -- 2000`.
+Moving ticks now run at 62.5 Hz, the rate of the 16 ms `ENGINE_TICK` period, not exactly 60 Hz. The deadline fixes the average rate, not the per-tick jitter: moving gaps still reach 18 ms at p90. A precise platform timer is #1168. Re-run with `cargo run --release -p fidget-core --example sleep_overshoot -- 2000`.
+
+**In the app, at `761e93ac`.** The bench's walking scenario reads 51.9 Engine ticks/s, but that rate covers the whole 20 s window, and BMO stands idle between walks for most of it. Splitting the `frame:` ticks inside each scenario's window by whether the traced position changed since the previous tick:
+
+| Scenario | Moving ticks | Moving mean gap | Still ticks | Still mean gap | Loop counter |
+|---|---|---|---|---|---|
+| Idle (BMO walked) | 338 | 16.0 ms (62.5 Hz) | 780 | 18.7 ms (53.5 Hz) | 55.8 Hz |
+| Walking | 330 | 16.0 ms (62.5 Hz) | 709 | 20.8 ms (48.1 Hz) | 51.9 Hz |
+| Load | 364 | 16.1 ms (62.1 Hz) | 760 | 18.7 ms (53.5 Hz) | 56.3 Hz |
+
+Moving ticks reach 62.5 Hz in the app. The loop counter blends the two paces: the split's gaps average to 55.9, 51.9 and 56.1 Hz. A still tick waits as it did before this change.
 
 **The frame trace does not slow the Engine.** Idle ticks at 53.8 Hz with `FIDGET_TRACE_FRAMES` on and 53.9 Hz with it off, by the loop's own counter. So the per-tick `frame:` print is not what holds the Engine under 60 Hz.
 
