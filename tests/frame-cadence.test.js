@@ -38,6 +38,8 @@ test("a window of the log reduces to cadence, drops, and interpolation lag", () 
     restarts: 2,
     ticks: 6,
     tickHz: 14.7,
+    moving: { ticks: 4, gapMs: 22.5, hz: 44.4 },
+    still: { ticks: 1, gapMs: 250, hz: 4 },
     countedHz: 57.5,
     lag: { p50Ms: 16.8, p95Ms: 59.8, p50Samples: 1, p95Samples: 1.48, held: 1 },
     histogram: [
@@ -53,12 +55,34 @@ test("a window of the log reduces to cadence, drops, and interpolation lag", () 
   });
 });
 
+// Shaped like a walking run: BMO walks on the 16 ms deadline, stands between
+// walks at the wake-based 20 ms pace, and walks again.
+test("Engine ticks split into moving and still, which the blended rate hides", () => {
+  const walking = [
+    "frame: 0 Grounded pos(1,2) sprite(3,4) walk#0 BMO",
+    "frame: 16 Grounded pos(2,2) sprite(3,4) walk#1 BMO",
+    "frame: 32 Grounded pos(3,2) sprite(3,4) walk#2 BMO",
+    "frame: 48 Grounded pos(4,2) sprite(3,4) walk#3 BMO",
+    "frame: 68 Grounded pos(4,2) sprite(3,4) idle#0 BMO",
+    "frame: 88 Grounded pos(4,2) sprite(3,4) idle#0 BMO",
+    "frame: 108 Grounded pos(4,2) sprite(3,4) idle#1 BMO",
+    "frame: 128 Grounded pos(4,2) sprite(3,4) idle#1 BMO",
+    "frame: 144 Grounded pos(5,2) sprite(3,4) walk#0 BMO",
+  ].join("\n");
+  const result = analyze(walking, {});
+  assert.equal(result.tickHz, 55.6);
+  assert.deepEqual(result.moving, { ticks: 4, gapMs: 16, hz: 62.5 });
+  assert.deepEqual(result.still, { ticks: 4, gapMs: 20, hz: 50 });
+  assert.match(report(result), /\| Engine ticks, moving \| 4 \(16 ms, 62\.5 Hz\) \|/);
+});
+
 test("a window with no display frames says so rather than dividing by zero", () => {
   const idle = analyze("frame: 1000 Perched pos(1,2) sprite(3,4) idle#0 BMO", {});
   assert.equal(idle.frames, 0);
   assert.equal(idle.fps, null);
   assert.equal(idle.lag, null);
   assert.equal(idle.countedHz, null);
+  assert.deepEqual(idle.moving, { ticks: 0, gapMs: null, hz: null });
   assert.match(report(idle), /\| Display frames \| 0 \|/);
 });
 
@@ -69,4 +93,6 @@ test("the report is a Markdown table a baseline doc can paste", () => {
   assert.match(text, /\| Interpolation lag p50, moving \| 16\.8 ms \(1 samples\) \|/);
   assert.match(text, /\| 25-34 \| 1 \| 0 \|/);
   assert.match(text, /\| Engine ticks\/s, loop counter \| 57\.5 \|/);
+  assert.match(text, /\| Engine ticks, moving \| 4 \(22\.5 ms, 44\.4 Hz\) \|/);
+  assert.match(text, /\| Engine ticks, still \| 1 \(250 ms, 4 Hz\) \|/);
 });
