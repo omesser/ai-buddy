@@ -490,7 +490,7 @@ test("a hidden sprite drops the asking pulse rather than queueing it", () => {
 test("a quick-message send shows thinking immediately, with no grace", () => {
   const { machine, calls, advance, placement, surface } = machineHarness();
 
-  machine.userTurnStarted();
+  machine.aiTurnStarted();
   assert.equal(surface(), "thinking", "indicator is up the moment the send is accepted");
   assert.deepEqual(calls, ["showThinking"]);
   advance(0);
@@ -506,19 +506,19 @@ test("a quick-message send shows thinking immediately, with no grace", () => {
 test("abandoning a quick-message send clears the thinking it armed", () => {
   const { machine, surface } = machineHarness();
 
-  machine.userTurnStarted();
+  machine.aiTurnStarted();
   assert.equal(surface(), "thinking");
-  machine.userTurnAbandoned();
+  machine.aiTurnAbandoned();
   assert.equal(surface(), null);
 });
 
 test("quick-message thinking holds until reply even when Engine has not raised thinking", () => {
   const { machine, advance, placement, surface } = machineHarness();
 
-  machine.userTurnStarted();
+  machine.aiTurnStarted();
   machine.frame(placement({ thinking: false }));
   advance(THINKING_MIN_HOLD_MS);
-  assert.equal(surface(), "thinking", "min-hold expiry must not clear a pending user turn");
+  assert.equal(surface(), "thinking", "min-hold expiry must not clear a pending AI turn");
   machine.frame(placement({ thinking: false }));
   assert.equal(surface(), "thinking", "held until dialogue or abandon");
 });

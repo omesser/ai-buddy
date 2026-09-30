@@ -425,7 +425,7 @@ function attachQuickMessage(view, id) {
       syncQuick(view);
     },
     send(text) {
-      view.bubbles.userTurnStarted();
+      view.bubbles.aiTurnStarted();
       const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
         .invoke("chat_opening", { instance: id })
@@ -434,14 +434,14 @@ function attachQuickMessage(view, id) {
           // stale picture, and the line still goes if that picture can answer.
           if (view.gateToken === token) paintQuickGate(view, opening);
           if (!machine.available) {
-            view.bubbles.userTurnAbandoned();
+            view.bubbles.aiTurnAbandoned();
             machine.restore(text);
             return;
           }
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {
-          view.bubbles.userTurnAbandoned();
+          view.bubbles.aiTurnAbandoned();
           if (machine.available) machine.restore(text);
           console.error("chat_send", err);
         });
