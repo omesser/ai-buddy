@@ -373,9 +373,9 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // is not a sentence that says so.
             None if !attached.alive => match &attached.missing {
                 Some(command) => format!(
-                    "`{command}` is not installed, so {} is not running and the AI runs on \
-                     static weights. Fidget does not bundle `{command}` - install it{}, or Model \
-                     API above hands the HTTP endpoint back.",
+                    "`{command}` is not installed, so {} is not running and the fidget runs on \
+                     static weights. Fidget does not bundle `{command}` - install it{}, or switch AI \
+                     source to Model API to use the HTTP endpoint below.",
                     attached.name,
                     crate::harness::install_page(command)
                         .map(|(_, url)| format!(" from {url}"))
@@ -401,9 +401,9 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                     attached.failed.as_deref().unwrap_or_default()
                 ),
                 None => format!(
-                    "{} is set but not running, so the AI runs on static weights until it \
-                     answers. It stays the AI brain while it is set; Model API above hands the \
-                     HTTP endpoint back, and takes effect at once.",
+                    "{} is set but not running, so the fidget runs on static weights until it \
+                     answers. It stays the AI brain while it is set; switch AI source to Model API \
+                     to use the HTTP endpoint below — Apply takes effect at once.",
                     attached.name
                 ),
             },
@@ -5074,8 +5074,12 @@ mod tests {
             "an errno is not a sentence, got {line:?}"
         );
         assert!(
-            line.contains("Model API above"),
-            "the line has to name the way back, got {line:?}"
+            line.contains("switch AI source to Model API"),
+            "the line has to name the AI source pick that hands control back, got {line:?}"
+        );
+        assert!(
+            line.contains("HTTP endpoint below"),
+            "the line has to name where Model API reads from, got {line:?}"
         );
     }
 
@@ -5138,9 +5142,9 @@ mod tests {
     /// to the HTTP Completer mid-run is the second mind ADR-0008 refuses.
     ///
     /// #500: what ends the wait is a pick, not a relaunch. The line is where
-    /// the user learns which, so it names Off and never a launch.
+    /// the user learns which, so it names Model API in AI source and never a launch.
     #[test]
-    fn a_dead_harness_says_off_hands_the_http_rows_back() {
+    fn a_dead_harness_names_model_api_as_the_way_back() {
         let dead = crate::harness::HarnessInspect {
             name: "claude".to_string(),
             command: "npx -y @agentclientprotocol/claude-agent-acp".to_string(),
@@ -5153,12 +5157,24 @@ mod tests {
             "nothing waits for one any more, got {line:?}"
         );
         assert!(
-            line.contains("Model API above"),
-            "the line has to name the pick that ends the wait, got {line:?}"
+            line.contains("switch AI source to Model API"),
+            "the line has to name the AI source pick that ends the wait, got {line:?}"
+        );
+        assert!(
+            line.contains("HTTP endpoint below"),
+            "the line has to name where Model API reads from, got {line:?}"
+        );
+        assert!(
+            line.contains("Apply takes effect at once"),
+            "the line has to say Apply is what commits the pick, got {line:?}"
         );
         assert!(
             !line.contains("is the AI brain"),
             "the dead handle is still the AI brain; the HTTP rows are not, got {line:?}"
+        );
+        assert!(
+            !line.contains("hands the HTTP endpoint back"),
+            "no harness-internal jargon, got {line:?}"
         );
     }
 
