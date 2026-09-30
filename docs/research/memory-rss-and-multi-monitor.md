@@ -373,6 +373,60 @@ heaptrack --analyze heaptrack.fidget.*.gz
 Look for top allocators and whether unused Character art (base64 strings) is
 the 47.6 MB gap found on macOS.
 
+### One-Instance cut (#645)
+
+Measured 2026-09-30 on an Ubuntu 24.04 VM, one display at 1920×1200, WebKitGTK
+2.52.6, **release** `fidget`. Same short scenario as the run above: one
+Instance `bmo:One`, every package on `FIDGET_CHARACTERS`, `FIDGET_DIRECTOR=0`,
+settle 5s, sample 30s, interval 2s, `scripts/bench-rss-linux.sh`. The script's
+binary path is `target/debug/fidget`; that file was a copy of the release
+build.
+
+The release baseline is the same size as the debug short run above (median
+858 MB against 823 MB, different machines). A debug binary is not what makes
+one Instance large, so the cut below is release against release.
+
+The installed WebKitGTK 2.52 marks
+`WEBKIT_PROCESS_MODEL_SHARED_SECONDARY_PROCESS` deprecated and without
+effect, so two webviews cannot share a web process.
+
+Chat and Settings are not built at launch: the fourth process in the baseline
+was the taskbar anchor, a `WebviewWindow` of the overlay page whose only job
+is a panel button. Linux now builds that button as a GTK window with no
+webview. Windows still uses a WebView2 window for the same button; this run
+did not measure it.
+
+| | Processes | Total RSS min / median / max |
+|---|---|---|
+| Before, anchor is a webview | 4 | 857 / **858** / 903 MB |
+| After, anchor is a GTK window | 3 | 584 / **585** / 613 MB |
+
+Per process, RSS median and VmHWM:
+
+| | fidget | Network | Web process | Web process |
+|---|---|---|---|---|
+| Before | 243 / 247 MB | 48 / 48 MB | 243 / 244 MB | 323 / 369 MB |
+| After | 218 / 222 MB | 48 / 48 MB | 319 / 361 MB | — |
+
+The script sums RSS, and WebKit's libraries are mapped in every process, so
+the sum counts those pages more than once. `Pss` and private pages from
+`smaps_rollup`, summed over the same pids while the RSS series sat on its
+median: about **501 MB PSS / 350 MB private** before, **381 MB PSS / 285 MB
+private** after. The bench's −273 MB is the script's number. The proportional
+drop is about 120 MB, and the private drop is about 65 MB.
+
+Focusing the anchor opened Settings and a second web process. The idle bench
+stayed at three. The button asks to be parked at (−32000, −32000); this
+window manager left the 1×1 on the display instead (`anchor: 1x1 at …` in
+the log). It is undecorated and does not take a web process.
+
+Loading only `bmo` (`FIDGET_CHARACTERS` pointed at that one package), same
+after binary and same script, did not come out lighter: total RSS median
+**602 MB** (min 559, max 603) against 585 with all eight. VmHWM moved from
+222 MB to 201 MB in `fidget` and from 361 MB to 354 MB in the web process.
+That is not a second web process, and the preload is what a Character switch
+draws from, so it stayed.
+
 ---
 
 ## Windows

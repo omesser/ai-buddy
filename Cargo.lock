@@ -1245,6 +1245,7 @@ dependencies = [
  "fidget-mcp-server",
  "file-rotate",
  "futures-io",
+ "gdk-pixbuf",
  "getrandom 0.4.3",
  "gtk",
  "image",
