@@ -131,7 +131,9 @@ test("fixture Harness with slow initialize shows starting state", { skip: !chrom
   assert.equal(result.dataInitializing, "true", "data-initializing attribute set to true");
   assert.match(result.title, /Initializing Hermes/, "title shows initializing");
   assert.match(result.lede, /starting up/, "lede mentions starting up");
-  assert.match(result.lede, /12[–-]18 seconds/, "lede mentions download time");
+  assert.match(result.lede, /download/i, "lede mentions first-run download");
+  assert.match(result.lede, /can take a while/i, "lede does not promise a fixed duration");
+  assert.doesNotMatch(result.lede, /\d+\s*[–-]\s*\d+\s*seconds/i, "no fixed second range");
   assert.match(result.lede, /when the Harness answers/, "lede clarifies when ready");
   assert.equal(result.composerPlaceholder, "Starting Hermes…", "composer shows starting placeholder");
   assert.equal(result.composerDisabled, true, "composer is disabled during init");
