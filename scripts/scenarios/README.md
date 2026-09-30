@@ -40,6 +40,11 @@ once. The landing's copy and the capture are unit-tested, not checked here.
 The menu bar icon takes one real click; Chat… and Codex go through AXPress,
 with a click at the control's centre only if AXPress is refused.
 
+`hero-gif.sh` takes the same two binaries and records the display for 20 s
+while you throw, perch and double-click Buddy Bot for the README hero GIF. Its
+`--crop` pass re-encodes the saved recording to `docs/readme/hero.gif` and
+launches nothing.
+
 ## codex-sign-in-link
 
 `codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,
