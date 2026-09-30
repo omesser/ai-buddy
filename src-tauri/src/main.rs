@@ -4859,10 +4859,7 @@ mod tests {
         );
     }
 
-    /// Both buddies, not the one whose menu it was. The row is about the
-    /// display. A second click finds them already there and does not move them.
-    /// Two displays side by side: a Summon on the right one opens Chat
-    /// there, beside the sprite, rather than centred on the main display.
+    /// A Summon on the right display opens Chat there, beside the sprite.
     #[test]
     fn chat_opens_on_the_display_the_sprite_stands_on() {
         let displays = [
@@ -4889,8 +4886,7 @@ mod tests {
         );
     }
 
-    /// At the right edge Chat flips to the sprite's left, and at the top it
-    /// is pulled down: inside the display either way. No display, no answer.
+    /// Near the right edge Chat flips to the sprite's left; no display, no answer.
     #[test]
     fn chat_stays_inside_the_sprites_display() {
         let display = Rect {
@@ -4910,6 +4906,8 @@ mod tests {
         assert_eq!(chat_origin(feet, &[], CHAT_SIZE), None);
     }
 
+    /// Both buddies, not the one whose menu it was. The row is about the
+    /// display. A second click finds them already there and does not move them.
     #[test]
     fn bring_to_this_display_puts_every_instance_on_the_cursor_monitor() {
         let character = stub_character("BMO");
