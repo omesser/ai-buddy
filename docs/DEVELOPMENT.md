@@ -163,7 +163,7 @@ For multiple instances, start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` 
 
 Search paths, in order:
 
-1. `~/Library/Application Support/fidget/characters/`
+1. The user path. Today `search_paths` in `src-tauri/src/package.rs` builds it as `$HOME/Library/Application Support/fidget/characters/` on macOS and Linux alike, and leaves it unset on Windows. [#1189](https://github.com/omesser/fidget/issues/1189) moves it to the per-platform data directory (`dirs::data_dir()`, where `settings.json` lives).
 2. Shipped characters (copied from `characters/` at build time)
 
 `FIDGET_CHARACTERS=/path/to/chars` overrides them (colon-separated).
@@ -176,18 +176,15 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 
 #### Create a character
 
-1. Copy a shipped package into the first of the [search paths](#character-packages), under the folder name you want to start it by. A `.zip` of the same files works too, and `FIDGET_CHARACTERS` points Fidget at another directory instead:
+1. Copy a shipped package into a directory of your own, under the folder name you want to start it by, and point `FIDGET_CHARACTERS` at that directory. A `.zip` of the same files works too:
 
    ```sh
-   mkdir -p ~/Library/Application\ Support/fidget/characters
-   cp -R characters/buddy-bot ~/Library/Application\ Support/fidget/characters/blip
+   mkdir -p ~/fidget-characters
+   cp -R characters/buddy-bot ~/fidget-characters/blip
+   export FIDGET_CHARACTERS=~/fidget-characters
    ```
 
-   `search_paths` in `src-tauri/src/package.rs` builds the user path from `$HOME` with no per-platform variant:
-
-   - **macOS:** `~/Library/Application Support/fidget/characters/`.
-   - **Linux:** the same literal path under `$HOME`, so the commands above work unchanged.
-   - **Windows:** `HOME` is usually unset, which leaves no user path. Set `FIDGET_CHARACTERS` to the directory that holds your package. It replaces every search path, so a list separated by `;` must also name the shipped `characters/` directory if you want those characters too.
+   `FIDGET_CHARACTERS` replaces every search path, so a list separated by `:` (`;` on Windows) must also name the shipped `characters/` directory if you want those characters too. On macOS and Linux the user [search path](#character-packages) works without the variable; [#1189](https://github.com/omesser/fidget/issues/1189) settles where it lands per platform.
 
 2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
 3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and delete `[source]` or rewrite it for your art.
