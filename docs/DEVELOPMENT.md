@@ -183,6 +183,12 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
    cp -R characters/buddy-bot ~/Library/Application\ Support/fidget/characters/blip
    ```
 
+   `search_paths` in `src-tauri/src/package.rs` builds the user path from `$HOME` with no per-platform variant:
+
+   - **macOS:** `~/Library/Application Support/fidget/characters/`.
+   - **Linux:** the same literal path under `$HOME`, so the commands above work unchanged.
+   - **Windows:** `HOME` is usually unset, which leaves no user path. Set `FIDGET_CHARACTERS` to the directory that holds your package. It replaces every search path, so a list separated by `;` must also name the shipped `characters/` directory if you want those characters too.
+
 2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
 3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and rewrite `[source]` for your art.
 4. Rewrite `personality.txt`, as [Writing a personality](#writing-a-personality) describes.
