@@ -391,6 +391,12 @@ enum ProbeOutcome {
 /// if the binary is not on PATH, Unhealthy if it exits nonzero, times out, or
 /// produces no output, and Healthy otherwise. Runs on the preflight thread.
 fn probe_launcher(launch: &Launch) -> ProbeOutcome {
+    probe_launcher_within(launch, PROBE_TIMEOUT)
+}
+
+/// `probe_launcher` with the timeout as a parameter, so a test need not wait out
+/// the production one.
+fn probe_launcher_within(launch: &Launch, timeout: Duration) -> ProbeOutcome {
     let mut command = Command::new(&launch.argv[0]);
     command
         .arg(launch.version_flag())
@@ -417,7 +423,7 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
         let _ = tx.send(child.wait_with_output());
     });
 
-    match rx.recv_timeout(PROBE_TIMEOUT) {
+    match rx.recv_timeout(timeout) {
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -462,7 +468,7 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
                 "`{} {}` timed out after {:.1}s",
                 launch.argv[0],
                 launch.version_flag(),
-                PROBE_TIMEOUT.as_secs_f32()
+                timeout.as_secs_f32()
             ))
         }
     }
@@ -6736,7 +6742,7 @@ mod tests {
         let script = {
             use std::os::unix::fs::PermissionsExt;
             let path = dir.join("slow-launcher.sh");
-            std::fs::write(&path, "#!/bin/sh\nsleep 10\n").unwrap();
+            std::fs::write(&path, "#!/bin/sh\nsleep 2\n").unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
             path
         };
@@ -6744,7 +6750,9 @@ mod tests {
         #[cfg(windows)]
         let script = {
             let path = dir.join("slow-launcher.bat");
-            std::fs::write(&path, "@echo off\ntimeout /t 10 /nobreak >nul\n").unwrap();
+            // Not `timeout`: CI's PATH finds GNU coreutils' first, and Windows'
+            // own exits at once when stdin is redirected, as the probe's is.
+            std::fs::write(&path, "@echo off\nping -n 3 127.0.0.1 >nul\n").unwrap();
             path
         };
 
@@ -6752,9 +6760,9 @@ mod tests {
             name: "timeout-fixture".into(),
             argv: vec![script.to_string_lossy().to_string()],
         };
-        match probe_launcher(&launch) {
+        match probe_launcher_within(&launch, Duration::from_millis(100)) {
             ProbeOutcome::Unhealthy(why) => {
-                assert!(why.contains("timed out"), "got {why}");
+                assert!(why.contains("timed out after 0.1s"), "got {why}");
             }
             other => panic!("expected Unhealthy from timeout, got {other:?}"),
         }
