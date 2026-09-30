@@ -3277,6 +3277,10 @@ fn load_all_characters(
             Err(_) => continue,
         };
         if let Ok(character) = fidget_core::character::load(&files) {
+            // Earlier directories win, so a package the user added is the one a switch loads.
+            if cache.contains_key(&character.name) {
+                continue;
+            }
             art.insert(
                 character.name.clone(),
                 CharacterArt {
