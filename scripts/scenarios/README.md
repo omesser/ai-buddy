@@ -35,8 +35,8 @@ sideways.
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
 the menu bar icon's Chat… row, checks that the landing names the launcher and
 the signal with the command drawn as code, then presses Codex and checks that
-the Harness launches again at once. Both presses go through the Accessibility
-API.
+the Harness launches again at once. Both presses go through AXPress, with a
+click at the control's centre only if AXPress is refused.
 
 ## codex-sign-in-link
 
