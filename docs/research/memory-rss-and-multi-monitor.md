@@ -5,6 +5,9 @@ Linux (method only), and Windows (method only). Each platform has different
 overlay toolkits and process architectures, so numbers are not comparable across
 operating systems.
 
+A later Linux run took the webview off the panel anchor. That measurement is
+`memory-rss-anchor-webview.md`. The numbers below are this investigation's.
+
 ## Summary of macOS findings
 
 A two-display, one-Instance character peaks at **583 MB** of physical footprint

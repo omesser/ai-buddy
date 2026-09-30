@@ -3594,12 +3594,12 @@ fn anchor_position_locked(flags: u32, nomove: u32) -> bool {
 }
 
 /// The taskbar/panel anchor on Windows and Linux, matching the macOS Dock.
-/// Clicking it opens Settings. Main thread only: builds a window and
-/// registers event handlers.
+/// Clicking it opens Settings. No webview: the button never draws a page,
+/// and a document here would be a second renderer process. Main thread only.
 #[cfg(not(target_os = "macos"))]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
-    let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
+    let window = tauri::window::WindowBuilder::new(app, "anchor")
         .title("Fidget")
         .inner_size(1.0, 1.0)
         .resizable(false)

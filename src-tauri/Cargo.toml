@@ -14,7 +14,9 @@ path = "src/main.rs"
 tauri-build = {version = "2", features = []}
 
 [dependencies]
-tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
+# `unstable` is WindowBuilder: a window with no webview. The panel anchor is
+# that window. The feature adds no crates; it only makes the builder public.
+tauri = {version = "2", features = ["macos-private-api", "tray-icon", "unstable"]}
 # Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
 tauri-plugin-updater = "2"
 fidget-core = {path = "../crates/core"}
