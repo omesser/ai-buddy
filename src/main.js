@@ -441,10 +441,8 @@ function attachQuickMessage(view, id) {
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {
-          if (machine.available) {
-            view.bubbles.userTurnAbandoned();
-            machine.restore(text);
-          }
+          view.bubbles.userTurnAbandoned();
+          if (machine.available) machine.restore(text);
           console.error("chat_send", err);
         });
     },

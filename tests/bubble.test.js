@@ -512,6 +512,17 @@ test("abandoning a quick-message send clears the thinking it armed", () => {
   assert.equal(surface(), null);
 });
 
+test("quick-message thinking holds until reply even when Engine has not raised thinking", () => {
+  const { machine, advance, placement, surface } = machineHarness();
+
+  machine.userTurnStarted();
+  machine.frame(placement({ thinking: false }));
+  advance(THINKING_MIN_HOLD_MS);
+  assert.equal(surface(), "thinking", "min-hold expiry must not clear a pending user turn");
+  machine.frame(placement({ thinking: false }));
+  assert.equal(surface(), "thinking", "held until dialogue or abandon");
+});
+
 // --- #178: one overlay owns the bubble; the rest draw the art only. ---
 // The Shell nulls `dialogue`, `thinking` and `cue` on every overlay but the
 // owner's, so the placements below are what a losing overlay is really handed.
