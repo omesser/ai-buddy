@@ -222,6 +222,14 @@ uv venv --python 3.11 && uv pip install pillow
 
 The importer writes the frames and a `character.manifest` to the `-o` directory, and `--force` replaces one that exists. It then runs `character::load` on the output and fails if the loader rejects it. It prints the pack's license and warns when none is declared.
 
+The result is a naive but valid Character Package. It loads and plays, but it is not yet the character. Tune it by hand:
+
+- The `[behaviors]` weights and triggers, which start as a copy of BMO's.
+- The animation and action names, so each reads as what the art shows.
+- `personality.txt`, the character prompt. The importer writes none; see [Writing a personality](#writing-a-personality).
+
+A coding agent can make these edits in a few prompts. See [Character Packages](#character-packages) for the manifest.
+
 ### Pets Codex
 
 ```sh
@@ -229,12 +237,7 @@ npx petscodex install labubu
 uv run scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
 ```
 
-`[source]` is filled from the pet's `pet.json`, with `url` pointing at its page. Hand edits after import:
-
-- Write a `personality.txt`; none is written.
-- Check every animation reads as its name, and that walk heads right. A pet whose art strays from petdex's row semantics is recut with `--walk-row`, `--mirror-walk`, or `--map`.
-
-See [Character Packages](#character-packages) for the manifest.
+`[source]` is filled from the pet's `pet.json`, with `url` pointing at its page. Also check every animation reads as its name, and that walk heads right. A pet whose art strays from petdex's row semantics is recut with `--walk-row`, `--mirror-walk`, or `--map`.
 
 ### Shimeji Shop
 
@@ -244,14 +247,11 @@ Download the pack's `.zip` from its gallery page. The importer wants per-pose PN
 uv run scripts/import-pet.py ~/Downloads/my-pet.zip --format shimeji -o characters/my-pet
 ```
 
-Every frame is mirrored to head right, and the manifest's leading comment records which Shimeji action fed each animation. Hand edits after import:
+Every frame is mirrored to head right, and the manifest's leading comment records which Shimeji action fed each animation. Also edit:
 
-- Write a `personality.txt`; none is written.
 - `name` is the zip's file name. Set the display name.
 - `[source]` has no `url` and a generic `art` line. Add the gallery page's URL and say what the art is.
 - `talk` falls back to the stand pose when the pack has no Wave, Greet, or Hello action. A bare pack has none of them.
-
-See [Character Packages](#character-packages) for the manifest.
 
 ## Linux Dependencies
 
