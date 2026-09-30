@@ -6744,7 +6744,9 @@ mod tests {
         #[cfg(windows)]
         let script = {
             let path = dir.join("slow-launcher.bat");
-            std::fs::write(&path, "@echo off\ntimeout /t 10 /nobreak >nul\n").unwrap();
+            // Not `timeout`: CI's PATH finds GNU coreutils' first, and Windows'
+            // own exits at once when stdin is redirected, as the probe's is.
+            std::fs::write(&path, "@echo off\nping -n 11 127.0.0.1 >nul\n").unwrap();
             path
         };
 
