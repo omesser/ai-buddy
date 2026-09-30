@@ -15,9 +15,6 @@ tauri-build = {version = "2", features = []}
 
 [dependencies]
 tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
-# Launch at login, when there is a bundled app to start. The settings row
-# is frozen until then: a Launch Agent on `cargo run` is not the product.
-tauri-plugin-autostart = "2"
 # Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
 tauri-plugin-updater = "2"
 fidget-core = {path = "../crates/core"}
@@ -84,7 +81,7 @@ libc = "0.2"
 # X11 for Linux: window list, pointer state, EWMH properties, idle time.
 # x11rb is pure Rust, maintained, and wraps the protocol at a level that
 # gives both raw access and type-safe helpers.
-x11rb = {version = "0.14", features = ["allow-unsafe-code", "randr", "xfixes", "shape", "dpms", "screensaver", "xinput"]}
+x11rb = {version = "0.14", features = ["allow-unsafe-code", "shape", "dpms", "screensaver", "xinput"]}
 # Raw window handle for getting the X11 window id from Tauri.
 raw-window-handle = "0.6"
 # Cast atom arrays to bytes for X11 property changes.
