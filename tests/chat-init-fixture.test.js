@@ -126,7 +126,7 @@ function paint(open) {
 
 test("fixture Harness with slow initialize shows starting state", { skip: !chrome }, () => {
   const result = paint(opening({ initializing: true }));
-  
+
   assert.equal(result.landingHidden, false, "landing is visible");
   assert.equal(result.dataInitializing, "true", "data-initializing attribute set to true");
   assert.match(result.title, /Initializing Hermes/, "title shows initializing");
@@ -141,7 +141,7 @@ test("fixture Harness transitions from initializing to ready", { skip: !chrome }
   const initializing = paint(opening({ initializing: true }));
   assert.equal(initializing.dataInitializing, "true", "starts with data-initializing true");
   assert.match(initializing.title, /Initializing/, "shows initializing title");
-  
+
   const ready = paint(opening({ alive: true, initializing: false }));
   assert.equal(ready.landingHidden, true, "landing hidden when ready");
   assert.equal(ready.composerDisabled, false, "composer enabled when ready");
@@ -151,10 +151,10 @@ test("fixture Harness transitions from initializing to failed", { skip: !chrome 
   const initializing = paint(opening({ initializing: true }));
   assert.equal(initializing.dataInitializing, "true", "starts with data-initializing true");
   assert.match(initializing.title, /Initializing/, "shows initializing title");
-  
-  const failed = paint(opening({ 
-    initializing: false, 
-    failed: "hermes exited before initialize, exit status: 1" 
+
+  const failed = paint(opening({
+    initializing: false,
+    failed: "hermes exited before initialize, exit status: 1"
   }));
   assert.equal(failed.landingHidden, false, "landing still visible when failed");
   assert.equal(failed.dataInitializing, "false", "data-initializing false after failure");
