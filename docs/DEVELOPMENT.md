@@ -232,6 +232,8 @@ A coding agent can make these edits in a few prompts. See [Character Packages](#
 
 ### Pets Codex
 
+A petdex pack shares the Pets Codex sheet layout and imports the same way, with `--format petscodex`.
+
 ```sh
 npx petscodex install labubu
 uv run scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
