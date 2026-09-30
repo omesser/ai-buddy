@@ -12,9 +12,9 @@
 
 # Fidget keeps you company while you vibe-code, and pitches in when you ask
 
-A little character that lives on your desktop. Pick it up, throw it, or let it nap.
+An embodied AI that lives on your desktop. Pick it up, throw it around, let it nap, talk to it, or ask it to do anything that an AI harness can do (which is a lot)! It's a virtual manifestation of your favorite AI model and harness, with all of its capabilities.
 
-Each one has a personality and a life of its own. Put an AI agent behind it and it colors your desktop with its character.
+Each character has a personality and a life of its own.
 
 ![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
