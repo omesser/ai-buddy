@@ -6,13 +6,27 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
+bin="target/debug/fidget"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --bin)
+      bin="$2"
+      shift 2
+      ;;
+    --) shift && break ;;
+    --*)
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+    *) break ;;
+  esac
+done
 scenario="${1:-idle}"
 duration="${2:-10}"
-bin="target/debug/fidget"
 
 usage() {
   cat << EOF
-Usage: $0 [SCENARIO] [DURATION]
+Usage: $0 [--bin PATH] [SCENARIO] [DURATION]
 
 Scenarios:
   idle       BMO perched, cursor away (expect ~0 rebuilds/sec)

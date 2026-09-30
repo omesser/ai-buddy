@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sample a running fidget's resident set, Linux only; WebKitGTK helpers are its
 # children. Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N]
-# [--interval N] [--out FILE] [--research]. Env reaches the app; set HOME to scratch.
+# [--interval N] [--out FILE] [--bin PATH] [--research]. Env reaches the app; set HOME to scratch.
 
 # RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
 # Compare scenarios on VmHWM and read the RSS series for shape, and record the
@@ -22,6 +22,7 @@ while [ $# -gt 0 ]; do
     --seconds) seconds="$2" && shift 2 ;;
     --interval) interval="$2" && shift 2 ;;
     --out) out="$2" && shift 2 ;;
+    --bin) bin="$2" && shift 2 ;;
     --research) settle=300 && seconds=300 && interval=5 && shift ;;
     *) echo "unknown argument: $1" >&2 && exit 2 ;;
   esac

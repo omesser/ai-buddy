@@ -13,6 +13,8 @@
 #   counter says whether the per-tick `frame:` print slows the Engine.
 # Every scenario launches fidget on the live desktop, so it refuses to run
 # unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to it.
+# The launch path is the same on Linux when a display exists. The machine
+# header reads Darwin or Linux so a cloud VM can run the same scenarios.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -102,6 +104,14 @@ now_ms() {
   perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'
 }
 
+cpu_count() {
+  if [ "$(uname -s)" = Darwin ]; then
+    sysctl -n hw.ncpu
+  else
+    nproc
+  fi
+}
+
 launch_app() {
   local log=$1 frames=$2 characters=$3
   # Scratch HOME so the bench does not write the user's settings. The API key
@@ -156,7 +166,7 @@ wait_walk() {
 run() {
   local name=$1 log="$out/$1.log"
   if [ "$name" = load ]; then
-    for _ in $(seq 1 "$(sysctl -n hw.ncpu)"); do
+    for _ in $(seq 1 "$(cpu_count)"); do
       yes > /dev/null &
       BURNERS+=($!)
     done
@@ -212,11 +222,20 @@ run() {
   fi
 }
 
+if [ "$(uname -s)" = Darwin ]; then
+  machine=$(sysctl -n hw.model)
+  os="$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
+  refresh_hz=$(system_profiler SPDisplaysDataType 2> /dev/null | sed -n 's/.*@ \([0-9.]*\)Hz.*/\1/p' | tr '\n' ' ')
+else
+  machine=$(uname -m)
+  os=$(awk -F= '/^PRETTY_NAME=/ { gsub(/"/, "", $2); print $2; exit }' /etc/os-release)
+  refresh_hz=$(xrandr --query 2> /dev/null | awk '/\*/ { for (i = 1; i <= NF; i++) if ($i ~ /\*/) { gsub(/[^0-9.]/, "", $i); print $i; exit } }')
+fi
 cat << EOF
-machine=$(sysctl -n hw.model)
-os=$(sw_vers -productVersion) ($(sw_vers -buildVersion))
-refresh_hz=$(system_profiler SPDisplaysDataType 2> /dev/null | sed -n 's/.*@ \([0-9.]*\)Hz.*/\1/p' | tr '\n' ' ')
-cpus=$(sysctl -n hw.ncpu)
+machine=$machine
+os=$os
+refresh_hz=$refresh_hz
+cpus=$(cpu_count)
 bin=$bin
 git_rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)
 seconds=$seconds
