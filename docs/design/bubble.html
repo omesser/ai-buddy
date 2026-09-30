@@ -370,34 +370,15 @@
     line-height: 1.55;
     pointer-events: none;
     opacity: 0;
-    transform-origin: center bottom;
-    transform: translateY(8px) scale(0.94);
-    transition: opacity 380ms cubic-bezier(0.16, 1, 0.3, 1), transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 180ms ease;
     color-scheme: dark;
   }
   .quick-message.visible {
     opacity: 1;
     pointer-events: auto;
-    animation: quick-message-pop 380ms linear both;
   }
   .quick-message::before,
   .quick-message::after { content: none; }
-  @keyframes quick-message-pop {
-    0% {
-      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-      opacity: 0;
-      transform: translateY(8px) scale(0.94);
-    }
-    45% {
-      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-      opacity: 1;
-      transform: translateY(-2px) scale(1.02);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
   .quick-message-row {
     display: inline-grid;
     flex: 1 1 auto;
@@ -466,7 +447,6 @@
   @media (prefers-reduced-motion: reduce) {
     .dots span { animation: none; opacity: .75; }
     .quick-message, .quick-message.visible {
-      animation-duration: 1ms !important;
       transition-duration: 1ms !important;
     }
   }
@@ -522,11 +502,10 @@
     says <b>talk to me</b>. Send is a 28px disc in the accent,
     <code>#5cc9b5</code>, holding a dark triangle, <code>#14171e</code> — not
     a link. The caret is the accent. Click a field and it shows. The pop and
-    the dismiss both ease out over 380ms, through a slight overshoot, then
-    rest. Replay them below; the three grounds are the same question the
-    speech bubble just answered.</p>
+    the dismiss both fade over 180ms. Replay them below; the three grounds
+    are the same question the speech bubble just answered.</p>
 
-  <p>Hover is not a link. After 2.5s on the Character the pill appears and
+  <p>Hover is not a link. After 1.5s on the Character the pill appears and
     the field takes focus. Leaving during that wait cancels it. Leaving once
     the pill is up does not. It dismisses on a click outside, a drag of the
     pet of at least 4px, or a double-click, and that double-click is Summon.
@@ -540,7 +519,7 @@
     dwell, the cancel, and the three ways out can be tried.</p>
 
   <div class="qm-bar">
-    <button type="button" id="qm-replay">Replay the 380ms pop</button>
+    <button type="button" id="qm-replay">Replay the 180ms fade</button>
     <button type="button" id="qm-hide">Dismiss</button>
     <button type="button" id="qm-show">Show</button>
   </div>

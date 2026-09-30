@@ -49,7 +49,7 @@ body {
 
   pointer-events: none;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 180ms ease;
   word-wrap: break-word;
   /* Over the sprite, for a bubble clamped onto the head at the ceiling. main.js
      writes a z-index per Instance every tick; this is the fallback for a
@@ -195,7 +195,7 @@ body {
 
 /* After thinking-bounce so the expression page's bubble slice — which treats
    `background: transparent` as overlay layout — stays speech and thinking.
-   Tails stay on Speech. The pop eases out through 1.02, then rests at 1. */
+   Tails stay on Speech. Opacity only: a scale keyframe fought the exit fade. */
 .bubble.quick-message {
   display: flex;
   align-items: center;
@@ -206,40 +206,16 @@ body {
   min-width: 200px;
   padding: 8px 8px 8px 13px;
   pointer-events: none;
-  transform-origin: center bottom;
-  transform: translateY(8px) scale(0.94);
-  transition: opacity 380ms cubic-bezier(0.16, 1, 0.3, 1), transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bubble.quick-message.inverted {
-  transform-origin: center top;
+  transition: opacity 180ms ease;
 }
 
 .bubble.quick-message.visible {
   pointer-events: auto;
-  animation: quick-message-pop 380ms linear both;
 }
 
 .bubble.quick-message::before,
 .bubble.quick-message::after {
   content: none;
-}
-
-@keyframes quick-message-pop {
-  0% {
-    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    opacity: 0;
-    transform: translateY(8px) scale(0.94);
-  }
-  45% {
-    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    opacity: 1;
-    transform: translateY(-2px) scale(1.02);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .quick-message-row {
@@ -567,20 +543,13 @@ body {
   .cue-wedge,
   .cue-wedge-edge,
   .cue-dash,
-  .cue-puff,
-  .bubble.quick-message,
-  .bubble.quick-message.visible {
+  .cue-puff {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }
 
-  .bubble.quick-message.visible {
-    opacity: 1;
-    transform: none;
-  }
-
-  .bubble.quick-message,
-  .bubble.quick-message.visible {
+  .bubble,
+  .bubble.quick-message {
     transition-duration: 1ms !important;
   }
 }

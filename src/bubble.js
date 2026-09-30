@@ -78,6 +78,9 @@ export function createBubbleMachine(io) {
   let minHoldTimer = null;
   let thinkingShown = false;
   let thinking = false;
+  // Latched when a quick-message send starts the AI turn; cleared by dialogue, abandon, or hide-all.
+  // Without it, frame() would clear thinking before the Engine raises the flag.
+  let aiTurnPending = false;
 
   function hideThinkingNow() {
     if (graceTimer !== null) {
@@ -124,6 +127,7 @@ export function createBubbleMachine(io) {
       // A hidden sprite speaks to nobody; the pulse is consumed, not queued,
       // or the line would pop up whenever the sprite next fades in.
       if ((dialogue || ask) && placement.visible) {
+        aiTurnPending = false;
         hideThinkingNow();
         if (speechTimer !== null) cancel(speechTimer);
         speechShowing = true;
@@ -139,7 +143,7 @@ export function createBubbleMachine(io) {
         }, ask ? MAX_DURATION_MS : bubbleDuration(dialogue));
       }
 
-      thinking = Boolean(placement.thinking && placement.visible);
+      thinking = Boolean(placement.thinking && placement.visible) || aiTurnPending;
       if (thinking) {
         if (!thinkingShown && graceTimer === null && !speechShowing) {
           armGrace();
@@ -152,8 +156,45 @@ export function createBubbleMachine(io) {
       }
     },
 
+    // Quick-message accepted a send: the AI turn starts; show thinking now, no grace.
+    // Cleared by dialogue/ask, aiTurnAbandoned, or hideAllNow — not by Engine thinking:false.
+    aiTurnStarted() {
+      aiTurnPending = true;
+      thinking = true;
+      if (speechTimer !== null) {
+        cancel(speechTimer);
+        speechTimer = null;
+      }
+      if (speechShowing) {
+        speechShowing = false;
+        io.hideSpeech();
+      }
+      if (graceTimer !== null) {
+        cancel(graceTimer);
+        graceTimer = null;
+      }
+      if (!thinkingShown) {
+        thinkingShown = true;
+        io.showThinking();
+      }
+      if (minHoldTimer === null) {
+        minHoldTimer = schedule(() => {
+          minHoldTimer = null;
+          if (!thinking) hideThinkingNow();
+        }, THINKING_MIN_HOLD_MS);
+      }
+    },
+
+    // chat_send refused or the gate froze: abandon the AI turn we armed.
+    aiTurnAbandoned() {
+      aiTurnPending = false;
+      thinking = false;
+      hideThinkingNow();
+    },
+
     // The hide hotkey's instant answer: nothing may stay or come back.
     hideAllNow() {
+      aiTurnPending = false;
       hideThinkingNow();
       if (speechTimer !== null) {
         cancel(speechTimer);
