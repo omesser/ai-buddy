@@ -1,11 +1,11 @@
 <!doctype html>
 <!--
   Demo for omesser/fidget#1161: Keep Chat clear and responsive while a Harness initializes.
-  
+
   Shows the landing state during Harness initialization with:
   - Updated copy mentioning first-run download time
   - Pulsing progress indicator showing ongoing initialization
-  
+
   Self-contained demo. Open directly in a browser to see the initializing state.
 -->
 <html lang="en">
@@ -25,9 +25,9 @@
     --chat-radius-badge: 5px;
     --chat-sans: system-ui, -apple-system, sans-serif;
   }
-  
+
   * { box-sizing: border-box; }
-  
+
   body {
     margin: 0;
     height: 100vh;
@@ -38,7 +38,7 @@
     font-family: var(--chat-sans);
     font-size: 14px;
   }
-  
+
   .window {
     width: 420px;
     height: 560px;
@@ -49,18 +49,18 @@
     border-radius: 12px;
     overflow: hidden;
   }
-  
+
   .tb {
     flex: 0 0 auto;
     padding: 13px 18px 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   }
-  
+
   .name {
     font-weight: 800;
     font-size: 14.5px;
   }
-  
+
   .of {
     padding: 1px 6px;
     margin-left: 7px;
@@ -70,7 +70,7 @@
     font-size: 11px;
     color: #7c8496;
   }
-  
+
   .log {
     flex: 1 1 auto;
     overflow-y: auto;
@@ -79,12 +79,12 @@
     justify-content: center;
     padding: 18px;
   }
-  
+
   .empty {
     display: grid;
     gap: 11px;
   }
-  
+
   .landing {
     display: flex;
     flex-direction: column;
@@ -93,13 +93,13 @@
     max-width: 380px;
     padding: 20px 16px;
   }
-  
+
   .landing h2 {
     margin: 0 0 8px 0;
     font-size: 16px;
     font-weight: 800;
   }
-  
+
   .landing[data-initializing="true"] h2::after {
     content: "";
     display: inline-block;
@@ -110,7 +110,7 @@
     background: var(--chat-accent);
     animation: pulse 1.5s ease-in-out infinite;
   }
-  
+
   @keyframes pulse {
     0%, 100% {
       opacity: 0.3;
@@ -121,7 +121,7 @@
       transform: scale(1);
     }
   }
-  
+
   .landing p {
     margin: 0;
     font-size: 12.8px;
@@ -129,7 +129,7 @@
     color: var(--chat-ink-2);
     max-width: 36ch;
   }
-  
+
   .composer {
     flex: 0 0 auto;
     display: flex;
@@ -137,7 +137,7 @@
     padding: 12px 16px 16px;
     border-top: 1px solid rgba(255, 255, 255, 0.07);
   }
-  
+
   .composer textarea {
     flex: 1;
     min-width: 0;
@@ -152,11 +152,11 @@
     resize: none;
     opacity: 0.5;
   }
-  
+
   .composer textarea::placeholder {
     color: #6c7488;
   }
-  
+
   .composer button {
     padding: 0 16px;
     border: 0;
@@ -167,7 +167,7 @@
     font-size: 13px;
     font-weight: 800;
   }
-  
+
   .bar {
     flex: 0 0 auto;
     padding: 7px 16px 9px;
@@ -187,7 +187,7 @@
     <span class="name">Atlas</span>
     <span class="of">codex</span>
   </div>
-  
+
   <div class="log">
     <div class="empty">
       <div class="landing" data-initializing="true">
@@ -196,12 +196,12 @@
       </div>
     </div>
   </div>
-  
+
   <div class="composer">
     <textarea rows="1" placeholder="Starting Codex…" disabled></textarea>
     <button disabled>Send</button>
   </div>
-  
+
   <div class="bar">
     Idle
   </div>
