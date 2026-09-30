@@ -2192,6 +2192,7 @@ fn open_link(url: String) -> Result<(), String> {
 #[tauri::command]
 async fn select_harness(
     harness: String,
+    instance: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, SettingsState>,
 ) -> Result<String, String> {
@@ -2199,15 +2200,29 @@ async fn select_harness(
     // on the main thread. The state handle is cloned into the worker.
     let settings = std::sync::Arc::clone(&state.settings);
     let session = settings_session(&app, &state);
+    let key = session_key(&instance, &state);
     tauri::async_runtime::spawn_blocking(move || {
-        select_harness_blocking(harness, session, settings)
+        select_harness_blocking(harness, key, session, settings)
     })
     .await
     .map_err(|why| format!("settings: {why}"))?
 }
 
+/// The session slot a wake from this Instance loads, or `None` for a row
+/// Settings no longer has. A pick with no row still switches the Harness.
+fn session_key(instance: &str, state: &SettingsState) -> Option<harness::SessionKey> {
+    let rows = state.instances.lock().ok()?;
+    let row = rows.iter().find(|row| row.id == instance)?;
+    Some(harness::SessionKey {
+        instance: instance.to_string(),
+        character: row.character.clone(),
+        blank: model::blank(),
+    })
+}
+
 fn select_harness_blocking(
     harness: String,
+    key: Option<harness::SessionKey>,
     session: settings::SettingsSession,
     settings: std::sync::Arc<std::sync::Mutex<settings::Settings>>,
 ) -> Result<String, String> {
@@ -2220,12 +2235,13 @@ fn select_harness_blocking(
     patch.set_text(settings::TextField::Harness, &harness);
     session.apply(patch)?;
     // Apply only retargets a changed row. The same Harness picked again after
-    // its launch failed is the user asking for another try.
+    // its launch failed, or while it waits on a login, is the user asking
+    // for another try (#1200).
     let spawning = settings
         .lock()
         .is_ok_and(|settings| model::director_in_force(settings.director_enabled));
     if let Some(attached) = harness::attached().filter(|_| spawning) {
-        attached.repick();
+        attached.repick(key)?;
     }
     Ok(harness::login_hint(&harness))
 }
@@ -4142,10 +4158,11 @@ mod tests {
 
     fn select_harness_returns_a_future(
         harness: String,
+        instance: String,
         app: tauri::AppHandle,
         state: tauri::State<'_, SettingsState>,
     ) {
-        let fut = select_harness(harness, app, state);
+        let fut = select_harness(harness, instance, app, state);
         fn assert_send<T: Send>(_: &T) {}
         assert_send(&fut);
         let _: &dyn std::future::Future<Output = Result<String, String>> = &fut;
@@ -4154,7 +4171,7 @@ mod tests {
     #[test]
     fn settings_and_harness_commands_leave_the_main_thread() {
         let _ = settings_event_returns_a_future as fn(_, _);
-        let _ = select_harness_returns_a_future as fn(_, _, _);
+        let _ = select_harness_returns_a_future as fn(_, _, _, _);
     }
 
     use fidget_core::character::{

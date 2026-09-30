@@ -574,10 +574,10 @@ impl SavedSlot {
 /// a retarget is a different Character Prompt (ADR-0012). Blank-AI mode joins
 /// them so a shaped session cannot keep answering after the mode switches on.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct SessionKey {
-    instance: String,
-    character: String,
-    blank: bool,
+pub(crate) struct SessionKey {
+    pub(crate) instance: String,
+    pub(crate) character: String,
+    pub(crate) blank: bool,
 }
 
 impl SessionKey {
@@ -904,12 +904,16 @@ impl Session {
     }
 
     /// Connect on the Harness already attached. One that is down, after a
-    /// failed launch or a dead child, is asked again; one that answers stands.
-    pub(crate) fn repick(self: &Arc<Self>) {
+    /// failed launch or a dead child, is asked again. One that is up but not
+    /// signed in opens `key` afresh, so a login run in a terminal is proved
+    /// now and not at the next wake. One that answers stands.
+    pub(crate) fn repick(self: &Arc<Self>, key: Option<SessionKey>) -> Result<(), String> {
+        let _ = key;
         let inspect = self.inspect();
         if !inspect.alive && !inspect.initializing {
             self.spawn_preflight();
         }
+        Ok(())
     }
 
     /// Take the turn lock from the wake in flight by cancelling it, or `None`
@@ -1155,6 +1159,18 @@ impl Session {
         // The device flow can sit for minutes. The gate stays free so another
         // Instance can attach; it is taken again only for the open after.
         wire.authenticate(method_id)?;
+        let key = SessionKey {
+            instance: instance.to_string(),
+            character: character.to_string(),
+            blank,
+        };
+        self.open_after_login(&wire, &key)
+    }
+
+    /// The open that proves a sign-in, after `authenticate` or a terminal
+    /// login. Fresh: a saved `session/load` that returns Ok would clear the
+    /// landing even when nothing changed.
+    fn open_after_login(&self, wire: &Arc<Wire>, key: &SessionKey) -> Result<(), String> {
         let _gate = self.attach_gate.lock().map_err(|_| LOST.to_string())?;
         {
             let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
@@ -1164,14 +1180,7 @@ impl Session {
             // The retry gate would swallow the session/new this click just earned.
             state.auth_tried = None;
         }
-        let key = SessionKey {
-            instance: instance.to_string(),
-            character: character.to_string(),
-            blank,
-        };
-        // A saved `session/load` that returns Ok would clear the landing even
-        // when `authenticate` changed nothing. This click has to open fresh.
-        self.open_session(&wire, &key, true).map(|_| ())
+        self.open_session(wire, key, true).map(|_| ())
     }
 
     fn offered_sign_in(&self) -> Vec<SignIn> {
@@ -5065,6 +5074,48 @@ mod tests {
         session.shutdown();
     }
 
+    /// #1200: an attached Harness that refused `session/new` is alive, so a
+    /// pick of the same preset fell through `repick` and nothing moved. The
+    /// pick now opens the session afresh, and the answer is either proof of a
+    /// terminal login or the refusal again.
+    #[test]
+    fn repicking_an_unauthenticated_harness_rechecks_the_sign_in() {
+        let key = SessionKey {
+            instance: "buddy-1".to_string(),
+            character: "bmo".to_string(),
+            blank: false,
+        };
+        let (fx, session) = Fixture::new("auth");
+        let session = Arc::new(session);
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_authenticated("fake --login"))
+        );
+        assert!(session.inspect().alive);
+        assert_eq!(session.repick(Some(key.clone())), Ok(()));
+        assert_eq!(fx.count("new"), 2, "the pick asked for no session");
+        assert_eq!(fx.count("spawn"), 1, "the pick restarted the child");
+        assert_eq!(
+            fx.count("authenticate"),
+            0,
+            "a pick is not a sign-in button"
+        );
+        assert_eq!(session.inspect().login, None);
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        session.shutdown();
+
+        let (fx, session) = Fixture::new("auth-sign-in-noop");
+        let session = Arc::new(session);
+        assert!(session.complete(&asking("hi")).is_err());
+        assert_eq!(
+            session.repick(Some(key)),
+            Err(not_authenticated("fake --login"))
+        );
+        assert_eq!(fx.count("new"), 2);
+        assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
+        session.shutdown();
+    }
+
     /// A Harness that signs in through a link hands it over mid-`authenticate`,
     /// before any session exists. Chat gets the link and the code in it, and
     /// the user's Open or Decline is what `authenticate` waits on.
@@ -5442,7 +5493,7 @@ mod tests {
         session.spawn_preflight();
         fx.attach_settled();
         assert!(session.inspect().failed.is_some());
-        session.repick();
+        assert_eq!(session.repick(None), Ok(()));
         fx.attach_settled();
         let inspect = session.inspect();
         assert!(inspect.alive, "the re-pick stood behind the backoff");
@@ -5458,7 +5509,7 @@ mod tests {
         let session = Arc::new(session);
         session.spawn_preflight();
         fx.attach_settled();
-        session.repick();
+        assert_eq!(session.repick(None), Ok(()));
         assert!(session.inspect().alive);
         assert_eq!(fx.count("spawn"), 1, "the re-pick restarted a live Harness");
         session.shutdown();
