@@ -14,25 +14,17 @@
 
 A little character that lives on your desktop. Pick it up, throw it, or let it nap.
 
-Talk to it, toss it around, and enjoy the company while your code compiles or that spreadsheet drags on. Each character has a personality and a life of its own. Put an AI agent behind it and it comes to life, and colors your desktop with its character.
-
-It helps, too. Double-click to chat with your agent of choice: Claude Code, Codex, Cursor, or any [harness](#harness-support) that speaks ACP. It can do almost anything on your machine, and answers in speech and motion.
-
-<p align="center">
-  <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
-</p>
+Each one has a personality and a life of its own. Put an AI agent behind it and it colors your desktop with its character.
 
 ![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
+Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget/cues.html)
+
 ## What It Does
 
-- **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue. Works offline with Static weights; optionally connect a model (API key or local) for more variety.
-- **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
-- **Never reads your screen.** Sensing is window metadata, never pixels. See [Computer use](#computer-use).
-
-## See It
-
-Try [Fidget Cues](https://omesser.github.io/fidget/cues.html) — gestures and physics on a draggable sprite in the browser.
+- **Keeps you company.** Eight characters with their own personalities; it walks, naps, and reacts; it works offline with no account.
+- **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
+- **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B, and reads window metadata, [never pixels](#computer-use).
 
 ## Interact
 
