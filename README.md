@@ -160,7 +160,7 @@ Which Harness you attach changes what Fidget can do with it.
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
 | <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. |
-| `antigravity` | `agy_acp_server.par` (`agy_acp_server.exe` on Windows) | First-party, Google's ACP server; `agy` itself has no ACP mode. Fresh and resumed sessions both work, smoked on agy_acp_server 1.2.1 (#604). |
+| <img src="https://cdn.simpleicons.org/google" width="14" alt="" /> `antigravity` | `agy_acp_server.par` (`agy_acp_server.exe` on Windows) | First-party, Google's ACP server; `agy` itself has no ACP mode. Fresh and resumed sessions both work, smoked on agy_acp_server 1.2.1 (#604). |
 | anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. |
 
 Tools each harness keeps under ACP, session and auth behavior, and per-harness setup notes are in [docs/harness.md](./docs/harness.md#harness-support).
