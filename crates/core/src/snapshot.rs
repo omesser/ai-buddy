@@ -2,6 +2,7 @@
 //! carrying its readings into the Engine's terms once per tick. Separate from the
 //! loop in `main.rs` so the two cadences and the conversion test against a fake desktop.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -37,18 +38,20 @@ pub struct SnapshotAssembler<S> {
 
 /// The side thread's wait, and the sample the tick copies.
 struct SidePoll {
-    control: Arc<Mutex<PollControl>>,
-    wake: Arc<Condvar>,
+    state: Arc<PollState>,
     published: Arc<Mutex<Published>>,
     join: Option<thread::JoinHandle<()>>,
 }
 
-struct PollControl {
-    interval: Duration,
+/// `interval` is the condvar's mutex, so a ride's `immediate` flag is stored
+/// while that mutex is held and cannot land between the check and the wait.
+struct PollState {
+    interval: Mutex<Duration>,
     /// A ride just started. The idle wait still has most of its interval left,
     /// and finishing it would be one more slow sample before the sprite moves.
-    immediate: bool,
-    stop: bool,
+    immediate: AtomicBool,
+    stop: AtomicBool,
+    wake: Condvar,
 }
 
 struct Published {
@@ -83,17 +86,17 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     /// desktop sixty times a second.
     pub fn poll_fast(&mut self, ride: bool) {
         if let Some(side) = &self.side {
-            let mut guard = side.control.lock().expect("poll control");
-            guard.interval = if ride {
+            let mut interval = side.state.interval.lock().expect("poll interval");
+            *interval = if ride {
                 RIDE_POLL_INTERVAL
             } else {
                 POLL_INTERVAL
             };
             if ride && !self.fast {
-                guard.immediate = true;
+                side.state.immediate.store(true, Ordering::Release);
             }
-            drop(guard);
-            side.wake.notify_one();
+            drop(interval);
+            side.state.wake.notify_one();
             self.fast = ride;
             return;
         }
@@ -177,31 +180,23 @@ impl<S: WindowSource> SnapshotAssembler<S> {
             geometry,
             generation: 1,
         }));
-        let control = Arc::new(Mutex::new(PollControl {
-            interval: POLL_INTERVAL,
-            immediate: false,
-            stop: false,
-        }));
-        let wake = Arc::new(Condvar::new());
+        let state = Arc::new(PollState {
+            interval: Mutex::new(POLL_INTERVAL),
+            immediate: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            wake: Condvar::new(),
+        });
         let source = Arc::clone(&self.source);
         let published_thread = Arc::clone(&published);
-        let control_thread = Arc::clone(&control);
-        let wake_thread = Arc::clone(&wake);
+        let state_thread = Arc::clone(&state);
         let join = thread::Builder::new()
             .name("window-poll".into())
             .spawn(move || {
-                poll_beside_the_tick(
-                    source,
-                    control_thread,
-                    wake_thread,
-                    published_thread,
-                    deadline,
-                );
+                poll_beside_the_tick(source, state_thread, published_thread, deadline);
             })
             .expect("window-poll thread");
         self.side = Some(SidePoll {
-            control,
-            wake,
+            state,
             published,
             join: Some(join),
         });
@@ -221,10 +216,10 @@ impl<S> Drop for SnapshotAssembler<S> {
             return;
         };
         {
-            let mut guard = side.control.lock().expect("poll control");
-            guard.stop = true;
+            let _interval = side.state.interval.lock().expect("poll interval");
+            side.state.stop.store(true, Ordering::Release);
         }
-        side.wake.notify_one();
+        side.state.wake.notify_one();
         if let Some(join) = side.join {
             let _ = join.join();
         }
@@ -240,30 +235,39 @@ fn next_poll_at(interval: Duration, deadline: Instant, woke: Instant, now: Insta
 
 fn poll_beside_the_tick<S: WindowSource>(
     source: Arc<S>,
-    control: Arc<Mutex<PollControl>>,
-    wake: Arc<Condvar>,
+    state: Arc<PollState>,
     published: Arc<Mutex<Published>>,
     mut deadline: Instant,
 ) {
     loop {
         let forced = {
-            let mut guard = control.lock().expect("poll control");
+            let mut interval = state.interval.lock().expect("poll interval");
             loop {
-                if guard.stop {
+                if state.stop.load(Ordering::Acquire) {
                     return;
                 }
-                if guard.immediate {
-                    guard.immediate = false;
+                if state.immediate.swap(false, Ordering::AcqRel) {
                     break true;
                 }
                 let now = Instant::now();
                 if now >= deadline {
                     break false;
                 }
-                let (next, result) = wake
-                    .wait_timeout(guard, deadline - now)
-                    .expect("poll control");
-                guard = next;
+                let remaining = deadline - now;
+                // A kernel timeout shorter than one frame returns late enough
+                // that the deadline is already a tick stale, so the ride never
+                // gets that lateness back. Only that slack spins; idle still sleeps.
+                if remaining <= RIDE_POLL_INTERVAL {
+                    drop(interval);
+                    spin_until(deadline, &state);
+                    interval = state.interval.lock().expect("poll interval");
+                    continue;
+                }
+                let (next, result) = state
+                    .wake
+                    .wait_timeout(interval, remaining)
+                    .expect("poll interval");
+                interval = next;
                 if result.timed_out() {
                     break false;
                 }
@@ -282,8 +286,19 @@ fn poll_beside_the_tick<S: WindowSource>(
             slot.geometry = geometry;
         }
         let now = Instant::now();
-        let interval = control.lock().expect("poll control").interval;
+        let interval = *state.interval.lock().expect("poll interval");
         deadline = next_poll_at(interval, deadline, woke, now);
+    }
+}
+
+/// Burn `deadline` on this thread. `spin_loop` pauses without a kernel timer,
+/// so a few milliseconds stay a few milliseconds.
+fn spin_until(deadline: Instant, state: &PollState) {
+    while Instant::now() < deadline {
+        if state.stop.load(Ordering::Acquire) || state.immediate.load(Ordering::Acquire) {
+            return;
+        }
+        std::hint::spin_loop();
     }
 }
 
@@ -766,6 +781,7 @@ mod tests {
 
     /// Each read takes 6 ms and the next one is still due 16 ms after the last
     /// start. Sleeping a whole interval after the read would leave a 22 ms gap.
+    /// The 6 ms is burned, not slept: a short sleep is quantized past one frame.
     #[test]
     fn a_slow_ride_poll_still_starts_once_per_frame() {
         let stamps = Arc::new(Mutex::new(Vec::new()));
@@ -1359,7 +1375,10 @@ mod tests {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
             self.stamps.lock().expect("stamps").push(Instant::now());
             if !self.delay.is_zero() {
-                thread::sleep(self.delay);
+                let until = Instant::now() + self.delay;
+                while Instant::now() < until {
+                    std::hint::spin_loop();
+                }
             }
             if let Some(hold) = &self.hold {
                 if n >= self.block_from {
