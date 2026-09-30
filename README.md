@@ -148,7 +148,6 @@ See [harness.md](./docs/harness.md) for provider details, Director env vars, loc
 ## Harness Support
 
 Which Harness you attach changes what Fidget can do with it.
-Named rows are smoked with `scripts/probe-harness.sh` (see [harness.md](./docs/harness.md#testing-connectivity)); the run itself lives on the issue that did it.
 
 | Harness | Command | Standing |
 |---|---|---|
@@ -160,53 +159,15 @@ Named rows are smoked with `scripts/probe-harness.sh` (see [harness.md](./docs/h
 | `goose` | `goose acp` | First-party, Block. `goose` alone is the interactive CLI. Fresh and resumed sessions both work, smoked on goose 1.51.0. |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
-| <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Needs a global `pi` on `PATH`: `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`, `node`, and `pi` must resolve in the app's environment; Finder-launched builds inherit launchd's `PATH`, as with every `npx` row. An unconfigured Pi may pick up an ambient provider key from the environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins. An npm-global `pi` can shadow the keg: `npm uninstall -g @earendil-works/pi-coding-agent`, then `brew link pi-coding-agent`. |
-| `antigravity` | `agy_acp_server.par` (`agy_acp_server.exe` on Windows) | First-party, Google's ACP server; `agy` itself has no ACP mode. Unzip the `antigravity-acp` archive from the [ACP registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json) and put its folder on `PATH`, keeping `localharness_external` beside the server. Sign in with Chat's Log in with Google or Gemini Enterprise button; the server opens your browser, and it has no terminal login. Google's [FAQ](https://antigravity.google/docs/faq) says third-party software using an Antigravity login violates its Terms of Service and may get the account suspended. Fresh and resumed sessions both work, smoked on agy_acp_server 1.2.1 (#604). |
+| <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. |
+| <img src="https://cdn.simpleicons.org/google" width="14" alt="" /> `antigravity` | `agy_acp_server.par` (`agy_acp_server.exe` on Windows) | First-party, Google's ACP server; `agy` itself has no ACP mode. Fresh and resumed sessions both work, smoked on agy_acp_server 1.2.1 (#604). |
 | anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. |
 
-What each named Harness keeps under an ACP attach, measured in the [tool-class probe](./docs/research/harness-tools-under-acp-probe.md):
-
-| Harness | Under ACP attach |
-|---|---|
-| `claude` | Keeps shell, web search and fetch, filesystem, and user-scope MCP plus claude.ai connectors, loads local and project MCP only when `cwd` matches, and does not list `AskUserQuestion`. |
-| `codex` | Keeps shell, web search and fetch, filesystem, the user's own MCP servers, and `request_user_input`. |
-| `copilot` | Keeps shell (`bash`, with `read_bash`, `stop_bash` and `list_bash`), filesystem (`view`, `create`, `edit`, `grep`, `glob`), `web_fetch` and no web-search tool, its subagent set (`task`, `parallel`, `search_code_subagent`, `read_agent`, `list_agents`, `write_agent`), `skill`, `sql` and `session_store_sql`, and five tools from its bundled `github-mcp-server`, and lists no ask-user tool. It takes Fidget's own MCP over HTTP, and lists Fidget's seven tools alongside its own, under an `fidget-` prefix. |
-| `cursor-agent` | Keeps shell, web search and fetch, filesystem, and the user's own MCP servers, and lists no ask-user tool. |
-| `grok` | Keeps shell, web search and fetch, filesystem, and `ask_user_question`, and the user's own MCP servers were empty on a machine with none configured, and project scope keys off `cwd` per vendor docs. |
-| `goose` | Lists eighteen tools of its own: `shell`, the `developer` filesystem set (`edit`, `write`, `load`, `tree`, `read_image`), `analyze`, `delegate`, `load_skill`, and its `apps__`, `todo__` and `extensionmanager__` built-in extensions. No web tool, neither search nor fetch, and no ask-user tool. It takes Fidget's own MCP over HTTP, and lists Fidget's seven tools alongside its own, under an `fidget__` prefix. |
-| `opencode` | Keeps shell, web fetch, filesystem, and the user's own MCP servers, and lists no web-search tool and no ask-user tool. |
-| `hermes` | Keeps shell, web search and extract, filesystem, and the user's own MCP servers via the vendor mcp subcommand that the probe did not exercise, lists no ask-user tool, and lists browser tools that the start-up CDP check marks unavailable. |
-| `pi` | Keeps its own `read`, `bash`, `edit`, and `write` tools, has no web tool, and on `initialize` has `http` and `sse` both false. Handed Fidget's stdio server on `session/new`, it never asked for the tool list: `pi-acp` stores those servers and does not pass them to `pi` (#1019), which reads the project `.mcp.json` the app writes on Apply and the probe does not. |
-
-No Harness brings desktop control to an ACP session Fidget opens.
-
-`scripts/probe-harness.sh` reports under `mcp listed` whether the Harness
-fetched Fidget's tool list (#984). Goose, Copilot, Codex, and Antigravity
-fetched it on a stock run; Pi did not. The prefixes above come from the tool-class probe's own
-client.
-
-Session handling:
-
-| Harness | Fresh session | Resumed session | `loadSession` | MCP transport † | Auth methods ‡ |
-|---|---|---|---|---|---|
-| `claude` | yes | yes | yes | http | none advertised when signed in |
-| `codex` | yes | yes | yes | http | two: API Key, ChatGPT |
-| `copilot` | yes | yes | yes | http | one: Log in with Copilot CLI |
-| `cursor-agent` | yes | no | no | http, through its own config | one: `cursor_login` |
-| `grok` | yes | yes | yes | http | three: xai.api_key, cached_token, Grok |
-| `goose` | yes | yes | yes | http | one: Configure Provider |
-| `opencode` | yes | yes | yes | http | Login with opencode |
-| `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
-| `pi` | yes | yes | yes | none | `pi_terminal_login` |
-| `antigravity` | yes | yes | yes | http | four: Log in with Google, Log in with Gemini Enterprise, Gemini API key, Gemini Enterprise Agent Platform. The last two need a key or cloud project Fidget never sends, so they are not buttons |
-| anything else | unverified | unverified | unverified | unverified | unverified |
-
-- † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose`, `copilot` and `antigravity` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](./docs/harness.md#how-cursor-agent-is-reached)). `opencode`, `grok`, `copilot` and `antigravity` also advertise `sse`, which nothing here reads.
-- ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
+Tools each harness keeps under ACP, session and auth behavior, and per-harness setup notes are in [docs/harness.md](./docs/harness.md#harness-support).
 
 ### Harness ↔ MCP
 
-Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route footnote † describes. [harness.md](./docs/harness.md#mcp-server) has the transport details.
+Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route the [MCP transport column](./docs/harness.md#harness-support) describes. [harness.md](./docs/harness.md#mcp-server) has the transport details.
 
 **Seven tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917):
 
