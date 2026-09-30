@@ -61,7 +61,8 @@ log="$out/app.log" marks="$out/harness.log" rec="$out/recording.mp4"
 : > "$marks"
 
 # avfoundation numbers the displays after the cameras, so look the index up.
-screen=$("$ffmpeg" -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
+# ffmpeg exits non-zero after listing, so the pipeline must not trip pipefail.
+screen=$({ "$ffmpeg" -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true; } |
   sed -n "s/.*\[\([0-9]*\)\] Capture screen ${FIDGET_HERO_DISPLAY:-0}\$/\1/p")
 [ -n "$screen" ] || fail "no avfoundation screen device; grant Screen Recording to the terminal"
 
