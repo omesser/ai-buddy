@@ -392,7 +392,7 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let child = match command.spawn() {
+    let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return ProbeOutcome::NotFound;
@@ -405,6 +405,7 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
         }
     };
 
+    let pid = child.id();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let _ = tx.send(child.wait_with_output());
@@ -449,12 +450,15 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
             launch.argv[0],
             launch.version_flag()
         )),
-        Err(_) => ProbeOutcome::Unhealthy(format!(
-            "`{} {}` timed out after {:.1}s",
-            launch.argv[0],
-            launch.version_flag(),
-            PROBE_TIMEOUT.as_secs_f32()
-        )),
+        Err(_) => {
+            kill_harness_tree(pid);
+            ProbeOutcome::Unhealthy(format!(
+                "`{} {}` timed out after {:.1}s",
+                launch.argv[0],
+                launch.version_flag(),
+                PROBE_TIMEOUT.as_secs_f32()
+            ))
+        }
     }
 }
 
@@ -6685,9 +6689,15 @@ mod tests {
     /// Probe timeout produces an unhealthy outcome.
     #[test]
     fn probe_timeout() {
+        let exe = std::env::current_exe().unwrap();
+        let test = module_path!()
+            .split_once("::")
+            .map_or("", |(_, rest)| rest)
+            .to_string()
+            + "::probe_timeout_fixture";
         let launch = Launch {
-            name: "sleep".into(),
-            argv: vec!["sleep".into()],
+            name: "timeout-fixture".into(),
+            argv: vec![exe.to_string_lossy().to_string(), test, "--exact".into()],
         };
         match probe_launcher(&launch) {
             ProbeOutcome::Unhealthy(why) => {
@@ -6695,6 +6705,15 @@ mod tests {
             }
             other => panic!("expected Unhealthy from timeout, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn probe_timeout_fixture() {
+        let args: Vec<String> = std::env::args().collect();
+        if !args.iter().any(|arg| arg.contains("probe_timeout_fixture")) {
+            return;
+        }
+        thread::sleep(Duration::from_secs(10));
     }
 
     /// Probe with no output produces an unhealthy outcome.
