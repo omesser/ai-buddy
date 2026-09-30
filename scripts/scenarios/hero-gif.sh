@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Scenario: hero-gif (macOS)
 # On screen: launches Fidget as Buddy Bot with a fixture Harness, then records
-#   the main display for 20 s. The terminal prompts you through: pick the
-#   sprite up and throw it, let it land and perch on a window's top edge,
-#   double-click it. Chat opens and takes focus, and the Harness replies
-#   "Hello". Fidget quits when the scenario ends.
+#   the main display for 20 s. The terminal cues four beats: throw the sprite
+#   at a window's top edge, poke it once as it lands, double-click it for a
+#   reply from the fixture Harness ("Hello"), then throw it again. Chat may
+#   open and take focus. Fidget quits when the scenario ends.
 # Input: yours, at the mouse, on the terminal's cue. The script sends none.
 # Duration: about 45 s, 2 min at most.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
@@ -88,12 +88,14 @@ ffpid=$!
 cue() { # <at s> <text>
   echo ">>> ${1}s  $2"
 }
-cue 0 "recording. Pick Buddy Bot up and throw it at a window's top edge."
-sleep 6
-cue 6 "let it land and perch. Hands off."
+cue 0 "recording. Pick Buddy Bot up and throw it hard at the window's top edge."
 sleep 4
-cue 10 "double-click it. Chat opens and the reply arrives."
-sleep 10
+cue 4 "it has landed. Click it once: a poke."
+sleep 3
+cue 7 "double-click it. The reply arrives."
+sleep 5
+cue 12 "pick it up and throw it once more, anywhere."
+sleep 8
 cue 20 "done. Hands off while the recording closes."
 wait "$ffpid" || fail "ffmpeg failed; see $out/ffmpeg.log"
 
