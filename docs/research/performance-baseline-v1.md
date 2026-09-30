@@ -4,6 +4,8 @@ Measured baselines for fidget performance before optimization work. See parent i
 
 Since this was measured, #1165 (for #1156) replaces `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section. The frame cadence bench has also changed since (#1172). Its idle scenarios run a copy of BMO whose only weighted Behavior is `fidget`, because `FIDGET_DIRECTOR=0` still lets the Static Director walk BMO on patrol, and `idle` fails on a walk frame. Its report splits Engine ticks into moving and still rows.
 
+Since this was measured, a macOS ride no longer reads the window list on the frame-loop thread. `SnapshotAssembler::detach_poll` polls on a thread named `window-poll`, and the tick copies the last finished sample. `poll_generation` advances when that read returns, so the sprite coasts until then, and a read still running is not started twice. No new numbers: `scripts/bench-window-list-macos.sh` is macOS-only, and `riding` and `matrix` refuse to run without `FIDGET_BENCH_GREEN_LIGHT=1` because they take the operator's screen. The last cited release riding row remains the [#1133](https://github.com/omesser/fidget/pull/1133) measurement (55.73 Hz, median about 7 ms, 152 windows, on the `active_wait` build `24cd91ca`). That rate is what a ~7 ms read leaves when the following sleep returns about a quarter late and the next wait does not get the lateness back. The side thread counts its wait from the deadline, the same rule `next_tick` uses for a moving sprite.
+
 ## Linux (issue #432)
 
 **Environment:**

@@ -50,7 +50,7 @@ pub(crate) fn run_frame_loop(
     app: tauri::AppHandle,
     mut roster: Roster,
     mut lives: Vec<InstanceState>,
-    source: impl WindowSource + Send + 'static,
+    source: impl WindowSource + Send + Sync + 'static,
     displays: platform::DisplayCache,
     rules: Arc<Mutex<HideRules>>,
     covered: Vec<Rect>,
@@ -64,6 +64,12 @@ pub(crate) fn run_frame_loop(
         quit_generation,
     } = menu_channel;
     thread::spawn(move || {
+        // macOS only. The window-list read there costs milliseconds, so it runs
+        // beside this loop and the tick copies the sample when it lands.
+        // Other platforms stay inline.
+        #[cfg(target_os = "macos")]
+        let mut assembler = SnapshotAssembler::new(source).detach_poll();
+        #[cfg(not(target_os = "macos"))]
         let mut assembler = SnapshotAssembler::new(source);
         let DirectorRun {
             mut config,
