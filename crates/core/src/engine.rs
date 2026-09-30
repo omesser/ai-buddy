@@ -3962,7 +3962,7 @@ mod tests {
     }
 
     #[test]
-    fn a_walk_holds_still_while_a_speech_bubble_is_up_and_then_continues() {
+    fn a_walk_is_preempted_while_a_speech_bubble_is_up() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
 
@@ -3975,9 +3975,9 @@ mod tests {
             started.position.x > 200.0,
             "the stroll has started: {started:?}"
         );
+        assert_eq!(started.animation, "walk");
 
         let held_x = started.position.x;
-        let held_animation_ms = started.animation_ms;
         let tick_ms = 100u32;
         let halt_ms = PRIMITIVE_MS + tick_ms;
         let halt_ticks = halt_ms / tick_ms;
@@ -3989,65 +3989,41 @@ mod tests {
             });
         }
 
-        assert_eq!(halted.position.x, held_x);
-        assert_eq!(halted.animation_ms, held_animation_ms + halt_ms);
-        assert_eq!(halted.velocity.x, 120.0);
-
-        let resumed = engine.tick(&WorldSnapshot {
-            locomotion_frozen: false,
-            ..a_long_perch()
-        });
-        assert_eq!(resumed.position.x, halted.position.x + 12.0);
-    }
-
-    #[test]
-    fn a_walk_holds_still_while_locomotion_frozen_then_continues() {
-        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
-        settle(&mut engine, &a_long_perch());
-
-        engine.tick(&WorldSnapshot {
-            proposal: walk(),
-            ..a_long_perch()
-        });
-        let started = engine.tick(&a_long_perch());
-        assert!(
-            started.position.x > 200.0,
-            "the stroll has started: {started:?}"
-        );
-
-        let held_x = started.position.x;
-        let held_animation_ms = started.animation_ms;
-        let tick_ms = 100u32;
-        let halt_ms = PRIMITIVE_MS + tick_ms;
-        let halt_ticks = halt_ms / tick_ms;
-        let mut halted = started;
-        for _ in 0..halt_ticks {
-            halted = engine.tick(&WorldSnapshot {
-                locomotion_frozen: true,
-                ..a_long_perch()
-            });
-        }
-
+        assert_eq!(halted.position.x, held_x, "position held under the bubble");
+        assert_eq!(halted.velocity.x, 0.0, "the walk is dropped, not paused");
         assert_eq!(
-            halted.position.x, held_x,
-            "locomotion frozen: position held"
+            halted.animation, "talk",
+            "under the bubble the sprite speaks instead of striding in place"
         );
         assert_eq!(
             halted.animation_ms,
-            held_animation_ms + halt_ms,
-            "animation continues"
+            halt_ms - tick_ms,
+            "talk started on the first held tick and has run since"
         );
-        assert_eq!(halted.velocity.x, 120.0, "velocity preserved");
 
-        let resumed = engine.tick(&WorldSnapshot {
-            locomotion_frozen: false,
+        let refused = engine.tick(&WorldSnapshot {
+            locomotion_frozen: true,
+            proposal: walk(),
             ..a_long_perch()
         });
         assert_eq!(
-            resumed.position.x,
-            halted.position.x + 12.0,
-            "movement resumes when thawed"
+            refused.position.x, held_x,
+            "no walk starts under the bubble"
         );
+        assert_eq!(refused.animation, "talk");
+
+        let thawed = engine.tick(&a_long_perch());
+        assert_eq!(thawed.position.x, held_x, "the thaw restores nothing");
+        assert_eq!(thawed.velocity.x, 0.0);
+        assert_eq!(thawed.animation, "sit", "Perched and unasked, it rests");
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let next_pick = engine.tick(&a_long_perch());
+        assert_eq!(next_pick.animation, "walk");
+        assert_eq!(next_pick.position.x, held_x + 12.0, "the next pick walks");
     }
 
     /// Both ends, because a walk that only ever goes one way would leave the
