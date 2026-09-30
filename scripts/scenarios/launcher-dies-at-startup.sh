@@ -34,19 +34,21 @@ log="$out/app.log" marks="$out/harness.log"
 : > "$marks"
 
 fail() {
-  echo "FAIL: $*" >&2
-  echo "evidence in $out" >&2
+  printf 'FAIL: %s\nevidence in %s\n' "$*" "$out" >&2
   exit 1
 }
 
 [ -x "$tools/window-id" ] || swiftc -O "$root/scripts/scenarios/window-id.swift" -o "$tools/window-id"
-# Rebuilt when the source is newer: this scenario needs `open` to take a row.
 [ "$tools/ax" -nt "$root/scripts/ax-settings.swift" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
 # `abort-first` prints a dyld line and aborts on its first spawn, then answers.
-# FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
-harness="$test_bin harness::tests::fake_acp_agent --exact --nocapture --test-threads=1 script=abort-first count=$marks"
-[ "$(wc -w <<< "$harness")" -eq 7 ] || fail "a path in the Harness line holds a space: $harness"
+# The wrapper answers the launcher probe's `--version` as harness.rs's does.
+harness="$out/launcher.sh"
+# shellcheck disable=SC2016 # "$1" and "$@" belong to the wrapper.
+printf '#!/bin/sh\n[ "$1" = --version ] && { echo fake-acp-agent 1.0.0; exit 0; }\nexec %q %s "$@"\n' \
+  "$test_bin" "harness::tests::fake_acp_agent --exact --nocapture --test-threads=1 script=abort-first count=$marks" > "$harness"
+chmod +x "$harness"
+[ "$(wc -w <<< "$harness")" -eq 1 ] || fail "FIDGET_HARNESS splits on spaces, and $harness holds one"
 
 # No ambient wake: one would respawn the Harness and pass the re-pick for it.
 env HOME="$out/home" \
@@ -83,8 +85,7 @@ shot() { screencapture -x -o -l "$("$tools/window-id" "$pid" BMO)" "$out/$1.png"
 rect() { tr , ' ' <<< "${1##*|}"; }                          # <dump line>: its frame as "x y w h"
 box() { grep -E '^AXStaticText\|' "$2" | grep -m1 -F "$1"; } # <text> <dump>
 
-name=${harness%% *}
-dyld="dyld[0]: Library not loaded"
+name=$harness dyld="dyld[0]: Library not loaded"
 fits() { # <width>: both boxes end inside Chat, and Error output starts above the composer
   local w=$1 f=$out/$1.ax.txt wx got x y ww fold text row
   "$tools/ax" size "$pid" BMO "$w" 560 > "$out/$w.frame.txt" 2>&1 || fail "$w: resize failed; see $out/$w.frame.txt"
