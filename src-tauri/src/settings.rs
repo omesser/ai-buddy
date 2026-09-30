@@ -375,7 +375,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                 Some(command) => format!(
                     "`{command}` is not installed, so {} is not running and the fidget runs on \
                      static weights. Fidget does not bundle `{command}` - install it{}, or switch AI \
-                     source to Model API to use the HTTP endpoint below.",
+                     source to Model API to use an HTTP endpoint.",
                     attached.name,
                     crate::harness::install_page(command)
                         .map(|(_, url)| format!(" from {url}"))
@@ -402,8 +402,8 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                 ),
                 None => format!(
                     "{} is set but not running, so the fidget runs on static weights until it \
-                     answers. It stays the AI brain while it is set; switch AI source to Model API \
-                     to use the HTTP endpoint below — Apply takes effect at once.",
+                     answers. It stays the AI brain while it is set; you may switch AI source at any \
+                     time. Apply takes effect at once.",
                     attached.name
                 ),
             },
@@ -5078,8 +5078,12 @@ mod tests {
             "the line has to name the AI source pick that hands control back, got {line:?}"
         );
         assert!(
-            line.contains("HTTP endpoint below"),
-            "the line has to name where Model API reads from, got {line:?}"
+            line.contains("an HTTP endpoint"),
+            "the line has to name Model API as the HTTP path, got {line:?}"
+        );
+        assert!(
+            !line.contains("HTTP endpoint below"),
+            "Settings already places the HTTP rows; no 'below' deixis, got {line:?}"
         );
     }
 
@@ -5157,16 +5161,20 @@ mod tests {
             "nothing waits for one any more, got {line:?}"
         );
         assert!(
-            line.contains("switch AI source to Model API"),
-            "the line has to name the AI source pick that ends the wait, got {line:?}"
-        );
-        assert!(
-            line.contains("HTTP endpoint below"),
-            "the line has to name where Model API reads from, got {line:?}"
+            line.contains("you may switch AI source at any time"),
+            "the line has to invite switching AI source without Model API jargon, got {line:?}"
         );
         assert!(
             line.contains("Apply takes effect at once"),
             "the line has to say Apply is what commits the pick, got {line:?}"
+        );
+        assert!(
+            !line.contains("HTTP endpoint"),
+            "dead-handle line should not point at HTTP rows, got {line:?}"
+        );
+        assert!(
+            !line.contains("Model API"),
+            "dead-handle line should not name Model API; the AI source row is enough, got {line:?}"
         );
         assert!(
             !line.contains("is the AI brain"),
