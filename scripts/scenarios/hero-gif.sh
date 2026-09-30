@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
 # Scenario: hero-gif (macOS)
-# On screen: launches Fidget as Buddy Bot with a fixture Harness, then records
-#   the main display for 20 s. The terminal cues four beats: throw the sprite
-#   at a window's top edge, poke it once as it lands, double-click it for a
-#   reply from the fixture Harness ("Hello"), then throw it again. Chat may
-#   open and take focus. Fidget quits when the scenario ends.
-# Input: yours, at the mouse, on the terminal's cue. The script sends none.
-# Duration: about 45 s, 2 min at most.
-# Grants: Screen Recording and Accessibility for the terminal that runs it.
-# Asserts: the recording exists and runs 19 to 21 s. The look is yours to judge
+# On screen: launches Fidget as one Character (default Buddy Bot) with a
+#   Harness and records the main display for 45 s. The terminal cues five
+#   beats: throw the sprite at a window's top edge, poke it, double-click it
+#   (Chat opens, takes focus), type a question in Chat, Enter, and throw it
+#   again once the reply lands as a speech bubble and in Chat: Claude Code in
+#   the Character's voice under --harness claude, "Hello" from the fixture.
+# Input: yours, at the mouse and keyboard, on the terminal's cue. None sent.
+# Duration: about 70 s, 2 min at most. Grants: Screen Recording, Accessibility.
+# Asserts: the recording exists and runs 44 to 46 s. The look is yours to judge
 #   from the contact sheet and the full-frame GIF in the evidence directory.
 #
-# Usage: hero-gif.sh --go <fidget binary> <fidget test binary>
+# Usage: hero-gif.sh --go [--harness fixture|claude] [--character <id>] <fidget binary> <fidget test binary>
 #        hero-gif.sh --crop x:y:w:h <recording.mp4> [<from s> [<length s>]]
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
-# --crop re-encodes a saved recording to docs/readme/hero.gif and launches
-# nothing. x:y:w:h is in recording pixels, so 2x on a Retina display.
+# --harness claude links your ~/.claude, ~/.claude.json and ~/.npm into the
+#   private HOME: sign-in and warm npx carry over, Fidget's data stays isolated.
+# --crop re-encodes a saved recording to docs/readme/hero.gif, launching
+#   nothing; x:y:w:h is in recording pixels, so 2x on a Retina display.
 set -euo pipefail
 
 ffmpeg=/opt/homebrew/bin/ffmpeg
 root=$(cd "$(dirname "$0")/../.." && pwd)
+record=45
 
 fail() {
   echo "FAIL: $*" >&2
@@ -50,9 +53,23 @@ case "${1:-}" in
     exit 2
     ;;
 esac
+shift
 
-bin=${2:?usage: hero-gif.sh --go <fidget binary> <fidget test binary>}
-test_bin=${3:?usage: hero-gif.sh --go <fidget binary> <fidget test binary>}
+usage="usage: hero-gif.sh --go [--harness fixture|claude] [--character <id>] <fidget binary> <fidget test binary>"
+harness_kind=fixture character=buddy-bot
+while [ $# -gt 2 ]; do
+  case "$1" in
+    --harness) harness_kind=$2 ;;
+    --character) character=$2 ;;
+    *) fail "$usage" ;;
+  esac
+  shift 2
+done
+bin=${1:?$usage}
+test_bin=${2:?$usage}
+# Buddy Bot draws 90 px square and Trump 108 px at 1x, so a crop tuned for
+# one is loose or tight on the other.
+[ -d "$root/characters/$character" ] || fail "no such character: $root/characters/$character"
 # Absolute: the Harness spawns in the data folder, so a relative path misses.
 test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
 out="${TMPDIR:-/tmp}/fidget-scenario-hero-gif-$(date +%Y%m%d-%H%M%S)"
@@ -66,14 +83,30 @@ screen=$({ "$ffmpeg" -hide_banner -f avfoundation -list_devices true -i "" 2>&1 
   sed -n "s/.*\[\([0-9]*\)\] Capture screen ${FIDGET_HERO_DISPLAY:-0}\$/\1/p")
 [ -n "$screen" ] || fail "no avfoundation screen device; grant Screen Recording to the terminal"
 
-# FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
-harness="$test_bin harness::tests::fake_acp_agent --exact --nocapture --test-threads=1 script=hero count=$marks"
-[ "$(wc -w <<< "$harness")" -eq 7 ] || fail "a path in the Harness line holds a space: $harness"
+case "$harness_kind" in
+  fixture)
+    # FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
+    harness="$test_bin harness::tests::fake_acp_agent --exact --nocapture --test-threads=1 script=hero count=$marks"
+    [ "$(wc -w <<< "$harness")" -eq 7 ] || fail "a path in the Harness line holds a space: $harness"
+    ;;
+  claude)
+    harness=claude
+    command -v npx > /dev/null || fail "npx is not on PATH; the claude Harness runs on Node"
+    # The CLI reads `$HOME/.claude` and `$HOME/.claude.json`, and its Keychain
+    # item is named for the config dir, so CLAUDE_CONFIG_DIR would miss the
+    # login. Links keep the CLI's view of HOME, and npx its warm cache.
+    for entry in .claude .claude.json .npm; do
+      [ -e "$HOME/$entry" ] || fail "no $HOME/$entry; sign in with \`claude /login\` first"
+      ln -s "$HOME/$entry" "$out/home/$entry"
+    done
+    ;;
+  *) fail "$usage" ;;
+esac
 
 env HOME="$out/home" \
-  FIDGET_HARNESS="$harness" \
+  FIDGET_HARNESS="$harness" FIDGET_TRACE_DIRECTOR=1 \
   FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 \
-  FIDGET_CHARACTER=buddy-bot FIDGET_CHARACTERS="$root/characters" \
+  FIDGET_CHARACTER="$character" FIDGET_CHARACTERS="$root/characters" \
   "$bin" > "$log" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2> /dev/null || true; pkill -f "count=$marks" || true' EXIT
@@ -81,29 +114,44 @@ trap 'kill "$pid" 2> /dev/null || true; pkill -f "count=$marks" || true' EXIT
 sleep 4
 kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
 "$ffmpeg" -y -v error -f avfoundation -capture_cursor 1 -framerate 30 -i "$screen:none" \
-  -t 20 -vf 'crop=trunc(iw/2)*2:trunc(ih/2)*2' -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p \
+  -t "$record" -vf 'crop=trunc(iw/2)*2:trunc(ih/2)*2' -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p \
   "$rec" > "$out/ffmpeg.log" 2>&1 &
 ffpid=$!
+t0=$SECONDS
 
-cue() { # <at s> <text>
-  echo ">>> ${1}s  $2"
+now() { echo $((SECONDS - t0)); }
+at() { # <s>: sleep until s seconds into the recording
+  while [ "$(now)" -lt "$1" ]; do sleep 1; done
 }
-cue 0 "recording. Pick Buddy Bot up and throw it hard at the window's top edge."
-sleep 4
-cue 4 "it has landed. Click it once: a poke."
-sleep 3
-cue 7 "double-click it. The reply arrives."
-sleep 5
-cue 12 "pick it up and throw it once more, anywhere."
-sleep 8
-cue 20 "done. Hands off while the recording closes."
+cue() { # <text>
+  echo ">>> $(now)s  $1"
+}
+# FIDGET_TRACE_DIRECTOR prints every reply the Completer returns.
+replies() { grep -c '^harness: reply ' "$log" || true; }
+
+cue "recording. Pick the sprite up and throw it hard at the window's top edge."
+at 4
+cue "it has landed. Click it once: a poke."
+at 7
+cue "double-click it. Chat opens; leave it open."
+at 10
+cue "type in Chat: What's in the news today?  Then press Enter."
+asked=$(replies)
+while [ "$(replies)" -le "$asked" ] && [ "$(now)" -lt $((record - 7)) ]; do sleep 1; done
+if [ "$(replies)" -gt "$asked" ]; then
+  cue "the reply landed. Pick it up and throw it once more, anywhere."
+else
+  cue "no reply yet. Throw it once more anyway; see $log after."
+fi
+at "$record"
+cue "done. Hands off while the recording closes."
 wait "$ffpid" || fail "ffmpeg failed; see $out/ffmpeg.log"
 
 [ -s "$rec" ] || fail "no recording at $rec"
 secs=$(/opt/homebrew/bin/ffprobe -v error -show_entries format=duration -of csv=p=0 "$rec")
-awk -v s="$secs" 'BEGIN { exit !(s >= 19 && s <= 21) }' || fail "recording runs ${secs}s, want 19 to 21"
+awk -v s="$secs" -v r="$record" 'BEGIN { exit !(s >= r - 1 && s <= r + 1) }' || fail "recording runs ${secs}s, want $((record - 1)) to $((record + 1))"
 
-"$ffmpeg" -y -v error -i "$rec" -vf 'fps=1,scale=480:-1,tile=5x4' "$out/contact-sheet.png"
-to_gif "$rec" "$out/full-frame.gif" "" 0 20
+"$ffmpeg" -y -v error -i "$rec" -vf 'fps=1,scale=480:-1,tile=5x9' "$out/contact-sheet.png"
+to_gif "$rec" "$out/full-frame.gif" "" 0 "$record"
 echo "PASS: evidence in $out"
 echo "next: $0 --crop x:y:w:h $rec [<from s> [<length s>]]"
