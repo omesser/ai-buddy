@@ -7,7 +7,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::acp_wire::{
-    Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError, Wire,
+    kill_harness_tree, Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError,
+    Wire,
 };
 use crate::action_log;
 
@@ -379,6 +380,7 @@ fn isolate_from_interrupt(command: &mut Command) {
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Probe outcome: the three states before attach.
+#[derive(Debug)]
 enum ProbeOutcome {
     NotFound,
     Unhealthy(String),
