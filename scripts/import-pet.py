@@ -934,8 +934,8 @@ def require_pillow():
         sys.exit(
             "Pillow is not importable from this Python. Set up the venv and "
             "run the importer with it:\n"
-            "  uv venv && uv pip install pillow\n"
-            "  .venv/bin/python scripts/import-pet.py ..."
+            "  uv venv --python 3.11 && uv pip install pillow\n"
+            "  uv run scripts/import-pet.py ..."
         )
 
 
