@@ -35,7 +35,7 @@ function npxOpening(name) {
 }
 
 test("chat.js paints the landing from the helper, and does not celebrate a pick", () => {
-  assert.match(js, /import \{ canAnswer, composerPlaceholder, drawInline, landingCopy \} from "\.\/chat-connect\.js"/);
+  assert.match(js, /import \{\n  canAnswer,\n  composerPlaceholder,\n  drawInline,\n  harnessDisplayName,\n  landingCopy,\n\} from "\.\/chat-connect\.js"/);
   assert.match(js, /canAnswer\(opening\)/);
   assert.match(js, /landingCopy\(opening\)/);
   assert.doesNotMatch(js, /is the AI brain now/);
@@ -207,9 +207,44 @@ test("needs-auth still names the login command", () => {
     },
   });
   assert.equal(copy.title, "Codex needs login");
+  assert.equal(copy.lede, "Codex is running but not signed in. Sign in, then press Retry.");
   assert.equal(copy.command, "codex login");
   assert.equal(copy.signInLabel, null);
   assert.equal(copy.hint, "Run this in a terminal:");
+});
+
+// The picker offers what is already picked. Only the login state swaps it
+// for Retry; every other landing keeps the picker as the way out.
+test("only the needs-login landing swaps the picker for Retry", () => {
+  const login = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "claude",
+    login: "claude /login",
+    harness: { name: "claude", session: null, alive: true, login: "claude /login" },
+  };
+  const copy = landingCopy(login);
+  assert.equal(copy.retry, true);
+  assert.equal(copy.title, "Claude Code needs login");
+  assert.equal(copy.lede, "Claude Code is running but not signed in. Sign in, then press Retry.");
+  assert.equal(copy.command, "claude /login");
+  assert.deepEqual(copy.signIn, []);
+
+  const pickers = [
+    { configured: false, enabled: false },
+    { configured: true, enabled: false, harness_name: "codex", harness: { name: "codex", alive: false } },
+    npxOpening("codex"),
+    { ...login, login: null, harness: { name: "claude", alive: true, login: null, initializing: true } },
+    { ...login, login: null, harness: { name: "claude", alive: false, login: null, failed: "died" } },
+    { ...login, login: null, harness: { name: "claude", alive: false, login: null } },
+  ];
+  for (const opening of pickers) {
+    assert.equal(Boolean(landingCopy(opening).retry), false, landingCopy(opening).title);
+  }
+  assert.match(js, /"landing-buttons"\)\.hidden = Boolean\(copy\.retry\)/);
+  assert.match(js, /retry\.hidden = !copy\.retry/);
+  assert.match(js, /connect\(lastOpening\.harness_name, harnessDisplayName\(lastOpening\)\)/);
 });
 
 test("needs-login offers agent sign-in beside the terminal command", () => {
@@ -238,6 +273,7 @@ test("needs-login offers agent sign-in beside the terminal command", () => {
     ],
   });
   const copy = landingCopy(opening);
+  assert.equal(copy.retry, true);
   assert.equal(copy.command, "codex login");
   assert.equal(copy.signInLabel, "Login using:");
   assert.equal(copy.hint, "Or run this in a terminal:");
@@ -293,6 +329,8 @@ test("Antigravity signs in from its buttons and names no terminal command", () =
   };
   const copy = landingCopy(opening);
   assert.equal(copy.title, "Antigravity needs login");
+  assert.equal(copy.lede, "Antigravity is running but not signed in.");
+  assert.equal(copy.retry, true);
   assert.equal(copy.signInLabel, "Login using:");
   assert.equal(copy.command, null);
   assert.deepEqual(
