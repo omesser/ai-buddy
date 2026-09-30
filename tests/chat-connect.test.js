@@ -134,7 +134,20 @@ test("a launcher that died at startup names why on the landing", () => {
     output: "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib",
     nodeCheck: "node --version",
   });
-  assert.equal(copy.next, "Fix the error above, then pick Codex again, or pick a different Harness below.");
+  assert.equal(copy.next, "Fix the error above, then pick it again, or pick a different Harness below.");
+});
+
+test("a custom launcher line is titled as the Harness, and its path stays in the Command box", () => {
+  const line = "/opt/tools/bin/my-agent --acp";
+  const opening = {
+    ...diedOpening({ command: line, reason: "exited before initialize", output: "boom", node_check: null }),
+    harness_name: line,
+  };
+  opening.harness.name = "/opt/tools/bin/my-agent";
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Harness couldn't start");
+  assert.equal(copy.failure.command, line);
+  assert.doesNotMatch(copy.lede + copy.next, /my-agent/);
 });
 
 test("a launcher that died silently says it printed nothing", () => {

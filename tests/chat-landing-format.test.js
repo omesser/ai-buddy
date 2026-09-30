@@ -126,6 +126,9 @@ function paint(open, width = 420) {
       kicker: document.getElementById("landing-kicker").hidden ? null : document.getElementById("landing-kicker").textContent,
       boxes: { output: box("output"), command: box("command"), check: box("check") },
       next: document.getElementById("landing-next").hidden ? null : document.getElementById("landing-next").textContent,
+      // The composer covers the log's foot, so its top is the fold.
+      outputTop: Math.round(document.getElementById("failure-output").getBoundingClientRect().top),
+      fold: Math.round(document.getElementById("line").getBoundingClientRect().top),
       sideways: Math.max(
         document.documentElement.scrollWidth - document.documentElement.clientWidth,
         log.scrollWidth - log.clientWidth,
@@ -185,18 +188,20 @@ for (const width of [420, 360, 320]) {
       command: { label: "Command", text: FAILED.command },
       check: null,
     });
-    assert.equal(report.next, "Fix the error above, then pick Codex again, or pick a different Harness below.");
+    assert.equal(report.next, "Fix the error above, then pick it again, or pick a different Harness below.");
     assert.equal(report.sideways, 0, "the landing scrolls sideways");
     assert.equal(report.backticks, false);
     assert.notEqual(report.lede.select, "none");
   });
 }
 
-test("a Harness named by its launcher path wraps its title (#1186)", { skip, timeout: 60000 }, () => {
+test("a Harness named by its launcher path keeps the path out of the title (#1186)", { skip, timeout: 60000 }, () => {
   const named = opening({ name: LAUNCHER, failed: FAILED });
   named.harness_name = LAUNCHER;
   const report = paint(named, 320);
-  assert.equal(report.title, `${LAUNCHER} couldn't start`);
+  assert.equal(report.title, "Harness couldn't start");
+  assert.ok(report.outputTop < report.fold, `Error output starts at ${report.outputTop}, under the composer at ${report.fold}`);
+  assert.equal(report.boxes.command.text, FAILED.command);
   assert.equal(report.sideways, 0, "the title pushed the landing sideways");
 });
 
