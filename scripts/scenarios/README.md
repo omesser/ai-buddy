@@ -31,6 +31,13 @@ The exit code is the verdict: 0 passed, 1 failed, 2 printed the header.
 360 and 320 points and checks that the header keeps one row and never scrolls
 sideways.
 
+`launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
+on the first launch, the way `npx` does over a broken Node. It opens Chat from
+the menu bar icon's Chat… row, checks that the landing names the launcher and
+the signal with the command drawn as code, then presses Codex and checks that
+the Harness launches again at once. Both presses go through the Accessibility
+API.
+
 ## codex-sign-in-link
 
 `codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,

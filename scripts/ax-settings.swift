@@ -278,6 +278,9 @@ switch args[0] {
 case "open":
     // The status item, not the app's own menu bar: Settings has no keyboard
     // shortcut and no menu of its own, so the tray row is the only way in.
+    // `open <pid> Chat BMO` presses the Chat… row and waits for that window.
+    let rowPrefix = args.count >= 3 ? args[2] : "Settings"
+    let windowTitle = args.count >= 4 ? args[3] : "Settings"
     guard let extras = waitFor(20, { attribute(app, "AXExtrasMenuBar").map { $0 as! AXUIElement } })
     else {
         die("no status item after 20s - did the app finish launching?")
@@ -290,14 +293,14 @@ case "open":
         let row = waitFor(
             5,
             {
-                find(extras) { string($0, kAXTitleAttribute)?.hasPrefix("Settings") == true }
+                find(extras) { string($0, kAXTitleAttribute)?.hasPrefix(rowPrefix) == true }
             })
     else {
-        die("the tray menu has no Settings row")
+        die("the tray menu has no \(rowPrefix) row")
     }
-    guard press(row) else { die("could not press Settings…") }
-    guard waitFor(10, { settingsWindow() }) != nil else {
-        die("Settings did not open within 10s")
+    guard press(row) else { die("could not press \(rowPrefix)…") }
+    guard waitFor(10, { window(titled: windowTitle) }) != nil else {
+        die("\(windowTitle) did not open within 10s")
     }
 
 case "tab":
@@ -506,12 +509,13 @@ case "press-button":
     // draws two Copy buttons; the snippet is first and the Hermes token is
     // second when that row is showing. #855.
     guard args.count >= 3 else {
-        die("usage: ax-settings press-button <pid> <title> [index]")
+        die("usage: ax-settings press-button <pid> <title> [index] [window title]")
     }
     let want = args[2]
     let index = args.count >= 4 ? (Int(args[3]) ?? 1) : 1
     guard index >= 1 else { die("button index must be >= 1") }
-    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
+    let windowTitle = args.count >= 5 ? args[4] : "Settings"
+    guard let window = settledWindow(titled: windowTitle) else { die("\(windowTitle) is not open") }
     var matches: [AXUIElement] = []
     func collect(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }
