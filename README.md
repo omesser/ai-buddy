@@ -28,6 +28,33 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 - **Knows what you're up to.** It can see and react to your open windows, for context-aware chatter. It reads window names only, with your consent, but [never takes screenshots](#computer-use).
 - **Stays out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
 
+## Get It
+
+Download a build from [GitHub Releases](https://github.com/omesser/fidget/releases): a `.dmg` for macOS (Apple Silicon), an AppImage and a `.deb` for Linux (x86_64), or an NSIS installer for Windows (x86_64). The builds are not signed yet, so the first open warns. On macOS, double-click `Fidget.app`, dismiss the Gatekeeper dialog, then System Settings → Privacy & Security → Open Anyway. On Windows, choose More info → Run anyway in SmartScreen.
+
+Or clone and run from the repo root (macOS, Linux, Windows):
+
+```sh
+git clone https://github.com/omesser/fidget.git fidget
+cd fidget
+cargo run -p fidget
+```
+
+It works offline out of the box. With nothing configured, Static weights pick idle Behaviors from the Character; no model, no account. To have an agent you already run answer instead, attach it as a Harness ([names and standing](#harness-support)); it signs in on its own:
+
+```sh
+FIDGET_HARNESS=claude cargo run -p fidget
+```
+
+Switch characters with `FIDGET_CHARACTER` or in Settings:
+
+```sh
+# Any of: buddy-bot (default), black-mage, bmo, cat, jotaro-kujo, nim, timber-wolf, trump
+FIDGET_CHARACTER=nim cargo run -p fidget
+```
+
+A Model API instead of a Harness (OpenAI, Anthropic, xAI, Ollama, or any OpenAI-compatible endpoint), the `FIDGET_DIRECTOR_*` variables, and the Keychain dialogs an unsigned build costs are in [harness.md](./docs/harness.md#quick-start). Linux packages, Wayland, and the AppImage's FUSE dependency are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
+
 ## Interact
 
 ![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
@@ -51,7 +78,7 @@ too, labelled with what it was reacting to.
 
 The bar at the bottom says what the fidget is doing and when it next thinks.
 Advanced opens the ladder: Behavior, Primitive, Animation, State, Facing, and
-the Director's countdown. Answers need a Director; see [Running It](#running-it).
+the Director's countdown. Answers need a Director; see [Get It](#get-it).
 
 ## Characters
 
@@ -73,82 +100,6 @@ Buddy Bot is the default. Eight Characters ship; each moves and speaks different
 </table>
 
 Characters are packages of art, personality, and tuning. See [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packages); the format is still evolving.
-
-## Install
-
-Download a build from [GitHub Releases](https://github.com/omesser/fidget/releases).
-
-Or clone and run from the repo root (macOS, Linux, Windows):
-
-```sh
-git clone https://github.com/omesser/fidget.git fidget
-cd fidget
-cargo run -p fidget
-```
-
-### macOS
-
-Apple Silicon. The Release ships a `.dmg`. Open it and copy `Fidget.app` to Applications.
-
-The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
-
-The same missing signature costs two Keychain dialogs at launch - "Fidget wants to use your confidential information stored in Fidget" - for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/fidget/issues/283)).
-
-### Linux
-
-The Release ships an AppImage and a `.deb` (x86_64).
-
-Under Wayland the sprite keeps to screen edges and loses window Perches - a supported mode, not an error. X11 gets both.
-
-```sh
-# Debian/Ubuntu .deb
-sudo apt install ./fidget_*.deb
-# or: AppImage (needs libfuse2 on Ubuntu 22.04, libfuse2t64 on 24.04+)
-# sudo apt install libfuse2    # or libfuse2t64
-# chmod +x fidget_*.AppImage && ./fidget_*.AppImage
-```
-
-Tray hosts, cue audio (GStreamer), and AppImage fuse notes: [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
-
-### Windows
-
-The Release ships an NSIS installer (x86_64). Run it and follow the prompts.
-
-SmartScreen may warn on the first open because the build is not Authenticode signed. Choose More info → Run anyway. Code signing is a follow-up.
-
-## Running It
-
-**Works offline.** With no API key, Static weights pick idle Behaviors from the Character. No model, no account required.
-
-**Optional Model API.** Point Settings → AI (or env vars) at OpenAI, Anthropic, xAI, Ollama, or any OpenAI-compatible `/v1/chat/completions` endpoint:
-
-```sh
-# OpenAI (or export env vars to persist)
-FIDGET_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
-FIDGET_DIRECTOR_BASE_URL=https://api.openai.com \
-FIDGET_DIRECTOR_MODEL=gpt-4o-mini \
-cargo run -p fidget
-
-# Ollama (local, no key)
-FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
-FIDGET_DIRECTOR_MODEL=gemma4 \
-cargo run -p fidget
-```
-
-**Optional Harness.** An agent you already run answers instead, over ACP, and signs in on its own:
-
-```sh
-FIDGET_HARNESS=claude cargo run -p fidget   # names and standing below
-```
-
-**Switch characters** (env or Settings):
-
-```sh
-# Any of: buddy-bot (default), black-mage, bmo, cat, jotaro-kujo, nim, timber-wolf, trump
-FIDGET_CHARACTER=nim cargo run -p fidget
-```
-
-See [harness.md](./docs/harness.md) for provider details, Director env vars, local model servers, keyring/secret store, and `probe-model.sh`.
 
 ## Harness Support
 
