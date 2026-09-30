@@ -4,7 +4,9 @@
 # FIDGET_TRACE_CADENCE (the overlay's display frames), samples a window, and
 # reduces it with scripts/frame-cadence.mjs into one report per scenario.
 #
-# idle: the sprite left alone. walking: sampled from the first walk frame.
+# idle: BMO held still by a copy whose only Behavior is `fidget`. It fails if
+#   a walk frame lands in the window anyway.
+# walking: sampled from the first walk frame.
 # load: walking with one `yes` per core running from launch.
 # idle-quiet: idle with FIDGET_TRACE_FRAMES off, so the loop's own tick
 #   counter says whether the per-tick `frame:` print slows the Engine.
@@ -100,7 +102,7 @@ now_ms() {
 }
 
 launch_app() {
-  local log=$1 frames=$2
+  local log=$1 frames=$2 characters=$3
   # Scratch HOME so the bench does not write the user's settings. The API key
   # skips the Keychain read a worktree build would otherwise block on.
   SCRATCH_HOME=$(mktemp -d)
@@ -109,10 +111,24 @@ launch_app() {
     FIDGET_TRACE_FRAMES="$frames" \
     FIDGET_TRACE_CADENCE=1 \
     FIDGET_INSTANCES="${FIDGET_INSTANCES:-BMO}" \
-    FIDGET_CHARACTERS="${FIDGET_CHARACTERS:-$PWD/characters}" \
+    FIDGET_CHARACTERS="$characters" \
     HOME="$SCRATCH_HOME" \
     "$bin" > "$log" 2>&1 &
   APP_PID=$!
+}
+
+# FIDGET_DIRECTOR=0 still runs the Static Director, which walks BMO on its
+# patrol. The idle scenarios run a copy of BMO whose only weighted Behavior is
+# `fidget`, which plays `idle`. Prints the search path holding the copy.
+still_characters() {
+  local dir="$out/still-characters"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  cp -R characters/bmo "$dir/bmo"
+  awk '/^\[/ { section = $0 }
+    /^weight = / && section ~ /^\[behaviors\./ && section != "[behaviors.fidget]" { $0 = "weight = 0" }
+    1' characters/bmo/character.manifest > "$dir/bmo/character.manifest"
+  echo "$dir"
 }
 
 # The sprite spawns mid-air; wait for it to land so a fall is not sampled.
@@ -144,12 +160,14 @@ run() {
       BURNERS+=($!)
     done
   fi
+  local characters="${FIDGET_CHARACTERS:-$PWD/characters}"
+  [ "${name%-quiet}" != idle ] || characters=$(still_characters)
   if [ "$name" = idle-quiet ]; then
-    launch_app "$log" 0
+    launch_app "$log" 0 "$characters"
     # No `frame:` lines to watch for a landing, so give the fall a fixed 5 s.
     sleep 5
   else
-    launch_app "$log" 1
+    launch_app "$log" 1 "$characters"
   fi
   if [ "$name" != idle-quiet ] && ! wait_landed "$log"; then
     echo "$name: the sprite never landed; see $log" >&2
@@ -164,7 +182,7 @@ run() {
     stop_burners
     return 1
   fi
-  local from to
+  local from to walks
   from=$(now_ms)
   sleep "$seconds"
   to=$(now_ms)
@@ -172,15 +190,21 @@ run() {
   sleep 1.5
   stop_app
   stop_burners
+  walks=$(awk -v f="$from" -v t="$to" '/^frame: / && $2 >= f && $2 <= t && / (walk|ballwalk)#/ { n++ } END { print n + 0 }' "$log")
   {
     echo "## $name"
     echo
-    echo "window: $from..$to ms, walk frames: $(awk -v f="$from" -v t="$to" '/^frame: / && $2 >= f && $2 <= t && / (walk|ballwalk)#/ { n++ } END { print n + 0 }' "$log")"
+    echo "window: $from..$to ms, walk frames: $walks"
     echo
     node scripts/frame-cadence.mjs "$log" --from "$from" --to "$to"
   } > "$out/$name.md"
   cat "$out/$name.md"
   echo
+  # idle-quiet traces no `frame:` lines, so only idle can catch a walk here.
+  if [ "${name%-quiet}" = idle ] && [ "$walks" -gt 0 ]; then
+    echo "$name: BMO walked $walks frames in the window, so this is not an idle sample; see $log" >&2
+    return 1
+  fi
 }
 
 cat << EOF
