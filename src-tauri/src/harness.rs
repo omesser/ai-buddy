@@ -5466,10 +5466,14 @@ mod tests {
         assert!(!inspect.alive && !inspect.initializing && inspect.missing.is_none());
         let failed = inspect.failed.expect("the landing has no reason to show");
         assert_eq!(failed.command, Some(session.launch.line()));
+        // Linux adds " (core dumped)" when the runner keeps cores; macOS does not.
         #[cfg(unix)]
-        assert_eq!(
-            failed.reason,
-            "exited before initialize, signal: 6 (SIGABRT)"
+        assert!(
+            failed
+                .reason
+                .starts_with("exited before initialize, signal: 6 (SIGABRT)"),
+            "{}",
+            failed.reason
         );
         // Its stderr, and libtest's own stdout from before the fixture ran.
         assert!(
