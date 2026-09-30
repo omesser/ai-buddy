@@ -362,7 +362,7 @@ else
   fail "could not reach Presence for the <details> sitting"
 fi
 
-# Enter applies: AI tab, First wake field. Replace 120 with 90 and Return.
+# Enter stages, Apply saves: AI tab, First wake field. Replace 120 with 90, Return, then Apply.
 # A junk string looks like it typed (the field shows it) then reverts on blur
 # because the row only stores a number.
 enter_ok=FAIL
@@ -386,12 +386,21 @@ if tab_until "AI"; then
     "$ax" dump "$app_pid" > "$out/enter-dump.txt"
     settings_json="$home/Library/Application Support/fidget/settings.json"
     # AX keeps the placeholder 120 on this row. The file is what Apply wrote.
-    if grep -Fq '"director_wake_secs": "90"' "$settings_json"; then
-      pass "Enter applied First wake = 90 in settings.json"
-      enter_ok=PASS
+    # AI-tab edits are staged until Apply, so Enter alone must not write it.
+    if grep -Fq '"director_wake_secs": "90"' "$settings_json" 2> /dev/null; then
+      fail "Enter wrote director_wake_secs 90 before Apply"
+    elif tab_until "Apply"; then
+      key space
+      sleep 0.5
+      if grep -Fq '"director_wake_secs": "90"' "$settings_json"; then
+        pass "Enter staged First wake = 90 and Apply wrote it to settings.json"
+        enter_ok=PASS
+      else
+        fail "Apply did not write director_wake_secs 90"
+        grep director_wake_secs "$settings_json" || true
+      fi
     else
-      fail "Enter did not write director_wake_secs 90"
-      grep director_wake_secs "$settings_json" || true
+      fail "Tab never reached Apply"
     fi
   else
     fail "Tab never reached First wake, in seconds"
@@ -431,7 +440,7 @@ table="$out/TABLE.md"
   echo "| Tab reaches every control in DOM order on every Settings tab | $tab_order |${five_stills} |"
   echo "| Focus ring visible on each | $focus_ring |${five_stills} |"
   echo "| Escape closes | $escape_ok | ![escape](./03-escape.png) |"
-  echo "| Enter applies | $enter_ok | ![enter-applies](./04-enter-applies.png) |"
+  echo "| Enter stages, Apply saves | $enter_ok | ![enter-applies](./04-enter-applies.png) |"
   echo "| \`<select>\` opens on Space, picks with arrows, commits | $select_ok | ![select-space](./05-select-space.png) |"
   echo "| \`<details>\` toggles on Enter | $details_ok | ![details-enter](./06-details-enter.png) |"
 } > "$table"
