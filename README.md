@@ -40,20 +40,26 @@ cd fidget
 cargo run -p fidget
 ```
 
-It works offline out of the box. With nothing configured, Static weights pick idle Behaviors from the Character; no model, no account. To have an agent you already run answer instead, attach it as a Harness ([names and standing](#harness-support)); it signs in on its own:
+It works offline with no key. With nothing configured, Static weights pick idle Behaviors from the Character.
+
+Right-click the fidget, or click the tray icon, and choose Settings….
+
+Settings → Character picks which character it wears. Buddy Bot is the default. The others are under [Characters](#characters).
+
+Settings → AI chooses who answers. Under AI source, pick `Harness · claude` or another name from [Harness Support](#harness-support). The Harness signs in on its own. For a Model API, pick Model API in AI source, then set Base URL, Model, and API key under Model / API. Presets fill the Base URL for OpenAI, Anthropic, xAI, and Ollama. Type any other OpenAI-compatible endpoint into Base URL. Apply saves the choice.
+
+Developers and CI can override Settings with optional environment variables:
 
 ```sh
+# Optional. Overrides Settings → AI → AI source.
 FIDGET_HARNESS=claude cargo run -p fidget
-```
 
-Switch characters with `FIDGET_CHARACTER` or in Settings:
-
-```sh
+# Optional. Overrides Settings → Character.
 # Any of: buddy-bot (default), black-mage, bmo, cat, jotaro-kujo, nim, timber-wolf, trump
 FIDGET_CHARACTER=nim cargo run -p fidget
 ```
 
-A Model API instead of a Harness (OpenAI, Anthropic, xAI, Ollama, or any OpenAI-compatible endpoint), the `FIDGET_DIRECTOR_*` variables, and the Keychain dialogs an unsigned build costs are in [harness.md](./docs/harness.md#quick-start). Full support for window Perches and edges via X11/XWayland (the normal Linux desktop path). Pure Wayland sessions without an X server fall back to screen edges only. Linux packages and the AppImage's FUSE dependency are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
+The full variable list, including `FIDGET_DIRECTOR_*`, is in [harness.md](./docs/harness.md#director-environment). Character packages are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packages). Keychain dialogs an unsigned build costs are in [harness.md](./docs/harness.md#settings-and-keyring). Full support for window Perches and edges via X11/XWayland (the normal Linux desktop path). Pure Wayland sessions without an X server fall back to screen edges only. Linux packages and the AppImage's FUSE dependency are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
 
 ## Interact
 
