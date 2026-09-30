@@ -214,14 +214,46 @@ cd src-tauri && FIDGET_INSTANCES="buddy-bot:One,buddy-bot:Two,nim:Nim" cargo run
 
 ## Importing Pets
 
-Translate [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), or [Shimeji Shop](https://shimejishop.com/) packs to Character Packages:
+Translate [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), or [Shimeji Shop](https://shimejishop.com/) packs to Character Packages. `scripts/import-pet.py` needs Python 3.11 or newer and Pillow. Set it up once, from the repository root:
 
 ```sh
-uv venv && uv pip install pillow
-npx petscodex install labubu
-.venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
-cargo run -p fidget-core --example validate -- characters/labubu
+uv venv --python 3.11 && uv pip install pillow
 ```
+
+The importer writes the frames and a `character.manifest` to the `-o` directory, and `--force` replaces one that exists. It then runs `character::load` on the output and fails if the loader rejects it. It prints the pack's license and warns when none is declared.
+
+The result is a naive but valid Character Package. It loads and plays, but it is not yet the character. Tune it by hand:
+
+- The `[behaviors]` weights and triggers, which start as a copy of BMO's.
+- The animation and action names, so each reads as what the art shows.
+- `personality.txt`, the character prompt. The importer writes none; see [Writing a personality](#writing-a-personality).
+
+A coding agent can make these edits in a few prompts. See [Character Packages](#character-packages) for the manifest.
+
+### Pets Codex
+
+A petdex pack shares the Pets Codex sheet layout and imports the same way, with `--format petscodex`.
+
+```sh
+npx petscodex install labubu
+uv run scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
+```
+
+`[source]` is filled from the pet's `pet.json`, with `url` pointing at its page. Also check every animation reads as its name, and that walk heads right. A pet whose art strays from petdex's row semantics is recut with `--walk-row`, `--mirror-walk`, or `--map`.
+
+### Shimeji Shop
+
+Download the pack's `.zip` from its gallery page. The importer wants per-pose PNGs named `shime1.png`, `shime2.png`, and so on, together in one folder at the pack's root or under it. Without an `actions.xml` it assumes Shimeji-ee's standard conf, which reads `shime1`-`shime14` and `shime18`-`shime21`. Pass the zip as is:
+
+```sh
+uv run scripts/import-pet.py ~/Downloads/my-pet.zip --format shimeji -o characters/my-pet
+```
+
+Every frame is mirrored to head right, and the manifest's leading comment records which Shimeji action fed each animation. Also edit:
+
+- `name` is the zip's file name. Set the display name.
+- `[source]` has no `url` and a generic `art` line. Add the gallery page's URL and say what the art is.
+- `talk` falls back to the stand pose when the pack has no Wave, Greet, or Hello action. A bare pack has none of them.
 
 ## Linux Dependencies
 
