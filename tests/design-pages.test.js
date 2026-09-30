@@ -83,6 +83,21 @@ test("window-titles-hint.html carries noindex and a visible Dated class line", (
   );
 });
 
+test("index landing entry is the #1210 Dated proposal", () => {
+  const named = cls(indexEntry(design("index.html"), "landing.html"));
+  assert.match(named, /Dated proposal/);
+  assert.match(named, /#1210/);
+});
+
+test("landing.html carries noindex and a visible Dated class line", () => {
+  const html = design("landing.html");
+  assert.match(html, /<meta name="robots" content="noindex">/);
+  assert.match(
+    html,
+    /Dated proposal · <a href="https:\/\/github\.com\/omesser\/fidget\/issues\/1210">#1210<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
+  );
+});
+
 // #916 and ADR-0032: the hint names what the fidget knows, never the grant that
 // buys it, and never a verb of sight. The Settings mock on the same page is
 // allowed to name Screen Recording, so only the hint elements are checked.
