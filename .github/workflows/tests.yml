@@ -184,6 +184,12 @@ jobs:
         env:
           RUNNER_OS: ${{ runner.os }}
 
+      - name: Measure moving tick precision on macOS
+        if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
+        run: |
+          echo "=== Moving tick precision baseline vs precise path ==="
+          cargo run --release -p fidget-core --example sleep_overshoot -- 2000
+
       - name: Renderer tests
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         # Pillow is for tests/readme-gifs.test.js.

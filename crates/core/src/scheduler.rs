@@ -8,12 +8,20 @@ use crate::engine::{Frame, State};
 
 #[cfg(target_os = "macos")]
 mod macos_timer {
+    use std::sync::OnceLock;
     use std::time::Duration;
 
     extern "C" {
         fn mach_absolute_time() -> u64;
         fn mach_timebase_info(info: *mut mach_timebase_info_data_t) -> i32;
         fn mach_wait_until(deadline: u64) -> i32;
+        fn thread_policy_set(
+            thread: u32,
+            flavor: i32,
+            policy_info: *const u8,
+            count: u32,
+        ) -> i32;
+        fn mach_thread_self() -> u32;
     }
 
     #[repr(C)]
@@ -22,18 +30,54 @@ mod macos_timer {
         denom: u32,
     }
 
+    const THREAD_TIME_CONSTRAINT_POLICY: i32 = 2;
+
+    #[repr(C)]
+    struct thread_time_constraint_policy {
+        period: u32,
+        computation: u32,
+        constraint: u32,
+        preemptible: u32,
+    }
+
     fn timebase() -> (u32, u32) {
-        static mut CACHED: Option<(u32, u32)> = None;
-        unsafe {
-            if let Some(tb) = CACHED {
-                return tb;
-            }
+        static CACHED: OnceLock<(u32, u32)> = OnceLock::new();
+        *CACHED.get_or_init(|| {
             let mut info = mach_timebase_info_data_t { numer: 0, denom: 0 };
-            mach_timebase_info(&mut info);
-            let result = (info.numer, info.denom);
-            CACHED = Some(result);
-            result
-        }
+            unsafe {
+                mach_timebase_info(&mut info);
+            }
+            (info.numer, info.denom)
+        })
+    }
+
+    pub fn enable_time_constraint() {
+        static ENABLED: OnceLock<()> = OnceLock::new();
+        ENABLED.get_or_init(|| {
+            let period_ns = 16_000_000u64;
+            let computation_ns = 8_000_000u64;
+            let constraint_ns = 16_000_000u64;
+            let (numerator, denominator) = timebase();
+            let period = (period_ns * denominator as u64 / numerator as u64) as u32;
+            let computation = (computation_ns * denominator as u64 / numerator as u64) as u32;
+            let constraint = (constraint_ns * denominator as u64 / numerator as u64) as u32;
+            let policy = thread_time_constraint_policy {
+                period,
+                computation,
+                constraint,
+                preemptible: 1,
+            };
+            let count = (std::mem::size_of::<thread_time_constraint_policy>() / 4) as u32;
+            unsafe {
+                let thread = mach_thread_self();
+                thread_policy_set(
+                    thread,
+                    THREAD_TIME_CONSTRAINT_POLICY,
+                    &policy as *const _ as *const u8,
+                    count,
+                );
+            }
+        });
     }
 
     pub fn precise_sleep(duration: Duration) {
@@ -111,12 +155,25 @@ pub fn precise_sleep(duration: Duration, moving: bool) {
     #[cfg(target_os = "macos")]
     {
         if moving {
+            macos_timer::enable_time_constraint();
             macos_timer::precise_sleep(duration);
             return;
         }
     }
     let _ = moving;
     std::thread::sleep(duration);
+}
+
+/// Returns whether `precise_sleep` will use the precise Mach timer path.
+/// True on macOS when `moving` is true, false otherwise.
+#[cfg(target_os = "macos")]
+pub fn uses_precise_mach(moving: bool) -> bool {
+    moving
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn uses_precise_mach(_moving: bool) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -289,5 +346,19 @@ mod tests {
         let duration = ms(10);
         precise_sleep(duration, true);
         precise_sleep(duration, false);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn moving_uses_precise_path_on_macos() {
+        assert!(crate::scheduler::uses_precise_mach(true));
+        assert!(!crate::scheduler::uses_precise_mach(false));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn no_platform_uses_precise_path() {
+        assert!(!crate::scheduler::uses_precise_mach(true));
+        assert!(!crate::scheduler::uses_precise_mach(false));
     }
 }
