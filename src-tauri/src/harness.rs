@@ -398,7 +398,7 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = match command.spawn() {
+    let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return ProbeOutcome::NotFound;
