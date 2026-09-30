@@ -286,9 +286,9 @@ case "open":
         die("no status item after 20s - did the app finish launching?")
     }
     guard let item = children(extras).first else { die("the app has no status item") }
-    guard press(item) else {
-        die("status item refused every action \(actions(item)); last: \(lastError)")
-    }
+    // A real click, not AXPress: tray-icon 0.25 attaches the menu only in its
+    // mouse-down handler, so AXPress on the item opens nothing.
+    guard click(item) else { die("the status item has no frame to click") }
     guard
         let row = waitFor(
             5,

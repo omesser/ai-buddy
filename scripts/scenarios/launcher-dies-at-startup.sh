@@ -4,8 +4,8 @@
 #   aborts before initialize. The menu bar icon's menu opens and its Chat… row
 #   is pressed, so Chat opens and takes focus. Chat is resized to 420 and 320
 #   points, then Codex is pressed. Three screenshots. Fidget quits at the end.
-# Input: AXPress on the menu row and Codex, a click at the centre only if one
-#   refuses it (two at most); resizes through the Accessibility API; no keys.
+# Input: one real click on the menu bar icon; AXPress on Chat… and Codex, a
+#   click only if one refuses it (three at most); AX resizes; no keys.
 # Duration: about 30 s, 2 min at most.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
 # Asserts: what only a live run can: the tray's Chat… row opens the Harness
