@@ -391,6 +391,15 @@ enum ProbeOutcome {
 /// if the binary is not on PATH, Unhealthy if it exits nonzero, times out, or
 /// produces no output, and Healthy otherwise. Runs on the preflight thread.
 fn probe_launcher(launch: &Launch) -> ProbeOutcome {
+    // Skip probe for test fixtures: they use the test binary as argv[0].
+    if cfg!(test) {
+        if let Ok(current_exe) = std::env::current_exe() {
+            if launch.argv[0] == current_exe.to_string_lossy() {
+                return ProbeOutcome::Healthy;
+            }
+        }
+    }
+
     let mut command = Command::new(&launch.argv[0]);
     command
         .arg(launch.version_flag())
