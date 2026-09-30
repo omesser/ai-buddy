@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::acp_wire::{
-    Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError, Wire,
+    kill_harness_tree, Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError,
+    Wire,
 };
 use crate::action_log;
 
@@ -173,6 +174,29 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
 }
 
 impl Launch {
+    /// The version flag for this launcher. npx presets probe npx itself; first-party
+    /// CLIs probe their own binary.
+    fn version_flag(&self) -> &str {
+        match self.argv[0].as_str() {
+            "npx" => "--version",
+            "copilot" => "--version",
+            "cursor-agent" => "--version",
+            "grok" => "--version",
+            "goose" => "--version",
+            "hermes" => "--version",
+            "opencode" => "--version",
+            _ => {
+                if self.argv[0].ends_with("agy_acp_server.par")
+                    || self.argv[0].ends_with("agy_acp_server.exe")
+                {
+                    "--help"
+                } else {
+                    "--version"
+                }
+            }
+        }
+    }
+
     /// The child, inheriting our environment. No provider key in it, because
     /// one overrides a subscription login with no prompt. No `CLAUDE_CONFIG_DIR`
     /// and no `--bare`, because both cut the child off from the login the user
@@ -351,6 +375,99 @@ fn isolate_from_interrupt(command: &mut Command) {
     apply_isolation(command, INTERRUPT_OWNED.load(Ordering::SeqCst));
 }
 
+/// Version probe timeout. Short enough not to block the UI thread, long
+/// enough for a cold npx or a slow network.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Probe outcome: the three states before attach.
+#[derive(Debug)]
+enum ProbeOutcome {
+    NotFound,
+    Unhealthy(String),
+    Healthy,
+}
+
+/// Probe the launcher with a version check before spawning. Returns NotFound
+/// if the binary is not on PATH, Unhealthy if it exits nonzero, times out, or
+/// produces no output, and Healthy otherwise. Runs on the preflight thread.
+fn probe_launcher(launch: &Launch) -> ProbeOutcome {
+    let mut command = Command::new(&launch.argv[0]);
+    command
+        .arg(launch.version_flag())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return ProbeOutcome::NotFound;
+        }
+        Err(error) => {
+            return ProbeOutcome::Unhealthy(format!(
+                "`{}` could not be run: {error}",
+                launch.argv[0]
+            ));
+        }
+    };
+
+    let pid = child.id();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+
+    match rx.recv_timeout(PROBE_TIMEOUT) {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if !output.status.success() {
+                let output_summary = if !stdout.is_empty() || !stderr.is_empty() {
+                    let combined = format!("{}{}", stdout.trim(), stderr.trim())
+                        .chars()
+                        .take(200)
+                        .collect::<String>();
+                    format!(" Output: {combined}")
+                } else {
+                    String::new()
+                };
+                return ProbeOutcome::Unhealthy(format!(
+                    "`{} {}` exited with {}.{}",
+                    launch.argv[0],
+                    launch.version_flag(),
+                    output.status,
+                    output_summary
+                ));
+            }
+
+            if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                return ProbeOutcome::Unhealthy(format!(
+                    "`{} {}` produced no output",
+                    launch.argv[0],
+                    launch.version_flag()
+                ));
+            }
+
+            ProbeOutcome::Healthy
+        }
+        Ok(Err(error)) => ProbeOutcome::Unhealthy(format!(
+            "`{} {}` could not be monitored: {error}",
+            launch.argv[0],
+            launch.version_flag()
+        )),
+        Err(_) => {
+            kill_harness_tree(pid);
+            ProbeOutcome::Unhealthy(format!(
+                "`{} {}` timed out after {:.1}s",
+                launch.argv[0],
+                launch.version_flag(),
+                PROBE_TIMEOUT.as_secs_f32()
+            ))
+        }
+    }
+}
+
 #[cfg(windows)]
 pub(crate) fn get_creation_flags() -> u32 {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -402,6 +519,9 @@ pub struct HarnessInspect {
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive, and authenticated, so nothing else here tells it apart.
     pub last_error: Option<String>,
+    /// Why the launcher is present but unhealthy: nonzero exit, no output, or
+    /// timeout on version check. The sentence Chat and Settings show.
+    pub unhealthy: Option<String>,
 }
 
 /// One remembered ACP session, keyed so a restart can load it for that
@@ -725,6 +845,7 @@ impl Session {
         self.update_inspect(|inspect| {
             inspect.initializing = true;
             inspect.failed = None;
+            inspect.unhealthy = None;
         });
         let session = Arc::clone(self);
         thread::spawn(move || {
@@ -733,6 +854,32 @@ impl Session {
             if let Ok(mut state) = session.state.lock() {
                 state.spawn_wait_until = None;
             }
+
+            match probe_launcher(&session.launch) {
+                ProbeOutcome::NotFound => {
+                    let why = session.note_missing();
+                    eprintln!("harness: {why}; StaticDirector is in force until it is installed");
+                    (session.forward)(Forwarded::AttachSettled);
+                    return;
+                }
+                ProbeOutcome::Unhealthy(why) => {
+                    let sentence = format!(
+                        "{why}. Run `{} {}` in a terminal to check what is wrong",
+                        session.launch.argv[0],
+                        session.launch.version_flag()
+                    );
+                    session.update_inspect(|inspect| {
+                        inspect.alive = false;
+                        inspect.initializing = false;
+                        inspect.unhealthy = Some(sentence.clone());
+                    });
+                    eprintln!("harness: {sentence}; StaticDirector is in force until it is fixed");
+                    (session.forward)(Forwarded::AttachSettled);
+                    return;
+                }
+                ProbeOutcome::Healthy => {}
+            }
+
             let attached = session.attach(None);
             match &attached {
                 Ok(_) => eprintln!("harness: {} attached", session.launch.name),
@@ -3012,17 +3159,40 @@ mod tests {
                 .map_or("", |(_, rest)| rest)
                 .to_string()
                 + "::fake_acp_agent";
+
+            #[cfg(unix)]
+            let wrapper = {
+                use std::os::unix::fs::PermissionsExt;
+                let path = dir.join("launcher-wrapper.sh");
+                let contents = format!(
+                    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"fake-acp-agent 1.0.0\"\n  exit 0\nfi\nexec '{}' {} --exact --nocapture --test-threads=1 'script={}' 'count={}' \"$@\"\n",
+                    exe.display(),
+                    test,
+                    script,
+                    count.display()
+                );
+                std::fs::write(&path, contents).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+                path
+            };
+
+            #[cfg(windows)]
+            let wrapper = {
+                let path = dir.join("launcher-wrapper.bat");
+                let contents = format!(
+                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 script={} count={} %*\n",
+                    exe.display(),
+                    test,
+                    script,
+                    count.display()
+                );
+                std::fs::write(&path, contents).unwrap();
+                path
+            };
+
             let launch = Launch {
                 name: "fake".into(),
-                argv: vec![
-                    exe.to_string_lossy().to_string(),
-                    test,
-                    "--exact".into(),
-                    "--nocapture".into(),
-                    "--test-threads=1".into(),
-                    format!("script={script}"),
-                    format!("count={}", count.display()),
-                ],
+                argv: vec![wrapper.to_string_lossy().to_string()],
             };
             let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
@@ -6476,5 +6646,153 @@ mod tests {
             &launch(Some("cursor-agent acp --model gpt")).unwrap()
         ));
         assert!(!takes_cursor_config(&launch(Some("hermes")).unwrap()));
+    }
+
+    /// Probe a missing launcher.
+    #[test]
+    fn probe_missing_launcher() {
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/fidget-no-such-harness".into()],
+        };
+        match probe_launcher(&launch) {
+            ProbeOutcome::NotFound => {}
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    /// Probe a launcher that exits nonzero.
+    #[test]
+    fn probe_launcher_exits_nonzero() {
+        let launch = Launch {
+            name: "false".into(),
+            argv: vec!["false".into()],
+        };
+        match probe_launcher(&launch) {
+            ProbeOutcome::Unhealthy(why) => {
+                assert!(why.contains("exited with"), "got {why}");
+            }
+            other => panic!("expected Unhealthy, got {other:?}"),
+        }
+    }
+
+    /// Probe a healthy launcher.
+    #[test]
+    fn probe_healthy_launcher() {
+        let launch = Launch {
+            name: "echo".into(),
+            argv: vec!["echo".into()],
+        };
+        match probe_launcher(&launch) {
+            ProbeOutcome::Healthy => {}
+            other => panic!("expected Healthy, got {other:?}"),
+        }
+    }
+
+    /// npx presets cite npx itself as their probe command.
+    #[test]
+    fn npx_presets_probe_npx() {
+        for preset in ["claude", "codex", "pi"] {
+            let launch = launch(Some(preset)).unwrap();
+            assert_eq!(launch.version_flag(), "--version");
+            assert_eq!(launch.argv[0], "npx", "preset {preset} should probe npx");
+        }
+    }
+
+    /// First-party CLIs cite their own binary.
+    #[test]
+    fn first_party_clis_probe_themselves() {
+        for preset in [
+            "copilot",
+            "cursor-agent",
+            "grok",
+            "goose",
+            "hermes",
+            "opencode",
+        ] {
+            let launch = launch(Some(preset)).unwrap();
+            assert_eq!(launch.version_flag(), "--version");
+            assert_eq!(
+                launch.argv[0], preset,
+                "preset {preset} should probe its own binary"
+            );
+        }
+    }
+
+    /// antigravity probes with --help instead of --version.
+    #[test]
+    fn antigravity_probes_with_help() {
+        let launch = launch(Some("antigravity")).unwrap();
+        assert_eq!(launch.version_flag(), "--help");
+    }
+
+    /// Probe timeout produces an unhealthy outcome.
+    #[test]
+    fn probe_timeout() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("slow-launcher.sh");
+            std::fs::write(&path, "#!/bin/sh\nsleep 10\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+
+        #[cfg(windows)]
+        let script = {
+            let path = dir.join("slow-launcher.bat");
+            std::fs::write(&path, "@echo off\ntimeout /t 10 /nobreak >nul\n").unwrap();
+            path
+        };
+
+        let launch = Launch {
+            name: "timeout-fixture".into(),
+            argv: vec![script.to_string_lossy().to_string()],
+        };
+        match probe_launcher(&launch) {
+            ProbeOutcome::Unhealthy(why) => {
+                assert!(why.contains("timed out"), "got {why}");
+            }
+            other => panic!("expected Unhealthy from timeout, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Probe with no output produces an unhealthy outcome.
+    #[test]
+    fn probe_no_output() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("no-output.sh");
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+
+        #[cfg(windows)]
+        let script = {
+            let path = dir.join("no-output.bat");
+            std::fs::write(&path, "@echo off\nexit /b 0\n").unwrap();
+            path
+        };
+
+        let launch = Launch {
+            name: "no-output".into(),
+            argv: vec![script.to_string_lossy().to_string()],
+        };
+        match probe_launcher(&launch) {
+            ProbeOutcome::Unhealthy(why) => {
+                assert!(why.contains("produced no output"), "got {why}");
+            }
+            other => panic!("expected Unhealthy from no output, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
