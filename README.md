@@ -34,7 +34,13 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 
 ## Get It
 
-Download a build from [GitHub Releases](https://github.com/omesser/fidget/releases): a `.dmg` for macOS (Apple Silicon), an AppImage and a `.deb` for Linux (x86_64), or an NSIS installer for Windows (x86_64). The builds are not signed yet, so the first open warns. On macOS, double-click `Fidget.app`, dismiss the Gatekeeper dialog, then System Settings → Privacy & Security → Open Anyway. On Windows, choose More info → Run anyway in SmartScreen.
+On macOS (Apple Silicon) with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask https://raw.githubusercontent.com/omesser/fidget/main/packaging/homebrew/Casks/fidget.rb
+```
+
+Or download a build from [GitHub Releases](https://github.com/omesser/fidget/releases): a `.dmg` for macOS (Apple Silicon), an AppImage and a `.deb` for Linux (x86_64), or an NSIS installer for Windows (x86_64). The builds are not signed yet, so the first open warns. On macOS, open the app from the disk image, dismiss the Gatekeeper dialog, then System Settings → Privacy & Security → Open Anyway. On Windows, choose More info → Run anyway in SmartScreen.
 
 Or clone and run from the repo root (macOS, Linux, Windows):
 

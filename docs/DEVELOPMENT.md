@@ -471,6 +471,23 @@ The NSIS installer ships. The README platform table lists the degraded cells.
 
 The ACP Harness child and its descendants (e.g. `npx` spawning Node) go in a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. The child is spawned suspended, assigned to the job, then resumed, so no grandchild outlives a quit or detach. It also gets its own process group (`CREATE_NEW_PROCESS_GROUP`), so Ctrl+C into `cargo run` does not reach it.
 
+## Homebrew
+
+Apple Silicon macOS, without a Rust toolchain:
+
+```sh
+brew install --cask https://raw.githubusercontent.com/omesser/fidget/main/packaging/homebrew/Casks/fidget.rb
+```
+
+The cask is [`packaging/homebrew/Casks/fidget.rb`](../packaging/homebrew/Casks/fidget.rb). It points at one GitHub Release disk image. `scripts/verify-homebrew-cask.sh` downloads that image and checks the checksum, the app bundle, the bundle id, and the data-directory path. After a Release, pass its tag:
+
+```sh
+scripts/bump-homebrew-cask.sh v0.0.1-dev
+scripts/verify-homebrew-cask.sh
+```
+
+The bump reads that tag's Apple Silicon `.dmg`. The cask depends on arm64 because that is the disk image the Release ships.
+
 ## Further Reading
 
 - [README](../README.md): what it does, how to run, platform support

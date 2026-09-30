@@ -1,0 +1,40 @@
+name: Homebrew cask
+
+# The cask names one Release disk image. This downloads that image and checks
+# the checksum, the app bundle, and the bundle id.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - packaging/homebrew/**
+      - scripts/homebrew-cask.rb
+      - scripts/verify-homebrew-cask.sh
+      - scripts/bump-homebrew-cask.sh
+      - .github/workflows/homebrew-cask.yml
+  pull_request:
+    paths:
+      - packaging/homebrew/**
+      - scripts/homebrew-cask.rb
+      - scripts/verify-homebrew-cask.sh
+      - scripts/bump-homebrew-cask.sh
+      - .github/workflows/homebrew-cask.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install ruby and 7z
+        run: sudo apt-get update && sudo apt-get install -y ruby p7zip-full
+
+      - name: Verify the cask against the Release
+        run: scripts/verify-homebrew-cask.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
