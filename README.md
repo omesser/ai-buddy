@@ -1,50 +1,44 @@
 <div align="center">
 
-# Fidget
-
 <!-- Shields split on a single hyphen, so cursor-agent is cursor--agent in the URL. Each color is that harness's own hue, darkened until the white shield text stays readable. -->
 
 [![CI](https://github.com/omesser/fidget/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/fidget/actions/workflows/tests.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 [![harness](https://img.shields.io/badge/harness-claude-C25B3A)](#harness-support) [![harness](https://img.shields.io/badge/harness-codex-0E8A6A)](#harness-support) [![harness](https://img.shields.io/badge/harness-cursor--agent-D04200)](#harness-support) [![harness](https://img.shields.io/badge/harness-hermes-5C5AD6)](#harness-support) [![harness](https://img.shields.io/badge/harness-opencode-005BBB)](#harness-support) [![harness](https://img.shields.io/badge/harness-pi-0C7EA8)](#harness-support) [![harness](https://img.shields.io/badge/harness-grok-2B2B2B)](#harness-support) [![harness](https://img.shields.io/badge/harness-copilot-57606A)](#harness-support) [![harness](https://img.shields.io/badge/harness-goose-B83800)](#harness-support) [![harness](https://img.shields.io/badge/harness-antigravity-C5221F)](#harness-support)
 
+<img src="./branding/banner.jpg" width="100%" alt="Fidget, a desktop pet" />
+
 </div>
 
----
+# Fidget keeps you company while you vibe-code, and pitches in when you ask
 
-A little character that lives on your desktop. It walks the tops of your windows, naps, and lets you pick it up and throw it.
+An embodied AI that lives on your desktop. Pick it up, throw it around, let it nap, talk to it, or ask it to do anything that an AI harness can do (which is a lot)! It's a virtual manifestation of your favorite AI model and harness, with all of its capabilities.
 
-Talk to it, toss it around, and enjoy the company while your code compiles or that spreadsheet drags on. Each character has a personality and a life of its own. Put an AI agent behind it and it comes to life, and colors your desktop with its character.
-
-It helps, too. Double-click to chat with your agent of choice: Claude Code, Codex, Cursor, or any [harness](#harness-support) that speaks ACP. It can do almost anything on your machine, and answers in speech and motion.
-
-<p align="center">
-  <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
-</p>
+Each character has a personality and a life of its own.
 
 ![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
+Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget/cues.html)
+
 ## What It Does
 
-- **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue. Works offline with Static weights; optionally connect a model (API key or local) for more variety.
-- **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
-- **Never reads your screen.** Sensing is window metadata, never pixels. See [Computer use](#computer-use).
-
-## See It
-
-Try [Fidget Cues](https://omesser.github.io/fidget/cues.html) — gestures and physics on a draggable sprite in the browser.
+- **Keeps you company.** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
+- **Pick a character, or bring your own.** Eight built-in characters, each with its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
+- **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
+- **Knows what you're up to.** It can see and react to your open windows, for context-aware chatter. It reads window names only, with your consent, but [never takes screenshots](#computer-use).
+- **Stays out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
 
 ## Interact
 
 ![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
 
-- **Poke** — click once for a react, then it resumes.
-- **Summon** — double-click to open a chat window for that fidget.
-- **Pick up** — click and drag; it follows the cursor.
-- **Throw** — release while moving; it flies on an arc and lands.
-- **Perch** — let it settle on a window's top edge; drag slowly to ride, fling to drop.
-- **Hide** — Control-Option-Command-B toggles the fidget instantly.
-- **Fullscreen** — fades out for fullscreen apps, fades back when you exit.
+- **Poke** - click once for a react, then it resumes.
+- **Summon** - double-click to open a chat window for that fidget.
+- **Pick up** - click and drag; it follows the cursor.
+- **Throw** - release while moving; it flies on an arc and lands.
+- **Perch** - let it settle on a window's top edge; drag slowly to ride, fling to drop.
+- **Hide** - Control-Option-Command-B toggles the fidget instantly.
+- **Fullscreen** - fades out for fullscreen apps, fades back when you exit.
 
 ### Talk to it
 
@@ -93,13 +87,13 @@ Apple Silicon. The Release ships a `.dmg`. Open it and copy `fidget` to Applicat
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
 
-The same missing signature costs two Keychain dialogs at launch — "Fidget wants to use your confidential information stored in Fidget" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/fidget/issues/283)).
+The same missing signature costs two Keychain dialogs at launch - "Fidget wants to use your confidential information stored in Fidget" - for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/fidget/issues/283)).
 
 ### Linux
 
 The Release ships an AppImage and a `.deb` (x86_64).
 
-Under Wayland the sprite keeps to screen edges and loses window Perches — a supported mode, not an error. X11 gets both.
+Under Wayland the sprite keeps to screen edges and loses window Perches - a supported mode, not an error. X11 gets both.
 
 ```sh
 # Debian/Ubuntu .deb
@@ -246,7 +240,7 @@ The portable option across the Harnesses above is [cua-driver](https://github.co
 
 ## Platform Support
 
-What works today on each OS. Degraded and stub mean reduced or no-op — supported honesty, not a crash.
+What works today on each OS. Degraded and stub mean reduced or no-op - supported honesty, not a crash.
 
 | Capability | macOS | Linux | Windows |
 |---|---|---|---|
@@ -259,19 +253,19 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 | Capturable; opt-out in settings | yes | degraded | yes |
 | Settings window | yes | yes † | yes |
 
-- `yes` — implemented.
-- `degraded` — runs in reduced form. A supported mode, not an error.
-- `†` — needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+- `yes` - implemented.
+- `degraded` - runs in reduced form. A supported mode, not an error.
+- `†` - needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Developing
 
 **Want to help?** [Open issues](https://github.com/omesser/fidget/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how Fidget compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
 
 **Design and decisions:**
-- [CONTEXT.md](./CONTEXT.md) — vocabulary
-- [DESIGN.md](./DESIGN.md) — design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/fidget/issues/17) tracks what is left)
-- [docs/SPEC.md](./docs/SPEC.md) — v1 scope
-- [docs/adr/](./docs/adr/) — ADRs
+- [CONTEXT.md](./CONTEXT.md) - vocabulary
+- [DESIGN.md](./DESIGN.md) - design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/fidget/issues/17) tracks what is left)
+- [docs/SPEC.md](./docs/SPEC.md) - v1 scope
+- [docs/adr/](./docs/adr/) - ADRs
 
 ## Prior Art and Attribution
 
@@ -284,7 +278,7 @@ with each brand's trademark reserved to its owner).
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. Fidget is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
-The Chat window's mind mark — the small brain beside what answers — is the
+The Chat window's mind mark - the small brain beside what answers - is the
 `brain` glyph from [Font Awesome Free](https://fontawesome.com/) 6.x, used
 under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and inlined as
 a path in `src/chat.html`. The licence asks for the credit; this is it.
