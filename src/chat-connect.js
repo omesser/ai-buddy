@@ -56,7 +56,7 @@ export function canAnswer(opening) {
   if (!harness) {
     return true;
   }
-  return harness.alive && !harness.missing && !harness.initializing;
+  return harness.alive && !harness.missing && !harness.unhealthy && !harness.initializing;
 }
 
 export function composerPlaceholder(opening) {
@@ -137,6 +137,17 @@ export function landingCopy(opening) {
     return {
       title: `Initializing ${name}…`,
       lede: `${name} is starting up. Chat will be ready in a moment.`,
+      command: null,
+      signInLabel: null,
+      hint: null,
+      signIn: [],
+    };
+  }
+
+  if (harness?.unhealthy) {
+    return {
+      title: `${name} is unhealthy`,
+      lede: `${harness.unhealthy} Then pick ${name} again, or pick a different Harness below.`,
       command: null,
       signInLabel: null,
       hint: null,

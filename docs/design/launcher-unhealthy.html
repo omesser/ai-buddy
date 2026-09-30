@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+  The unhealthy launcher state for omesser/fidget#1162: Settings and Chat
+  states when a launcher is present but broken (nonzero exit, no output, or
+  timeout on version check).
+
+  A Dated page under ADR-0011: hand-written and frozen at its date. Design
+  approved 2026-09-30. Self-contained: no font link, no remote images, inline
+  only. The system font stack is the design.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launcher Unhealthy State</title>
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #2C8C7C;
+    --warning: #D97757;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1F232D;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      --warning: #E8A78A;
+      color-scheme: dark;
+    }
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
+  .class {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .02em;
+    color: var(--ink-3); margin: 0;
+  }
+  .class a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .class a:hover { text-decoration: underline; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  .lede { color: var(--ink-2); max-width: 66ch; margin: 0; }
+  .lede code, p code, li code { font-family: var(--mono); font-size: 0.92em; }
+  h2 {
+    font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-2); margin: 48px 0 20px; border-bottom: 1px solid var(--line); padding-bottom: 8px;
+  }
+  p { margin: 16px 0; }
+  code { background: var(--paper-2); padding: 2px 6px; border-radius: 3px; }
+
+  .state-box {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 24px 0;
+  }
+  .state-box.warning {
+    border-color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 5%, var(--paper-2));
+  }
+  .state-title {
+    font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 12px;
+  }
+  .state-content { color: var(--ink-2); margin: 0; }
+  .state-content strong { color: var(--ink); }
+  .state-action {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 4px;
+    padding: 12px; margin: 16px 0 0; display: block;
+  }
+
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  @media (max-width: 768px) {
+    .comparison { grid-template-columns: 1fr; }
+  }
+  .outcome {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .outcome h3 {
+    font-size: 14px; font-weight: 700; margin: 0 0 8px;
+  }
+  .outcome.not-found h3 { color: var(--ink-2); }
+  .outcome.unhealthy h3 { color: var(--warning); }
+  .outcome.healthy h3 { color: var(--accent); }
+  .outcome p {
+    font-size: 13px; color: var(--ink-2); margin: 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <p class="class">
+    <a href="https://github.com/omesser/fidget/issues/1162">#1162</a>
+    Dated page: design approved 2026-09-30
+  </p>
+  <h1>Launcher Unhealthy State</h1>
+  <p class="lede">
+    Before each attach, fidget probes the launcher with a version check under a
+    short timeout. Three outcomes: not found, unhealthy, or healthy. The unhealthy
+    state is new.
+  </p>
+</header>
+
+<h2>Three probe outcomes</h2>
+
+<div class="comparison">
+  <div class="outcome not-found">
+    <h3>Not Found</h3>
+    <p>Binary not on PATH. Existing landing (#1105).</p>
+  </div>
+
+  <div class="outcome unhealthy">
+    <h3>Unhealthy</h3>
+    <p>Present but broken: nonzero exit, no output, or timeout. New sticky state.</p>
+  </div>
+
+  <div class="outcome healthy">
+    <h3>Healthy</h3>
+    <p>Version check passed. Attach as today.</p>
+  </div>
+</div>
+
+<h2>Settings state</h2>
+
+<div class="state-box warning">
+  <div class="state-title">npx preset (claude, codex, pi)</div>
+  <div class="state-content">
+    <strong>claude</strong> is unhealthy: <code>`npx --version` exited with exit status: 1.</code>
+    Run <code>npx --version</code> in a terminal to check what is wrong. The AI runs on
+    static weights until it is fixed; Model API above hands the HTTP endpoint back.
+  </div>
+</div>
+
+<div class="state-box warning">
+  <div class="state-title">First-party CLI (copilot, goose, hermes)</div>
+  <div class="state-content">
+    <strong>hermes</strong> is unhealthy: <code>`hermes --version` timed out after 3.0s.</code>
+    Run <code>hermes --version</code> in a terminal to check what is wrong. The AI runs on
+    static weights until it is fixed; Model API above hands the HTTP endpoint back.
+  </div>
+</div>
+
+<div class="state-box warning">
+  <div class="state-title">Broken Node.js</div>
+  <div class="state-content">
+    <strong>codex</strong> is unhealthy: <code>`npx --version` produced no output.</code>
+    Run <code>npx --version</code> in a terminal to check what is wrong. The AI runs on
+    static weights until it is fixed; Model API above hands the HTTP endpoint back.
+  </div>
+</div>
+
+<h2>Chat surface state</h2>
+
+<div class="state-box warning">
+  <div class="state-title">Chat landing (same as Settings)</div>
+  <div class="state-content">
+    The launcher is unhealthy. The sentence names the command and shows abbreviated output.
+    The ways out: pick another Harness, switch to Model API, or turn AI off. Same exit paths
+    as the missing-launcher landing (#1105).
+  </div>
+</div>
+
+<h2>Verification</h2>
+
+<p>
+  Each preset documents its probe command. npx presets (claude, codex, pi) probe <code>npx --version</code>.
+  First-party CLIs probe their own binary with <code>--version</code>.
+  antigravity probes <code>agy_acp_server.par --help</code> (or <code>.exe</code> on Windows).
+</p>
+
+<p>
+  Tests drive fixture launchers that exit nonzero, hang, or produce no output. Each outcome
+  reaches its documented state.
+</p>
+
+<h2>Open decisions</h2>
+
+<p>None. The design matches the acceptance criteria from the issue.</p>
+
+</div>
+</body>
+</html>

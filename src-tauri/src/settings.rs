@@ -390,6 +390,12 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                      weights meanwhile.",
                     attached.name
                 ),
+                None if attached.unhealthy.is_some() => format!(
+                    "{} is unhealthy: {} The AI runs on static weights until it is fixed; \
+                     Model API above hands the HTTP endpoint back.",
+                    attached.name,
+                    attached.unhealthy.as_deref().unwrap_or_default()
+                ),
                 None if attached.failed.is_some() => format!(
                     "{} failed to start: {} The AI runs on static weights until it answers; \
                      Model API above hands the HTTP endpoint back.",
