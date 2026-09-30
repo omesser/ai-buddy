@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Scenario: hero-gif (macOS)
-# On screen: launches Fidget as one Character (default Buddy Bot) with a
-#   Harness and records the main display for 45 s. The terminal cues five
-#   beats: throw the sprite at a window's top edge, poke it, double-click it
-#   (Chat opens, takes focus), type a question in Chat, Enter, and throw it
-#   again once the reply lands as a speech bubble and in Chat: Claude Code in
-#   the Character's voice under --harness claude, "Hello" from the fixture.
+# On screen: launches Fidget as one Character (default Buddy Bot) with a Harness
+#   and records the main display for 45 s. The terminal cues five beats: throw
+#   the sprite at a window's top edge, poke it, double-click it (Chat opens; keep
+#   it open, or the first-run tour bubble lands 25 s after launch), type a
+#   question, Enter, and throw it again once the reply lands as a speech bubble
+#   and in Chat: Claude Code's words under --harness claude, "Hello" from the fixture.
 # Input: yours, at the mouse and keyboard, on the terminal's cue. None sent.
 # Duration: about 70 s, 2 min at most. Grants: Screen Recording, Accessibility.
 # Asserts: the recording exists and runs 44 to 46 s. The look is yours to judge
@@ -14,8 +14,8 @@
 # Usage: hero-gif.sh --go [--harness fixture|claude] [--character <id>] <fidget binary> <fidget test binary>
 #        hero-gif.sh --crop x:y:w:h <recording.mp4> [<from s> [<length s>]]
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
-# --harness claude links your ~/.claude, ~/.claude.json and ~/.npm into the
-#   private HOME: sign-in and warm npx carry over, Fidget's data stays isolated.
+# --harness claude links ~/.claude, ~/.claude.json, ~/.npm and ~/Library/Keychains
+#   into the private HOME: sign-in and warm npx carry over, Fidget's data stays isolated.
 # --crop re-encodes a saved recording to docs/readme/hero.gif, launching
 #   nothing; x:y:w:h is in recording pixels, so 2x on a Retina display.
 set -euo pipefail
@@ -92,11 +92,13 @@ case "$harness_kind" in
   claude)
     harness=claude
     command -v npx > /dev/null || fail "npx is not on PATH; the claude Harness runs on Node"
-    # The CLI reads `$HOME/.claude` and `$HOME/.claude.json`, and its Keychain
-    # item is named for the config dir, so CLAUDE_CONFIG_DIR would miss the
-    # login. Links keep the CLI's view of HOME, and npx its warm cache.
-    for entry in .claude .claude.json .npm; do
-      [ -e "$HOME/$entry" ] || fail "no $HOME/$entry; sign in with \`claude /login\` first"
+    # The login sits in the login keychain, not under ~/.claude, and `security`
+    # falls back to `$HOME/Library/Keychains/login.keychain-db` for its search
+    # list, so CLAUDE_CONFIG_DIR alone would still read no keychain.
+    [ -e "$HOME/.claude.json" ] || fail "no $HOME/.claude.json; sign in with \`claude /login\` first"
+    mkdir -p "$out/home/Library"
+    for entry in .claude .claude.json .npm Library/Keychains; do
+      [ -e "$HOME/$entry" ] || fail "no $HOME/$entry"
       ln -s "$HOME/$entry" "$out/home/$entry"
     done
     ;;
@@ -133,7 +135,7 @@ cue "recording. Pick the sprite up and throw it hard at the window's top edge."
 at 4
 cue "it has landed. Click it once: a poke."
 at 7
-cue "double-click it. Chat opens; leave it open."
+cue "double-click it. Chat opens; leave it open, or the tour bubble lands at 21 s."
 at 10
 cue "type in Chat: What's in the news today?  Then press Enter."
 asked=$(replies)
