@@ -163,7 +163,7 @@ For multiple instances, start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` 
 
 Search paths, in order:
 
-1. `~/Library/Application Support/fidget/characters/`
+1. The user path. Today `search_paths` in `src-tauri/src/package.rs` builds it as `$HOME/Library/Application Support/fidget/characters/` on macOS and Linux alike, and leaves it unset on Windows. [#1189](https://github.com/omesser/fidget/issues/1189) moves it to the per-platform data directory (`dirs::data_dir()`, where `settings.json` lives).
 2. Shipped characters (copied from `characters/` at build time)
 
 `FIDGET_CHARACTERS=/path/to/chars` overrides them (colon-separated).
@@ -172,11 +172,191 @@ Eight characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotar
 
 ### Writing a Character
 
-A Character Package is a directory or `.zip` holding a `character.manifest`, a `personality.txt`, and the frames its manifest names. Manifest structure, animation declarations, and Behavior composition stay internal and undocumented until v2.
+A Character Package is a directory or `.zip` holding a `character.manifest`, an optional `personality.txt`, and the PNG frames its Character Manifest names. The Character Manifest is documented below, but it is not frozen: a key can still change before v2, and `character::load` in `crates/core/src/character.rs` is the authority when this page and the loader disagree.
+
+#### Create a character
+
+1. Copy a shipped package into a directory of your own, under the folder name you want to start it by, and point `FIDGET_CHARACTERS` at that directory. A `.zip` of the same files works too:
+
+   ```sh
+   mkdir -p ~/fidget-characters
+   cp -R characters/buddy-bot ~/fidget-characters/blip
+   export FIDGET_CHARACTERS=~/fidget-characters
+   ```
+
+   `FIDGET_CHARACTERS` replaces every search path, so a list separated by `:` (`;` on Windows) must also name the shipped `characters/` directory if you want those characters too. On macOS and Linux the user [search path](#character-packages) works without the variable; [#1189](https://github.com/omesser/fidget/issues/1189) settles where it lands per platform.
+
+2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
+3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and delete `[source]` or rewrite it for your art.
+4. Rewrite `personality.txt`, as [Writing a personality](#writing-a-personality) describes.
+5. Start it by folder name:
+
+   ```sh
+   cd src-tauri && FIDGET_CHARACTER=blip cargo run
+   ```
+
+   A package the loader rejects prints `character: <path> is not a valid Character Package:` on stderr, followed by every mistake at once.
+
+#### The Character Manifest
+
+`character.manifest` is TOML. The loader rejects any key it does not know, so a typo is an error, not a silent default. Top-level keys come before the first table, as TOML requires. In the tables below, "Required" means the loader rejects the package without it.
+
+| Key | Required | Value | Default |
+|---|---|---|---|
+| `name` | Yes | The Character's name, as the UI shows it. Not empty. | |
+| `render_mode` | No | `"pixelated"` keeps hard pixels when scaling; `"smooth"` filters drawn art. | `"pixelated"` |
+| `scale` | No | Whole number from 1 to 4: the factor the art is drawn at. | 4 |
+| `[source]` | No | Where the art came from. See [Declaring where the art came from](#declaring-where-the-art-came-from). | |
+| `[director]` | No | How proactive model calls space themselves. | |
+| `[cursor]` | No | How the Character reacts to the cursor. | |
+| `[animations.<name>]` | Nine required | One table per Animation. | |
+| `[behaviors.<name>]` | No | One table per Behavior. | |
+
+A Character Manifest is at most 1 MiB. A package is at most 64 MiB, 4096 files, and 8 directories deep.
+
+#### Animations
+
+Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`, `react`, `talk`, and `hold`. The Engine also asks for three optional ones, and draws a stand-in when a package omits them:
+
+| Animation | Plays when | Without it |
+|---|---|---|
+| `grab` | The user drags the sprite | `fall` |
+| `climb` | The sprite climbs | `walk` |
+| `jump` | A Behavior plays the `jump` Primitive | `fall` |
+
+Any other name draws only as a Variant or a Left Strip of one of these.
+
+| Key | Required | Value | Default |
+|---|---|---|---|
+| `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
+| `fps` | No | Whole number from 1 to 60. | 8 |
+| `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
+| `variant_of` | No | Another Animation's name. Starting that base draws one member of its ring by weight: the base or any of its Variants. | |
+| `weight` | No | Whole number: this Animation's share of its Variant ring. Read only in a ring. | 10 |
+| `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
+
+The loader checks each frame against the art:
+
+- Every frame is an 8-bit RGBA PNG in the package, at most 1024 pixels on either side, and every frame of one Animation is the same size.
+- All of a package's distinct frames add up to at most 256 megapixels (256 × 1024 × 1024 pixels). A frame two Animations share counts once.
+- A `variant_of` base is declared, is not itself a Variant, and both it and the variant loop `"forever"`.
+- A `left_of` base is declared and is not itself a Left Strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
+
+Draw every Animation facing right. The renderer mirrors it for leftward travel unless another Animation declares `left_of` for it. Pixels with alpha below 128 do not catch clicks.
+
+#### Behaviors
+
+A Behavior is a named sequence of Primitives that the Static Director picks by weight, or that a model proposes. A Character composes Behaviors from Primitives and cannot define new ones.
+
+| Key | Required | Value | Default |
+|---|---|---|---|
+| `play` | No | A list of Primitives, played in order. A Behavior with none plays nothing. | `[]` |
+| `then` | No | The name of the Behavior that follows this one. | |
+| `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
+| `when` | No | The condition that must hold before the Behavior is picked. | Any time |
+
+The Primitives, and the Animation each plays:
+
+| Primitive | Animation |
+|---|---|
+| `idle`, `walk`, `land`, `sit`, `sleep`, `react`, `talk`, `hold` | The Animation of the same name |
+| `chase` | `walk`, steered toward the cursor's x along the ground |
+| `jump` | `jump`, or `fall` without it |
+
+`when` takes one of three forms. A duration is a whole number followed by `s` or `m`.
+
+| Condition | Holds while |
+|---|---|
+| `"idle over 2m"` | The user has been away for longer than the duration |
+| `"idle under 30s"` | The user has been away for less than the duration |
+| `"app Google Chrome"` | That application is frontmost, by the name the platform reports |
+
+Every `then` names a declared Behavior, and every chain ends. A chain that returns to a Behavior it already ran is an error.
+
+#### Director and cursor tuning
+
+| Key | Value | Default |
+|---|---|---|
+| `director.model_base` | Whole number from 1. | 2 |
+| `director.model_power` | Whole number from 0. | 1 |
+| `cursor.near_reaction` | What the Character does when the cursor comes near. | `"indifferent"` |
+| `cursor.rush_reaction` | What the Character does when the cursor rushes at it. | `"indifferent"` |
+
+After each proactive model call, the wait before the next one is multiplied by `model_base` raised to `model_power`, up to two hours. Addressing the Character resets the wait. The defaults double it; a `model_base` of 1 keeps it constant.
+
+A cursor reaction is one of `"indifferent"` (carry on), `"speak"` (play `talk`), `"face"` (turn toward the cursor), `"toward"` (walk toward it), `"away"` (walk away from it), or `"react"` (play `react`).
+
+#### A worked example
+
+`characters/buddy-bot/character.manifest` ships with the default Character. These tables are quoted from it, with comments and most frames left out:
+
+```toml
+name = "Buddy Bot"
+render_mode = "smooth"
+scale = 1
+
+[director]
+model_base = 1
+model_power = 1
+
+[cursor]
+near_reaction = "speak"
+rush_reaction = "react"
+
+[animations.idle]
+frames = [
+  "frames/idle-0.png",
+  # ... frames/idle-1.png to frames/idle-15.png
+]
+fps = 5
+weight = 20
+
+[animations.idle-blink]
+frames = [
+  "frames/idle-blink-0.png",
+  # ... frames/idle-blink-1.png to frames/idle-blink-5.png
+]
+fps = 8
+variant_of = "idle"
+
+[animations.land]
+frames = [
+  "frames/land-0.png",
+  "frames/land-1.png",
+  "frames/land-2.png",
+  "frames/land-3.png",
+]
+fps = 8
+loop = "once"
+
+[behaviors.greet]
+play = ["talk"]
+then = "stroll"
+weight = 40
+when = "idle under 10s"
+
+[behaviors.stroll]
+play = ["walk"]
+weight = 30
+when = "idle over 30s"
+
+[behaviors.settle]
+play = ["sit"]
+then = "nap"
+weight = 30
+when = "idle over 1m"
+
+[behaviors.nap]
+play = ["sit", "sleep"]
+weight = 40
+when = "idle over 2m"
+```
+
+Buddy Bot is drawn art at its own size, so it renders `smooth` at scale 1. Its proactive calls keep their first wait, two minutes by default, instead of backing off. `idle` weighs 20 against 10 for each of its three variants (`idle-blink` is one), so a bare idle draws on two turns in five. `land` plays once and holds its last frame into idle. `greet` hands over to `stroll`, and `settle` hands over to `nap`, which ends the chain. Buddy Bot declares no `grab`, so a drag plays its `fall`.
 
 #### Declaring where the art came from
 
-`[source]` is the one part of the manifest documented before v2, because the [Character Gallery](https://omesser.github.io/fidget/characters.html) publishes it. A package that omits it shows up there with no attribution.
+`[source]` says what the art is, where it came from, and what license covers it. The loader does not need it, and a local package can leave it out.
 
 ```toml
 [source]
@@ -185,7 +365,9 @@ url     = "https://example.com/the-pack"   # optional, http or https only
 license = "The license the art carries, or that none is declared."
 ```
 
-`license` is required whenever `[source]` is present. "None is declared" is a valid value; a missing key is not, because it looks like an unfinished manifest. A package with no `[source]` still loads, but cannot ship from this repository.
+When `[source]` is present, the loader rejects it without both `art` and `license`. "None is declared" is a valid `license`; a missing key is not, because it reads as an unfinished declaration.
+
+A Character shipped from `characters/` in this repository is expected to declare `[source]`, and `cargo test -p fidget-core --test character_packages` checks it. The [Character Gallery](https://omesser.github.io/fidget/characters.html) publishes it as the attribution panel. `art` names the Character and the pack or process its frames came from. `url` links that pack. `license` names the license the art carries, or says that none is declared.
 
 #### Writing a personality
 

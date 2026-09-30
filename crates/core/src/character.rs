@@ -30,8 +30,8 @@
 //! a table per Behavior, an optional `[source]` saying where the art came
 //! from, and an optional `[director]` for how proactive model calls space
 //! themselves. TOML replaces only the container — the `when`
-//! condition is still this module's own small language, checked here. It stays
-//! internal and undocumented until v2, so this is the whole of it:
+//! condition is still this module's own small language, checked here.
+//! `docs/DEVELOPMENT.md` documents it for authors; in short:
 //!
 //! ```text
 //! name = "Blip"
