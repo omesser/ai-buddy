@@ -242,7 +242,7 @@ The AppImage bundles `libgstreamer` but not the plugin pack (`bundleMediaFramewo
 
 ### Linux X11/Wayland
 
-One build, lane chosen at runtime. XWayland usually answers. A Wayland-only session loses window geometry: screen-edge physics only, no Perches.
+One build, lane chosen at runtime. When an X server answers (real X11 or XWayland under GNOME/KDE), full spatial support: window Perches, edges, Grab, Throw, and fullscreen fade. Rare pure Wayland sessions with no X server degrade to screen-edge physics only — no window Perches.
 
 ### Windows
 

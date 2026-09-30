@@ -53,7 +53,7 @@ Switch characters with `FIDGET_CHARACTER` or in Settings:
 FIDGET_CHARACTER=nim cargo run -p fidget
 ```
 
-A Model API instead of a Harness (OpenAI, Anthropic, xAI, Ollama, or any OpenAI-compatible endpoint), the `FIDGET_DIRECTOR_*` variables, and the Keychain dialogs an unsigned build costs are in [harness.md](./docs/harness.md#quick-start). Linux packages, Wayland, and the AppImage's FUSE dependency are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
+A Model API instead of a Harness (OpenAI, Anthropic, xAI, Ollama, or any OpenAI-compatible endpoint), the `FIDGET_DIRECTOR_*` variables, and the Keychain dialogs an unsigned build costs are in [harness.md](./docs/harness.md#quick-start). Full support for window Perches and edges via X11/XWayland (the normal Linux desktop path). Pure Wayland sessions without an X server fall back to screen edges only. Linux packages and the AppImage's FUSE dependency are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
 
 ## Interact
 
@@ -161,18 +161,19 @@ What works today on each OS.
 
 | Capability | macOS | Linux | Windows |
 |---|---|---|---|
-| Overlay that never takes focus | yes | yes † | yes |
-| Click-through off the sprite | yes | yes † | yes |
-| Grab, Throw and Poke | yes | yes † | yes |
-| Perch on window edges | yes | yes † | yes |
+| Overlay that never takes focus | yes | yes | yes |
+| Click-through off the sprite | yes | yes | yes |
+| Grab, Throw and Poke | yes | yes | yes |
+| Perch on window edges | yes | yes | yes |
 | Dock or panel as a Perch | yes | degraded | degraded |
-| Fade out for a fullscreen app | yes | yes † | degraded |
+| Fade out for a fullscreen app | yes | yes | degraded |
 | Capturable; opt-out in settings | yes | degraded | yes |
-| Settings window | yes | yes † | yes |
+| Settings window | yes | yes | yes |
 
 - `yes` - implemented.
 - `degraded` - runs in reduced form. A supported mode, not an error.
-- `†` - needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+
+Linux support is full on normal desktops (X11 or XWayland under GNOME/KDE). Rare pure Wayland sessions without an X server fall back to screen edges only - no window Perches, Grab, Throw, or fullscreen fade. See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Developing
 
