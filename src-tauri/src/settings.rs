@@ -391,14 +391,12 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                     attached.name
                 ),
                 None if attached.unhealthy.is_some() => format!(
-                    "{} is unhealthy: {} The AI runs on static weights until it is fixed; \
-                     Model API above hands the HTTP endpoint back.",
+                    "{} is unhealthy: {} The fidget runs on static weights until it is fixed.",
                     attached.name,
                     attached.unhealthy.as_deref().unwrap_or_default()
                 ),
                 None if attached.failed.is_some() => format!(
-                    "{} failed to start: {} The AI runs on static weights until it answers; \
-                     Model API above hands the HTTP endpoint back.",
+                    "{} failed to start: {} The fidget runs on static weights until it answers.",
                     attached.name,
                     attached.failed.as_deref().unwrap_or_default()
                 ),
@@ -5091,8 +5089,21 @@ mod tests {
         };
         assert_eq!(
             harness_state(Some(&died)),
-            "codex failed to start: `npx` exited before initialize, signal: 6 (SIGABRT). The AI \
-             runs on static weights until it answers; Model API above hands the HTTP endpoint back."
+            "codex failed to start: `npx` exited before initialize, signal: 6 (SIGABRT). The fidget \
+             runs on static weights until it answers."
+        );
+    }
+
+    #[test]
+    fn an_unhealthy_launcher_says_why_without_endpoint_jargon() {
+        let sick = crate::harness::HarnessInspect {
+            name: "codex".to_string(),
+            unhealthy: Some("version probe timed out".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            harness_state(Some(&sick)),
+            "codex is unhealthy: version probe timed out The fidget runs on static weights until it is fixed."
         );
     }
 
