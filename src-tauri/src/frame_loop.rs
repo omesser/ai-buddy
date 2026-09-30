@@ -1154,11 +1154,16 @@ pub(crate) fn run_frame_loop(
                 // the verb stays on `live` for the Engine. Here because
                 // `std::mem::take` empties the vec below.
                 if live.verbs.iter().any(|verb| matches!(verb, Verb::Summon)) {
-                    let title = roster
-                        .get(&live.id)
+                    let instance = roster.get(&live.id);
+                    let title = instance
                         .map(|instance| instance.name.clone())
                         .unwrap_or_else(|| live.character.name.clone());
-                    open_chat(&app, &live.id, title);
+                    open_chat(
+                        &app,
+                        &live.id,
+                        title,
+                        instance.map(|instance| instance.feet()),
+                    );
                 }
             }
 
