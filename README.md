@@ -23,7 +23,7 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 ## What It Does
 
 - **Keeps you company.** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
-- **Pick a character, or bring your own.** Eight built-in characters, each with its own sprites, animation loops, and personality. Edit any character's prompt, add one with a simple [manifest](./docs/DEVELOPMENT.md#character-packages), or [import](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
+- **Pick a character, or bring your own.** Eight built-in characters, each with its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
 - **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
 - **Knows what you're up to.** It can see and react to your open windows, for context-aware chatter. It reads window names only, with your consent, but [never takes screenshots](#computer-use).
 - **Stays out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
