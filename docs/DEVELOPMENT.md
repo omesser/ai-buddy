@@ -190,7 +190,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
    - **Windows:** `HOME` is usually unset, which leaves no user path. Set `FIDGET_CHARACTERS` to the directory that holds your package. It replaces every search path, so a list separated by `;` must also name the shipped `characters/` directory if you want those characters too.
 
 2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
-3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and rewrite `[source]` for your art.
+3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and delete `[source]` or rewrite it for your art.
 4. Rewrite `personality.txt`, as [Writing a personality](#writing-a-personality) describes.
 5. Start it by folder name:
 
@@ -202,7 +202,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 
 #### The Character Manifest
 
-`character.manifest` is TOML. The loader rejects any key it does not know, so a typo is an error, not a silent default. Top-level keys come before the first table, as TOML requires.
+`character.manifest` is TOML. The loader rejects any key it does not know, so a typo is an error, not a silent default. Top-level keys come before the first table, as TOML requires. In the tables below, "Required" means the loader rejects the package without it.
 
 | Key | Required | Value | Default |
 |---|---|---|---|
@@ -359,7 +359,7 @@ Buddy Bot is drawn art at its own size, so it renders `smooth` at scale 1. Its p
 
 #### Declaring where the art came from
 
-The [Character Gallery](https://omesser.github.io/fidget/characters.html) publishes `[source]`. A package that omits it shows up there with no attribution.
+`[source]` says what the art is, where it came from, and what license covers it. The loader does not need it, and a local package can leave it out.
 
 ```toml
 [source]
@@ -368,7 +368,9 @@ url     = "https://example.com/the-pack"   # optional, http or https only
 license = "The license the art carries, or that none is declared."
 ```
 
-`art` and `license` are required whenever `[source]` is present. "None is declared" is a valid value; a missing key is not, because it looks like an unfinished manifest. A package with no `[source]` still loads, but cannot ship from this repository.
+When `[source]` is present, the loader rejects it without both `art` and `license`. "None is declared" is a valid `license`; a missing key is not, because it reads as an unfinished declaration.
+
+A Character shipped from `characters/` in this repository is expected to declare `[source]`, and `cargo test -p fidget-core --test character_packages` checks it. The [Character Gallery](https://omesser.github.io/fidget/characters.html) publishes it as the attribution panel. `art` names the Character and the pack or process its frames came from. `url` links that pack. `license` names the license the art carries, or says that none is declared.
 
 #### Writing a personality
 
