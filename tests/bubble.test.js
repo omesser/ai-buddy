@@ -486,6 +486,32 @@ test("a hidden sprite drops the asking pulse rather than queueing it", () => {
   assert.deepEqual(calls, []);
 });
 
+
+test("a quick-message send shows thinking immediately, with no grace", () => {
+  const { machine, calls, advance, placement, surface } = machineHarness();
+
+  machine.userTurnStarted();
+  assert.equal(surface(), "thinking", "indicator is up the moment the send is accepted");
+  assert.deepEqual(calls, ["showThinking"]);
+  advance(0);
+  assert.equal(surface(), "thinking", "no grace timer to wait out");
+
+  // Engine dialogue still clears it the same frame.
+  const reply = placement({ dialogue: "on it" });
+  machine.event(reply);
+  machine.frame(reply);
+  assert.equal(surface(), "speech");
+});
+
+test("abandoning a quick-message send clears the thinking it armed", () => {
+  const { machine, surface } = machineHarness();
+
+  machine.userTurnStarted();
+  assert.equal(surface(), "thinking");
+  machine.userTurnAbandoned();
+  assert.equal(surface(), null);
+});
+
 // --- #178: one overlay owns the bubble; the rest draw the art only. ---
 // The Shell nulls `dialogue`, `thinking` and `cue` on every overlay but the
 // owner's, so the placements below are what a losing overlay is really handed.

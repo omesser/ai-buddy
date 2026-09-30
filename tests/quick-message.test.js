@@ -68,7 +68,7 @@ function shown() {
   return harnessed;
 }
 
-test("the composer appears after a 2.5s hover, focused, and not before", () => {
+test("the composer appears after a 1.5s hover, focused, and not before", () => {
   const { qm, advance } = harness();
 
   qm.enterSprite();
@@ -320,15 +320,15 @@ test("Escape does not dismiss", () => {
   assert.equal(qm.visible, true);
 });
 
-test("Send delivers the trimmed line and hides the composer", () => {
+test("Send delivers the trimmed line, clears text, and keeps the composer", () => {
   const { qm, sent } = shown();
   qm.setText("  hey, status?  ");
 
   assert.equal(qm.submit(), true);
   assert.deepEqual(sent, ["hey, status?"]);
-  assert.equal(qm.visible, false);
+  assert.equal(qm.visible, true, "pill stays up so thinking can push it");
   assert.equal(qm.text, "");
-  assert.equal(qm.typing, false);
+  assert.equal(qm.typing, true, "caret stays for a follow-up");
 });
 
 test("an empty line is not sent", () => {
@@ -519,7 +519,7 @@ test("Enter sends and Shift+Enter does not", () => {
 
   assert.equal(qm.keydown("Enter"), true);
   assert.deepEqual(sent, ["hey"]);
-  assert.equal(qm.visible, false);
+  assert.equal(qm.visible, true, "Enter keeps the pill for the turn in flight");
 });
 
 test("the composer sits above Speech when the two would share a box", () => {
@@ -535,30 +535,49 @@ test("the composer sits above Speech when the two would share a box", () => {
   assert.equal(stacked.y, 300, "one gap above the Speech bubble, not on top of it");
 });
 
-test("the composer pops in and settles in 380ms, and leaves the same way", () => {
+
+test("speech hide/show repositions the quick-message without waiting for a later frame", () => {
+  const js = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+
+  // Idle overlays may not paint after arm(); place when the bubble's visibility
+  // changes so a departed speech line cannot leave a stale top.
+  assert.match(
+    js,
+    /function show\(mode\) \{[\s\S]*?positionQuick\(view, spriteRect\(\)\)/,
+    "showing speech or thinking pushes the pill in the same turn",
+  );
+  assert.match(
+    js,
+    /function hide\(\) \{[\s\S]*?positionQuick\(view, spriteRect\(\)\)/,
+    "hiding speech or thinking snaps the pill back in the same turn",
+  );
+  assert.match(
+    js,
+    /view\.bubbles\.frame\(latest\);[\s\S]*?positionQuick\(/,
+    "drawView places the pill after the bubble machine has applied this frame",
+  );
+});
+
+test("the composer fades in and out quickly on opacity, without a scale pop", () => {
   const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
 
-  assert.equal(HOVER_DELAY_MS, 2500);
+  assert.equal(HOVER_DELAY_MS, 1500);
   assert.match(
     css,
     /\.bubble\.quick-message::before,\s*\.bubble\.quick-message::after\s*\{[^}]*content:\s*none/s,
   );
+  assert.doesNotMatch(css, /quick-message-pop/, "scale pop fought the opacity exit");
+  assert.doesNotMatch(css, /scale\(0\.94\)/);
+  assert.doesNotMatch(css, /scale\(1\.02\)/);
   assert.match(
     css,
-    /animation:\s*quick-message-pop 380ms linear/,
-    "the clock is linear so the overshoot is not spent in the first moments",
+    /\.bubble\.quick-message \{[^}]*transition:\s*opacity 180ms ease/s,
+    "enter and exit share one short opacity transition",
   );
   assert.match(
     css,
-    /@keyframes quick-message-pop[\s\S]*cubic-bezier\(0\.16, 1, 0\.3, 1\)[\s\S]*translateY\(8px\) scale\(0\.94\)[\s\S]*translateY\(-2px\) scale\(1\.02\)[\s\S]*translateY\(0\) scale\(1\)/,
-    "the pop eases out through 1.02, rises, and settles at 1",
-  );
-  assert.doesNotMatch(css, /scale\(1\.03\)/);
-  assert.match(css, /transform-origin:\s*center bottom/);
-  assert.match(
-    css,
-    /\.bubble\.quick-message \{[^}]*transition:\s*opacity 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\), transform 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/s,
-    "dismiss eases out on the same 380ms the pop used",
+    /\.bubble \{[^}]*transition:\s*opacity 180ms ease/s,
+    "speech uses the same short fade, not the Character's fade_ms",
   );
 });
 
@@ -657,7 +676,7 @@ test("the overlay autofocuses, dismisses on the locked gestures, and reports typ
   assert.doesNotMatch(
     js,
     /function notePointerLeft\(view\) \{\s*if \(!view\.quickMachine\.visible\) return;/,
-    "a leave during the 2.5s dwell has to cancel the timer",
+    "a leave during the 1.5s dwell has to cancel the timer",
   );
 });
 

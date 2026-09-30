@@ -97,9 +97,9 @@ test("quick-message showcase matches the overlay", () => {
   const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
   const shared = readFileSync(new URL("../src/chat-shared.css", import.meta.url), "utf8");
 
-  assert.match(js, /HOVER_DELAY_MS = 2500/);
+  assert.match(js, /HOVER_DELAY_MS = 1500/);
   assert.match(js, /DRAG_DISMISS_PX = 4/);
-  assert.match(cues, /HOVER_DELAY_MS = 2500/);
+  assert.match(cues, /HOVER_DELAY_MS = 1500/);
   assert.match(cues, /DRAG_DISMISS_PX = 4/);
   assert.match(js, /return "talk to me"/);
   assert.match(cues, /placeholder="talk to me"/);
@@ -132,12 +132,12 @@ test("quick-message showcase matches the overlay", () => {
   assert.match(css, /\.bubble\.quick-message::before,\s*\.bubble\.quick-message::after\s*\{\s*content:\s*none/s);
   assert.match(cues, noTail);
   assert.match(bubble, noTail);
-  assert.match(css, /380ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
-  assert.match(cues, /380ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
-  assert.match(bubble, /380ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
-  assert.match(css, /translateY\(-2px\) scale\(1\.02\)/);
-  assert.match(cues, /translateY\(-2px\) scale\(1\.02\)/);
-  assert.match(bubble, /translateY\(-2px\) scale\(1\.02\)/);
+  assert.match(css, /opacity 180ms ease/);
+  assert.match(cues, /opacity 180ms ease/);
+  assert.match(bubble, /opacity 180ms ease/);
+  assert.doesNotMatch(css, /quick-message-pop/);
+  assert.doesNotMatch(cues, /quick-message-pop/);
+  assert.doesNotMatch(bubble, /quick-message-pop/);
 
   assert.match(cues, /Left during the dwell/);
   assert.match(cues, /does not dismiss/);
@@ -150,7 +150,7 @@ test("quick-message showcase matches the overlay", () => {
   assert.doesNotMatch(cues, /class="bubble-more"|Open chat/);
 
   assert.match(bubble, /no tail/i);
-  assert.match(bubble, /2\.5s/);
+  assert.match(bubble, /1\.5s/);
   assert.match(bubble, /at least 4px/);
   assert.match(bubble, /does not dismiss/);
   assert.match(bubble, /selects\s+text/);
@@ -163,7 +163,7 @@ test("index names the quick-message on the cues and bubble pages", () => {
   const index = design("index.html");
   const cues = indexEntry(index, "cues.html");
   const bubble = indexEntry(index, "bubble.html");
-  assert.match(cues, /2\.5s/);
+  assert.match(cues, /1\.5s/);
   assert.match(cues, /quick-message/);
   assert.match(bubble, /no tail/);
   assert.match(bubble, /talk to me/);
