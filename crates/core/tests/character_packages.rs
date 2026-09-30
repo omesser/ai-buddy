@@ -343,10 +343,9 @@ fn timber_wolf_stands_on_the_canvas_floor() {
     }
 }
 
-/// The overlay draws a frame's bottom row on the feet, so any row of air
-/// under a frame lifts the sprite off its Perch by that much. Trump is smooth
-/// art, and its shoes end in a feathered row, so the floor is judged at
-/// alpha 1 rather than `VISIBLE`. #1199.
+/// The overlay draws a frame's bottom row on the feet, so a row of air under a
+/// frame lifts the sprite off its Perch by that much. Trump's shoes end in a
+/// feathered row, so the floor is judged at alpha 1, not `VISIBLE`.
 #[test]
 fn every_trump_frame_touches_the_canvas_floor() {
     for (animation, frame, bytes) in frames_of("trump") {
