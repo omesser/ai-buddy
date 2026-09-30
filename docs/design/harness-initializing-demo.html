@@ -1,0 +1,211 @@
+<!doctype html>
+<!--
+  Demo for omesser/fidget#1161: Keep Chat clear and responsive while a Harness initializes.
+
+  Shows the landing state during Harness initialization with:
+  - Updated copy: first-run may download and can take a while (no fixed duration)
+  - Pulsing progress indicator showing ongoing initialization
+
+  Self-contained demo. Open directly in a browser to see the initializing state.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Harness Initializing Demo</title>
+<style>
+  :root {
+    --chat-panel: #14171e;
+    --chat-ink: #E4EAF2;
+    --chat-ink-2: #9aa2b4;
+    --chat-accent: #5cc9b5;
+    --chat-fill: rgba(255, 255, 255, 0.04);
+    --chat-radius-control: 10px;
+    --chat-radius-badge: 5px;
+    --chat-sans: system-ui, -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--chat-panel);
+    color: var(--chat-ink);
+    font-family: var(--chat-sans);
+    font-size: 14px;
+  }
+
+  .window {
+    width: 420px;
+    height: 560px;
+    margin: 40px auto;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .tb {
+    flex: 0 0 auto;
+    padding: 13px 18px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .name {
+    font-weight: 800;
+    font-size: 14.5px;
+  }
+
+  .of {
+    padding: 1px 6px;
+    margin-left: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: var(--chat-radius-badge);
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    color: #7c8496;
+  }
+
+  .log {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+
+  .empty {
+    display: grid;
+    gap: 11px;
+  }
+
+  .landing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    max-width: 380px;
+    padding: 20px 16px;
+  }
+
+  .landing h2 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  .landing[data-initializing="true"] h2::after {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 8px;
+    border-radius: 50%;
+    background: var(--chat-accent);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 0.3;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .landing p {
+    margin: 0;
+    font-size: 12.8px;
+    line-height: 1.5;
+    color: var(--chat-ink-2);
+    max-width: 36ch;
+  }
+
+  .composer {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 9px;
+    padding: 12px 16px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .composer textarea {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 13px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: var(--chat-radius-control);
+    background: var(--chat-fill);
+    color: var(--chat-ink);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: none;
+    opacity: 0.5;
+  }
+
+  .composer textarea::placeholder {
+    color: #6c7488;
+  }
+
+  .composer button {
+    padding: 0 16px;
+    border: 0;
+    border-radius: var(--chat-radius-control);
+    background: rgba(255, 255, 255, 0.06);
+    color: #6c7488;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .bar {
+    flex: 0 0 auto;
+    padding: 7px 16px 9px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.02);
+    font-family: ui-monospace, monospace;
+    font-size: 10.5px;
+    color: #7c8496;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <div class="tb">
+    <span class="name">Atlas</span>
+    <span class="of">codex</span>
+  </div>
+
+  <div class="log">
+    <div class="empty">
+      <div class="landing" data-initializing="true">
+        <h2>Initializing Codex…</h2>
+        <p>Codex is starting up. First run may download and can take a while. Chat will be ready when the Harness answers.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="composer">
+    <textarea rows="1" placeholder="Starting Codex…" disabled></textarea>
+    <button disabled>Send</button>
+  </div>
+
+  <div class="bar">
+    Idle
+  </div>
+</div>
+
+</body>
+</html>
