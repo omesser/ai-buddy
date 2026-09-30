@@ -180,6 +180,8 @@ pub(crate) fn run_frame_loop(
         let mut counted_since = Instant::now();
         let mut last_tick = Instant::now();
         let mut turn_started = Instant::now();
+        let mut tick_deadline = turn_started;
+        let mut moving = true;
         let mut time_since_launch = Duration::ZERO;
         let mut tour_triggered = false;
         let mut schedule_mode = scheduler::ScheduleMode::Active;
@@ -270,10 +272,15 @@ pub(crate) fn run_frame_loop(
                     // Monitoring (#183 Stage 2b).
                     match (schedule_mode, was_visible) {
                         (scheduler::ScheduleMode::Active, _) => {
-                            thread::sleep(scheduler::active_wait(
+                            let now = Instant::now();
+                            tick_deadline = scheduler::next_tick(
                                 ENGINE_TICK,
-                                turn_started.elapsed(),
-                            ));
+                                tick_deadline,
+                                turn_started,
+                                now,
+                                moving,
+                            );
+                            thread::sleep(tick_deadline - now);
                         }
                         (scheduler::ScheduleMode::Idle, false) => {
                             // Hidden idle: uncapped deep sleep. Only non-input
@@ -1276,6 +1283,7 @@ pub(crate) fn run_frame_loop(
             // Idle means all visible instances are grounded/perched with no
             // behavior playing, asleep, or hidden (#183).
             let mut any_needs_active = false;
+            let mut any_moving = false;
 
             // Whether the cursor is over any Instance's art. Click-through is
             // per overlay, so one sprite under the cursor is enough; the press
@@ -1518,6 +1526,7 @@ pub(crate) fn run_frame_loop(
                 let needs_active_for_sleep_accrual =
                     matches!(frame.state, State::Grounded | State::Perched);
 
+                any_moving |= scheduler::moving(&frame);
                 if needs_active_for_motion
                     || needs_active_for_animation
                     || needs_active_for_sleep_accrual
@@ -1971,6 +1980,7 @@ pub(crate) fn run_frame_loop(
                     } else {
                         scheduler::ScheduleMode::Active
                     };
+                    moving = any_moving;
                     was_visible = presence.visible;
                 }
 

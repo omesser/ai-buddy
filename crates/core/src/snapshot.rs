@@ -452,22 +452,22 @@ mod tests {
         let mut assembler = SnapshotAssembler::new(ChangingDesktop::of_display_widths(&[1000.0]));
         assembler.poll_fast(true);
 
-        let mut clock = Duration::ZERO;
-        let mut last_tick = Duration::ZERO;
+        let start = std::time::Instant::now();
+        let (mut woke, mut deadline, mut last_tick) = (start, start, start);
         let mut polls = 0;
         loop {
-            clock += crate::scheduler::active_wait(tick, work);
-            if clock >= Duration::from_secs(1) {
+            deadline = crate::scheduler::next_tick(tick, deadline, woke, woke + work, true);
+            woke = deadline;
+            if woke - start >= Duration::from_secs(1) {
                 break;
             }
-            let elapsed_ms = u32::try_from((clock - last_tick).as_millis()).unwrap();
-            last_tick = clock;
+            let elapsed_ms = u32::try_from((woke - last_tick).as_millis()).unwrap();
+            last_tick = woke;
             polls = assembler
                 .assemble(elapsed_ms, Point::default(), Vec::new())
                 .poll_generation;
-            clock += work;
         }
-        assert_eq!(polls, 61, "one poll per 16ms tick after the first");
+        assert_eq!(polls, 62, "one poll per 16ms tick");
     }
 
     /// The desktop furniture is not somewhere to stand. Layers, bounds and
