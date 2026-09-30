@@ -68,7 +68,7 @@ use fidget_core::director::{
 use fidget_core::engine::{Cue, Point, State, Verb};
 use fidget_core::input::Pointer;
 use fidget_core::memory;
-use fidget_core::overlay::SpriteRect;
+use fidget_core::overlay::{display_index_for, SpriteRect};
 use fidget_core::roster::{self, InstanceId, InstanceSpec, Roster};
 use fidget_core::snapshot::starting_position;
 use fidget_core::speech::SpeechBubble;
@@ -1588,7 +1588,7 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
                 .map(|rows| instance_title(&rows, &id))
         })
         .unwrap_or_else(|| id.clone());
-    open_chat(&app, &id, title);
+    open_chat(&app, &id, title, None);
 }
 
 /// Put the overlay over one display. Size before move: growing a window
@@ -1662,14 +1662,43 @@ fn build_chat(
     app: &tauri::AppHandle,
     label: &str,
     title: &str,
+    at: Option<(f64, f64)>,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
-        .inner_size(420.0, 560.0)
+        .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
         .min_inner_size(320.0, 320.0)
-        .focused(true)
-        .build()
+        .focused(true);
+    if let Some((x, y)) = at {
+        builder = builder.position(x, y);
+    }
+    builder.build()
+}
+
+/// A new Chat window's inner size, in points.
+const CHAT_SIZE: (f64, f64) = (420.0, 560.0);
+
+/// Where a Chat opens for the sprite whose feet are at `feet`: beside it, on
+/// the display it stands on, and inside that display. `None` leaves the
+/// placement to the windowing layer, which centres on the main display.
+fn chat_origin(feet: Point, displays: &[Rect], size: (f64, f64)) -> Option<(f64, f64)> {
+    // Clears the half-width of a scale-2 sprite, so Chat does not cover it.
+    const GAP: f64 = 96.0;
+    let display = displays[display_index_for((feet.x, feet.y), displays)?];
+    let right_edge = display.x + display.width;
+    let x = if feet.x + GAP + size.0 <= right_edge {
+        feet.x + GAP
+    } else {
+        feet.x - GAP - size.0
+    };
+    Some((
+        x.clamp(display.x, (right_edge - size.0).max(display.x)),
+        (feet.y - size.1).clamp(
+            display.y,
+            (display.y + display.height - size.1).max(display.y),
+        ),
+    ))
 }
 
 /// Build the Settings webview window.
@@ -1686,8 +1715,11 @@ fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri:
 /// Open this Instance's Chat surface, or raise the one it already has.
 /// Posted whole to the main thread; the lookup goes too, because Ok from
 /// `run_on_main_thread` means queued, so two Summons a tick apart would each post a build.
-fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
+/// A new window opens beside `feet` when the caller knows where the sprite is.
+fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Option<Point>) {
     let label = chat_label(id);
+    let at = feet
+        .and_then(|feet| chat_origin(feet, &platform::read_displays(app).usable_frames, CHAT_SIZE));
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
         let window = match handle.get_webview_window(&label) {
@@ -1700,7 +1732,7 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
                 let _ = window.unminimize();
                 window
             }
-            None => match build_chat(&handle, &label, &title) {
+            None => match build_chat(&handle, &label, &title, at) {
                 Ok(window) => window,
                 Err(why) => {
                     eprintln!("chat: {label}: {why}");
@@ -1880,7 +1912,7 @@ fn show_chat_for_ask(app: &tauri::AppHandle, shut: Option<String>) {
         return;
     };
     let title = instance_title(&rows, &id);
-    open_chat(app, &id, title);
+    open_chat(app, &id, title, None);
 }
 
 /// Record what just happened, unless a typed line is still waiting.
@@ -2880,7 +2912,7 @@ fn apply_menu_action(
         menu::MenuAction::Summon => {
             if let Some(instance) = roster.get(instance_id) {
                 let title = instance.name.clone();
-                open_chat(app, instance_id, title);
+                open_chat(app, instance_id, title, Some(instance.feet()));
                 eprintln!("menu: Summon");
             }
         }
@@ -4829,6 +4861,55 @@ mod tests {
 
     /// Both buddies, not the one whose menu it was. The row is about the
     /// display. A second click finds them already there and does not move them.
+    /// Two displays side by side: a Summon on the right one opens Chat
+    /// there, beside the sprite, rather than centred on the main display.
+    #[test]
+    fn chat_opens_on_the_display_the_sprite_stands_on() {
+        let displays = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ];
+        let feet = Point {
+            x: 2500.0,
+            y: 1000.0,
+        };
+        assert_eq!(
+            chat_origin(feet, &displays, CHAT_SIZE),
+            Some((2596.0, 440.0))
+        );
+    }
+
+    /// At the right edge Chat flips to the sprite's left, and at the top it
+    /// is pulled down: inside the display either way. No display, no answer.
+    #[test]
+    fn chat_stays_inside_the_sprites_display() {
+        let display = Rect {
+            x: 1920.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let feet = Point {
+            x: 3800.0,
+            y: 100.0,
+        };
+        assert_eq!(
+            chat_origin(feet, &[display], CHAT_SIZE),
+            Some((3800.0 - 96.0 - 420.0, 0.0))
+        );
+        assert_eq!(chat_origin(feet, &[], CHAT_SIZE), None);
+    }
+
     #[test]
     fn bring_to_this_display_puts_every_instance_on_the_cursor_monitor() {
         let character = stub_character("BMO");

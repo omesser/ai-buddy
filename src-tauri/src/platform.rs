@@ -1005,7 +1005,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
 /// The displays as the windowing layer sees them right now.
 /// Portable Tauri so degraded mode still has screen edges. Convert each
 /// monitor with that monitor's scale, never the primary's (`docs/SPEC.md`).
-fn read_displays(app: &tauri::AppHandle) -> Displays {
+pub(crate) fn read_displays(app: &tauri::AppHandle) -> Displays {
     use fidget_core::window_source::{floor_under_dock, in_points, plausible_dock, usable_frame};
 
     let Ok(monitors) = app.available_monitors() else {
