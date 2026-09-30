@@ -20,7 +20,7 @@ Each character has a personality and a life of its own.
 
 An AI harness is optional. Attach the one you already use and it can talk and pitch in with tools; leave it off and the pet still works. It doesn't read your screen without consent and [never takes screenshots](#computer-use).
 
-![Buddy Bot thrown at Activity Monitor, perching on its top edge, and answering a double-click](./docs/readme/hero.gif)
+![Trump thrown onto a window, walking its top edge, and commenting in character](./docs/readme/hero.gif)
 
 Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget/cues.html)
 
