@@ -650,6 +650,8 @@ test("overlay Send uses chat_send and does not poke the pet", () => {
     /invoke\("chat_send", \{ instance: id, text, echo: true \}\)/,
     "the line joins the Chat pipeline, and an open Chat surface is told",
   );
+  assert.match(js, /bubbles\.userTurnStarted\(\)/, "accepted send shows thinking now");
+  assert.match(js, /bubbles\.userTurnAbandoned\(\)/, "a refused send drops that thinking");
   assert.match(js, /quickMachine\.press\(where/, "a composer press is not a Poke");
 });
 

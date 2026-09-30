@@ -139,12 +139,16 @@ function createView(id) {
     bubble.dataset.mode = mode;
     bubble.classList.add("visible");
     positionBubble(view, spriteRect(), currentDisplayBounds());
+    // Place now: idle overlays may not paint after arm(), and a departed
+    // bubble must not leave the quick-message at a stale top.
+    if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
   }
 
   function hide() {
     bubble.classList.remove("visible");
     view.hotspot = null;
+    if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
   }
 
@@ -421,6 +425,7 @@ function attachQuickMessage(view, id) {
       syncQuick(view);
     },
     send(text) {
+      view.bubbles.userTurnStarted();
       const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
         .invoke("chat_opening", { instance: id })
@@ -429,13 +434,17 @@ function attachQuickMessage(view, id) {
           // stale picture, and the line still goes if that picture can answer.
           if (view.gateToken === token) paintQuickGate(view, opening);
           if (!machine.available) {
+            view.bubbles.userTurnAbandoned();
             machine.restore(text);
             return;
           }
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {
-          if (machine.available) machine.restore(text);
+          if (machine.available) {
+            view.bubbles.userTurnAbandoned();
+            machine.restore(text);
+          }
           console.error("chat_send", err);
         });
     },
@@ -535,8 +544,10 @@ function drawView(view, now) {
   view.sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
   view.sprite.style.opacity = latest.visible ? "1" : "0";
 
-  view.bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  // Character presence uses fade_ms; speech/thinking keep the CSS fade so a
+  // line does not inherit a 0ms or multi-second presence transition.
   if (!latest.visible) {
+    view.bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
     view.bubble.style.opacity = "0";
     // A control nobody can see is not one to click, and a fading bubble is
     // still `.visible` — so this is cleared here as well as in `hide`.
@@ -546,26 +557,23 @@ function drawView(view, now) {
       view.bubbles.hideAllNow();
     }
   } else {
+    view.bubble.style.transition = "";
     view.bubble.style.opacity = "";
-
-    if (view.bubble.classList.contains("visible")) {
-      positionBubble(
-        view,
-        { x: spriteX, y: spriteY, width: latest.width, height: latest.height },
-        currentDisplayBounds(),
-      );
-    }
-    if (view.quickMachine.visible) {
-      positionQuick(view, {
-        x: spriteX,
-        y: spriteY,
-        width: latest.width,
-        height: latest.height,
-      });
-    }
   }
 
+  // Bubble decisions before placement so this frame's show/hide is what
+  // speechRect and the pill offset see (show/hide also place when idle).
   view.bubbles.frame(latest);
+
+  if (latest.visible) {
+    const rect = { x: spriteX, y: spriteY, width: latest.width, height: latest.height };
+    if (view.bubble.classList.contains("visible")) {
+      positionBubble(view, rect, currentDisplayBounds());
+    }
+    if (view.quickMachine.visible) {
+      positionQuick(view, rect);
+    }
+  }
 
   const placement = `${latest.character} ${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === view.drawn) {
