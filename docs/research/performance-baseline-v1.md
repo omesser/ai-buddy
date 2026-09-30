@@ -2,7 +2,7 @@
 
 Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/fidget/issues/423) for context and child benchmarks.
 
-Since this was measured, #1165 (for #1156) replaces `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section.
+Since this was measured, #1165 (for #1156) replaces `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section. The frame cadence bench has also changed since (#1172). Its idle scenarios run a copy of BMO whose only weighted Behavior is `fidget`, because `FIDGET_DIRECTOR=0` still lets the Static Director walk BMO on patrol, and `idle` fails on a walk frame. Its report splits Engine ticks into moving and still rows.
 
 ## Linux (issue #432)
 

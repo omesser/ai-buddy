@@ -48,8 +48,11 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
   const overlays = new Map();
   for (const line of log.split("\n")) {
     const [kind, ...fields] = line.split(" ");
-    if (kind === "frame:") placements.push({ at: Number(fields[0]), pos: fields[2] });
-    if (kind === "frame:" && inWindow(Number(fields[0]))) ticks.push(Number(fields[0]));
+    if (kind === "frame:") {
+      const placement = { at: Number(fields[0]), pos: fields[2] };
+      placements.push(placement);
+      if (inWindow(placement.at)) ticks.push(placement);
+    }
     if (kind === "cadence-ticks:" && inWindow(Number(fields[0]))) {
       counts.push({ at: Number(fields[0]), ticks: Number(fields[1]) });
     }
@@ -96,7 +99,17 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
     });
   }
 
-  const tickDeltas = deltas(ticks);
+  const tickDeltas = deltas(ticks.map((tick) => tick.at));
+  // A moving tick waits toward the 16 ms deadline and a still one keeps the
+  // wake-based pace, so the blended rate describes neither. A tick moved when
+  // its traced position differs from the tick before it.
+  const steps = ticks.slice(1).map((tick, i) => ({ gap: tick.at - ticks[i].at, moved: tick.pos !== ticks[i].pos }));
+  const pace = (moved) => {
+    const gaps = steps.filter((step) => step.moved === moved).map((step) => step.gap);
+    return gaps.length
+      ? { ticks: gaps.length, gapMs: round(mean(gaps), 1), hz: round(1000 / mean(gaps), 1) }
+      : { ticks: 0, gapMs: null, hz: null };
+  };
   const byMs = lags.map((l) => l.ms).sort((a, b) => a - b);
   const bySamples = lags.map((l) => l.samples).sort((a, b) => a - b);
   return {
@@ -106,6 +119,8 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
     restarts,
     ticks: ticks.length,
     tickHz: tickDeltas.length ? round(1000 / mean(tickDeltas), 1) : null,
+    moving: pace(true),
+    still: pace(false),
     countedHz: countedHz(counts),
     lag: lags.length
       ? {
@@ -130,6 +145,10 @@ export function report(result) {
     ["Loop restarts", result.restarts],
     ["Engine ticks", `${result.ticks} (${na(result.tickHz, " Hz")})`],
     ["Engine ticks/s, loop counter", na(result.countedHz)],
+    ...["moving", "still"].map((kind) => {
+      const { ticks, gapMs, hz } = result[kind];
+      return [`Engine ticks, ${kind}`, `${ticks} (${na(gapMs === null ? null : `${gapMs} ms, ${hz} Hz`)})`];
+    }),
     ["Interpolation lag p50, moving", lag ? `${lag.p50Ms} ms (${lag.p50Samples} samples)` : "N/A"],
     ["Interpolation lag p95, moving", lag ? `${lag.p95Ms} ms (${lag.p95Samples} samples)` : "N/A"],
     ["Moving frames held at the latest placement", lag ? lag.held : "N/A"],
