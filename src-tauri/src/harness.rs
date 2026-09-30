@@ -184,14 +184,10 @@ impl Launch {
             "goose" => "--version",
             "hermes" => "--version",
             "opencode" => "--version",
-            _ => {
-                if self.argv[0].ends_with("agy_acp_server.par")
-                    || self.argv[0].ends_with("agy_acp_server.exe")
-                {
-                    "--help"
-                } else {
-                    "--version"
-                }
+            _ => if self.argv[0].ends_with("agy_acp_server.par") || self.argv[0].ends_with("agy_acp_server.exe") {
+                "--help"
+            } else {
+                "--version"
             }
         }
     }
@@ -861,11 +857,7 @@ impl Session {
                     return;
                 }
                 ProbeOutcome::Unhealthy(why) => {
-                    let sentence = format!(
-                        "{why}. Run `{} {}` in a terminal to check what is wrong",
-                        session.launch.argv[0],
-                        session.launch.version_flag()
-                    );
+                    let sentence = format!("{why}. Run `{} {}` in a terminal to check what is wrong", session.launch.argv[0], session.launch.version_flag());
                     session.update_inspect(|inspect| {
                         inspect.alive = false;
                         inspect.initializing = false;
@@ -6677,14 +6669,7 @@ mod tests {
     /// First-party CLIs cite their own binary.
     #[test]
     fn first_party_clis_probe_themselves() {
-        for preset in [
-            "copilot",
-            "cursor-agent",
-            "grok",
-            "goose",
-            "hermes",
-            "opencode",
-        ] {
+        for preset in ["copilot", "cursor-agent", "grok", "goose", "hermes", "opencode"] {
             let launch = launch(Some(preset)).unwrap();
             assert_eq!(launch.version_flag(), "--version");
             assert_eq!(
@@ -6704,28 +6689,15 @@ mod tests {
     /// Probe timeout produces an unhealthy outcome.
     #[test]
     fn probe_timeout() {
-        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-
-        #[cfg(unix)]
-        let script = {
-            use std::os::unix::fs::PermissionsExt;
-            let path = dir.join("slow-launcher.sh");
-            std::fs::write(&path, "#!/bin/sh\nsleep 10\n").unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            path
-        };
-
-        #[cfg(windows)]
-        let script = {
-            let path = dir.join("slow-launcher.bat");
-            std::fs::write(&path, "@echo off\ntimeout /t 10 /nobreak >nul\n").unwrap();
-            path
-        };
-
+        let exe = std::env::current_exe().unwrap();
+        let test = module_path!()
+            .split_once("::")
+            .map_or("", |(_, rest)| rest)
+            .to_string()
+            + "::probe_timeout_fixture";
         let launch = Launch {
             name: "timeout-fixture".into(),
-            argv: vec![script.to_string_lossy().to_string()],
+            argv: vec![exe.to_string_lossy().to_string(), test, "--exact".into()],
         };
         match probe_launcher(&launch) {
             ProbeOutcome::Unhealthy(why) => {
@@ -6733,7 +6705,15 @@ mod tests {
             }
             other => panic!("expected Unhealthy from timeout, got {other:?}"),
         }
-        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probe_timeout_fixture() {
+        let args: Vec<String> = std::env::args().collect();
+        if !args.iter().any(|arg| arg.contains("probe_timeout_fixture")) {
+            return;
+        }
+        thread::sleep(Duration::from_secs(10));
     }
 
     /// Probe with no output produces an unhealthy outcome.
