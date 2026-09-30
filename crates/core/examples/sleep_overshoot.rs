@@ -87,7 +87,8 @@ fn baseline_vs_precise(tick: Duration, count: usize) {
 
     baseline_gaps.sort_by(f64::total_cmp);
     precise_gaps.sort_by(f64::total_cmp);
-    let at_baseline = |p: f64| baseline_gaps[((baseline_gaps.len() - 1) as f64 * p).round() as usize];
+    let at_baseline =
+        |p: f64| baseline_gaps[((baseline_gaps.len() - 1) as f64 * p).round() as usize];
     let at_precise = |p: f64| precise_gaps[((precise_gaps.len() - 1) as f64 * p).round() as usize];
     println!(
         "baseline_sleep: n={} p50={:.2} p90={:.2} p99={:.2} max={:.2} ms",

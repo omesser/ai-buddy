@@ -15,12 +15,7 @@ mod macos_timer {
         fn mach_absolute_time() -> u64;
         fn mach_timebase_info(info: *mut mach_timebase_info_data_t) -> i32;
         fn mach_wait_until(deadline: u64) -> i32;
-        fn thread_policy_set(
-            thread: u32,
-            flavor: i32,
-            policy_info: *const u8,
-            count: u32,
-        ) -> i32;
+        fn thread_policy_set(thread: u32, flavor: i32, policy_info: *const u8, count: u32) -> i32;
         fn mach_thread_self() -> u32;
     }
 
