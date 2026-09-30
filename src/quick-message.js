@@ -45,7 +45,7 @@ export function quickMessageMirror(text, prompt, available) {
   return "\u200b";
 }
 
-export const HOVER_DELAY_MS = 2500;
+export const HOVER_DELAY_MS = 1500;
 
 // Auto-hide: 3s continuous away from both sprite and pill. Re-entering resets.
 export const AUTO_HIDE_DELAY_MS = 3000;
@@ -134,8 +134,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     const line = text.trim();
     if (!ready || !visible || !line) return false;
     text = "";
-    hide();
+    // Stay up so the thinking bubble can push this pill; auto-hide still
+    // applies once empty and the pointer is away.
     send(line);
+    startAutoHideIfNeeded();
+    changed();
     return true;
   }
 
