@@ -214,14 +214,37 @@ cd src-tauri && FIDGET_INSTANCES="buddy-bot:One,buddy-bot:Two,nim:Nim" cargo run
 
 ## Importing Pets
 
-Translate [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), or [Shimeji Shop](https://shimejishop.com/) packs to Character Packages:
+Translate [Pets Codex](https://petscodex.com/), [petdex](https://petdex.dev/), or [Shimeji Shop](https://shimejishop.com/) packs to Character Packages. `scripts/import-pet.py` needs Python 3.11 or newer and Pillow, once per checkout:
 
 ```sh
-uv venv && uv pip install pillow
+uv venv --python 3.11 && uv pip install pillow
+```
+
+The importer writes the frames and a `character.manifest`, then runs `character::load` on the output and fails if the loader rejects it. It prints the pack's license and warns when none is declared. Review every animation before shipping: walk must head right. No `personality.txt` is written; author one to fit the art. See [Character Packages](#character-packages) for the manifest.
+
+### Pets Codex
+
+```sh
 npx petscodex install labubu
-.venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
+uv run scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
 cargo run -p fidget-core --example validate -- characters/labubu
 ```
+
+`[source]` comes filled from the pet's page. A pet whose art strays from petdex's row semantics is recut with `--walk-row`, `--mirror-walk`, or `--map`.
+
+### Shimeji Shop
+
+Download the pack's `.zip` from its gallery page. The importer wants per-pose PNGs named `shime1.png`, `shime2.png`, and so on, at the pack's root or in any folder under it. Without an `actions.xml` it assumes Shimeji-ee's standard conf, which reads `shime1`-`shime14` and `shime18`-`shime21`. Pass the zip as is:
+
+```sh
+uv run scripts/import-pet.py ~/Downloads/my-pet.zip --format shimeji -o characters/my-pet
+```
+
+Every frame is mirrored to head right, and the manifest's leading comment records which Shimeji action fed each animation. Hand edits after import:
+
+- `name` is the zip's file name. Set the display name.
+- `[source]` has no `url` and a generic `art` line. Add the gallery page's URL and say what the art is.
+- `talk` falls back to the stand pose when the pack has no Wave action, and a bare pack never has one.
 
 ## Linux Dependencies
 
