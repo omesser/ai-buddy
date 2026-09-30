@@ -33,10 +33,10 @@ sideways.
 
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
-the menu bar icon's Chat… row and checks the Harness error landing: the signal,
-the captured stderr under Error output, and the launch line under Command,
-both boxes inside the window at 420 and 320 points. Then it presses Codex and
-checks that the Harness launches again at once. Both presses go through
+the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness
+error landing's boxes end inside the window and Error output starts above the
+composer, then presses Codex and checks that the Harness launches again at
+once. The landing's copy and the capture are unit-tested, not checked here. Both presses go through
 AXPress, with a click at the control's centre only if AXPress is refused.
 
 ## codex-sign-in-link
