@@ -32,13 +32,13 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 
 ![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
 
-- **Poke** — click once for a react, then it resumes.
-- **Summon** — double-click to open a chat window for that fidget.
-- **Pick up** — click and drag; it follows the cursor.
-- **Throw** — release while moving; it flies on an arc and lands.
-- **Perch** — let it settle on a window's top edge; drag slowly to ride, fling to drop.
-- **Hide** — Control-Option-Command-B toggles the fidget instantly.
-- **Fullscreen** — fades out for fullscreen apps, fades back when you exit.
+- **Poke** - click once for a react, then it resumes.
+- **Summon** - double-click to open a chat window for that fidget.
+- **Pick up** - click and drag; it follows the cursor.
+- **Throw** - release while moving; it flies on an arc and lands.
+- **Perch** - let it settle on a window's top edge; drag slowly to ride, fling to drop.
+- **Hide** - Control-Option-Command-B toggles the fidget instantly.
+- **Fullscreen** - fades out for fullscreen apps, fades back when you exit.
 
 ### Talk to it
 
@@ -87,13 +87,13 @@ Apple Silicon. The Release ships a `.dmg`. Open it and copy `fidget` to Applicat
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
 
-The same missing signature costs two Keychain dialogs at launch — "Fidget wants to use your confidential information stored in Fidget" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/fidget/issues/283)).
+The same missing signature costs two Keychain dialogs at launch - "Fidget wants to use your confidential information stored in Fidget" - for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `FIDGET_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/fidget/issues/283)).
 
 ### Linux
 
 The Release ships an AppImage and a `.deb` (x86_64).
 
-Under Wayland the sprite keeps to screen edges and loses window Perches — a supported mode, not an error. X11 gets both.
+Under Wayland the sprite keeps to screen edges and loses window Perches - a supported mode, not an error. X11 gets both.
 
 ```sh
 # Debian/Ubuntu .deb
@@ -240,7 +240,7 @@ The portable option across the Harnesses above is [cua-driver](https://github.co
 
 ## Platform Support
 
-What works today on each OS. Degraded and stub mean reduced or no-op — supported honesty, not a crash.
+What works today on each OS. Degraded and stub mean reduced or no-op - supported honesty, not a crash.
 
 | Capability | macOS | Linux | Windows |
 |---|---|---|---|
@@ -253,19 +253,19 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 | Capturable; opt-out in settings | yes | degraded | yes |
 | Settings window | yes | yes † | yes |
 
-- `yes` — implemented.
-- `degraded` — runs in reduced form. A supported mode, not an error.
-- `†` — needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+- `yes` - implemented.
+- `degraded` - runs in reduced form. A supported mode, not an error.
+- `†` - needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Developing
 
 **Want to help?** [Open issues](https://github.com/omesser/fidget/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how Fidget compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
 
 **Design and decisions:**
-- [CONTEXT.md](./CONTEXT.md) — vocabulary
-- [DESIGN.md](./DESIGN.md) — design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/fidget/issues/17) tracks what is left)
-- [docs/SPEC.md](./docs/SPEC.md) — v1 scope
-- [docs/adr/](./docs/adr/) — ADRs
+- [CONTEXT.md](./CONTEXT.md) - vocabulary
+- [DESIGN.md](./DESIGN.md) - design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/fidget/issues/17) tracks what is left)
+- [docs/SPEC.md](./docs/SPEC.md) - v1 scope
+- [docs/adr/](./docs/adr/) - ADRs
 
 ## Prior Art and Attribution
 
@@ -278,7 +278,7 @@ with each brand's trademark reserved to its owner).
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. Fidget is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
-The Chat window's mind mark — the small brain beside what answers — is the
+The Chat window's mind mark - the small brain beside what answers - is the
 `brain` glyph from [Font Awesome Free](https://fontawesome.com/) 6.x, used
 under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and inlined as
 a path in `src/chat.html`. The licence asks for the credit; this is it.

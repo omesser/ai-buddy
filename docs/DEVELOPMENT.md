@@ -192,7 +192,7 @@ license = "The license the art carries, or that none is declared."
 `personality.txt` is plain prose the loader never interprets, up to 2000 characters. Temperament alone is not enough: a model given only that converges on the same few assistant-flavored lines. Include three things, unlabeled (#156):
 
 1. **Who the character is and how it carries itself.** Skip what the sprite already shows; spend the words on how it speaks and what it notices.
-2. **Fixations:** three to five strong, specific opinions — things it loves, resents, takes personally, or takes credit for.
+2. **Fixations:** three to five strong, specific opinions - things it loves, resents, takes personally, or takes credit for.
 3. **Sample lines**, verbatim, introduced in prose ("It has been heard to say: …"). They carry the character's recurring bits and catchphrases. Be generous; `characters/black-mage/` shows how far that goes.
 
 #### Universal rules
@@ -200,10 +200,10 @@ license = "The license the art carries, or that none is declared."
 Leave these out of a personality file. `character_prompt` in `crates/core/src/director.rs` injects them for every Character:
 
 - Stay in character, and never mention being a model or an assistant.
-- Fit the bubble — five short sentences at the most.
+- Fit the bubble - five short sentences at the most.
 - Vary, preferring an unused line, while a signature phrase may recur.
 - Lean away from the Behaviors that just played.
-- React to the moment — what just happened, and what the sprite stands on — when there is something worth remarking on.
+- React to the moment - what just happened, and what the sprite stands on - when there is something worth remarking on.
 - Dialogue is demeanour, never capability: no promising actions on the machine, no claiming abilities.
 
 ### Running Multiple Instances
