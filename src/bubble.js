@@ -152,6 +152,40 @@ export function createBubbleMachine(io) {
       }
     },
 
+    // Quick-message accepted a send: show the indicator now, no grace.
+    // Engine dialogue / thinking:false / hideAllNow still clear it.
+    userTurnStarted() {
+      thinking = true;
+      if (speechTimer !== null) {
+        cancel(speechTimer);
+        speechTimer = null;
+      }
+      if (speechShowing) {
+        speechShowing = false;
+        io.hideSpeech();
+      }
+      if (graceTimer !== null) {
+        cancel(graceTimer);
+        graceTimer = null;
+      }
+      if (!thinkingShown) {
+        thinkingShown = true;
+        io.showThinking();
+      }
+      if (minHoldTimer === null) {
+        minHoldTimer = schedule(() => {
+          minHoldTimer = null;
+          if (!thinking) hideThinkingNow();
+        }, THINKING_MIN_HOLD_MS);
+      }
+    },
+
+    // chat_send refused or the gate froze: drop the indicator we armed.
+    userTurnAbandoned() {
+      thinking = false;
+      hideThinkingNow();
+    },
+
     // The hide hotkey's instant answer: nothing may stay or come back.
     hideAllNow() {
       hideThinkingNow();
