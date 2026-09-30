@@ -172,18 +172,18 @@ Eight characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotar
 
 ### Writing a Character
 
-A Character Package is a directory or `.zip` holding a `character.manifest`, an optional `personality.txt`, and the PNG frames its manifest names. The manifest is documented below, but it is not frozen: a key can still change before v2, and `character::load` in `crates/core/src/character.rs` is the authority when this page and the loader disagree.
+A Character Package is a directory or `.zip` holding a `character.manifest`, an optional `personality.txt`, and the PNG frames its Character Manifest names. The Character Manifest is documented below, but it is not frozen: a key can still change before v2, and `character::load` in `crates/core/src/character.rs` is the authority when this page and the loader disagree.
 
 #### Create a character
 
-1. Copy a shipped package into your own search path, under the folder name you want to start it by:
+1. Copy a shipped package into the first of the [search paths](#character-packages), under the folder name you want to start it by. A `.zip` of the same files works too, and `FIDGET_CHARACTERS` points Fidget at another directory instead:
 
    ```sh
    mkdir -p ~/Library/Application\ Support/fidget/characters
    cp -R characters/buddy-bot ~/Library/Application\ Support/fidget/characters/blip
    ```
 
-2. Replace the PNGs in `frames/` with your own art, facing right. Keep one size per Animation.
+2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
 3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and rewrite `[source]` for your art.
 4. Rewrite `personality.txt`, as [Writing a personality](#writing-a-personality) describes.
 5. Start it by folder name:
@@ -209,7 +209,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 | `[animations.<name>]` | Nine required | One table per Animation. | |
 | `[behaviors.<name>]` | No | One table per Behavior. | |
 
-A manifest is at most 1 MiB. A package is at most 64 MiB, 4096 files, and 8 directories deep.
+A Character Manifest is at most 1 MiB. A package is at most 64 MiB, 4096 files, and 8 directories deep.
 
 #### Animations
 
@@ -221,26 +221,25 @@ Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sle
 | `climb` | The sprite climbs | `walk` |
 | `jump` | A Behavior plays the `jump` Primitive | `fall` |
 
-Any other name draws only as a variant or a left strip of one of these.
+Any other name draws only as a Variant or a Left Strip of one of these.
 
 | Key | Required | Value | Default |
 |---|---|---|---|
 | `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
-| `variant_of` | No | Another Animation's name. Starting that base draws one member of its ring by weight: the base or any of its variants. | |
-| `weight` | No | Whole number: this Animation's share of its variant ring. Read only in a ring. | 10 |
+| `variant_of` | No | Another Animation's name. Starting that base draws one member of its ring by weight: the base or any of its Variants. | |
+| `weight` | No | Whole number: this Animation's share of its Variant ring. Read only in a ring. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
 
 The loader checks each frame against the art:
 
-- Every frame is a PNG in the package, at most 1024 pixels on either side, and every frame of one Animation is the same size.
-- All of a package's distinct frames add up to at most 256 frames of 1024 by 1024 pixels.
-- Pixels with alpha below 128 do not catch clicks.
-- A `variant_of` base is declared, is not itself a variant, and both it and the variant loop `"forever"`.
-- A `left_of` base is declared and is not itself a left strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
+- Every frame is an 8-bit RGBA PNG in the package, at most 1024 pixels on either side, and every frame of one Animation is the same size.
+- All of a package's distinct frames add up to at most 256 megapixels (256 × 1024 × 1024 pixels). A frame two Animations share counts once.
+- A `variant_of` base is declared, is not itself a Variant, and both it and the variant loop `"forever"`.
+- A `left_of` base is declared and is not itself a Left Strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
 
-Draw every Animation facing right. The renderer mirrors it for leftward travel unless another Animation declares `left_of` for it.
+Draw every Animation facing right. The renderer mirrors it for leftward travel unless another Animation declares `left_of` for it. Pixels with alpha below 128 do not catch clicks.
 
 #### Behaviors
 
@@ -250,7 +249,7 @@ A Behavior is a named sequence of Primitives that the Static Director picks by w
 |---|---|---|---|
 | `play` | No | A list of Primitives, played in order. A Behavior with none plays nothing. | `[]` |
 | `then` | No | The name of the Behavior that follows this one. | |
-| `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then`, a Poke, or a model. | 10 |
+| `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
 | `when` | No | The condition that must hold before the Behavior is picked. | Any time |
 
 The Primitives, and the Animation each plays:
@@ -363,7 +362,7 @@ url     = "https://example.com/the-pack"   # optional, http or https only
 license = "The license the art carries, or that none is declared."
 ```
 
-`license` is required whenever `[source]` is present. "None is declared" is a valid value; a missing key is not, because it looks like an unfinished manifest. A package with no `[source]` still loads, but cannot ship from this repository.
+`art` and `license` are required whenever `[source]` is present. "None is declared" is a valid value; a missing key is not, because it looks like an unfinished manifest. A package with no `[source]` still loads, but cannot ship from this repository.
 
 #### Writing a personality
 
