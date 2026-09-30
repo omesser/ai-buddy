@@ -5,7 +5,13 @@
 import { elicitChoices, elicitSays } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
 import { mountChatAppearance } from "./chat-appearance.js";
-import { canAnswer, composerPlaceholder, drawInline, landingCopy } from "./chat-connect.js";
+import {
+  canAnswer,
+  composerPlaceholder,
+  drawInline,
+  harnessDisplayName,
+  landingCopy,
+} from "./chat-connect.js";
 import { createNamesNotice } from "./chat-names-hint.js";
 import { planSteps } from "./chat-plan.js";
 import { applyChatUiClass } from "./chat-ui-class.js";
@@ -363,6 +369,8 @@ const applyChatAppearance = mountChatAppearance(document.documentElement);
 // so it reads as waiting.
 // One button per agent method. Rebuilt on every paint so a later opening
 // cannot leave a method that is no longer offered.
+const retry = document.getElementById("landing-retry");
+
 function paintSignIn(actions, waiting) {
   const host = document.getElementById("landing-sign-in");
   host.replaceChildren();
@@ -377,11 +385,14 @@ function paintSignIn(actions, waiting) {
       drawInline(pending, waiting);
       button.after(pending);
       button.disabled = true;
+      // A Retry during the device flow would race this open for the session.
+      retry.disabled = true;
       invoke("sign_in", { instance, methodId: action.id })
         .catch((why) => note(String(why)))
         .finally(() => {
           pending.remove();
           button.disabled = false;
+          retry.disabled = false;
         });
     });
     host.append(button);
@@ -389,7 +400,10 @@ function paintSignIn(actions, waiting) {
   host.hidden = actions.length === 0;
 }
 
+let lastOpening = null;
+
 function attached(opening) {
+  lastOpening = opening;
   const ready = canAnswer(opening);
   const isHttpMode = opening.configured && !opening.harness_name;
 
@@ -434,6 +448,8 @@ function attached(opening) {
     const hint = document.getElementById("landing-hint");
     const copy = landingCopy(opening);
     paintSignIn(copy.signIn, copy.signInWaiting);
+    document.getElementById("landing-buttons").hidden = Boolean(copy.retry);
+    retry.hidden = !copy.retry;
 
     drawInline(title, copy.title);
     drawInline(lede, copy.lede);
@@ -458,20 +474,27 @@ function attached(opening) {
 // and header paint from the opening `ReloadChat` pushes. The click never
 // starts the sign-in: the Harness authenticates itself in the user's own
 // terminal, and fidget holds no credential.
-for (const btn of document.querySelectorAll(".connect-btn")) {
-  btn.addEventListener("click", () => {
-    const harness = btn.dataset.harness;
-    const label = btn.querySelector(".connect-label").textContent;
-
-    // Nothing is repainted here: the pick goes through `SettingsSession::apply`,
-    // whose `ReloadChat` pushes a full opening to the `chat-opening` listener.
-    // A second read from this side would race that push.
-    invoke("select_harness", { harness }).catch((why) => {
-      console.error(`connect failed:`, why);
-      note(`Could not connect to ${label}: ${why}.`);
-    });
+function connect(harness, label) {
+  // Nothing is repainted here: the pick goes through `SettingsSession::apply`,
+  // whose `ReloadChat` pushes a full opening to the `chat-opening` listener.
+  // A second read from this side would race that push.
+  invoke("select_harness", { harness, instance }).catch((why) => {
+    console.error(`connect failed:`, why);
+    note(`Could not connect to ${label}: ${why}.`);
   });
 }
+
+for (const btn of document.querySelectorAll(".connect-btn")) {
+  btn.addEventListener("click", () => {
+    connect(btn.dataset.harness, btn.querySelector(".connect-label").textContent);
+  });
+}
+
+// Retry is the same pick on the Harness already picked. It re-asks for a
+// session, which is how a login run in a terminal is proved.
+retry.addEventListener("click", () => {
+  connect(lastOpening.harness_name, harnessDisplayName(lastOpening));
+});
 
 const settingsBtn = document.getElementById("settings-btn");
 if (settingsBtn) {

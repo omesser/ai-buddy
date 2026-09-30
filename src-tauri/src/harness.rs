@@ -903,13 +903,16 @@ impl Session {
         });
     }
 
-    /// Connect on the Harness already attached. One that is down, after a
-    /// failed launch or a dead child, is asked again. One that is up but not
-    /// signed in opens `key` afresh, so a login run in a terminal is proved
-    /// now and not at the next wake. One that answers stands.
+    /// Connect on the Harness already attached. Down after a failed launch or
+    /// a dead child is asked again. Up but not signed in opens `key` afresh, so
+    /// a terminal login is proved now and not at the next wake. Answering stands.
     pub(crate) fn repick(self: &Arc<Self>, key: Option<SessionKey>) -> Result<(), String> {
-        let _ = key;
         let inspect = self.inspect();
+        if inspect.alive && inspect.login.is_some() {
+            let key = key.ok_or_else(|| "unknown instance".to_string())?;
+            let wire = self.current_wire().ok_or_else(|| LOST.to_string())?;
+            return self.open_after_login(&wire, &key);
+        }
         if !inspect.alive && !inspect.initializing {
             self.spawn_preflight();
         }
@@ -5074,10 +5077,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #1200: an attached Harness that refused `session/new` is alive, so a
-    /// pick of the same preset fell through `repick` and nothing moved. The
-    /// pick now opens the session afresh, and the answer is either proof of a
-    /// terminal login or the refusal again.
+    /// A Harness that refused `session/new` is alive, so a pick of the same
+    /// preset asks it for a session again rather than standing. The answer is
+    /// proof of a terminal login, or the refusal again.
     #[test]
     fn repicking_an_unauthenticated_harness_rechecks_the_sign_in() {
         let key = SessionKey {
@@ -5092,7 +5094,14 @@ mod tests {
             Err(not_authenticated("fake --login"))
         );
         assert!(session.inspect().alive);
+        fx.attach_settled();
+        assert_eq!(
+            session.repick(None),
+            Err("unknown instance".to_string()),
+            "a pick with no session slot to open said nothing"
+        );
         assert_eq!(session.repick(Some(key.clone())), Ok(()));
+        fx.attach_settled();
         assert_eq!(fx.count("new"), 2, "the pick asked for no session");
         assert_eq!(fx.count("spawn"), 1, "the pick restarted the child");
         assert_eq!(

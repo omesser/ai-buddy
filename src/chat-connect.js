@@ -86,7 +86,11 @@ export function landingCopy(opening) {
     const terminal = !BUTTONS_ONLY.has(opening.harness_name);
     return {
       title: `${name} needs login`,
-      lede: `${name} needs login, or you can switch to a different Harness:`,
+      lede: terminal
+        ? `${name} is running but not signed in. Sign in, then press Retry.`
+        : `${name} is running but not signed in.`,
+      // The picker offers what is already picked. Retry re-asks it instead.
+      retry: true,
       command: terminal ? opening.login : null,
       signInLabel: buttons ? "Login using:" : null,
       hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
