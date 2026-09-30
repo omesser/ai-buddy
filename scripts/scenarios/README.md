@@ -31,6 +31,15 @@ The exit code is the verdict: 0 passed, 1 failed, 2 printed the header.
 360 and 320 points and checks that the header keeps one row and never scrolls
 sideways.
 
+`launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
+on the first launch, the way `npx` does over a broken Node. It opens Chat from
+the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness
+error landing's boxes end inside the window and Error output starts above the
+composer, then presses Codex and checks that the Harness launches again at
+once. The landing's copy and the capture are unit-tested, not checked here.
+The menu bar icon takes one real click; Chat… and Codex go through AXPress,
+with a click at the control's centre only if AXPress is refused.
+
 ## codex-sign-in-link
 
 `codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,

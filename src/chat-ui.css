@@ -24,6 +24,7 @@
   --chat-fill-soft: ButtonFace;
   --chat-rule: ButtonBorder;
   --chat-line: ButtonBorder;
+  --chat-error: ButtonBorder;
 
   --chat-radius: 0;
   --chat-radius-tail: 0;
@@ -61,6 +62,7 @@
   --chat-fill-soft: rgba(255, 255, 255, 0.06);
   --chat-rule: rgba(255, 255, 255, 0.07);
   --chat-line: rgba(255, 255, 255, 0.13);
+  --chat-error: #e5484d;
 
   --chat-radius: var(--shared-radius);
   --chat-radius-tail: 3px;
@@ -111,6 +113,7 @@
   --chat-fill-soft: rgba(0, 0, 0, 0.05);
   --chat-rule: rgba(0, 0, 0, 0.08);
   --chat-line: rgba(0, 0, 0, 0.15);
+  --chat-error: #c62828;
 
   --claude-accent: #C86D4F;
   --codex-accent: #169b85;
@@ -141,6 +144,7 @@
   --chat-fill-soft: #0F141B;
   --chat-rule: #2A3340;
   --chat-line: #2A3340;
+  --chat-error: #FF7B72;
 
   --chat-radius: 3px;
   --chat-radius-tail: 3px;
@@ -167,6 +171,7 @@
   --chat-fill-soft: #F0F3F6;
   --chat-rule: #D5DBDF;
   --chat-line: #D5DBDF;
+  --chat-error: #CF222E;
 }
 
 [data-chat-palette="light"].chat-ui-terminal .tb {
@@ -1435,7 +1440,10 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* `anywhere`: a Harness named by its command line is one unbroken path, and
+   the title, lede and next step all say it (issue 1186). */
 .empty .landing {
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1487,6 +1495,66 @@ body {
   margin: 4px 0 8px;
   user-select: all;
   cursor: text;
+}
+
+/* A launcher that died: prose left-aligned, and what it ran and printed in
+   boxes that wrap rather than scroll sideways. A long one scrolls down inside
+   its box, so the next step stays in view. */
+.empty .landing.failed {
+  align-items: stretch;
+  text-align: start;
+  max-width: none;
+}
+
+.empty .landing.failed p {
+  max-width: none;
+}
+
+.empty .landing .kicker {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chat-ink-3);
+}
+
+.failure-part {
+  margin: 12px 0 0;
+}
+
+.failure-part h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chat-ink-3);
+}
+
+.failure-box {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: calc(8 * 1.5em + 14px);
+  margin: 0;
+  padding: 7px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: color-mix(in srgb, var(--chat-ink) 10%, var(--chat-panel));
+  color: var(--chat-ink);
+  font-family: var(--chat-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.failure-box.error {
+  border-color: color-mix(in srgb, var(--chat-error) 55%, var(--chat-line));
+}
+
+.empty .landing.failed #landing-next {
+  margin-top: 12px;
 }
 
 /* `display: flex` would beat the hidden attribute and leave a stale row. */

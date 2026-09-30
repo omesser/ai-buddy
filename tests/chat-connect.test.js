@@ -107,21 +107,63 @@ test("a named Harness that has not come up stays on the landing", () => {
   assert.match(copy.lede, /Static weights/);
 });
 
-test("a launcher that died at startup names why on the landing", () => {
-  const failed =
-    "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize, signal: 6 (SIGABRT). " +
-    "`npx` runs on Node.js: run `node --version` in a terminal to check that it starts.";
-  const opening = {
+function diedOpening(failed) {
+  return {
     name: "bmo",
     configured: true,
     enabled: true,
     harness_name: "codex",
     harness: { name: "codex", session: null, alive: false, login: null, failed },
   };
+}
+
+test("a launcher that died at startup names why on the landing", () => {
+  const opening = diedOpening({
+    command: "npx -y @agentclientprotocol/codex-acp@latest",
+    reason: "exited before initialize, signal: 6 (SIGABRT)",
+    output: "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib",
+    node_check: "node --version",
+  });
   assert.equal(canAnswer(opening), false);
   const copy = landingCopy(opening);
-  assert.equal(copy.title, "Codex failed to start");
-  assert.equal(copy.lede, `${failed} Then pick Codex again, or pick a different Harness below.`);
+  assert.equal(copy.kicker, "Harness error");
+  assert.equal(copy.title, "Codex couldn't start");
+  assert.equal(copy.lede, "It exited before initialize, signal: 6 (SIGABRT). This is what it printed:");
+  assert.deepEqual(copy.failure, {
+    command: "npx -y @agentclientprotocol/codex-acp@latest",
+    output: "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib",
+    nodeCheck: "node --version",
+  });
+  assert.equal(copy.next, "Fix the error above, then pick it again, or pick a different Harness below.");
+});
+
+test("a custom launcher line is titled as the Harness, and its path stays in the Command box", () => {
+  const line = "/opt/tools/bin/my-agent --acp";
+  const opening = {
+    ...diedOpening({ command: line, reason: "exited before initialize", output: "boom", node_check: null }),
+    harness_name: line,
+  };
+  opening.harness.name = "/opt/tools/bin/my-agent";
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Harness couldn't start");
+  assert.equal(copy.failure.command, line);
+  assert.doesNotMatch(copy.lede + copy.next, /my-agent/);
+});
+
+test("a launcher that died silently says it printed nothing", () => {
+  const copy = landingCopy(
+    diedOpening({ command: "hermes acp", reason: "exited before initialize", output: "", node_check: null }),
+  );
+  assert.equal(copy.lede, "It exited before initialize, and printed nothing.");
+  assert.deepEqual(copy.failure, { command: "hermes acp", output: null, nodeCheck: null });
+});
+
+test("a failure before the launch has no command to box", () => {
+  const copy = landingCopy(
+    diedOpening({ command: null, reason: "`codex` did not answer initialize.", output: "", node_check: null }),
+  );
+  assert.equal(copy.lede, "`codex` did not answer initialize.");
+  assert.deepEqual(copy.failure, { command: null, output: null, nodeCheck: null });
 });
 
 test("initializing Harness gates chat and shows clear state", () => {
