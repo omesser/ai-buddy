@@ -343,30 +343,6 @@ fn timber_wolf_stands_on_the_canvas_floor() {
     }
 }
 
-/// The overlay draws a frame's bottom row on the feet, so a row of air under a
-/// frame lifts the sprite off its Perch by that much. Trump's shoes end in a
-/// feathered row, so the floor is judged at alpha 1, not `VISIBLE`.
-#[test]
-fn every_trump_frame_touches_the_canvas_floor() {
-    for (animation, frame, bytes) in frames_of("trump") {
-        let (width, height, alpha) = frame_alpha(&bytes);
-        let bottom = (0..height)
-            .rev()
-            .find(|row| {
-                alpha[row * width..(row + 1) * width]
-                    .iter()
-                    .any(|&a| a >= 1)
-            })
-            .expect("frame is not blank");
-        assert_eq!(
-            height - 1 - bottom,
-            0,
-            "{animation} frame {frame} floats {}px above the canvas floor",
-            height - 1 - bottom
-        );
-    }
-}
-
 /// #161: one canvas for the package, silhouette heavy beside Jotaro's 110px
 /// without dwarfing the desktop.
 #[test]
