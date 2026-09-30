@@ -5,7 +5,8 @@
 # reduces it with scripts/frame-cadence.mjs into one report per scenario.
 #
 # idle: BMO held still by a copy whose only Behavior is `fidget`. It fails if
-#   a walk frame lands in the window anyway.
+#   a walk frame lands in the window anyway. Idle runs BMO whatever
+#   FIDGET_CHARACTERS says, so FIDGET_INSTANCES must name BMO.
 # walking: sampled from the first walk frame.
 # load: walking with one `yes` per core running from launch.
 # idle-quiet: idle with FIDGET_TRACE_FRAMES off, so the loop's own tick
@@ -160,8 +161,11 @@ run() {
       BURNERS+=($!)
     done
   fi
-  local characters="${FIDGET_CHARACTERS:-$PWD/characters}"
-  [ "${name%-quiet}" != idle ] || characters=$(still_characters)
+  local idle=0 characters="${FIDGET_CHARACTERS:-$PWD/characters}"
+  if [ "${name%-quiet}" = idle ]; then
+    idle=1
+    characters=$(still_characters)
+  fi
   if [ "$name" = idle-quiet ]; then
     launch_app "$log" 0 "$characters"
     # No `frame:` lines to watch for a landing, so give the fall a fixed 5 s.
@@ -176,7 +180,7 @@ run() {
     return 1
   fi
   sleep 2
-  if [ "${name%-quiet}" != idle ] && ! wait_walk "$log"; then
+  if [ "$idle" = 0 ] && ! wait_walk "$log"; then
     echo "$name: no walk frame within ${walk_timeout}s; see $log" >&2
     stop_app
     stop_burners
@@ -190,7 +194,9 @@ run() {
   sleep 1.5
   stop_app
   stop_burners
-  walks=$(awk -v f="$from" -v t="$to" '/^frame: / && $2 >= f && $2 <= t && / (walk|ballwalk)#/ { n++ } END { print n + 0 }' "$log")
+  # idle-quiet traces no `frame:` lines, so it has no walk frames to count.
+  walks=untraced
+  [ "$name" = idle-quiet ] || walks=$(awk -v f="$from" -v t="$to" '/^frame: / && $2 >= f && $2 <= t && / (walk|ballwalk)#/ { n++ } END { print n + 0 }' "$log")
   {
     echo "## $name"
     echo
@@ -200,8 +206,7 @@ run() {
   } > "$out/$name.md"
   cat "$out/$name.md"
   echo
-  # idle-quiet traces no `frame:` lines, so only idle can catch a walk here.
-  if [ "${name%-quiet}" = idle ] && [ "$walks" -gt 0 ]; then
+  if [ "$name" = idle ] && [ "$walks" -gt 0 ]; then
     echo "$name: BMO walked $walks frames in the window, so this is not an idle sample; see $log" >&2
     return 1
   fi

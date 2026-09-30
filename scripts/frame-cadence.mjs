@@ -48,8 +48,11 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
   const overlays = new Map();
   for (const line of log.split("\n")) {
     const [kind, ...fields] = line.split(" ");
-    if (kind === "frame:") placements.push({ at: Number(fields[0]), pos: fields[2] });
-    if (kind === "frame:" && inWindow(Number(fields[0]))) ticks.push(placements.at(-1));
+    if (kind === "frame:") {
+      const placement = { at: Number(fields[0]), pos: fields[2] };
+      placements.push(placement);
+      if (inWindow(placement.at)) ticks.push(placement);
+    }
     if (kind === "cadence-ticks:" && inWindow(Number(fields[0]))) {
       counts.push({ at: Number(fields[0]), ticks: Number(fields[1]) });
     }
@@ -98,14 +101,11 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
 
   const tickDeltas = deltas(ticks.map((tick) => tick.at));
   // A moving tick waits toward the 16 ms deadline and a still one keeps the
-  // wake-based pace (#183), so the blended rate describes neither. A tick moved
-  // when its traced position differs from the tick before it.
+  // wake-based pace, so the blended rate describes neither. A tick moved when
+  // its traced position differs from the tick before it.
+  const steps = ticks.slice(1).map((tick, i) => ({ gap: tick.at - ticks[i].at, moved: tick.pos !== ticks[i].pos }));
   const pace = (moved) => {
-    const gaps = ticks
-      .slice(1)
-      .map((tick, i) => ({ gap: tick.at - ticks[i].at, moved: tick.pos !== ticks[i].pos }))
-      .filter((pair) => pair.moved === moved)
-      .map((pair) => pair.gap);
+    const gaps = steps.filter((step) => step.moved === moved).map((step) => step.gap);
     return gaps.length
       ? { ticks: gaps.length, gapMs: round(mean(gaps), 1), hz: round(1000 / mean(gaps), 1) }
       : { ticks: 0, gapMs: null, hz: null };
@@ -147,7 +147,7 @@ export function report(result) {
     ["Engine ticks/s, loop counter", na(result.countedHz)],
     ...["moving", "still"].map((kind) => {
       const { ticks, gapMs, hz } = result[kind];
-      return [`Engine ticks, ${kind}`, gapMs === null ? `${ticks} (N/A)` : `${ticks} (${gapMs} ms, ${hz} Hz)`];
+      return [`Engine ticks, ${kind}`, `${ticks} (${na(gapMs === null ? null : `${gapMs} ms, ${hz} Hz`)})`];
     }),
     ["Interpolation lag p50, moving", lag ? `${lag.p50Ms} ms (${lag.p50Samples} samples)` : "N/A"],
     ["Interpolation lag p95, moving", lag ? `${lag.p95Ms} ms (${lag.p95Samples} samples)` : "N/A"],

@@ -2,7 +2,7 @@
 
 Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/fidget/issues/423) for context and child benchmarks.
 
-Since this was measured, #1165 (for #1156) replaces `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section.
+Since this was measured, #1165 (for #1156) replaces `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section. The frame cadence bench has also changed since (#1172). Its idle scenarios run a copy of BMO whose only weighted Behavior is `fidget`, because `FIDGET_DIRECTOR=0` still lets the Static Director walk BMO on patrol, and `idle` fails on a walk frame. Its report splits Engine ticks into moving and still rows.
 
 ## Linux (issue #432)
 
@@ -339,8 +339,7 @@ Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh mat
 **Tools:**
 
 - `FIDGET_TRACE_CADENCE=1` makes the overlay log every display frame it draws: the rAF timestamp, whether it asked for the next frame, and the two arrivals it interpolated between. It also makes the frame loop print its tick count once a second. `FIDGET_TRACE_FRAMES=1` supplies the Engine ticks, one `frame:` line each.
-- `scripts/frame-cadence.mjs` reduces a log window to the tables below. Interpolation lag runs `interpolate()` over the arrival times, so it uses the renderer's own arithmetic. It also splits the traced Engine ticks into moving and still rows, each with its count, mean gap and rate. A tick is moving when its traced position changed since the tick before it.
-- `FIDGET_DIRECTOR=0` still runs the Static Director, which can walk BMO on its patrol. So `idle` and `idle-quiet` run a copy of BMO whose only weighted Behavior is `fidget`, and `idle` fails if a walk frame lands in its window. The idle rows below predate that copy.
+- `scripts/frame-cadence.mjs` reduces a log window to the tables below. Interpolation lag runs `interpolate()` over the arrival times, so it uses the renderer's own arithmetic.
 - Lag is measured from each placement's arrival in the webview to the display frame that draws it. Both stamps come from the webview's clock. #426 asked for Engine tick against render. Arrivals follow ticks at the IPC delay, so the spacing matches, but no stamp here is the Engine's own.
 - "Moving" is decided by the Engine position traced at or before each arrival. That match crosses clocks: `frame:` lines are Rust wall time and rounded to whole points. A skew between the two clocks, or motion under half a point, can drop a lag sample. At walking speed neither shows.
 - WebKit rounds `performance.now()` and rAF timestamps to 1 ms, so a frame delta reads as 16 or 17 ms, never 16.7.
