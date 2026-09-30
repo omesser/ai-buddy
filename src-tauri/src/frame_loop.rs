@@ -280,7 +280,7 @@ pub(crate) fn run_frame_loop(
                                 now,
                                 moving,
                             );
-                            thread::sleep(tick_deadline - now);
+                            scheduler::precise_sleep(tick_deadline - now, moving);
                         }
                         (scheduler::ScheduleMode::Idle, false) => {
                             // Hidden idle: uncapped deep sleep. Only non-input

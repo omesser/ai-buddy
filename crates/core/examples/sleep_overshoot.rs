@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use fidget_core::scheduler::next_tick;
+use fidget_core::scheduler::{next_tick, precise_sleep};
 
 fn percentiles(label: &str, mut samples: Vec<f64>) {
     samples.sort_by(f64::total_cmp);
@@ -41,7 +41,7 @@ fn tick_loop(tick: Duration, count: usize, moving: bool) {
     for _ in 0..count {
         let now = Instant::now();
         deadline = next_tick(tick, deadline, woke, now, moving);
-        std::thread::sleep(deadline - now);
+        precise_sleep(deadline - now, moving);
         let now = Instant::now();
         gaps.push(now.duration_since(woke).as_secs_f64() * 1000.0);
         woke = now;

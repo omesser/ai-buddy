@@ -6,6 +6,47 @@ use std::time::{Duration, Instant};
 
 use crate::engine::{Frame, State};
 
+#[cfg(target_os = "macos")]
+mod macos_timer {
+    use std::time::Duration;
+
+    extern "C" {
+        fn mach_absolute_time() -> u64;
+        fn mach_timebase_info(info: *mut mach_timebase_info_data_t) -> i32;
+        fn mach_wait_until(deadline: u64) -> i32;
+    }
+
+    #[repr(C)]
+    struct mach_timebase_info_data_t {
+        numer: u32,
+        denom: u32,
+    }
+
+    fn timebase() -> (u32, u32) {
+        static mut CACHED: Option<(u32, u32)> = None;
+        unsafe {
+            if let Some(tb) = CACHED {
+                return tb;
+            }
+            let mut info = mach_timebase_info_data_t { numer: 0, denom: 0 };
+            mach_timebase_info(&mut info);
+            let result = (info.numer, info.denom);
+            CACHED = Some(result);
+            result
+        }
+    }
+
+    pub fn precise_sleep(duration: Duration) {
+        let nanos = duration.as_nanos() as u64;
+        let (numerator, denominator) = timebase();
+        let ticks = nanos * denominator as u64 / numerator as u64;
+        let deadline = unsafe { mach_absolute_time() + ticks };
+        unsafe {
+            mach_wait_until(deadline);
+        }
+    }
+}
+
 /// How the frame loop should wait for the next tick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScheduleMode {
@@ -62,6 +103,20 @@ pub fn next_tick(
         woke
     };
     (from + tick).max(now)
+}
+
+/// Sleep until a deadline. On macOS with a moving sprite, uses a precise Mach
+/// timer to reduce per-tick jitter. Otherwise uses `std::thread::sleep`.
+pub fn precise_sleep(duration: Duration, moving: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        if moving {
+            macos_timer::precise_sleep(duration);
+            return;
+        }
+    }
+    let _ = moving;
+    std::thread::sleep(duration);
 }
 
 #[cfg(test)]
@@ -227,5 +282,12 @@ mod tests {
             ScheduleMode::Idle,
             "hidden overrides active state — nobody is watching"
         );
+    }
+
+    #[test]
+    fn precise_sleep_exists_and_accepts_moving_flag() {
+        let duration = ms(10);
+        precise_sleep(duration, true);
+        precise_sleep(duration, false);
     }
 }

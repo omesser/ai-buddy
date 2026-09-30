@@ -49,7 +49,8 @@ repos:
         # "crate" is Rust vocabulary, not a misspelling of "create".
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
         # "sigit" is an agent id in the ACP registry, not a misspelling of "digit".
-        args: ["--ignore-words-list=crate,crates,static,statics,sigit"]
+        # "numer" is a macOS Mach timebase struct field name (not "number").
+        args: ["--ignore-words-list=crate,crates,static,statics,sigit,numer"]
         exclude: *vendored
 
   # Comment block ceiling, from `scripts/ast-grep/rules/`. Snapshot tests are
