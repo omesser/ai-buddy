@@ -391,15 +391,6 @@ enum ProbeOutcome {
 /// if the binary is not on PATH, Unhealthy if it exits nonzero, times out, or
 /// produces no output, and Healthy otherwise. Runs on the preflight thread.
 fn probe_launcher(launch: &Launch) -> ProbeOutcome {
-    // Skip probe for test fixtures: they use the test binary as argv[0].
-    if cfg!(test) {
-        if let Ok(current_exe) = std::env::current_exe() {
-            if launch.argv[0] == current_exe.to_string_lossy() {
-                return ProbeOutcome::Healthy;
-            }
-        }
-    }
-
     let mut command = Command::new(&launch.argv[0]);
     command
         .arg(launch.version_flag())
@@ -3168,17 +3159,40 @@ mod tests {
                 .map_or("", |(_, rest)| rest)
                 .to_string()
                 + "::fake_acp_agent";
+
+            #[cfg(unix)]
+            let wrapper = {
+                use std::os::unix::fs::PermissionsExt;
+                let path = dir.join("launcher-wrapper.sh");
+                let contents = format!(
+                    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"fake-acp-agent 1.0.0\"\n  exit 0\nfi\nexec '{}' {} --exact --nocapture --test-threads=1 'script={}' 'count={}' \"$@\"\n",
+                    exe.display(),
+                    test,
+                    script,
+                    count.display()
+                );
+                std::fs::write(&path, contents).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+                path
+            };
+
+            #[cfg(windows)]
+            let wrapper = {
+                let path = dir.join("launcher-wrapper.bat");
+                let contents = format!(
+                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 script={} count={} %*\n",
+                    exe.display(),
+                    test,
+                    script,
+                    count.display()
+                );
+                std::fs::write(&path, contents).unwrap();
+                path
+            };
+
             let launch = Launch {
                 name: "fake".into(),
-                argv: vec![
-                    exe.to_string_lossy().to_string(),
-                    test,
-                    "--exact".into(),
-                    "--nocapture".into(),
-                    "--test-threads=1".into(),
-                    format!("script={script}"),
-                    format!("count={}", count.display()),
-                ],
+                argv: vec![wrapper.to_string_lossy().to_string()],
             };
             let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
@@ -6750,9 +6764,28 @@ mod tests {
     /// Probe with no output produces an unhealthy outcome.
     #[test]
     fn probe_no_output() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("no-output.sh");
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+
+        #[cfg(windows)]
+        let script = {
+            let path = dir.join("no-output.bat");
+            std::fs::write(&path, "@echo off\nexit /b 0\n").unwrap();
+            path
+        };
+
         let launch = Launch {
-            name: "true".into(),
-            argv: vec!["true".into()],
+            name: "no-output".into(),
+            argv: vec![script.to_string_lossy().to_string()],
         };
         match probe_launcher(&launch) {
             ProbeOutcome::Unhealthy(why) => {
@@ -6760,5 +6793,6 @@ mod tests {
             }
             other => panic!("expected Unhealthy from no output, got {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
