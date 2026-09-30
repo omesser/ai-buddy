@@ -233,34 +233,15 @@
     line-height: 1.55;
     pointer-events: none;
     opacity: 0;
-    transform-origin: center bottom;
-    transform: translateY(8px) scale(0.94);
-    transition: opacity 380ms cubic-bezier(0.16, 1, 0.3, 1), transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 180ms ease;
     color-scheme: dark;
   }
   .quick-message.visible {
     opacity: 1;
     pointer-events: auto;
-    animation: quick-message-pop 380ms linear both;
   }
   .quick-message::before,
   .quick-message::after { content: none; }
-  @keyframes quick-message-pop {
-    0% {
-      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-      opacity: 0;
-      transform: translateY(8px) scale(0.94);
-    }
-    45% {
-      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-      opacity: 1;
-      transform: translateY(-2px) scale(1.02);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
   .quick-message-row {
     display: inline-grid;
     flex: 1 1 auto;
@@ -345,7 +326,6 @@
   .qm-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   @media (prefers-reduced-motion: reduce) {
     .quick-message, .quick-message.visible {
-      animation-duration: 1ms !important;
       transition-duration: 1ms !important;
     }
   }
@@ -392,7 +372,7 @@
 
   <section class="desk-wrap">
     <div class="desk-bar">
-      <span class="hint">Try each gesture on BMO. Hover and stay 2.5s for the quick-message pill. The wallpaper changes to check that the cues read on any desktop.</span>
+      <span class="hint">Try each gesture on BMO. Hover and stay 1.5s for the quick-message pill. The wallpaper changes to check that the cues read on any desktop.</span>
       <div class="seg" role="group" aria-label="Wallpaper">
         <button data-wall="light" aria-pressed="true">Light</button>
         <button data-wall="dark" aria-pressed="false">Dark</button>
@@ -413,7 +393,7 @@
       <div class="sprite" id="sprite"><img alt="BMO" src="data:image/png;base64,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"></div>
     </div>
     <div class="toast" id="toast">Waiting for the first click.</div>
-    <p class="qm-live" id="qm-status">Hover BMO and stay for 2.5s.</p>
+    <p class="qm-live" id="qm-status">Hover BMO and stay for 1.5s.</p>
     <div class="dwell" id="dwell" aria-hidden="true"><span id="dwell-fill"></span></div>
     <div class="qm-bar" data-qm-keep>
       <button type="button" class="toggle" id="stroll" aria-pressed="true">Stroll on</button>
@@ -423,8 +403,8 @@
 
   <section id="quick-message-spec">
     <h2>Quick message</h2>
-    <p>Hover BMO for 2.5 seconds and a pill appears over the sprite, the field focused. Empty, it says <b>talk to me</b>. Send is an accent disc, <code>#5cc9b5</code>, with a dark triangle — not a link. The box is the speech bubble's chrome and it has no tail. Appear and dismiss ease out over 380ms. The caret is that same accent. The same pill on a light, a dark and a busy desktop is <a href="bubble.html#quick-message-chrome">Fidget Bubble</a>.</p>
-    <p>Leave during the 2.5s and the pill never appears. Leave after it is up and it stays. It goes away on a click outside the sprite and the pill, a drag of the pet of at least 4px, or a double-click. The double-click is still Summon. A poke still plays and does not dismiss. A drag that starts in the field selects text; it does not grab the pet and does not dismiss. Escape does not dismiss. Enter sends.</p>
+    <p>Hover BMO for 1.5 seconds and a pill appears over the sprite, the field focused. Empty, it says <b>talk to me</b>. Send is an accent disc, <code>#5cc9b5</code>, with a dark triangle — not a link. The box is the speech bubble's chrome and it has no tail. Appear and dismiss fade over 180ms. The caret is that same accent. The same pill on a light, a dark and a busy desktop is <a href="bubble.html#quick-message-chrome">Fidget Bubble</a>.</p>
+    <p>Leave during the 1.5s and the pill never appears. Leave after it is up and it stays. It goes away on a click outside the sprite and the pill, a drag of the pet of at least 4px, or a double-click. The double-click is still Summon. A poke still plays and does not dismiss. A drag that starts in the field selects text; it does not grab the pet and does not dismiss. Escape does not dismiss. Enter sends.</p>
     <p>While the caret is in the field the stroll holds in place. This desk has no walk-cycle frames, so the slide stands in for the Engine's walk. Idle is the sprite at rest, which stays. A jump is not drawn here; the Engine still lets one leave. <b>Release the caret</b> blurs the field without a dismiss, which is when the stroll resumes and the pill remains. The stroll pauses while the pointer is on the sprite, so a still cursor can finish the dwell — on the desktop the pet can keep walking through that wait.</p>
     <p>When nothing can answer, the field is disabled and the draft is cleared so the sentence shows. That is <b>Nothing can answer yet</b>, or <b>Starting Hermes…</b> while a harness is still coming up. Send is the dim disc <code>#2c3340</code>, not the accent.</p>
     <div class="quick-message visible quick-frozen" id="quick-message-frozen">
@@ -676,7 +656,7 @@ document.getElementById("sequence").addEventListener("click", () => {
 
 // The quick-message gesture locked on #1076. The desk already decodes poke,
 // drag and Summon; this only decides when the pill is up.
-const HOVER_DELAY_MS = 2500;
+const HOVER_DELAY_MS = 1500;
 const WALK_PX_PER_S = 48;
 const quick = document.getElementById("quick-message");
 const field = document.getElementById("quick-field");
@@ -853,7 +833,7 @@ function tick(now) {
   if (hoverTimer !== null) {
     const p = Math.min(1, (now - hoverStart) / HOVER_DELAY_MS);
     dwellFill.style.width = (p * 100).toFixed(1) + "%";
-    setQmStatus("Dwelling " + ((now - hoverStart) / 1000).toFixed(1) + "s of 2.5s. Leave now and the pill does not appear.");
+    setQmStatus("Dwelling " + ((now - hoverStart) / 1000).toFixed(1) + "s of 1.5s. Leave now and the pill does not appear.");
   }
   requestAnimationFrame(tick);
 }
