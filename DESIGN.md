@@ -191,8 +191,8 @@ The latency cost of the convention it replaced is in
 ### 6. Characters are packages; the engine owns the vocabulary
 
 A Character Package contains animations, a Character Manifest, a Personality Prompt, and
-Behavior declarations. The format is first-class from day one, and it stays
-internal and undocumented until v2.
+Behavior declarations. The format is first-class from day one.
+`docs/DEVELOPMENT.md` documents it for authors, but it is not frozen until v2.
 
 The engine owns the **Primitives** — the State machine and the units of motion
 and expression. No Character can invent one. A Character declares **Behaviors**

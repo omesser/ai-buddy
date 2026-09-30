@@ -583,8 +583,8 @@ Deferred to a later version, decided but not built:
 
 - Voice: hotkey push-to-talk, wake word, transcription. Transcription will be a trait
   with Apple `SpeechAnalyzer` on macOS 26+ and `whisper.cpp` elsewhere.
-- Publishing the Character Package format and authoring documentation. The format is
-  first-class internally and stays undocumented until v2.
+- Freezing the Character Package format. `docs/DEVELOPMENT.md` documents it for
+  authors, but a key can still change until v2.
 
 Decided against, not merely deferred:
 
