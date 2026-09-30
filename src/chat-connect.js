@@ -136,7 +136,7 @@ export function landingCopy(opening) {
   if (harness?.initializing) {
     return {
       title: `Initializing ${name}…`,
-      lede: `${name} is starting up. Chat will be ready in a moment.`,
+      lede: `${name} is starting up. First run may download for 12–18 seconds. Chat will be ready when the Harness answers.`,
       command: null,
       signInLabel: null,
       hint: null,

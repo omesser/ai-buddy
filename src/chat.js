@@ -426,6 +426,7 @@ function attached(opening) {
     }
   } else {
     landing.hidden = false;
+    landing.dataset.initializing = opening.harness?.initializing ? "true" : "false";
 
     const title = document.getElementById("landing-title");
     const lede = document.getElementById("landing-lede");

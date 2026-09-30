@@ -143,6 +143,9 @@ test("initializing Harness gates chat and shows clear state", () => {
   const copy = landingCopy(opening);
   assert.equal(copy.title, "Initializing Hermes…");
   assert.match(copy.lede, /starting up/i);
+  assert.match(copy.lede, /12[–-]18 seconds/i);
+  assert.match(copy.lede, /download/i);
+  assert.match(copy.lede, /when the Harness answers/i);
   assert.doesNotMatch(copy.lede, /not running/);
 });
 
