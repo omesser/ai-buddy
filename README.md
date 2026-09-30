@@ -24,7 +24,7 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 
 - **Keeps you company.** Eight characters with their own personalities; it walks, naps, and reacts; it works offline without an AI account or subscription, but hook it up to an AI and it takes on its character!
 - **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
-- **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B, and reads window metadata, [never pixels](#computer-use).
+- **Stays out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
 
 ## Interact
 
