@@ -37,10 +37,10 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 - **Pick up** - click and drag; it follows the cursor.
 - **Throw** - release while moving; it flies on an arc and lands.
 - **Perch** - let it settle on a window's top edge; drag slowly to ride, fling to drop.
-- **Hide** - Control-Option-Command-B toggles the fidget instantly.
+- **Hide** - Control-Option-Command-B (the default; change it in Settings) toggles the fidget instantly.
 - **Fullscreen** - fades out for fullscreen apps, fades back when you exit.
 
-### Talk to it
+### Talk to It
 
 Summon opens that fidget's chat window. What you type joins the same
 conversation that decides what it does on your desktop, so an answer arrives as
@@ -49,8 +49,9 @@ too, labelled with what it was reacting to.
 
 <img src="./docs/readme/chat-surface.png" width="420" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" />
 
-The bottom bar names the current Behavior, Primitive, Animation, and State, and
-the time until the next wake. It needs a Director; see [Running it](#running-it).
+The bar at the bottom says what the fidget is doing and when it next thinks.
+Advanced opens the ladder: Behavior, Primitive, Animation, State, Facing, and
+the Director's countdown. Answers need a Director; see [Running It](#running-it).
 
 ## Characters
 
@@ -87,7 +88,7 @@ cargo run -p fidget
 
 ### macOS
 
-Apple Silicon. The Release ships a `.dmg`. Open it and copy `fidget` to Applications.
+Apple Silicon. The Release ships a `.dmg`. Open it and copy `Fidget.app` to Applications.
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
 
@@ -115,11 +116,11 @@ The Release ships an NSIS installer (x86_64). Run it and follow the prompts.
 
 SmartScreen may warn on the first open because the build is not Authenticode signed. Choose More info → Run anyway. Code signing is a follow-up.
 
-## Running it
+## Running It
 
 **Works offline.** With no API key, Static weights pick idle Behaviors from the Character. No model, no account required.
 
-**Optional Model API.** Point Settings → AI (or env vars) at OpenAI, Anthropic, Ollama, or any OpenAI-compatible `/v1/chat/completions` endpoint:
+**Optional Model API.** Point Settings → AI (or env vars) at OpenAI, Anthropic, xAI, Ollama, or any OpenAI-compatible `/v1/chat/completions` endpoint:
 
 ```sh
 # OpenAI (or export env vars to persist)
@@ -195,17 +196,17 @@ Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP,
 
 **Explicitly not served:** mouse/keyboard/Executor tools (ADR-0003). No click, no type, no input events by design.
 
-### Computer use
+### Computer Use
 
-Fidget never reads screen pixels. Sensing is OS window metadata — bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)) — so `describe_screen` describes the window layout, not what is on screen. Decline it and the fidget still knows where the windows are, and not what they are. The fidget takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
+Fidget never reads screen pixels. Sensing is OS window metadata: bounds and idle for free, plus the owning application, the title and the frontmost app under one consent ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)). So `describe_screen` describes the window layout, not what is on screen. Decline it and the fidget still knows where the windows are, and not what they are. The fidget takes no screenshots, runs no OCR, and embeds no vision model for desktop content. The "Appear in screenshots and screen shares" setting is the other direction: whether the *sprite* shows up in captures you take.
 
-That bounds Fidget's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can — the capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through Fidget, whose MCP serves no input events.
+That bounds Fidget's own code, not the agent you attach to it. An agent that needs to see and act on your desktop still can. The capability comes from the Harness itself, or from a computer-use MCP server you attach to the Harness, never through Fidget, whose MCP serves no input events.
 
-The portable option across the Harnesses above is [cua-driver](https://github.com/trycua/cua) (MIT; macOS, Windows, Linux), attached over stdio MCP. [Connect your agent to Cua Driver](https://cua.ai/docs/how-to-guides/driver/connect-your-agent) carries the per-client registration, and [MCP tools](https://cua.ai/docs/reference/cua-driver/mcp-tools) lists what it exposes. Attach it deliberately — it drives the real desktop with your signed-in sessions, and its permission mode is chosen by the process that owns the driver runtime, not by the agent asking. Some Harnesses bring computer use of their own instead; the [Capture decision note](./docs/research/capture-drop-and-harness-cu-path.md) has the per-Harness table and the other drivers surveyed.
+The portable option across the Harnesses above is [cua-driver](https://github.com/trycua/cua) (MIT; macOS, Windows, Linux), attached over stdio MCP. [Connect your agent to Cua Driver](https://cua.ai/docs/how-to-guides/driver/connect-your-agent) carries the per-client registration, and [MCP tools](https://cua.ai/docs/reference/cua-driver/mcp-tools) lists what it exposes. Attach it deliberately: it drives the real desktop with your signed-in sessions, and its permission mode is chosen by the process that owns the driver runtime, not by the agent asking. Some Harnesses bring computer use of their own instead; the [Capture decision note](./docs/research/capture-drop-and-harness-cu-path.md) has the per-Harness table and the other drivers surveyed.
 
 ## Platform Support
 
-What works today on each OS. Degraded and stub mean reduced or no-op - supported honesty, not a crash.
+What works today on each OS.
 
 | Capability | macOS | Linux | Windows |
 |---|---|---|---|
@@ -227,8 +228,9 @@ What works today on each OS. Degraded and stub mean reduced or no-op - supported
 **Want to help?** [Open issues](https://github.com/omesser/fidget/issues) welcome bugs, ideas, and PRs. Start with [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, verification, character writing, and imports. See how Fidget compares to other desktop pets in [alternatives.md](./docs/research/alternatives.md).
 
 **Design and decisions:**
+
 - [CONTEXT.md](./CONTEXT.md) - vocabulary
-- [DESIGN.md](./DESIGN.md) - design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/fidget/issues/17) tracks what is left)
+- [DESIGN.md](./DESIGN.md) - design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/fidget/chat-mockups.html) are a Dated page, a frozen proposal, not what ships)
 - [docs/SPEC.md](./docs/SPEC.md) - v1 scope
 - [docs/adr/](./docs/adr/) - ADRs
 
@@ -246,9 +248,9 @@ with each brand's trademark reserved to its owner).
 The Chat window's mind mark - the small brain beside what answers - is the
 `brain` glyph from [Font Awesome Free](https://fontawesome.com/) 6.x, used
 under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and inlined as
-a path in `src/chat.html`. The licence asks for the credit; this is it.
+a path in `src/chat.html`. The license asks for the credit; this is it.
 
-Character provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/fidget/characters.html). In short: Buddy Bot and Nim are this project's own art. Timber Wolf derives, with the creator's permission, from [MekaRamen](https://mekaramen.com/)'s [Sketchfab model](https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f). BMO is cut from the [shimejishop BMO pack](https://shimejishop.com/free/bmo-shimeji/). Cat, Jotaro Kujo and Trump are cut from [petscodex](https://petscodex.com/) pets. Black Mage is sliced from GigaGuy's sprite sheet on The Spriters Resource. A package is prose, a manifest and art: the personality and the manifest — animations, Behaviors, Director and cursor tuning — are this project's work and MIT throughout. The art is not always ours. Some characters adapt art that declares no license, and each manifest names what it adapts and whose IP the character is.
+Character provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/fidget/characters.html). In short: Buddy Bot and Nim are this project's own art. Timber Wolf derives, with the creator's permission, from [MekaRamen](https://mekaramen.com/)'s [Sketchfab model](https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f). BMO is cut from the [shimejishop BMO pack](https://shimejishop.com/free/bmo-shimeji/). Cat, Jotaro Kujo and Trump are cut from [petscodex](https://petscodex.com/) pets. Black Mage is sliced from GigaGuy's sprite sheet on The Spriters Resource. A package is prose, a manifest and art: the personality and the manifest - animations, Behaviors, Director and cursor tuning - are this project's work and MIT throughout. The art is not always ours. Some characters adapt art that declares no license, and each manifest names what it adapts and whose IP the character is.
 
 ## License
 
