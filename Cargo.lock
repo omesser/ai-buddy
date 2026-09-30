@@ -1244,6 +1244,7 @@ dependencies = [
  "fidget-core",
  "fidget-mcp-server",
  "file-rotate",
+ "futures-io",
  "getrandom 0.4.3",
  "gtk",
  "image",

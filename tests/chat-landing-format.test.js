@@ -11,8 +11,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
-const FAILED =
-  "`npx` exited before initialize, exit status: 1. `npx` runs on Node.js: run `node --version` in a terminal to check that it starts.";
+// The fixture launcher of scripts/scenarios/launcher-dies-at-startup.sh: one
+// unbroken path, the shape that pushed the landing sideways (#1186).
+const LAUNCHER = "/private/tmp/claude-501/scratchpad/pr1088/wt/target/debug/deps/fidget-b9e5365f61326ae2";
+const FAILED = {
+  command: `${LAUNCHER} harness::tests::fake_acp_agent --exact --nocapture script=abort-first`,
+  reason: "exited before initialize, signal: 6 (SIGABRT)",
+  output: "running 1 test\ndyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib",
+  node_check: null,
+};
 
 function chromeBin() {
   if (process.env.FIDGET_CHROME) {
@@ -49,7 +56,7 @@ function opening(harness) {
   };
 }
 
-function paint(open) {
+function paint(open, width = 420) {
   const stub = `
 <script type="module">
   const handlers = {};
@@ -95,6 +102,13 @@ function paint(open) {
       return { font: s.fontFamily, color: s.color, line: s.textDecorationLine, select: s.userSelect };
     };
     const mind = document.getElementById("mind-text");
+    const log = document.getElementById("log");
+    const box = (part) => {
+      const section = document.getElementById(\`failure-\${part}-part\`);
+      return section.hidden || section.closest("[hidden]")
+        ? null
+        : { label: section.querySelector("h3").textContent, text: section.querySelector("pre").textContent };
+    };
     const report = {
       title: title.textContent,
       titleCode: [...title.querySelectorAll("code")].map((n) => n.textContent),
@@ -109,6 +123,13 @@ function paint(open) {
       code: style(code),
       link: style(link),
       accent: getComputedStyle(document.documentElement).getPropertyValue("--chat-accent").trim(),
+      kicker: document.getElementById("landing-kicker").hidden ? null : document.getElementById("landing-kicker").textContent,
+      boxes: { output: box("output"), command: box("command"), check: box("check") },
+      next: document.getElementById("landing-next").hidden ? null : document.getElementById("landing-next").textContent,
+      sideways: Math.max(
+        document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        log.scrollWidth - log.clientWidth,
+      ),
     };
     const out = document.createElement("pre");
     out.id = "probe";
@@ -136,6 +157,7 @@ function paint(open) {
       `--user-data-dir=${join(dir, "profile")}`,
       "--allow-file-access-from-files",
       "--virtual-time-budget=3000",
+      `--window-size=${width},560`,
       "--dump-dom",
       pathToFileURL(page).href,
     ],
@@ -153,15 +175,40 @@ function paint(open) {
 
 const skip = chrome ? false : "headless Chromium is not installed";
 
-test("a launcher that failed to start shows its commands as code", { skip, timeout: 60000 }, () => {
-  const report = paint(opening({ failed: FAILED }));
-  assert.equal(report.backticks, false);
-  assert.deepEqual(report.ledeCode, ["npx", "npx", "node --version"]);
-  assert.match(report.code.font, /mono/i);
-  assert.notEqual(report.lede.select, "none");
-  assert.match(report.selected, /npx exited before initialize/);
-  assert.match(report.selected, /run node --version in a terminal/);
-  assert.doesNotMatch(report.selected, /`/);
+for (const width of [420, 360, 320]) {
+  test(`a launcher that failed to start boxes what it ran and printed at ${width}`, { skip, timeout: 60000 }, () => {
+    const report = paint(opening({ failed: FAILED }), width);
+    assert.equal(report.kicker, "Harness error");
+    assert.equal(report.title, "Codex couldn't start");
+    assert.deepEqual(report.boxes, {
+      output: { label: "Error output", text: FAILED.output },
+      command: { label: "Command", text: FAILED.command },
+      check: null,
+    });
+    assert.equal(report.next, "Fix the error above, then pick Codex again, or pick a different Harness below.");
+    assert.equal(report.sideways, 0, "the landing scrolls sideways");
+    assert.equal(report.backticks, false);
+    assert.notEqual(report.lede.select, "none");
+  });
+}
+
+test("a Harness named by its launcher path wraps its title (#1186)", { skip, timeout: 60000 }, () => {
+  const named = opening({ name: LAUNCHER, failed: FAILED });
+  named.harness_name = LAUNCHER;
+  const report = paint(named, 320);
+  assert.equal(report.title, `${LAUNCHER} couldn't start`);
+  assert.equal(report.sideways, 0, "the title pushed the landing sideways");
+});
+
+test("an npx launcher that failed shows the Node.js check in its own box", { skip, timeout: 60000 }, () => {
+  const report = paint(
+    opening({
+      failed: { command: "npx -y @agentclientprotocol/codex-acp@latest", reason: "exited before initialize", output: "", node_check: "node --version" },
+    }),
+  );
+  assert.equal(report.boxes.output, null);
+  assert.deepEqual(report.boxes.check, { label: "Check that Node.js starts", text: "node --version" });
+  assert.match(report.selected, /It exited before initialize, and printed nothing\./);
 });
 
 test("a missing launcher links its install page to the browser", { skip, timeout: 60000 }, () => {

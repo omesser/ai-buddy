@@ -112,7 +112,7 @@ test("a Harness that never came up says so rather than claiming the turn", () =>
 test("a launcher that died at startup says it failed, not only that it is down", () => {
   const opening = {
     ...http,
-    harness: { name: "codex", session: null, alive: false, login: null, failed: "`npx` exited." },
+    harness: { name: "codex", session: null, alive: false, login: null, failed: { command: "npx", reason: "exited before initialize", output: "", node_check: null } },
   };
 
   assert.equal(mindLine(opening), "codex · failed to start");

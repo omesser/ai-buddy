@@ -30,6 +30,15 @@ picks something else, or the user dismisses it. It never clears on a timer, and
 it is never only a toast. Every surface that reports the state says the same
 thing until it changes.
 
+**A launcher that dies at startup shows what it printed.** Added 2026-09-30
+(#1183). #1070 named the exit status and left the child's stderr in the
+terminal, because piping it meant teeing it for the child's whole life on every
+platform. The owner overrode that: a user who started Fidget from the Dock has
+no terminal, and the dyld line is the diagnosis. The wire now pipes stderr and
+copies every byte through to Fidget's own stderr, and keeps the last 4 KiB of
+it, with the child's stdout up to `initialize`, for the landing's Error output
+box. After `initialize`, stdout is the ACP stream and is not kept.
+
 **An optional dependency degrades in silence.** When a missing piece only costs
 flavor, Fidget carries on without it and shows nothing.
 

@@ -398,7 +398,11 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                 None if attached.failed.is_some() => format!(
                     "{} failed to start: {} The fidget runs on static weights until it answers.",
                     attached.name,
-                    attached.failed.as_deref().unwrap_or_default()
+                    attached
+                        .failed
+                        .as_ref()
+                        .map(crate::harness::LaunchFailure::sentence)
+                        .unwrap_or_default()
                 ),
                 None => format!(
                     "{} is set but not running, so the fidget runs on static weights until it \
@@ -5092,7 +5096,12 @@ mod tests {
     fn a_launcher_that_died_at_startup_says_why() {
         let died = crate::harness::HarnessInspect {
             name: "codex".to_string(),
-            failed: Some("`npx` exited before initialize, signal: 6 (SIGABRT).".to_string()),
+            failed: Some(crate::harness::LaunchFailure {
+                command: Some("npx".to_string()),
+                reason: "exited before initialize, signal: 6 (SIGABRT)".to_string(),
+                output: "dyld[0]: Library not loaded".to_string(),
+                node_check: None,
+            }),
             ..Default::default()
         };
         assert_eq!(

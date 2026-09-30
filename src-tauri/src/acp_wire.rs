@@ -387,8 +387,11 @@ fn auth_refused(error: &Error) -> bool {
 pub enum SpawnError {
     Missing,
     /// The child ran and was gone before `initialize` answered, with its
-    /// status when the wire saw it go.
-    Exited(Option<std::process::ExitStatus>),
+    /// status when the wire saw it go and the tail of what it printed.
+    Exited {
+        status: Option<std::process::ExitStatus>,
+        output: String,
+    },
     Failed(String),
 }
 
@@ -491,7 +494,12 @@ impl Wire {
                 let _ = tx.send(Msg::Shutdown);
                 return Err(SpawnError::Failed("did not answer initialize".to_string()));
             }
-            Err(RecvTimeoutError::Disconnected) => return Err(SpawnError::Exited(None)),
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(SpawnError::Exited {
+                    status: None,
+                    output: String::new(),
+                })
+            }
         };
         Ok(Self {
             tx,
@@ -679,9 +687,19 @@ fn run(
             return;
         }
     };
+    // Piped rather than inherited so a launcher that dies at startup can show
+    // what it printed. The pump still copies every byte to our own stderr.
+    let tail = Tail::default();
+    let stderr = match std::io::pipe() {
+        Ok((reader, writer)) => {
+            tail.pump_stderr(reader);
+            std::process::Stdio::from(writer)
+        }
+        Err(_) => std::process::Stdio::inherit(),
+    };
     runtime.block_on(async move {
         #[cfg(windows)]
-        let spawned = windows_job::spawn_in_job(command);
+        let spawned = windows_job::spawn_in_job(command, stderr);
 
         #[cfg(not(windows))]
         let spawned = {
@@ -689,7 +707,7 @@ fn run(
             async_command
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::inherit());
+                .stderr(stderr);
             async_command.spawn()
         };
         // Both platforms hand back the spawn's own `io::Error`, so the missing
@@ -746,7 +764,13 @@ fn run(
                 agent_client_protocol::on_receive_request!(),
             )
             .connect_with(
-                ByteStreams::new(stdin, stdout),
+                ByteStreams::new(
+                    stdin,
+                    Tee {
+                        inner: stdout,
+                        tail: tail.clone(),
+                    },
+                ),
                 async |cx: ConnectionTo<Agent>| {
                     let handshake = cx
                         .send_request(initialize_request())
@@ -762,6 +786,7 @@ fn run(
                     // the chance to say whether it is gone.
                     match handshake {
                         Ok(handshake) => {
+                            tail.close_stdout();
                             if let Some(ready) = ready.take() {
                                 let _ = ready.send(Ok(handshake));
                             }
@@ -782,10 +807,18 @@ fn run(
         // that died at startup, such as `node` failing to load.
         if let Some(ready) = ready.take() {
             let refused = refused.or(outcome.err().map(|why| why.message));
-            let _ = ready.send(Err(match (exit_status(&mut child), refused) {
-                (Some(status), _) => SpawnError::Exited(Some(status)),
+            let status = exit_status(&mut child);
+            let output = tail.text(Duration::from_millis(250));
+            let _ = ready.send(Err(match (status, refused) {
+                (Some(status), _) => SpawnError::Exited {
+                    status: Some(status),
+                    output,
+                },
                 (None, Some(why)) => SpawnError::Failed(format!("initialize: {why}")),
-                (None, None) => SpawnError::Exited(None),
+                (None, None) => SpawnError::Exited {
+                    status: None,
+                    output,
+                },
             }));
         }
         // The Harness may have been started through `npx`, which does not
@@ -808,6 +841,126 @@ fn exit_status(child: &mut async_process::Child) -> Option<std::process::ExitSta
             Ok(None) if Instant::now() < until => thread::sleep(Duration::from_millis(10)),
             _ => return None,
         }
+    }
+}
+
+/// How much of a child's output a failure keeps: the last 4 KiB, whole lines.
+const TAIL_BYTES: usize = 4096;
+
+/// The tail of what a child printed: all of its stderr, and its stdout until
+/// `initialize` answers, in the order they arrived. After that stdout is the
+/// ACP stream, which the SDK owns and a failure has no use for.
+#[derive(Clone, Default)]
+struct Tail(std::sync::Arc<TailInner>);
+
+#[derive(Default)]
+struct TailInner {
+    bytes: Mutex<TailBytes>,
+    stdout_closed: std::sync::atomic::AtomicBool,
+    stderr_done: std::sync::atomic::AtomicBool,
+}
+
+#[derive(Default)]
+struct TailBytes {
+    kept: Vec<u8>,
+    cut: bool,
+}
+
+impl Tail {
+    fn push(&self, bytes: &[u8]) {
+        let Ok(mut tail) = self.0.bytes.lock() else {
+            return;
+        };
+        tail.kept.extend_from_slice(bytes);
+        // Trimmed at twice the bound, so a chatty child costs one drain per
+        // 4 KiB rather than one per write.
+        if tail.kept.len() > 2 * TAIL_BYTES {
+            let cut = tail.kept.len() - TAIL_BYTES;
+            tail.kept.drain(..cut);
+            tail.cut = true;
+        }
+    }
+
+    fn close_stdout(&self) {
+        self.0
+            .stdout_closed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Our stderr still gets every byte, so the terminal reads as it did
+    /// before the pipe. A thread and not a task: the wire's runtime blocks in
+    /// `exit_status`, and the last lines arrive while it does.
+    fn pump_stderr(&self, mut from: std::io::PipeReader) {
+        let tail = self.clone();
+        let spawned = thread::Builder::new()
+            .name("harness-stderr".into())
+            .spawn(move || {
+                use std::io::{Read, Write};
+                let mut buf = [0u8; 4096];
+                while let Ok(read @ 1..) = from.read(&mut buf) {
+                    let _ = std::io::stderr().write_all(&buf[..read]);
+                    tail.push(&buf[..read]);
+                }
+                tail.0
+                    .stderr_done
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+            });
+        if let Err(why) = spawned {
+            eprintln!("harness: no stderr pump: {why}");
+        }
+    }
+
+    /// What was kept, once stderr has closed or `wait` is up. A grandchild
+    /// can hold stderr open after the child is gone, so the wait is bounded.
+    fn text(&self, wait: Duration) -> String {
+        let until = Instant::now() + wait;
+        while !self.0.stderr_done.load(std::sync::atomic::Ordering::SeqCst)
+            && Instant::now() < until
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let Ok(tail) = self.0.bytes.lock() else {
+            return String::new();
+        };
+        let start = tail.kept.len().saturating_sub(TAIL_BYTES);
+        let cut = tail.cut || start > 0;
+        let text = String::from_utf8_lossy(&tail.kept[start..]);
+        // A cut tail starts mid-line; that fragment reads as noise.
+        let text = match (cut, text.find('\n')) {
+            (true, Some(newline)) => &text[newline + 1..],
+            _ => &text[..],
+        };
+        text.trim().to_string()
+    }
+}
+
+/// The child's stdout on its way to the SDK, copied into the tail until
+/// `initialize` answers. Bytes pass through untouched; the SDK does all the
+/// reading of what they mean.
+struct Tee<R> {
+    inner: R,
+    tail: Tail,
+}
+
+impl<R: futures_io::AsyncRead + Unpin> futures_io::AsyncRead for Tee<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = &mut *self;
+        let read = Pin::new(&mut this.inner).poll_read(cx, buf);
+        if let std::task::Poll::Ready(Ok(read)) = &read {
+            if !this
+                .tail
+                .0
+                .stdout_closed
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                this.tail.push(&buf[..*read]);
+            }
+        }
+        read
     }
 }
 
@@ -2137,13 +2290,14 @@ mod windows_job {
     /// closes the post-spawn race.
     pub(super) fn spawn_in_job(
         mut command: std::process::Command,
+        stderr: std::process::Stdio,
     ) -> Result<async_process::Child, std::io::Error> {
         use std::os::windows::process::CommandExt;
 
         let job = unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if job.is_null() || job == INVALID_HANDLE_VALUE {
-                return spawn_fallback_no_job(command, "CreateJobObjectW failed");
+                return spawn_fallback_no_job(command, "CreateJobObjectW failed", stderr);
             }
 
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
@@ -2158,7 +2312,7 @@ mod windows_job {
 
             if ok == 0 {
                 CloseHandle(job);
-                return spawn_fallback_no_job(command, "SetInformationJobObject failed");
+                return spawn_fallback_no_job(command, "SetInformationJobObject failed", stderr);
             }
 
             job
@@ -2171,7 +2325,7 @@ mod windows_job {
         async_command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit());
+            .stderr(stderr);
 
         let mut child = match async_command.spawn() {
             Ok(child) => child,
@@ -2300,13 +2454,14 @@ mod windows_job {
     fn spawn_fallback_no_job(
         command: std::process::Command,
         why: &str,
+        stderr: std::process::Stdio,
     ) -> Result<async_process::Child, std::io::Error> {
         eprintln!("harness: {why}; spawning without Job Object (grandchildren may linger)");
         let mut async_command = async_process::Command::from(command);
         async_command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit());
+            .stderr(stderr);
         async_command.spawn()
     }
 

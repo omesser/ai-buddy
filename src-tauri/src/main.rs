@@ -1958,9 +1958,9 @@ struct ChatHarness {
     install: Option<String>,
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     initializing: bool,
-    /// Why a launcher that was there gave no wire. The one field here that
-    /// is a sentence: the exit status and next step are the Harness's to say.
-    failed: Option<String>,
+    /// Why a launcher that was there gave no wire: its command, the reason,
+    /// and what it printed, which the landing draws apart.
+    failed: Option<harness::LaunchFailure>,
 }
 
 fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
@@ -4440,11 +4440,16 @@ mod tests {
         let character = stub_character("nim");
         let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
         let instance = roster.get(&id).expect("still there");
-        let why = "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize, signal: 6 (SIGABRT).";
+        let why = crate::harness::LaunchFailure {
+            command: Some("npx -y @agentclientprotocol/codex-acp@latest".to_string()),
+            reason: "exited before initialize, signal: 6 (SIGABRT)".to_string(),
+            output: "dyld[0]: Library not loaded".to_string(),
+            node_check: Some("node --version".to_string()),
+        };
         let inspect = model::DirectorInspect {
             harness: Some(crate::harness::HarnessInspect {
                 name: "codex".to_string(),
-                failed: Some(why.to_string()),
+                failed: Some(why.clone()),
                 ..Default::default()
             }),
             ..stub_inspect()
@@ -4453,7 +4458,7 @@ mod tests {
         let harness = chat_opening_from(instance, &inspect, "")
             .harness
             .expect("the opening carries the attachment");
-        assert_eq!(harness.failed.as_deref(), Some(why));
+        assert_eq!(harness.failed, Some(why));
     }
 
     /// The landing payload while login is still required. The fragment is the

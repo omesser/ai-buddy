@@ -67,11 +67,29 @@
            launcher, and not-running; hidden in HTTP Completer mode. -->
       <div class="empty" id="empty" hidden>
         <div class="landing" id="landing">
+          <p class="kicker" id="landing-kicker" hidden></p>
           <h2 id="landing-title">Connect a Harness to get started</h2>
           <p id="landing-lede">
             Choose an agent runtime to power this chat. Each signs in on its own — no
             credentials stored here.
           </p>
+          <!-- A launcher that died: what it printed and what it ran, as the
+               raw text they are, each under its own label. -->
+          <div id="landing-failure" hidden>
+            <section class="failure-part" id="failure-output-part">
+              <h3>Error output</h3>
+              <pre class="failure-box error" id="failure-output"></pre>
+            </section>
+            <section class="failure-part" id="failure-command-part">
+              <h3>Command</h3>
+              <pre class="failure-box" id="failure-command"></pre>
+            </section>
+            <section class="failure-part" id="failure-check-part">
+              <h3>Check that Node.js starts</h3>
+              <pre class="failure-box" id="failure-check"></pre>
+            </section>
+          </div>
+          <p id="landing-next" hidden></p>
           <p class="hint" id="landing-sign-in-label" hidden></p>
           <div id="landing-sign-in" hidden></div>
           <p class="hint" id="landing-hint" hidden></p>

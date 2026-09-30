@@ -2,18 +2,18 @@
 # Scenario: launcher-dies-at-startup (macOS)
 # On screen: launches Fidget as BMO with a fixture Harness whose first launch
 #   aborts before initialize. The menu bar icon's menu opens and its Chat… row
-#   is pressed, so Chat opens and takes focus. Codex is pressed on the landing.
-#   Two screenshots of the Chat window. Fidget quits when the scenario ends.
-# Input: the menu row and the Codex button are pressed through AXPress. Only
-#   if one refuses AXPress does the helper click its centre: two clicks at most.
-#   No keys.
-# Duration: about 25 s, 2 min at most.
+#   is pressed, so Chat opens and takes focus. Chat is resized to 420 and 320
+#   points, then Codex is pressed. Three screenshots. Fidget quits at the end.
+# Input: AXPress on the menu row and Codex, a click at the centre only if one
+#   refuses it (two at most); resizes through the Accessibility API; no keys.
+# Duration: about 30 s, 2 min at most.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
-# Asserts: the landing reads "<launcher> failed to start" and names the abort
-#   signal; the launcher line is its own code text and no landing text shows a
-#   backtick (#1071); the mind line reads "failed to start". Pressing a Harness
-#   on the landing launches it again at once, and the mind line then names the
-#   live Harness. FIDGET_HARNESS owns the row, so Codex re-picks the fixture.
+# Asserts: a "Harness error" landing titled "<launcher> couldn't start" names
+#   the signal, boxes the captured stderr under "Error output" and the launch
+#   line under "Command", says to fix the error before picking again, and shows
+#   no backtick (#1071). At 420 and 320 both boxes end inside Chat and nothing
+#   scrolls sideways (#1186). Codex, a re-pick under FIDGET_HARNESS, launches it
+#   again at once, and the mind line then names the live Harness.
 #
 # Usage: launcher-dies-at-startup.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
@@ -85,6 +85,28 @@ dump_has() { # <name> <text>...: true when the dump holds any of them
 shot() { screencapture -x -o -l "$("$tools/window-id" "$pid" BMO)" "$out/$1.png"; }
 
 name=${harness%% *}
+dyld="dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib"
+rect() { tr , ' ' <<< "${1##*|}"; } # <dump line>: its frame as "x y w h"
+
+fits() { # <width>: both boxes end inside Chat, and the page never scrolls sideways
+  local w=$1 f=$out/$1.ax.txt wx got wr x ww sw aw row text
+  "$tools/ax" size "$pid" BMO "$w" 560 > "$out/$w.frame.txt" 2>&1 || fail "$w: resize failed; see $out/$w.frame.txt"
+  read -r wx _ got _ < <(tr , ' ' < "$out/$w.frame.txt")
+  [ "$got" -eq "$w" ] || fail "$w: Chat is $got points wide after the resize"
+  sleep 1
+  "$tools/ax" dump "$pid" BMO frames > "$f" 2>&1 || fail "$w: AX dump failed; see $f"
+  shot "failed-$w"
+  wr=$((wx + got))
+  for text in "$dyld" "|$harness|"; do
+    row=$(grep -E '^AXStaticText\|' "$f" | grep -m1 -F "$text") || fail "$w: no box holds '$text' in $f"
+    read -r x _ ww _ <<< "$(rect "$row")"
+    [ $((x + ww)) -le $((wr + 1)) ] || fail "$w: a box ends at $((x + ww)), past the window edge at $wr"
+  done
+  read -r _ _ sw _ <<< "$(rect "$(grep -m1 '^AXScrollArea|' "$f")")"
+  read -r _ _ aw _ <<< "$(rect "$(grep -m1 '^AXWebArea|' "$f")")"
+  [ "$aw" -le $((sw + 1)) ] || fail "$w: the page is $aw points wide in a $sw-point scroll area, so Chat scrolls sideways"
+  echo "ok: $w: both boxes inside the window, page $aw of $sw points"
+}
 wait_for 20 grep -q 'exited before initialize' "$log" || fail "the launcher never died before initialize; see $log"
 [ "$(spawns)" -eq 1 ] || fail "want one spawn before Chat opens, the fixture saw $(spawns)"
 echo "ok: the first launch aborted: $(grep -om1 'exited before initialize[^;]*' "$log")"
@@ -92,16 +114,19 @@ echo "ok: the first launch aborted: $(grep -om1 'exited before initialize[^;]*' 
 "$tools/ax" open "$pid" Chat BMO > "$out/open.txt" 2>&1 || fail "the menu's Chat row did not open Chat; see $out/open.txt"
 wait_for 15 dump_has failed "|$name · failed to start|" || fail "the mind line never read 'failed to start'; see $out/failed.ax.txt"
 failed=$out/failed.ax.txt
-shot failed
-grep -qF "|$name failed to start|" "$failed" || fail "no '$name failed to start' title in $failed"
-grep -qE '^AXStaticText\|[^|]*\|[^|]*exited before initialize, signal: 6 \(SIGABRT\)' "$failed" ||
+grep -qiF "|harness error|" "$failed" || fail "no 'Harness error' kicker in $failed"
+grep -qF "|$name couldn't start|" "$failed" || fail "no '$name couldn't start' title in $failed"
+grep -qF "|It exited before initialize, signal: 6 (SIGABRT). This is what it printed:|" "$failed" ||
   fail "the lede does not name the abort signal in $failed"
-grep -qF "Then pick $name again, or pick a different Harness below." "$failed" ||
-  fail "the lede does not say to pick the Harness again in $failed"
-grep -qF "|$harness|" "$failed" ||
-  fail "the launcher line is not a text of its own, so it is not drawn as code, in $failed"
+grep -qE '^AXHeading\|Error output\|' "$failed" || fail "no 'Error output' label in $failed"
+grep -qE '^AXHeading\|Command\|' "$failed" || fail "no 'Command' label in $failed"
+grep -E '^AXStaticText\|' "$failed" | grep -qF "$dyld" || fail "the fixture's stderr is not in the Error output box in $failed"
+grep -qF "|$harness|" "$failed" || fail "the launch line is not boxed whole in $failed"
+grep -qF "Fix the error above, then pick $name again, or pick a different Harness below." "$failed" ||
+  fail "the next step does not say to fix the error first in $failed"
 ! grep -n '`' "$failed" > "$out/backticks.txt" || fail "landing text shows a backtick; see $out/backticks.txt"
-echo "ok: the landing names the launcher, the signal and the next step, with no backticks"
+echo "ok: the landing boxes the captured stderr and the launch line, and says to fix the error first"
+for w in 420 320; do fits "$w"; done
 
 [ "$(spawns)" -eq 1 ] || fail "the Harness launched again before the re-pick ($(spawns) spawns)"
 "$tools/ax" press-button "$pid" Codex 1 BMO > "$out/press.txt" 2>&1 || fail "could not press Codex on the landing; see $out/press.txt"

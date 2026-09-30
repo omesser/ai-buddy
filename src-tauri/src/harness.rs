@@ -519,8 +519,7 @@ pub struct HarnessInspect {
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     pub initializing: bool,
     /// Why the last spawn gave no wire, when the launcher was there to run.
-    /// The sentence Chat, Settings and the wake all show.
-    pub failed: Option<String>,
+    pub failed: Option<LaunchFailure>,
     /// What the last turn came back with, when it came back with an error, and
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive, and authenticated, so nothing else here tells it apart.
@@ -528,6 +527,49 @@ pub struct HarnessInspect {
     /// Why the launcher is present but unhealthy: nonzero exit, no output, or
     /// timeout on version check. The sentence Chat and Settings show.
     pub unhealthy: Option<String>,
+}
+
+/// Why a launcher that was there gave no wire. Chat draws the parts apart:
+/// the command and what it printed are raw text to read or paste, and the
+/// reason is prose. Settings and the wake take `sentence`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct LaunchFailure {
+    /// The launch line as run, when the launch itself failed. `None` for a
+    /// failure before it, such as a working folder that is not there.
+    pub command: Option<String>,
+    /// What went wrong, as a clause after the command: "exited before
+    /// initialize, signal: 6 (SIGABRT)".
+    pub reason: String,
+    /// The tail of what the launcher printed before it died: stderr, and its
+    /// stdout before `initialize`. Empty when it printed nothing.
+    pub output: String,
+    /// For an `npx` launcher, the command that checks Node.js starts.
+    pub node_check: Option<String>,
+}
+
+impl LaunchFailure {
+    /// A failure with no launch line and nothing printed.
+    fn before_launch(reason: String) -> Self {
+        Self {
+            reason,
+            ..Self::default()
+        }
+    }
+
+    /// The one sentence for surfaces that show a line of text.
+    pub fn sentence(&self) -> String {
+        let reason = self.reason.trim_end_matches('.');
+        let mut sentence = match &self.command {
+            Some(command) => format!("`{command}` {reason}."),
+            None => format!("{reason}."),
+        };
+        if let Some(check) = &self.node_check {
+            sentence.push_str(&format!(
+                " `npx` runs on Node.js: run `{check}` in a terminal to check that it starts."
+            ));
+        }
+        sentence
+    }
 }
 
 /// One remembered ACP session, keyed so a restart can load it for that
@@ -1262,15 +1304,11 @@ impl Session {
     }
 
     /// Record why a launcher that was there gave no wire, and charge the loss.
-    /// Kept as a sentence, because Chat and Settings put their own after it.
-    fn note_failed(&self, state: &mut State, why: String) -> String {
-        let why = if why.ends_with('.') {
-            why
-        } else {
-            format!("{why}.")
-        };
+    /// The wake gets the sentence; Chat and Settings read the parts.
+    fn note_failed(&self, state: &mut State, failure: LaunchFailure) -> String {
+        let why = failure.sentence();
         self.charge_loss(state);
-        self.update_inspect(|inspect| inspect.failed = Some(why.clone()));
+        self.update_inspect(|inspect| inspect.failed = Some(failure));
         why
     }
 
@@ -1387,16 +1425,18 @@ impl Session {
                 match self.spawn_and_initialize() {
                     Ok(wire) => wire,
                     Err(why) => {
-                        let message = match why {
+                        let failure = match why {
                             // A file `PATH` has not got is not a child that might
                             // come back. Backoff would only refuse the next wake
                             // for up to five minutes after the user installs the CLI.
                             SpawnError::Missing => return Err(self.note_missing()),
-                            SpawnError::Exited(status) => exited(&self.launch, status),
-                            SpawnError::Failed(message) => message,
+                            SpawnError::Exited { status, output } => {
+                                exited(&self.launch, status, output)
+                            }
+                            SpawnError::Failed(message) => LaunchFailure::before_launch(message),
                         };
                         let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
-                        return Err(self.note_failed(&mut state, message));
+                        return Err(self.note_failed(&mut state, failure));
                     }
                 }
             }
@@ -2131,20 +2171,20 @@ fn wake_kind(reactive: bool) -> &'static str {
 
 /// A launcher that ran and was gone before `initialize`. `npx` is Node.js, and
 /// a Node.js that cannot start (a broken Homebrew link) dies exactly here.
-fn exited(launch: &Launch, status: Option<std::process::ExitStatus>) -> String {
+fn exited(
+    launch: &Launch,
+    status: Option<std::process::ExitStatus>,
+    output: String,
+) -> LaunchFailure {
     let status = status
         .map(|status| format!(", {status}"))
         .unwrap_or_default();
-    let hint = match launch.argv[0].as_str() {
-        "npx" => {
-            " `npx` runs on Node.js: run `node --version` in a terminal to check that it starts."
-        }
-        _ => "",
-    };
-    format!(
-        "`{}` exited before initialize{status}.{hint}",
-        launch.line()
-    )
+    LaunchFailure {
+        command: Some(launch.line()),
+        reason: format!("exited before initialize{status}"),
+        output,
+        node_check: (launch.argv[0] == "npx").then(|| "node --version".to_string()),
+    }
 }
 
 fn not_authenticated(command: &str) -> String {
@@ -5425,10 +5465,25 @@ mod tests {
         let inspect = session.inspect();
         assert!(!inspect.alive && !inspect.initializing && inspect.missing.is_none());
         let failed = inspect.failed.expect("the landing has no reason to show");
-        let exited = format!("`{}` exited before initialize", session.launch.line());
-        assert!(failed.starts_with(&exited), "{failed}");
+        assert_eq!(failed.command, Some(session.launch.line()));
         #[cfg(unix)]
-        assert!(failed.contains("SIGABRT"), "no exit status in {failed}");
+        assert_eq!(
+            failed.reason,
+            "exited before initialize, signal: 6 (SIGABRT)"
+        );
+        // Its stderr, and libtest's own stdout from before the fixture ran.
+        assert!(
+            failed.output.contains(
+                "dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib"
+            ),
+            "stderr not captured: {:?}",
+            failed.output
+        );
+        assert!(
+            failed.output.contains("running 1 test"),
+            "stdout before initialize not captured: {:?}",
+            failed.output
+        );
         session.shutdown();
         let _ = std::fs::remove_dir_all(&fx.dir);
     }
@@ -5863,12 +5918,12 @@ mod tests {
     #[test]
     fn an_npx_launcher_that_exits_says_to_check_node() {
         assert_eq!(
-            exited(&launch(Some("codex")).unwrap(), None),
+            exited(&launch(Some("codex")).unwrap(), None, String::new()).sentence(),
             "`npx -y @agentclientprotocol/codex-acp@latest` exited before initialize. \
              `npx` runs on Node.js: run `node --version` in a terminal to check that it starts."
         );
         assert_eq!(
-            exited(&launch(Some("hermes")).unwrap(), None),
+            exited(&launch(Some("hermes")).unwrap(), None, String::new()).sentence(),
             "`hermes acp` exited before initialize."
         );
     }

@@ -155,12 +155,26 @@ export function landingCopy(opening) {
     };
   }
 
-  // The launcher ran and died before it answered. The Shell's sentence names
-  // it, its exit status, and for `npx` the Node.js check.
+  // The launcher ran and died before it answered. The Shell hands over its
+  // parts: the command, why, what it printed, and for `npx` the Node.js check.
+  // Only the reason is prose; the rest is raw text for the boxes.
   if (harness?.failed) {
+    const { command, reason, output, node_check: nodeCheck } = harness.failed;
+    const why = String(reason ?? "").replace(/\.$/, "");
+    let lede;
+    if (!command) {
+      lede = `${why}.`;
+    } else if (output) {
+      lede = `It ${why}. This is what it printed:`;
+    } else {
+      lede = `It ${why}, and printed nothing.`;
+    }
     return {
-      title: `${name} failed to start`,
-      lede: `${harness.failed} Then pick ${name} again, or pick a different Harness below.`,
+      kicker: "Harness error",
+      title: `${name} couldn't start`,
+      lede,
+      failure: { command: command || null, output: output || null, nodeCheck: nodeCheck || null },
+      next: `Fix the error above, then pick ${name} again, or pick a different Harness below.`,
       command: null,
       signInLabel: null,
       hint: null,

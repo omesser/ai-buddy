@@ -437,6 +437,7 @@ function attached(opening) {
 
     drawInline(title, copy.title);
     drawInline(lede, copy.lede);
+    paintFailure(landing, copy);
     const signInLabel = document.getElementById("landing-sign-in-label");
     signInLabel.textContent = copy.signInLabel ?? "";
     signInLabel.hidden = !copy.signInLabel;
@@ -452,6 +453,28 @@ function attached(opening) {
   }
 
   return ready;
+}
+
+// The failed landing's kicker, boxes and next step. Every other landing hides
+// them. The boxes take textContent: what a launcher printed is never markup.
+function paintFailure(landing, copy) {
+  const failure = copy.failure ?? null;
+  landing.classList.toggle("failed", failure !== null);
+  const kicker = document.getElementById("landing-kicker");
+  kicker.textContent = copy.kicker ?? "";
+  kicker.hidden = !copy.kicker;
+  document.getElementById("landing-failure").hidden = failure === null;
+  for (const [part, text] of [
+    ["output", failure?.output],
+    ["command", failure?.command],
+    ["check", failure?.nodeCheck],
+  ]) {
+    document.getElementById(`failure-${part}`).textContent = text ?? "";
+    document.getElementById(`failure-${part}-part`).hidden = !text;
+  }
+  const next = document.getElementById("landing-next");
+  drawInline(next, copy.next ?? "");
+  next.hidden = !copy.next;
 }
 
 // Connect button: make that Harness the Completer source. The landing
