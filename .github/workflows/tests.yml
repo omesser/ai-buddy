@@ -231,15 +231,6 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Warm up headless Chrome
-        if: steps.changes.outputs.code == 'true'
-        run: |
-          for i in 1 2; do
-            /usr/bin/time -f "launch $i: %es" google-chrome --headless --disable-gpu \
-              --no-sandbox --disable-dev-shm-usage --user-data-dir="$RUNNER_TEMP/warm-$i" \
-              --dump-dom about:blank > /dev/null
-          done
-
       - name: Renderer tests
         if: steps.changes.outputs.code == 'true'
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
