@@ -2,7 +2,10 @@
 //! carrying its readings into the Engine's terms once per tick. Separate from the
 //! loop in `main.rs` so the two cadences and the conversion test against a fake desktop.
 
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::engine::{Point, Verb, Window, WorldSnapshot};
 use crate::window_source::{
@@ -18,7 +21,7 @@ const MAX_ELAPSED_MS: u32 = POLL_INTERVAL.as_millis() as u32;
 /// Geometry is read at the idle poll, or at the ride poll when the sprite is
 /// holding a moving Perch, and reused on any tick that arrives sooner.
 pub struct SnapshotAssembler<S> {
-    source: S,
+    source: Arc<S>,
     /// The last geometry read, reused until the next read replaces it.
     geometry: WorldGeometry,
     since_poll: Duration,
@@ -29,6 +32,29 @@ pub struct SnapshotAssembler<S> {
     /// A ride needs the frame rate; sitting and sleeping do not. The Shell
     /// flips this from the last Frame.
     fast: bool,
+    side: Option<SidePoll>,
+}
+
+struct SidePoll {
+    state: Arc<PollState>,
+    published: Arc<Mutex<Published>>,
+    join: Option<thread::JoinHandle<()>>,
+}
+
+/// `interval` is the condvar's mutex, so a ride's `immediate` flag is stored
+/// while that mutex is held and cannot land between the check and the wait.
+struct PollState {
+    interval: Mutex<Duration>,
+    /// A ride just started. The idle wait still has most of its interval left,
+    /// and finishing it would be one more slow sample before the sprite moves.
+    immediate: AtomicBool,
+    stop: AtomicBool,
+    wake: Condvar,
+}
+
+struct Published {
+    geometry: WorldGeometry,
+    generation: u64,
 }
 
 impl<S: WindowSource> SnapshotAssembler<S> {
@@ -37,11 +63,12 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     /// no floor and nothing to land on.
     pub fn new(source: S) -> Self {
         Self {
-            source,
+            source: Arc::new(source),
             geometry: WorldGeometry::default(),
             since_poll: POLL_INTERVAL,
             poll_generation: 0,
             fast: false,
+            side: None,
         }
     }
 
@@ -56,6 +83,21 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     /// Idle is the default so a sleeping character does not enumerate the
     /// desktop sixty times a second.
     pub fn poll_fast(&mut self, ride: bool) {
+        if let Some(side) = &self.side {
+            let mut interval = side.state.interval.lock().expect("poll interval");
+            *interval = if ride {
+                RIDE_POLL_INTERVAL
+            } else {
+                POLL_INTERVAL
+            };
+            if ride && !self.fast {
+                side.state.immediate.store(true, Ordering::Release);
+            }
+            drop(interval);
+            side.state.wake.notify_one();
+            self.fast = ride;
+            return;
+        }
         if ride && !self.fast {
             // One immediate read, not a burst of whatever the idle clock
             // had left — that remainder is many ride intervals at once.
@@ -76,6 +118,24 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     /// cursor in the Engine's coordinate space.
     pub fn assemble(&mut self, elapsed_ms: u32, cursor: Point, verbs: Vec<Verb>) -> WorldSnapshot {
         let elapsed_ms = elapsed_ms.min(MAX_ELAPSED_MS);
+        if let Some(side) = &self.side {
+            let published = {
+                let slot = side.published.lock().expect("published geometry");
+                (slot.generation != self.poll_generation)
+                    .then(|| (slot.generation, slot.geometry.clone()))
+            };
+            if let Some((generation, geometry)) = published {
+                self.geometry = geometry;
+                self.poll_generation = generation;
+            }
+            return world_snapshot(
+                &self.geometry,
+                cursor,
+                elapsed_ms,
+                verbs,
+                self.poll_generation,
+            );
+        }
         let interval = self.interval();
 
         // The due check comes before the tick's own time is added, and a read
@@ -97,10 +157,144 @@ impl<S: WindowSource> SnapshotAssembler<S> {
         )
     }
 
+    /// Poll on a side thread so a slow window-list read cannot spend the tick.
+    /// The tick copies the last finished sample and coasts; the first read is
+    /// synchronous, so that sample has a floor. One read at a time.
+    pub fn detach_poll(mut self) -> Self
+    where
+        S: Send + Sync + 'static,
+    {
+        if self.side.is_some() {
+            return self;
+        }
+        let woke = Instant::now();
+        let geometry = self.source.snapshot();
+        let now = Instant::now();
+        let deadline = next_poll_at(POLL_INTERVAL, woke, woke, now);
+        self.geometry = geometry.clone();
+        self.poll_generation = 1;
+
+        let published = Arc::new(Mutex::new(Published {
+            geometry,
+            generation: 1,
+        }));
+        let state = Arc::new(PollState {
+            interval: Mutex::new(POLL_INTERVAL),
+            immediate: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            wake: Condvar::new(),
+        });
+        let source = Arc::clone(&self.source);
+        let published_thread = Arc::clone(&published);
+        let state_thread = Arc::clone(&state);
+        let join = thread::Builder::new()
+            .name("window-poll".into())
+            .spawn(move || {
+                poll_beside_the_tick(source, state_thread, published_thread, deadline);
+            })
+            .expect("window-poll thread");
+        self.side = Some(SidePoll {
+            state,
+            published,
+            join: Some(join),
+        });
+        self
+    }
+
     /// What the sprite's feet are on, for the Director. Titles need Screen
     /// Recording; the owner name is what the window server gives for free.
     pub fn standing_on(&self, feet: Point) -> String {
         describe_standing(feet, &self.geometry)
+    }
+}
+
+impl<S> Drop for SnapshotAssembler<S> {
+    fn drop(&mut self) {
+        let Some(side) = self.side.take() else {
+            return;
+        };
+        {
+            let _interval = side.state.interval.lock().expect("poll interval");
+            side.state.stop.store(true, Ordering::Release);
+        }
+        side.state.wake.notify_one();
+        if let Some(join) = side.join {
+            let _ = join.join();
+        }
+    }
+}
+
+/// Counts as a moving tick, so a late return shortens the next wait.
+fn next_poll_at(interval: Duration, deadline: Instant, woke: Instant, now: Instant) -> Instant {
+    crate::scheduler::next_tick(interval, deadline, woke, now, true)
+}
+
+fn poll_beside_the_tick<S: WindowSource>(
+    source: Arc<S>,
+    state: Arc<PollState>,
+    published: Arc<Mutex<Published>>,
+    mut deadline: Instant,
+) {
+    loop {
+        let forced = {
+            let mut interval = state.interval.lock().expect("poll interval");
+            loop {
+                if state.stop.load(Ordering::Acquire) {
+                    return;
+                }
+                if state.immediate.swap(false, Ordering::AcqRel) {
+                    break true;
+                }
+                let now = Instant::now();
+                if now >= deadline {
+                    break false;
+                }
+                let remaining = deadline - now;
+                // A kernel sleep this short returns about 48 ms late on the
+                // Actions macOS runner, past one tick, so the deadline stays stale.
+                // Only this slack spins. An idle wait still sleeps.
+                if remaining <= RIDE_POLL_INTERVAL {
+                    drop(interval);
+                    spin_until(deadline, &state);
+                    interval = state.interval.lock().expect("poll interval");
+                    continue;
+                }
+                let (next, result) = state
+                    .wake
+                    .wait_timeout(interval, remaining)
+                    .expect("poll interval");
+                interval = next;
+                if result.timed_out() {
+                    break false;
+                }
+            }
+        };
+        // A ride just started. The idle deadline is still in the future;
+        // pacing the next wait from it would skip the ride.
+        let woke = Instant::now();
+        if forced {
+            deadline = woke;
+        }
+        let geometry = source.snapshot();
+        {
+            let mut slot = published.lock().expect("published geometry");
+            slot.generation = slot.generation.saturating_add(1);
+            slot.geometry = geometry;
+        }
+        let now = Instant::now();
+        let interval = *state.interval.lock().expect("poll interval");
+        deadline = next_poll_at(interval, deadline, woke, now);
+    }
+}
+
+/// Burn `deadline` on this thread. `spin_loop` pauses without a kernel timer,
+/// so a few milliseconds stay a few milliseconds.
+fn spin_until(deadline: Instant, state: &PollState) {
+    while Instant::now() < deadline {
+        if state.stop.load(Ordering::Acquire) || state.immediate.load(Ordering::Acquire) {
+            return;
+        }
+        std::hint::spin_loop();
     }
 }
 
@@ -220,6 +414,10 @@ pub fn starting_position(geometry: &WorldGeometry) -> Point {
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::thread;
+    use std::time::Instant;
 
     use super::*;
     use crate::engine::{Engine, State, Window};
@@ -468,6 +666,157 @@ mod tests {
                 .poll_generation;
         }
         assert_eq!(polls, 62, "one poll per 16ms tick");
+    }
+
+    #[test]
+    fn a_seven_millisecond_poll_stays_on_the_frame_cadence_when_sleep_runs_late() {
+        let polls = paced_polls(Duration::from_millis(7));
+        assert!(
+            (60..=65).contains(&polls),
+            "ride polls in one second: {polls}"
+        );
+        let stretched = remainder_sleep_polls(Duration::from_millis(7));
+        assert!(
+            stretched < 58,
+            "sleeping the remainder and keeping the lateness is the 55 Hz ride, got {stretched}"
+        );
+    }
+
+    #[test]
+    fn a_riding_tick_does_not_wait_on_the_window_poll() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let hold = Arc::new(Hold {
+            open: Mutex::new(false),
+            cv: Condvar::new(),
+        });
+        let source = TimedDesktop {
+            calls: Arc::clone(&calls),
+            stamps: Arc::new(Mutex::new(Vec::new())),
+            delay: Duration::ZERO,
+            hold: Some(Arc::clone(&hold)),
+            block_from: 1,
+        };
+        let mut assembler = SnapshotAssembler::new(source).detach_poll();
+        let release = Release(hold);
+        assembler.poll_fast(true);
+        assert!(
+            wait_until(|| calls.load(Ordering::SeqCst) >= 2, Duration::from_secs(1)),
+            "the ride did not start a second read"
+        );
+        let tick = Instant::now();
+        let snapshot = assembler.assemble(16, Point::default(), Vec::new());
+        assert!(
+            tick.elapsed() < Duration::from_millis(40),
+            "the tick waited on the poll: {:?}",
+            tick.elapsed()
+        );
+        assert_eq!(
+            snapshot.poll_generation, 1,
+            "an in-flight read is not a new sample"
+        );
+        for _ in 0..5 {
+            assert_eq!(
+                assembler
+                    .assemble(16, Point::default(), Vec::new())
+                    .poll_generation,
+                1
+            );
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "a read still running is not started twice"
+        );
+        release.open();
+        assert!(
+            wait_until(
+                || {
+                    assembler
+                        .assemble(16, Point::default(), Vec::new())
+                        .poll_generation
+                        >= 2
+                },
+                Duration::from_secs(1)
+            ),
+            "the finished read never reached the tick"
+        );
+    }
+
+    #[test]
+    fn a_ride_reads_at_once_instead_of_finishing_the_idle_wait() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let stamps = Arc::new(Mutex::new(Vec::new()));
+        let mut assembler = SnapshotAssembler::new(TimedDesktop::counting(
+            Arc::clone(&calls),
+            Arc::clone(&stamps),
+        ))
+        .detach_poll();
+        let asked = Instant::now();
+        assembler.poll_fast(true);
+        assert!(
+            wait_until(
+                || calls.load(Ordering::SeqCst) >= 2,
+                Duration::from_millis(80)
+            ),
+            "the second read did not start within 80 ms of the ride"
+        );
+        let stamps = stamps.lock().expect("stamps");
+        assert!(
+            stamps[1].saturating_duration_since(asked) < Duration::from_millis(80),
+            "second read lagged the ride by {:?}",
+            stamps[1].saturating_duration_since(asked)
+        );
+    }
+
+    /// The 6 ms is a spin, not `thread::sleep`. On the Actions macOS runner a
+    /// short sleep returns about 48 ms late. Sleeping a whole extra interval
+    /// after the read leaves a 22 ms gap on a precise clock.
+    #[test]
+    fn a_slow_ride_poll_still_starts_once_per_frame() {
+        let stamps = Arc::new(Mutex::new(Vec::new()));
+        let mut assembler = SnapshotAssembler::new(TimedDesktop {
+            calls: Arc::new(AtomicUsize::new(0)),
+            stamps: Arc::clone(&stamps),
+            delay: Duration::from_millis(6),
+            hold: None,
+            block_from: usize::MAX,
+        })
+        .detach_poll();
+        assembler.poll_fast(true);
+        assert!(
+            wait_until(
+                || stamps.lock().expect("stamps").len() >= 12,
+                Duration::from_secs(2)
+            ),
+            "the ride poll did not keep its cadence"
+        );
+        let median = median_gap(&stamps.lock().expect("stamps"));
+        assert!(
+            median >= Duration::from_millis(12) && median <= Duration::from_millis(19),
+            "median gap between poll starts {median:?}"
+        );
+    }
+
+    #[test]
+    fn a_detached_poll_keeps_the_idle_interval_until_a_ride() {
+        let stamps = Arc::new(Mutex::new(Vec::new()));
+        let _assembler = SnapshotAssembler::new(TimedDesktop::counting(
+            Arc::new(AtomicUsize::new(0)),
+            Arc::clone(&stamps),
+        ))
+        .detach_poll();
+        assert!(
+            wait_until(
+                || stamps.lock().expect("stamps").len() >= 4,
+                Duration::from_secs(2)
+            ),
+            "the idle poll did not repeat"
+        );
+        let median = median_gap(&stamps.lock().expect("stamps"));
+        assert!(
+            median >= Duration::from_millis(80) && median <= Duration::from_millis(150),
+            "median idle gap {median:?}"
+        );
     }
 
     /// The desktop furniture is not somewhere to stand. Layers, bounds and
@@ -921,5 +1270,132 @@ mod tests {
             ),
             "the display floor, above the Dock"
         );
+    }
+
+    /// Quarter of the request, capped near 5 ms: the shape measured for
+    /// `thread::sleep` on the baseline machine.
+    fn late_sleep(requested: Duration) -> Duration {
+        let over = Duration::from_secs_f64(requested.as_secs_f64() * 0.25);
+        requested + over.min(Duration::from_millis(5))
+    }
+
+    fn paced_polls(work: Duration) -> u32 {
+        let start = Instant::now();
+        let woke = start;
+        let mut now = start + work;
+        let mut deadline = next_poll_at(RIDE_POLL_INTERVAL, woke, woke, now);
+        let mut polls = 1u32;
+        while now.duration_since(start) < Duration::from_secs(1) {
+            let started = now + late_sleep(deadline.saturating_duration_since(now));
+            if started.duration_since(start) >= Duration::from_secs(1) {
+                break;
+            }
+            now = started + work;
+            polls += 1;
+            deadline = next_poll_at(RIDE_POLL_INTERVAL, deadline, started, now);
+        }
+        polls
+    }
+
+    fn remainder_sleep_polls(work: Duration) -> u32 {
+        let start = Instant::now();
+        let mut now = start;
+        let mut polls = 0u32;
+        while now.duration_since(start) < Duration::from_secs(1) {
+            now += work;
+            polls += 1;
+            now += late_sleep(RIDE_POLL_INTERVAL.saturating_sub(work));
+        }
+        polls
+    }
+
+    struct Hold {
+        open: Mutex<bool>,
+        cv: Condvar,
+    }
+
+    struct Release(Arc<Hold>);
+
+    impl Release {
+        fn open(&self) {
+            *self.0.open.lock().expect("hold") = true;
+            self.0.cv.notify_all();
+        }
+    }
+
+    impl Drop for Release {
+        fn drop(&mut self) {
+            self.open();
+        }
+    }
+
+    struct TimedDesktop {
+        calls: Arc<AtomicUsize>,
+        stamps: Arc<Mutex<Vec<Instant>>>,
+        delay: Duration,
+        hold: Option<Arc<Hold>>,
+        block_from: usize,
+    }
+
+    impl TimedDesktop {
+        fn counting(calls: Arc<AtomicUsize>, stamps: Arc<Mutex<Vec<Instant>>>) -> Self {
+            Self {
+                calls,
+                stamps,
+                delay: Duration::ZERO,
+                hold: None,
+                block_from: usize::MAX,
+            }
+        }
+    }
+
+    impl WindowSource for TimedDesktop {
+        fn capabilities(&self) -> Capabilities {
+            seeing_everything()
+        }
+
+        fn read(&self) -> WorldGeometry {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            self.stamps.lock().expect("stamps").push(Instant::now());
+            if !self.delay.is_zero() {
+                let until = Instant::now() + self.delay;
+                while Instant::now() < until {
+                    std::hint::spin_loop();
+                }
+            }
+            if let Some(hold) = &self.hold {
+                if n >= self.block_from {
+                    let mut open = hold.open.lock().expect("hold");
+                    while !*open {
+                        open = hold.cv.wait(open).expect("hold");
+                    }
+                }
+            }
+            WorldGeometry {
+                usable_frames: vec![rect(0.0, 0.0, n as f64 + 1.0, 800.0)],
+                windows: Vec::new(),
+                dock: None,
+            }
+        }
+    }
+
+    fn wait_until(mut pred: impl FnMut() -> bool, limit: Duration) -> bool {
+        let start = Instant::now();
+        while !pred() {
+            if start.elapsed() > limit {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        true
+    }
+
+    fn median_gap(stamps: &[Instant]) -> Duration {
+        let mut gaps: Vec<Duration> = stamps
+            .windows(2)
+            .map(|pair| pair[1].saturating_duration_since(pair[0]))
+            .collect();
+        gaps.sort();
+        gaps[gaps.len() / 2]
     }
 }

@@ -4,6 +4,8 @@ Rollup for [#423](https://github.com/omesser/fidget/issues/423). Each number bel
 
 Anchor: `31d2f245`. The architecture section names symbols from that tree. Linux numbers were measured on `target/release/fidget` built from that tree. The bench scripts on this branch do not change that binary. The cadence script printed `git_rev=57d12388` because that was `HEAD` during the run. Rust sources at `57d12388` match the anchor.
 
+Since that anchor, macOS riding calls `SnapshotAssembler::detach_poll`. The window-list read runs on a thread named `window-poll`, and the tick copies the last finished sample. This branch did not run a new `riding` bench. `riding` and `matrix` in `scripts/bench-window-list-macos.sh` still need `FIDGET_BENCH_GREEN_LIGHT=1`.
+
 Fidget is the product. A fidget is one running instance. Character stays the name of a package such as BMO.
 
 ## What to optimize first
