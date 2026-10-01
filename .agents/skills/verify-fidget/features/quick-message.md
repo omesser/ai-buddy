@@ -31,6 +31,7 @@ Preconditions:
 ## Gotchas
 
 - A glance shorter than `HOVER_DELAY_MS` (1500) must not open the pill; do not click (that is Poke) or double-click (Summon).
+- After a Summon (or any path that calls the pill's `summon` dismiss), the pill stays down while the pointer remains on the sprite; only `leaveSprite` clears that latch so a fresh hover can open it again (#1237).
 - Auto-hide is 3000ms away from **both** sprite and pill; text in the field blocks auto-hide.
 - Opening Chat from the connect control is `overlay_open_chat`, not `verbs:.*Summon` — do not mark Summon verified from this path.
 - Live X11 under headless boxes often lacks a screenshot tool; say so and rely on units rather than inventing a parallel harness.
