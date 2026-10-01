@@ -147,7 +147,8 @@ pub struct WorldSnapshot {
     /// This Instance's quick message has the caret. Walk and chase stop;
     /// idle, sit and a perch in place do not.
     pub composing: bool,
-    /// Whether a speech bubble or QM pill is showing. A resting stroll does not translate while either is visible.
+    /// A speech bubble or the quick-message pill is showing. Walk and chase
+    /// stop and none starts; a sprite on its feet draws `talk` meanwhile.
     pub locomotion_frozen: bool,
 }
 
@@ -399,17 +400,13 @@ pub struct Engine {
     /// losing the ground ends it at once.
     poke_cooldown_ms: u32,
 
-    /// The quick message has the caret this tick. Copied off the snapshot
+    /// Typing or a bubble holds the feet this tick. Copied off the snapshot
     /// at the start so a proposal later in the tick sees the same hold.
-    composing: bool,
+    feet_held: bool,
 
     /// Whether the previous tick already carried `Verb::Menu`. The Shell re-injects that verb every tick the popup is held, so a cue keyed on the verb would fire for as long as the menu is open.
     /// The press edge is the cue; a gap clears this and the next press cues again.
     menu_held: bool,
-}
-
-fn locomotion_allowed(locomotion_frozen: bool) -> bool {
-    !locomotion_frozen
 }
 
 /// Where each sprite should stand to be on the display under `cursor`.
@@ -573,7 +570,7 @@ impl Engine {
             rush_reported: false,
             chase_ms: 0,
             poke_cooldown_ms: 0,
-            composing: false,
+            feet_held: false,
             menu_held: false,
         }
     }
@@ -681,7 +678,7 @@ impl Engine {
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
-        self.composing = snapshot.composing;
+        self.feet_held = snapshot.composing || snapshot.locomotion_frozen;
 
         // Idling is resting untouched. Time spent in the air or in someone's
         // hand does not count towards nodding off.
@@ -934,9 +931,9 @@ impl Engine {
             }
         }
 
-        // Typing holds the feet. Idle, sit and perch stay; a walk already
-        // under way must not take this tick's step. A jump still leaves.
-        if self.composing && matches!(state, State::Grounded | State::Perched) {
+        // Typing or a bubble holds the feet. Idle, sit and perch stay; a walk
+        // already under way stops rather than striding in place. A jump still leaves.
+        if self.feet_held && matches!(state, State::Grounded | State::Perched) {
             if matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
                 self.stop_playing();
             }
@@ -1094,6 +1091,12 @@ impl Engine {
             // until the sprite runs out of Perch, so the Animation has to hold
             // with it rather than dropping back to standing mid-stride.
             None if self.is_walking() => "walk",
+            // The bubble is the sprite speaking, so its feet held, it says so.
+            None if snapshot.locomotion_frozen
+                && matches!(self.state, State::Grounded | State::Perched) =>
+            {
+                "talk"
+            }
             // A sprite that rests quietly on a Perch idles in place: still
             // Perched, same edge, idle art and idle life.
             None if matches!(self.state, State::Perched)
@@ -1256,11 +1259,7 @@ impl Engine {
                 if self.velocity.y < 0.0 {
                     return Some(Contact::Airborne);
                 }
-                let dx = if locomotion_allowed(snapshot.locomotion_frozen) {
-                    self.velocity.x * dt
-                } else {
-                    0.0
-                };
+                let dx = self.velocity.x * dt;
                 self.position.x += dx;
                 if self.last_perch.is_some() {
                     self.hold_offset_x += dx;
@@ -1522,13 +1521,13 @@ impl Engine {
 
     /// Whether the sprite's State permits every one of `primitives`. Motion
     /// needs the post-Poke cooldown (#177). Walk and chase also wait out a
-    /// quick message; a jump still may.
+    /// quick message or a bubble; a jump still may.
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk => true,
             Primitive::Walk | Primitive::Chase => {
-                on_feet && self.poke_cooldown_ms == 0 && !self.composing
+                on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
             }
             Primitive::Jump => on_feet && self.poke_cooldown_ms == 0,
             _ => on_feet,
@@ -3962,7 +3961,7 @@ mod tests {
     }
 
     #[test]
-    fn a_walk_holds_still_while_a_speech_bubble_is_up_and_then_continues() {
+    fn a_walk_is_preempted_while_a_speech_bubble_is_up() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
 
@@ -3975,9 +3974,9 @@ mod tests {
             started.position.x > 200.0,
             "the stroll has started: {started:?}"
         );
+        assert_eq!(started.animation, "walk");
 
         let held_x = started.position.x;
-        let held_animation_ms = started.animation_ms;
         let tick_ms = 100u32;
         let halt_ms = PRIMITIVE_MS + tick_ms;
         let halt_ticks = halt_ms / tick_ms;
@@ -3989,65 +3988,41 @@ mod tests {
             });
         }
 
-        assert_eq!(halted.position.x, held_x);
-        assert_eq!(halted.animation_ms, held_animation_ms + halt_ms);
-        assert_eq!(halted.velocity.x, 120.0);
-
-        let resumed = engine.tick(&WorldSnapshot {
-            locomotion_frozen: false,
-            ..a_long_perch()
-        });
-        assert_eq!(resumed.position.x, halted.position.x + 12.0);
-    }
-
-    #[test]
-    fn a_walk_holds_still_while_locomotion_frozen_then_continues() {
-        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
-        settle(&mut engine, &a_long_perch());
-
-        engine.tick(&WorldSnapshot {
-            proposal: walk(),
-            ..a_long_perch()
-        });
-        let started = engine.tick(&a_long_perch());
-        assert!(
-            started.position.x > 200.0,
-            "the stroll has started: {started:?}"
-        );
-
-        let held_x = started.position.x;
-        let held_animation_ms = started.animation_ms;
-        let tick_ms = 100u32;
-        let halt_ms = PRIMITIVE_MS + tick_ms;
-        let halt_ticks = halt_ms / tick_ms;
-        let mut halted = started;
-        for _ in 0..halt_ticks {
-            halted = engine.tick(&WorldSnapshot {
-                locomotion_frozen: true,
-                ..a_long_perch()
-            });
-        }
-
+        assert_eq!(halted.position.x, held_x, "position held under the bubble");
+        assert_eq!(halted.velocity.x, 0.0, "the walk is dropped, not paused");
         assert_eq!(
-            halted.position.x, held_x,
-            "locomotion frozen: position held"
+            halted.animation, "talk",
+            "under the bubble the sprite speaks instead of striding in place"
         );
         assert_eq!(
             halted.animation_ms,
-            held_animation_ms + halt_ms,
-            "animation continues"
+            halt_ms - tick_ms,
+            "talk started on the first held tick and has run since"
         );
-        assert_eq!(halted.velocity.x, 120.0, "velocity preserved");
 
-        let resumed = engine.tick(&WorldSnapshot {
-            locomotion_frozen: false,
+        let refused = engine.tick(&WorldSnapshot {
+            locomotion_frozen: true,
+            proposal: walk(),
             ..a_long_perch()
         });
         assert_eq!(
-            resumed.position.x,
-            halted.position.x + 12.0,
-            "movement resumes when thawed"
+            refused.position.x, held_x,
+            "no walk starts under the bubble"
         );
+        assert_eq!(refused.animation, "talk");
+
+        let thawed = engine.tick(&a_long_perch());
+        assert_eq!(thawed.position.x, held_x, "the thaw restores nothing");
+        assert_eq!(thawed.velocity.x, 0.0);
+        assert_eq!(thawed.animation, "sit", "Perched and unasked, it rests");
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let next_pick = engine.tick(&a_long_perch());
+        assert_eq!(next_pick.animation, "walk");
+        assert_eq!(next_pick.position.x, held_x + 12.0, "the next pick walks");
     }
 
     /// Both ends, because a walk that only ever goes one way would leave the
