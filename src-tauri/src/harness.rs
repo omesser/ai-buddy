@@ -397,81 +397,219 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
 /// `probe_launcher` with the timeout as a parameter, so a test need not wait out
 /// the production one.
 fn probe_launcher_within(launch: &Launch, timeout: Duration) -> ProbeOutcome {
-    let mut command = Command::new(&launch.argv[0]);
-    command
-        .arg(launch.version_flag())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    probe_launcher_with_path(launch, timeout, None)
+}
 
-    let child = match command.spawn() {
-        Ok(child) => child,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return ProbeOutcome::NotFound;
-        }
-        Err(error) => {
+/// `path` replaces `PATH` for the probe commands. Production passes `None`
+/// and the child inherits the process path. Tests pass a directory of stand-ins
+/// so they do not race other tests by editing the process path.
+fn probe_launcher_with_path(
+    launch: &Launch,
+    timeout: Duration,
+    path: Option<&Path>,
+) -> ProbeOutcome {
+    let flag = launch.version_flag();
+    let output = match timed_command(&launch.argv[0], &[flag], timeout, path, Stdio::piped()) {
+        Ok(output) => output,
+        Err(TimedCommandError::NotFound) => return ProbeOutcome::NotFound,
+        Err(TimedCommandError::Spawn(error)) => {
             return ProbeOutcome::Unhealthy(format!(
                 "`{}` could not be run: {error}",
                 launch.argv[0]
             ));
         }
+        Err(TimedCommandError::Wait(error)) => {
+            return ProbeOutcome::Unhealthy(format!(
+                "`{} {}` could not be monitored: {error}",
+                launch.argv[0], flag
+            ));
+        }
+        Err(TimedCommandError::TimedOut) => {
+            return ProbeOutcome::Unhealthy(format!(
+                "`{} {}` timed out after {:.1}s",
+                launch.argv[0],
+                flag,
+                timeout.as_secs_f32()
+            ));
+        }
     };
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        let output_summary = if !stdout.is_empty() || !stderr.is_empty() {
+            let combined = format!("{}{}", stdout.trim(), stderr.trim())
+                .chars()
+                .take(200)
+                .collect::<String>();
+            format!(" Output: {combined}")
+        } else {
+            String::new()
+        };
+        return ProbeOutcome::Unhealthy(format!(
+            "`{} {}` exited with {}.{}",
+            launch.argv[0], flag, output.status, output_summary
+        ));
+    }
+
+    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+        return ProbeOutcome::Unhealthy(format!(
+            "`{} {}` produced no output",
+            launch.argv[0], flag
+        ));
+    }
+
+    // `npx --version` is npm's version, so it passes on a Node the
+    // adapter refuses. Read `engines.node` because `@latest` moves
+    // the floor. A missed read stays Healthy.
+    if let Some(why) = npx_node_rejection(launch, timeout, path) {
+        return ProbeOutcome::Unhealthy(why);
+    }
+    ProbeOutcome::Healthy
+}
+
+enum TimedCommandError {
+    NotFound,
+    Spawn(std::io::Error),
+    Wait(std::io::Error),
+    TimedOut,
+}
+
+/// The wait both probes share. A timeout kills the child. Callers decide
+/// what a miss means, so a second command does not grow a second wait.
+fn timed_command(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    path: Option<&Path>,
+    stderr: Stdio,
+) -> Result<std::process::Output, TimedCommandError> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(stderr);
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
+    let child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(TimedCommandError::NotFound);
+        }
+        Err(error) => return Err(TimedCommandError::Spawn(error)),
+    };
     let pid = child.id();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let _ = tx.send(child.wait_with_output());
     });
-
     match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            if !output.status.success() {
-                let output_summary = if !stdout.is_empty() || !stderr.is_empty() {
-                    let combined = format!("{}{}", stdout.trim(), stderr.trim())
-                        .chars()
-                        .take(200)
-                        .collect::<String>();
-                    format!(" Output: {combined}")
-                } else {
-                    String::new()
-                };
-                return ProbeOutcome::Unhealthy(format!(
-                    "`{} {}` exited with {}.{}",
-                    launch.argv[0],
-                    launch.version_flag(),
-                    output.status,
-                    output_summary
-                ));
-            }
-
-            if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                return ProbeOutcome::Unhealthy(format!(
-                    "`{} {}` produced no output",
-                    launch.argv[0],
-                    launch.version_flag()
-                ));
-            }
-
-            ProbeOutcome::Healthy
-        }
-        Ok(Err(error)) => ProbeOutcome::Unhealthy(format!(
-            "`{} {}` could not be monitored: {error}",
-            launch.argv[0],
-            launch.version_flag()
-        )),
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => Err(TimedCommandError::Wait(error)),
         Err(_) => {
             kill_harness_tree(pid);
-            ProbeOutcome::Unhealthy(format!(
-                "`{} {}` timed out after {:.1}s",
-                launch.argv[0],
-                launch.version_flag(),
-                timeout.as_secs_f32()
-            ))
+            Err(TimedCommandError::TimedOut)
         }
     }
+}
+
+/// `None` is not a failed launcher. The version probe already decided the
+/// binary is there.
+fn probe_stdout(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    path: Option<&Path>,
+) -> Option<String> {
+    let output = timed_command(program, args, timeout, path, Stdio::null()).ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+fn npm_package_spec(argv: &[String]) -> Option<&str> {
+    argv.iter()
+        .skip(1)
+        .find(|arg| !arg.starts_with('-'))
+        .map(String::as_str)
+}
+
+fn npx_node_rejection(launch: &Launch, timeout: Duration, path: Option<&Path>) -> Option<String> {
+    if launch.argv.first().map(String::as_str) != Some("npx") {
+        return None;
+    }
+    let spec = npm_package_spec(&launch.argv)?;
+    let current = probe_stdout("node", &["--version"], timeout, path)?;
+    let requirement = probe_stdout("npm", &["view", spec, "engines.node"], timeout, path)?;
+    node_engine_rejection(&launch.name, &current, &requirement)
+}
+
+fn parse_node_version(raw: &str) -> Option<(u64, u64, u64)> {
+    let raw = raw.trim().trim_start_matches(['v', 'V']);
+    let raw = raw.split(['-', '+']).next()?.trim();
+    if raw.is_empty() || !raw.chars().next()?.is_ascii_digit() {
+        return None;
+    }
+    let mut parts = raw.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = match parts.next() {
+        Some(text) => text.parse().ok()?,
+        None => 0,
+    };
+    let patch = match parts.next() {
+        Some(text) => text.parse().ok()?,
+        None => 0,
+    };
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+/// `>=` only. The adapters publish that form. Any other range is unread on
+/// purpose, so a floor we cannot parse does not fail a Node that might be fine.
+fn node_satisfies(current: (u64, u64, u64), requirement: &str) -> Option<bool> {
+    let requirement = requirement.trim();
+    if requirement.is_empty() || requirement == "*" {
+        return Some(true);
+    }
+    let rest = requirement.strip_prefix(">=")?;
+    let required = parse_node_version(rest)?;
+    Some(current >= required)
+}
+
+fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option<String> {
+    let current = current.trim();
+    let requirement = requirement
+        .trim()
+        .trim_matches(|character| character == '"' || character == '\'');
+    let version = parse_node_version(current)?;
+    if node_satisfies(version, requirement) != Some(false) {
+        return None;
+    }
+    let floor = requirement.strip_prefix(">=")?.trim();
+    Some(format!(
+        "{name} needs Node {floor} or newer; `node` on PATH is {current}"
+    ))
+}
+
+/// The sentence Chat shows for an unhealthy probe. An engine rejection names
+/// `node`, so the terminal check is `node --version` rather than `npx --version`.
+fn unhealthy_sentence(launch: &Launch, why: &str) -> String {
+    let check = if why.contains("`node` on PATH") {
+        "node --version".to_string()
+    } else {
+        format!("{} {}", launch.argv[0], launch.version_flag())
+    };
+    format!("{why}. Run `{check}` in a terminal to check what is wrong")
 }
 
 #[cfg(windows)]
@@ -911,11 +1049,7 @@ impl Session {
                     return;
                 }
                 ProbeOutcome::Unhealthy(why) => {
-                    let sentence = format!(
-                        "{why}. Run `{} {}` in a terminal to check what is wrong",
-                        session.launch.argv[0],
-                        session.launch.version_flag()
-                    );
+                    let sentence = unhealthy_sentence(&session.launch, &why);
                     session.update_inspect(|inspect| {
                         inspect.alive = false;
                         inspect.initializing = false;
@@ -1420,6 +1554,11 @@ impl Session {
         let wire = match self.current_wire() {
             Some(wire) => wire,
             None => {
+                // The probe already refused this launcher. A wake that spawns
+                // it anyway is the hang the probe is there to stop.
+                if let Some(why) = self.inspect().unhealthy {
+                    return Err(why);
+                }
                 {
                     let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
                     // A new child does not have the previous process's sessions.
@@ -6921,5 +7060,197 @@ mod tests {
             other => panic!("expected Unhealthy from no output, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `npx --version` prints npm's version and exits 0 when Node is too old
+    /// for the adapter. Preflight has to fail before attach hangs on that.
+    #[test]
+    fn an_npx_preset_fails_preflight_when_node_is_older_than_the_adapter_engine() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        write_npx_engine_fixture(&dir, "v20.19.2", ">=22\n", true);
+        let launch = claude_npx_launch();
+        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
+            ProbeOutcome::Unhealthy(why) => {
+                assert_eq!(
+                    why,
+                    "claude needs Node 22 or newer; `node` on PATH is v20.19.2"
+                );
+            }
+            other => panic!("expected Unhealthy, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_npx_preset_passes_preflight_when_node_meets_the_adapter_engine() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        write_npx_engine_fixture(&dir, "v20.19.2", ">=20\n", true);
+        let launch = claude_npx_launch();
+        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
+            ProbeOutcome::Healthy => {}
+            other => panic!("expected Healthy, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_npx_preset_passes_preflight_when_the_adapter_engine_cannot_be_read() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        write_npx_engine_fixture(&dir, "v20.19.2", "", false);
+        let launch = claude_npx_launch();
+        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
+            ProbeOutcome::Healthy => {}
+            other => panic!("expected Healthy when engines.node cannot be read, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_npx_preset_passes_preflight_when_the_adapter_declares_no_engine() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        write_npx_engine_fixture(&dir, "v20.19.2", "", true);
+        let launch = claude_npx_launch();
+        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
+            ProbeOutcome::Healthy => {}
+            other => panic!("expected Healthy when engines.node is empty, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn node_engine_rejection_names_an_old_node_and_accepts_a_new_enough_one() {
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2", ">=22"),
+            Some("claude needs Node 22 or newer; `node` on PATH is v20.19.2".to_string())
+        );
+        assert_eq!(node_engine_rejection("claude", "v22.0.0", ">=22"), None);
+        assert_eq!(node_engine_rejection("pi", "v20.19.2", ">=20"), None);
+        assert_eq!(
+            node_engine_rejection("claude", "v22.4.9", ">=22.5.0"),
+            Some("claude needs Node 22.5.0 or newer; `node` on PATH is v22.4.9".to_string())
+        );
+        assert_eq!(node_engine_rejection("claude", "v22.5.0", ">=22.5.0"), None);
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2", "not-a-range"),
+            None
+        );
+    }
+
+    #[test]
+    fn an_old_node_tells_the_user_to_run_node_version() {
+        let launch = launch(Some("claude")).unwrap();
+        let why = "claude needs Node 22 or newer; `node` on PATH is v20.19.2";
+        assert_eq!(
+            unhealthy_sentence(&launch, why),
+            "claude needs Node 22 or newer; `node` on PATH is v20.19.2. Run `node --version` in a terminal to check what is wrong"
+        );
+        assert_eq!(
+            unhealthy_sentence(&launch, "`npx --version` timed out after 3.0s"),
+            "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong"
+        );
+    }
+
+    /// A wake after a refused probe must not start the adapter. That spawn is
+    /// the hang the probe is there to stop.
+    #[test]
+    fn an_unhealthy_probe_does_not_let_a_wake_spawn_the_adapter() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("spawned");
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("hang.sh");
+            std::fs::write(
+                &path,
+                format!("#!/bin/sh\ntouch \"{}\"\nexit 0\n", marker.display()),
+            )
+            .unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        #[cfg(windows)]
+        let script = {
+            let path = dir.join("hang.bat");
+            std::fs::write(
+                &path,
+                format!(
+                    "@echo off\ntype nul > \"{}\"\nexit /b 0\n",
+                    marker.display()
+                ),
+            )
+            .unwrap();
+            path
+        };
+        let session = Session::new(
+            Launch {
+                name: "claude".into(),
+                argv: vec![script.to_string_lossy().to_string()],
+            },
+            Ok(AttachCwd(dir.clone())),
+            SessionDataDir::at(dir.clone()),
+            silent(),
+        );
+        let why = "claude needs Node 22 or newer; `node` on PATH is v20.19.2. Run `node --version` in a terminal to check what is wrong";
+        session.update_inspect(|inspect| inspect.unhealthy = Some(why.to_string()));
+        let err = session.complete(&asking("hi")).unwrap_err();
+        assert_eq!(err, why);
+        assert!(
+            !marker.exists(),
+            "the wake spawned the adapter after preflight refused it"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn claude_npx_launch() -> Launch {
+        Launch {
+            name: "claude".into(),
+            argv: vec![
+                "npx".into(),
+                "-y".into(),
+                "@agentclientprotocol/claude-agent-acp@latest".into(),
+            ],
+        }
+    }
+
+    fn write_npx_engine_fixture(dir: &Path, node_version: &str, engines_node: &str, npm_ok: bool) {
+        std::fs::create_dir_all(dir).unwrap();
+        // The probe replaces PATH, so the stand-ins cannot call `cat` or
+        // `dirname`. The engine string is in the script itself.
+        let engines = engines_node.trim();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let write = |name: &str, body: &str| {
+                let path = dir.join(name);
+                std::fs::write(&path, body).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            };
+            write("npx", "#!/bin/sh\necho 11.16.0\n");
+            write("node", &format!("#!/bin/sh\necho {node_version}\n"));
+            let npm = if npm_ok {
+                format!("#!/bin/sh\nprintf '%s\\n' '{engines}'\n")
+            } else {
+                "#!/bin/sh\nexit 1\n".to_string()
+            };
+            write("npm", &npm);
+        }
+        #[cfg(windows)]
+        {
+            std::fs::write(dir.join("npx.cmd"), "@echo off\r\necho 11.16.0\r\n").unwrap();
+            std::fs::write(
+                dir.join("node.cmd"),
+                format!("@echo off\r\necho {node_version}\r\n"),
+            )
+            .unwrap();
+            let npm = if !npm_ok {
+                "@echo off\r\nexit /b 1\r\n".to_string()
+            } else if engines.is_empty() {
+                "@echo off\r\nexit /b 0\r\n".to_string()
+            } else {
+                format!("@echo off\r\necho {}\r\n", engines.replace('>', "^>"))
+            };
+            std::fs::write(dir.join("npm.cmd"), npm).unwrap();
+        }
     }
 }
