@@ -24,8 +24,7 @@ model_power = 1
 near_reaction = "speak"
 rush_reaction = "toward"
 
-# Idling shares three rings: the quiet stand, the gesturing wait, and a wave.
-# The stand and the wait are near equals; the wave is the occasional flourish.
+# The quiet stand and the folded-arm wait share the idling, three to two.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 4
@@ -41,17 +40,19 @@ weight = 20
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
 fps = 8
 
-# wave-1 and wave-2 are rescaled to wave-0's hair so the wave holds size.
-[animations.wave]
-frames = ["frames/wave-0.png", "frames/wave-1.png", "frames/wave-2.png"]
-fps = 4
-variant_of = "idle"
-weight = 10
-
 # The mouth moves open, shut, open, open, so a reply reads as speech.
 [animations.talk]
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png"]
 fps = 5
+weight = 30
+
+# A greeting is a talk, and one talk in four is a wave instead.
+# wave-1 and wave-2 are rescaled to wave-0's hair so the wave holds size.
+[animations.wave]
+frames = ["frames/wave-0.png", "frames/wave-1.png", "frames/wave-2.png"]
+fps = 4
+variant_of = "talk"
+weight = 10
 
 [animations.fall]
 frames = ["frames/fall-0.png", "frames/fall-1.png"]
@@ -86,7 +87,7 @@ loop = "once"
 # quiet. Walk stays light: he would rather speak than patrol.
 
 [behaviors.greet]
-play = ["wave", "talk", "wave"]
+play = ["talk"]
 then = "report"
 weight = 40
 when = "idle under 10s"

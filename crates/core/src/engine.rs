@@ -1525,7 +1525,7 @@ impl Engine {
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
-            Primitive::React | Primitive::Talk | Primitive::Wave => true,
+            Primitive::React | Primitive::Talk => true,
             Primitive::Walk | Primitive::Chase => {
                 on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
             }
@@ -1575,9 +1575,6 @@ fn animation_of(primitive: Primitive) -> &'static str {
         // Optional art: the renderer resolves it to `fall` when a package
         // draws none, so the required set stays at nine (ADR-0007).
         Primitive::Jump => "jump",
-        // Optional art: the renderer resolves it to `idle` when a package
-        // draws none.
-        Primitive::Wave => "wave",
     }
 }
 
@@ -6941,17 +6938,6 @@ mod tests {
     #[test]
     fn a_jump_asks_for_optional_jump_art() {
         assert_eq!(animation_of(Primitive::Jump), "jump");
-    }
-
-    #[test]
-    fn a_wave_asks_for_optional_wave_art_and_needs_no_footing() {
-        assert_eq!(animation_of(Primitive::Wave), "wave");
-        let engine = Engine::new(Point { x: 100.0, y: 0.0 });
-        assert_eq!(engine.state, State::Falling, "mid-air to begin with");
-        assert!(
-            engine.permitted(&[Primitive::Wave]),
-            "a wave is an expression, like talk"
-        );
     }
 
     /// The sprite already walks off a window edge, so it may jump off one too.
