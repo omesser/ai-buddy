@@ -10,11 +10,13 @@
 
 </div>
 
-# Fidget keeps you company while you vibe-code, and pitches in when you ask
+# Fidget walks your window tops, naps, and flies when you throw it
 
-An embodied AI that lives on your desktop. Pick it up, throw it around, let it nap, talk to it, or ask it to do anything that an AI harness can do (which is a lot)! It's a virtual manifestation of your favorite AI model and harness, with all of its capabilities.
+Pick it up and throw it. It walks the top edge of your windows, naps, and arcs across the screen when you let go. No account and no key: offline, it is already a complete toy. Each character has a personality and a life of its own.
 
-Each character has a personality and a life of its own.
+An AI harness is optional. Attach the one you already use and it can talk and pitch in with tools; leave it off and the pet still works. It never reads your screen and [never takes screenshots](#computer-use).
+
+**What's different from WindowPet and Shimeji?** WindowPet and classic Shimeji are presence and animation pets; Fidget is its own Tauri desktop pet, inspired by [WindowPet](https://github.com/SeakMengs/WindowPet) and not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)), that still works offline as a pure pet and can optionally attach an AI harness for speech and tool use.
 
 ![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
@@ -25,7 +27,7 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 - **Keeps you company.** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
 - **Pick a character, or bring your own.** Eight built-in characters, each with its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
 - **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
-- **Knows what you're up to.** It can see and react to your open windows, for context-aware chatter. It reads window names only, with your consent, but [never takes screenshots](#computer-use).
+- **Knows where your windows are.** It reacts to open windows. It never reads screen pixels and [never takes screenshots](#computer-use). Titles and application names are a separate consent, which is what context-aware chatter can use.
 - **Stays out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
 
 ## Get It
@@ -202,6 +204,8 @@ Every other mark is served from [Simple Icons](https://simpleicons.org) (CC0,
 with each brand's trademark reserved to its owner).
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. Fidget is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
+
+Classic Shimeji and WindowPet stay presence and animation pets. Fidget can optionally attach an AI harness for speech and tool use, and still runs as a pure pet with that off.
 
 The Chat window's mind mark - the small brain beside what answers - is the
 `brain` glyph from [Font Awesome Free](https://fontawesome.com/) 6.x, used
