@@ -107,6 +107,29 @@ test("a named Harness that has not come up stays on the landing", () => {
   assert.match(copy.lede, /Static weights/);
 });
 
+test("a launcher that failed preflight names why and the command to run", () => {
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "claude",
+    harness: {
+      name: "claude",
+      session: null,
+      alive: false,
+      login: null,
+      unhealthy: "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong",
+    },
+  };
+  assert.equal(canAnswer(opening), false);
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Claude Code is unhealthy");
+  assert.equal(
+    copy.lede,
+    "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong. Then pick Claude Code again, or pick a different Harness below.",
+  );
+});
+
 function diedOpening(failed) {
   return {
     name: "bmo",

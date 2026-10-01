@@ -4805,6 +4805,28 @@ mod tests {
         assert_eq!(harness.failed, Some(why));
     }
 
+    /// A launcher that failed preflight reaches Chat with the sentence, or the
+    /// landing can only say the Harness has not come up.
+    #[test]
+    fn chat_opening_carries_why_the_launcher_is_unhealthy() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let why = "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong";
+        let inspect = model::DirectorInspect {
+            harness: Some(crate::harness::HarnessInspect {
+                name: "claude".to_string(),
+                unhealthy: Some(why.to_string()),
+                ..Default::default()
+            }),
+            ..stub_inspect()
+        };
+
+        let opening = serde_json::to_value(chat_opening_from(instance, &inspect, "")).unwrap();
+        assert_eq!(opening["harness"]["unhealthy"], why);
+    }
+
     /// The landing payload while login is still required. The fragment is the
     /// button list, not a value recomputed while asserting.
     #[test]

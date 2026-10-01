@@ -5115,12 +5115,17 @@ mod tests {
     fn an_unhealthy_launcher_says_why_without_endpoint_jargon() {
         let sick = crate::harness::HarnessInspect {
             name: "codex".to_string(),
-            unhealthy: Some("version probe timed out".to_string()),
+            unhealthy: Some(
+                "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check \
+                 what is wrong"
+                    .to_string(),
+            ),
             ..Default::default()
         };
         assert_eq!(
             harness_state(Some(&sick)),
-            "codex is unhealthy: version probe timed out The fidget runs on static weights until it is fixed."
+            "codex is unhealthy: `npx --version` timed out after 3.0s. Run `npx --version` in a \
+             terminal to check what is wrong. The fidget runs on static weights until it is fixed."
         );
     }
 
