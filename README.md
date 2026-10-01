@@ -111,19 +111,72 @@ Characters are packages of art, personality, and tuning. See [DEVELOPMENT.md](./
 
 Which Harness you attach changes what Fidget can do with it.
 
-| Harness | Command | Standing |
-|---|---|---|
-| <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
-| `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Zed's adapter (`codex-acp`); no first-party ACP mode. Fresh and resumed sessions both work. |
-| <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> `copilot` | `copilot --acp` | First-party, GitHub. `copilot` alone is the interactive TUI. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (#1016). |
-| <img src="https://cdn.simpleicons.org/cursor" width="14" alt="" /> `cursor-agent` | `cursor-agent acp` | First-party. `cursor-agent` alone is the interactive TUI. Every attach opens a fresh session, because it advertises no `loadSession`. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="./docs/readme/grok-on-dark.svg" /><img src="./docs/readme/grok-on-light.svg" width="14" alt="" /></picture> `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI. Fresh and resumed sessions both work. |
-| `goose` | `goose acp` | First-party, Block. `goose` alone is the interactive CLI. Fresh and resumed sessions both work, smoked on goose 1.51.0. |
-| <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
-| <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
-| <img src="https://cdn.simpleicons.org/pi" width="14" alt="" /> `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. |
-| <img src="https://cdn.simpleicons.org/google" width="14" alt="" /> `antigravity` | `agy_acp_server.par` (`agy_acp_server.exe` on Windows) | First-party, Google's ACP server; `agy` itself has no ACP mode. Fresh and resumed sessions both work, smoked on agy_acp_server 1.2.1 (#604). |
-| anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. |
+<table>
+<thead>
+<tr>
+<th align="left" nowrap width="170">Harness</th>
+<th align="left">Command</th>
+<th align="left">Standing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td nowrap width="170"><img src="https://cdn.simpleicons.org/claude" width="14" alt="" />&nbsp;<code>claude</code></td>
+<td><code>npx -y @agentclientprotocol/claude-agent-acp@latest</code></td>
+<td>Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work.</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="./docs/readme/openai.svg" width="14" alt="" />&nbsp;<code>codex</code></td>
+<td><code>npx -y @agentclientprotocol/codex-acp@latest</code></td>
+<td>Zed's adapter (<code>codex-acp</code>); no first-party ACP mode. Fresh and resumed sessions both work.</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" />&nbsp;<code>copilot</code></td>
+<td><code>copilot --acp</code></td>
+<td>First-party, GitHub. <code>copilot</code> alone is the interactive TUI. Fresh and resumed sessions both work, smoked on copilot 1.0.88 (<a href="https://github.com/omesser/fidget/issues/1016">#1016</a>).</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="https://cdn.simpleicons.org/cursor" width="14" alt="" />&nbsp;<code>cursor-agent</code></td>
+<td><code>cursor-agent acp</code></td>
+<td>First-party. <code>cursor-agent</code> alone is the interactive TUI. Every attach opens a fresh session, because it advertises no <code>loadSession</code>.</td>
+</tr>
+<tr>
+<td nowrap width="170"><picture><source media="(prefers-color-scheme: dark)" srcset="./docs/readme/grok-on-dark.svg" /><img src="./docs/readme/grok-on-light.svg" width="14" alt="" /></picture>&nbsp;<code>grok</code></td>
+<td><code>grok agent stdio</code></td>
+<td>First-party, Grok Build. <code>grok</code> alone is the interactive TUI. Fresh and resumed sessions both work.</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="./docs/readme/goose.svg" width="14" alt="" />&nbsp;<code>goose</code></td>
+<td><code>goose acp</code></td>
+<td>First-party, Block. <code>goose</code> alone is the interactive CLI. Fresh and resumed sessions both work, smoked on goose 1.51.0.</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="https://cdn.simpleicons.org/opencode" width="14" alt="" />&nbsp;<code>opencode</code></td>
+<td><code>opencode acp</code></td>
+<td>First-party. Fresh and resumed sessions both work.</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="./docs/readme/nous.svg" width="14" alt="" />&nbsp;<code>hermes</code></td>
+<td><code>hermes acp</code></td>
+<td>First-party. Fresh sessions work; a resume that cannot restore the session reopens (<a href="https://github.com/omesser/fidget/issues/448">#448</a>).</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="https://cdn.simpleicons.org/pi" width="14" alt="" />&nbsp;<code>pi</code></td>
+<td><code>npx -y pi-acp@latest</code></td>
+<td>Zed-registry adapter (<code>pi-acp</code>); no first-party ACP. Fresh and resumed sessions both work.</td>
+</tr>
+<tr>
+<td nowrap width="170"><img src="https://cdn.simpleicons.org/google" width="14" alt="" />&nbsp;<code>antigravity</code></td>
+<td><code>agy_acp_server.par</code> (<code>agy_acp_server.exe</code> on Windows)</td>
+<td>First-party, Google's ACP server; <code>agy</code> itself has no ACP mode. Fresh and resumed sessions both work, smoked on agy_acp_server 1.2.1 (<a href="https://github.com/omesser/fidget/issues/604">#604</a>).</td>
+</tr>
+<tr>
+<td nowrap width="170">anything else</td>
+<td>as typed, split on whitespace</td>
+<td>Unnamed, and it works: any command that speaks ACP on stdio attaches.</td>
+</tr>
+</tbody>
+</table>
 
 Tools each harness keeps under ACP, session and auth behavior, and per-harness setup notes are in [docs/harness.md](./docs/harness.md#harness-support).
 
@@ -198,8 +251,13 @@ Harness brand marks identify each Harness and belong to their owners. The Grok
 logomark is xAI's own file from [their brand guidelines](https://x.ai/legal/brand-guidelines),
 used unaltered to refer to Grok, which those guidelines permit and may revoke.
 The Nous Research mark (`docs/readme/nous.svg`) identifies the Hermes Harness.
-Every other mark is served from [Simple Icons](https://simpleicons.org) (CC0,
-with each brand's trademark reserved to its owner).
+The Codex row uses the OpenAI mark (`docs/readme/openai.svg`) from
+[Simple Icons](https://simpleicons.org), kept in the repo because the CDN no
+longer serves that slug (CC0, trademark reserved to OpenAI). The Goose mark
+(`docs/readme/goose.svg`) is the Goose icon from
+[Lobe Icons](https://github.com/lobehub/lobe-icons) (MIT); the trademark stays
+with Block. Every other mark is served from Simple Icons (CC0, with each
+brand's trademark reserved to its owner).
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. Fidget is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
