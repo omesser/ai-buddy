@@ -12,6 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fidget_core::director::{Completer, Reply, Wake, WakeRequest};
+use semver::{BuildMetadata, Op, Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -552,53 +553,41 @@ fn npx_node_rejection(launch: &Launch, timeout: Duration, path: Option<&Path>) -
     node_engine_rejection(&launch.name, &current, &requirement)
 }
 
-fn parse_node_version(raw: &str) -> Option<(u64, u64, u64)> {
-    let raw = raw.trim().trim_start_matches(['v', 'V']);
-    let raw = raw.split(['-', '+']).next()?.trim();
-    if raw.is_empty() || !raw.chars().next()?.is_ascii_digit() {
-        return None;
-    }
-    let mut parts = raw.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = match parts.next() {
-        Some(text) => text.parse().ok()?,
-        None => 0,
-    };
-    let patch = match parts.next() {
-        Some(text) => text.parse().ok()?,
-        None => 0,
-    };
-    if parts.next().is_some() {
-        return None;
-    }
-    Some((major, minor, patch))
-}
-
-/// `>=` only. The adapters publish that form. Any other range is unread on
-/// purpose, so a floor we cannot parse does not fail a Node that might be fine.
-fn node_satisfies(current: (u64, u64, u64), requirement: &str) -> Option<bool> {
-    let requirement = requirement.trim();
-    if requirement.is_empty() || requirement == "*" {
-        return Some(true);
-    }
-    let rest = requirement.strip_prefix(">=")?;
-    let required = parse_node_version(rest)?;
-    Some(current >= required)
-}
-
 fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option<String> {
     let current = current.trim();
     let requirement = requirement
         .trim()
         .trim_matches(|character| character == '"' || character == '\'');
-    let version = parse_node_version(current)?;
-    if node_satisfies(version, requirement) != Some(false) {
+    let version = Version::parse(current.trim_start_matches(['v', 'V'])).ok()?;
+    if node_meets(&version, &VersionReq::parse(requirement).ok()?) {
         return None;
     }
-    let floor = requirement.strip_prefix(">=")?.trim();
+    let needed = match requirement.strip_prefix(">=") {
+        Some(floor) => format!("Node {} or newer", floor.trim()),
+        None => format!("Node {requirement}"),
+    };
     Some(format!(
-        "{name} needs Node {floor} or newer; `node` on PATH is {current}"
+        "{name} needs {needed}; `node` on PATH is {current}"
     ))
+}
+
+/// `matches` drops a prerelease unless the range names that tuple, so a
+/// lone `>=` uses version order. `*` is an empty comparator list.
+fn node_meets(version: &Version, requirement: &VersionReq) -> bool {
+    match requirement.comparators.as_slice() {
+        [] => true,
+        [comparator] if comparator.op == Op::GreaterEq => {
+            version
+                >= &Version {
+                    major: comparator.major,
+                    minor: comparator.minor.unwrap_or(0),
+                    patch: comparator.patch.unwrap_or(0),
+                    pre: comparator.pre.clone(),
+                    build: BuildMetadata::EMPTY,
+                }
+        }
+        _ => requirement.matches(version),
+    }
 }
 
 /// The sentence Chat shows for an unhealthy probe. An engine rejection names
@@ -7131,7 +7120,31 @@ mod tests {
         );
         assert_eq!(node_engine_rejection("claude", "v22.5.0", ">=22.5.0"), None);
         assert_eq!(
+            node_engine_rejection("claude", "v20.19.2-nightly", ">=20.19.2"),
+            Some(
+                "claude needs Node 20.19.2 or newer; `node` on PATH is v20.19.2-nightly"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v25.0.0-nightly", ">=20"),
+            None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2-nightly", "*"),
+            None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2", "^22.0.0"),
+            Some("claude needs Node ^22.0.0; `node` on PATH is v20.19.2".to_string())
+        );
+        assert_eq!(node_engine_rejection("claude", "v22.0.0", "^22.0.0"), None);
+        assert_eq!(
             node_engine_rejection("claude", "v20.19.2", "not-a-range"),
+            None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v22.0.0", ">=20.19.0 || >=22.12.0"),
             None
         );
     }
