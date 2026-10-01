@@ -102,10 +102,20 @@ now_ms() {
   perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'
 }
 
+cpu_count() {
+  if [ "$(uname -s)" = Darwin ]; then
+    sysctl -n hw.ncpu
+  else
+    nproc
+  fi
+}
+
 launch_app() {
   local log=$1 frames=$2 characters=$3
-  # Scratch HOME so the bench does not write the user's settings. The API key
-  # skips the Keychain read a worktree build would otherwise block on.
+  # X11 reads its authority file from HOME, so export that path first.
+  if [ -z "${XAUTHORITY:-}" ] && [ -f "${HOME}/.Xauthority" ]; then
+    export XAUTHORITY="${HOME}/.Xauthority"
+  fi
   SCRATCH_HOME=$(mktemp -d)
   FIDGET_DIRECTOR_API_KEY=bench-placeholder \
     FIDGET_DIRECTOR=0 \
@@ -156,7 +166,7 @@ wait_walk() {
 run() {
   local name=$1 log="$out/$1.log"
   if [ "$name" = load ]; then
-    for _ in $(seq 1 "$(sysctl -n hw.ncpu)"); do
+    for _ in $(seq 1 "$(cpu_count)"); do
       yes > /dev/null &
       BURNERS+=($!)
     done
@@ -212,11 +222,20 @@ run() {
   fi
 }
 
+if [ "$(uname -s)" = Darwin ]; then
+  machine=$(sysctl -n hw.model)
+  os="$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
+  refresh_hz=$(system_profiler SPDisplaysDataType 2> /dev/null | sed -n 's/.*@ \([0-9.]*\)Hz.*/\1/p' | tr '\n' ' ')
+else
+  machine=$(uname -m)
+  os=$(awk -F= '/^PRETTY_NAME=/ { gsub(/"/, "", $2); print $2; exit }' /etc/os-release)
+  refresh_hz=$(xrandr --query 2> /dev/null | awk '/\*/ { for (i = 1; i <= NF; i++) if ($i ~ /\*/) { gsub(/[^0-9.]/, "", $i); print $i; exit } }')
+fi
 cat << EOF
-machine=$(sysctl -n hw.model)
-os=$(sw_vers -productVersion) ($(sw_vers -buildVersion))
-refresh_hz=$(system_profiler SPDisplaysDataType 2> /dev/null | sed -n 's/.*@ \([0-9.]*\)Hz.*/\1/p' | tr '\n' ' ')
-cpus=$(sysctl -n hw.ncpu)
+machine=$machine
+os=$os
+refresh_hz=$refresh_hz
+cpus=$(cpu_count)
 bin=$bin
 git_rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)
 seconds=$seconds

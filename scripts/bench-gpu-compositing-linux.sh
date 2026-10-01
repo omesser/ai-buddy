@@ -13,7 +13,7 @@ bin="target/debug/fidget"
 scenario=""
 
 usage() {
-  echo "Usage: $0 <env|baseline|idle|walking|chat|multi|hidden|matrix> [--seconds N] [--walk-timeout N] [--shot FILE] [--out DIR]" >&2
+  echo "Usage: $0 <env|baseline|idle|walking|chat|multi|hidden|matrix> [--seconds N] [--walk-timeout N] [--shot FILE] [--out DIR] [--bin PATH]" >&2
   exit 2
 }
 
@@ -33,6 +33,10 @@ while [ $# -gt 0 ]; do
       ;;
     --out)
       out="$2"
+      shift 2
+      ;;
+    --bin)
+      bin="$2"
       shift 2
       ;;
     --help | -h) usage ;;
