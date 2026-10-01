@@ -374,6 +374,9 @@ struct SpritePlacement<'a> {
     /// On this tick only: a touch was dropped because a question waits on the
     /// user (ADR-0016), so the bubble points at Chat. False off the bubble owner.
     asking: bool,
+    /// Whether this Instance has a Chat window. Sent to every overlay, because
+    /// the pill that must stay down can open on any of them.
+    chatting: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were
     /// showing on the tick the answer changes.
@@ -408,6 +411,7 @@ impl<'a> SpritePlacement<'a> {
             dialogue: instance.dialogue.as_ref().filter(|_| bubble).cloned(),
             thinking: bubble && instance.thinking,
             asking: bubble && instance.asking,
+            chatting: instance.chatting,
             bubble,
             cue: instance.cue.filter(|_| bubble).map(Cue::name),
         }
@@ -482,6 +486,7 @@ struct Placed {
     dialogue: Option<String>,
     thinking: bool,
     asking: bool,
+    chatting: bool,
     cue: Option<Cue>,
     /// The overlay that draws the bubble, decided once from the feet
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
@@ -1554,7 +1559,7 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
                 }
                 SettingsEffect::Raise => {
                     if let Some(window) = &window {
-                        if let Err(why) = platform::raise_settings_window(window) {
+                        if let Err(why) = platform::raise_above_overlay(window) {
                             eprintln!("settings webview raise: {why}");
                         }
                     }
@@ -1870,9 +1875,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
             },
         };
         // Both paths: `focused(true)` only orders the window to the front of
-        // this application. `set_focus` activates the process, which a Summon
-        // has to do, and doing it here keeps the overlay from taking focus.
-        if let Err(why) = window.set_focus() {
+        // this application. The raise activates the process, which a Summon has
+        // to do, and lifts Chat over the overlay so the bubble cannot cover it.
+        if let Err(why) = platform::raise_above_overlay(&window) {
             eprintln!("chat: {label} could not be raised: {why}");
         }
     }) {
@@ -5353,6 +5358,7 @@ mod tests {
             dialogue: Some("Yare yare daze.".to_string()),
             thinking: true,
             asking: true,
+            chatting: true,
             cue: Some(Cue::Poke),
             owner: Some(1),
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
@@ -5375,6 +5381,10 @@ mod tests {
         );
         assert!(!elsewhere.bubble);
         assert_eq!(elsewhere.cue, None, "or the cue sounds once per display");
+        assert!(
+            owner.chatting && elsewhere.chatting,
+            "the pill can open on any overlay, so each one hears that Chat is up"
+        );
 
         assert_eq!(
             (elsewhere.animation, elsewhere.frame_index, elsewhere.mirror),

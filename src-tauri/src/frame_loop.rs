@@ -1833,6 +1833,7 @@ pub(crate) fn run_frame_loop(
                     dialogue,
                     thinking,
                     asking,
+                    chatting: app.get_webview_window(&chat_label(&live.id)).is_some(),
                     cue: frame.cue,
                     owner,
                     mask: drawn.mask.clone(),

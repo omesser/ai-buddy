@@ -335,18 +335,18 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
 }
 
-/// Raise the Settings webview above the overlay. Main thread only.
+/// Raise Settings or Chat above the overlay, and give it the keyboard. Main thread only.
 ///
 /// NSStatusWindowLevel sits above the overlay's NSFloatingWindowLevel, so tray-open is not a no-op.
 #[cfg(target_os = "macos")]
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     use objc2::msg_send;
     use objc2_app_kit::{NSApplication, NSStatusWindowLevel, NSWindowLevel};
     use objc2_foundation::MainThreadMarker;
 
     let ptr = window
         .ns_window()
-        .map_err(|e| format!("settings window has no native handle: {e}"))?
+        .map_err(|e| format!("window has no native handle: {e}"))?
         as *mut objc2::runtime::AnyObject;
 
     unsafe {
@@ -377,31 +377,31 @@ pub fn tune_tray_icon(tray: &tauri::tray::TrayIcon) -> Result<(), tauri::Error> 
     macos::tune_tray_icon(tray)
 }
 
-/// Raise the Settings webview above the overlay. Main thread only.
+/// Raise Settings or Chat above the overlay, and give it the keyboard. Main thread only.
 ///
-/// The overlay is `_NET_WM_STATE_ABOVE`. Settings keep_above shares that band (#799).
+/// The overlay is `_NET_WM_STATE_ABOVE`. keep_above shares that band (#799).
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     use gtk::prelude::*;
 
     let gtk_window = window
         .gtk_window()
-        .map_err(|e| format!("settings window has no gtk handle: {e}"))?;
+        .map_err(|e| format!("window has no gtk handle: {e}"))?;
     gtk_window.set_keep_above(true);
     gtk_window.present();
     // Mapped windows need a ClientMessage. GTK keep_above is the native path; this covers a WM that ignored it.
     if let Err(why) = x11::raise_settings_ewmh_above(window) {
-        eprintln!("settings webview ewmh raise: {why}");
+        eprintln!("ewmh raise: {why}");
     }
     Ok(())
 }
 
-/// Raise the Settings webview above the overlay. Main thread only.
+/// Raise Settings or Chat above the overlay, and give it the keyboard. Main thread only.
 ///
 /// The overlay is HWND_TOPMOST. A normal window cannot stack above that band.
 #[cfg(not(unix))]
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
-    windows::raise_settings_window(window)
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+    windows::raise_above_overlay(window)
 }
 
 /// Push a fresh snapshot to the Settings webview. Main thread only.

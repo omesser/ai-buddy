@@ -70,6 +70,8 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   // The overlay re-reports the hover every tick, so without this the dwell
   // re-arms under the cursor that just opened Chat.
   let yielded = false;
+  // Chat is the composer while it is up. A level, told by every frame.
+  let chatOpen = false;
   let ready = available;
 
   function changed() {
@@ -137,11 +139,8 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     const line = text.trim();
     if (!ready || !visible || !line) return false;
     text = "";
-    // Stay up so the thinking bubble can push this pill; auto-hide still
-    // applies once empty and the pointer is away.
     send(line);
-    startAutoHideIfNeeded();
-    changed();
+    hide();
     return true;
   }
 
@@ -167,10 +166,10 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       if (disposed) return;
       overSprite = true;
       cancelAutoHide();
-      if (yielded || visible || hoverTimer !== null) return;
+      if (yielded || chatOpen || visible || hoverTimer !== null) return;
       hoverTimer = schedule(() => {
         hoverTimer = null;
-        if (disposed || !overSprite) return;
+        if (disposed || !overSprite || chatOpen) return;
         show();
       }, HOVER_DELAY_MS);
     },
@@ -188,6 +187,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     leavePill() {
       overPill = false;
       startAutoHideIfNeeded();
+    },
+    // A pill already up stays: it may hold a draft, and auto-hide takes an empty one.
+    setChatOpen(open) {
+      chatOpen = Boolean(open);
+      if (chatOpen) cancelHover();
     },
     setAvailable(next) {
       if (disposed || next === ready) return;
