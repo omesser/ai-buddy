@@ -408,88 +408,110 @@ fn probe_launcher_with_path(
     timeout: Duration,
     path: Option<&Path>,
 ) -> ProbeOutcome {
-    let mut command = Command::new(&launch.argv[0]);
-    command
-        .arg(launch.version_flag())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(path) = path {
-        command.env("PATH", path);
-    }
-
-    let child = match command.spawn() {
-        Ok(child) => child,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return ProbeOutcome::NotFound;
-        }
-        Err(error) => {
+    let flag = launch.version_flag();
+    let output = match timed_command(&launch.argv[0], &[flag], timeout, path, Stdio::piped()) {
+        Ok(output) => output,
+        Err(TimedCommandError::NotFound) => return ProbeOutcome::NotFound,
+        Err(TimedCommandError::Spawn(error)) => {
             return ProbeOutcome::Unhealthy(format!(
                 "`{}` could not be run: {error}",
                 launch.argv[0]
             ));
         }
+        Err(TimedCommandError::Wait(error)) => {
+            return ProbeOutcome::Unhealthy(format!(
+                "`{} {}` could not be monitored: {error}",
+                launch.argv[0], flag
+            ));
+        }
+        Err(TimedCommandError::TimedOut) => {
+            return ProbeOutcome::Unhealthy(format!(
+                "`{} {}` timed out after {:.1}s",
+                launch.argv[0],
+                flag,
+                timeout.as_secs_f32()
+            ));
+        }
     };
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        let output_summary = if !stdout.is_empty() || !stderr.is_empty() {
+            let combined = format!("{}{}", stdout.trim(), stderr.trim())
+                .chars()
+                .take(200)
+                .collect::<String>();
+            format!(" Output: {combined}")
+        } else {
+            String::new()
+        };
+        return ProbeOutcome::Unhealthy(format!(
+            "`{} {}` exited with {}.{}",
+            launch.argv[0], flag, output.status, output_summary
+        ));
+    }
+
+    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+        return ProbeOutcome::Unhealthy(format!(
+            "`{} {}` produced no output",
+            launch.argv[0], flag
+        ));
+    }
+
+    // `npx --version` is npm's version, so it passes on a Node the
+    // adapter refuses. Read `engines.node` because `@latest` moves
+    // the floor. A missed read stays Healthy.
+    if let Some(why) = npx_node_rejection(launch, timeout, path) {
+        return ProbeOutcome::Unhealthy(why);
+    }
+    ProbeOutcome::Healthy
+}
+
+enum TimedCommandError {
+    NotFound,
+    Spawn(std::io::Error),
+    Wait(std::io::Error),
+    TimedOut,
+}
+
+/// The wait both probes share. A timeout kills the child. Callers decide
+/// what a miss means, so a second command does not grow a second wait.
+fn timed_command(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    path: Option<&Path>,
+    stderr: Stdio,
+) -> Result<std::process::Output, TimedCommandError> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(stderr);
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
+    let child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(TimedCommandError::NotFound);
+        }
+        Err(error) => return Err(TimedCommandError::Spawn(error)),
+    };
     let pid = child.id();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let _ = tx.send(child.wait_with_output());
     });
-
     match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            if !output.status.success() {
-                let output_summary = if !stdout.is_empty() || !stderr.is_empty() {
-                    let combined = format!("{}{}", stdout.trim(), stderr.trim())
-                        .chars()
-                        .take(200)
-                        .collect::<String>();
-                    format!(" Output: {combined}")
-                } else {
-                    String::new()
-                };
-                return ProbeOutcome::Unhealthy(format!(
-                    "`{} {}` exited with {}.{}",
-                    launch.argv[0],
-                    launch.version_flag(),
-                    output.status,
-                    output_summary
-                ));
-            }
-
-            if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                return ProbeOutcome::Unhealthy(format!(
-                    "`{} {}` produced no output",
-                    launch.argv[0],
-                    launch.version_flag()
-                ));
-            }
-
-            // `npx --version` is npm's version, so it passes on a Node the
-            // adapter refuses. Read `engines.node` because `@latest` moves
-            // the floor. A missed read stays Healthy.
-            if let Some(why) = npx_node_rejection(launch, timeout, path) {
-                return ProbeOutcome::Unhealthy(why);
-            }
-            ProbeOutcome::Healthy
-        }
-        Ok(Err(error)) => ProbeOutcome::Unhealthy(format!(
-            "`{} {}` could not be monitored: {error}",
-            launch.argv[0],
-            launch.version_flag()
-        )),
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => Err(TimedCommandError::Wait(error)),
         Err(_) => {
             kill_harness_tree(pid);
-            ProbeOutcome::Unhealthy(format!(
-                "`{} {}` timed out after {:.1}s",
-                launch.argv[0],
-                launch.version_flag(),
-                timeout.as_secs_f32()
-            ))
+            Err(TimedCommandError::TimedOut)
         }
     }
 }
@@ -502,29 +524,7 @@ fn probe_stdout(
     timeout: Duration,
     path: Option<&Path>,
 ) -> Option<String> {
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    if let Some(path) = path {
-        command.env("PATH", path);
-    }
-    let child = command.spawn().ok()?;
-    let pid = child.id();
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
-    let output = match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => output,
-        Ok(Err(_)) => return None,
-        Err(_) => {
-            kill_harness_tree(pid);
-            return None;
-        }
-    };
+    let output = timed_command(program, args, timeout, path, Stdio::null()).ok()?;
     if !output.status.success() {
         return None;
     }
