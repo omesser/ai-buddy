@@ -19,7 +19,7 @@ pub(super) fn enter() -> bool {
 /// A release with nothing held does not wrap.
 pub(super) fn exit() -> bool {
     DEPTH
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |depth| {
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |depth| {
             depth.checked_sub(1)
         })
         .is_ok_and(|previous| previous == 1)

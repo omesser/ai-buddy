@@ -8,8 +8,7 @@ members = ["crates/core", "crates/mcp-server", "crates/verify", "src-tauri"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-# 1.88 is what `agent-client-protocol` 2.x and its schema crate declare. The
-# shell's ACP client is built on them (ADR-0022). Nothing else here asked for
-# more than 1.77.
-rust-version = "1.88"
+# 1.95 stabilizes `AtomicUsize::try_update`, the name clippy wants on stable.
+# The ACP crates (ADR-0022) need 1.88.
+rust-version = "1.95"
 license = "MIT"
