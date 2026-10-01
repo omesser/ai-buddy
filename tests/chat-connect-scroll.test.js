@@ -155,14 +155,18 @@ async function withChat(run, { rejectHarness = false } = {}) {
   try {
     let wsUrl = null;
     const href = pathToFileURL(page).href;
-    for (let i = 0; i < 50 && !wsUrl; i++) {
+    // A cold Chrome on the Ubuntu runner, beside the other Chrome tests, takes over 5 s.
+    const deadline = Date.now() + 30000;
+    let seen = "no reply";
+    while (!wsUrl && Date.now() < deadline) {
       try {
         const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+        seen = JSON.stringify(pages.map((item) => [item.type, item.url]));
         wsUrl = pages.find((item) => item.type === "page" && item.url === href)?.webSocketDebuggerUrl;
       } catch {}
       if (!wsUrl) await sleep(100);
     }
-    assert.ok(wsUrl, "Chrome did not open a debuggable page");
+    assert.ok(wsUrl, `Chrome did not open ${href} for debugging; last saw ${seen}`);
 
     const ws = new WebSocket(wsUrl);
     await new Promise((resolve, reject) => {
