@@ -265,8 +265,6 @@ mod x11;
 #[cfg(not(unix))]
 mod windows;
 
-/// Perch admission for a Windows top-level window. Pure, so the rule is tested
-/// on every host; the Win32 walk that feeds it stays Windows-only.
 #[cfg(any(test, not(unix)))]
 mod windows_perch;
 

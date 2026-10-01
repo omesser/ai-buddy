@@ -12,8 +12,8 @@ use crate::mcp_resources::WindowTitle;
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
-    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE,
+    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowTextW, IsWindowVisible, GWL_EXSTYLE,
+    GWL_STYLE,
 };
 
 use super::super::windows_perch::perch_candidate;
@@ -134,13 +134,7 @@ fn window_rect(hwnd: HWND, can_read_names: bool) -> Option<WindowRect> {
     // SAFETY: GetWindowLongW on GWL_EXSTYLE reads the extended style bits.
     let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) };
 
-    // Admission is the whole decision. A process check here drops Chat.
-    if !perch_candidate(
-        is_window_visible,
-        style,
-        ex_style,
-        belongs_to_this_process(hwnd),
-    ) {
+    if !perch_candidate(is_window_visible, style, ex_style) {
         return None;
     }
 
@@ -205,18 +199,4 @@ fn read_window_title(hwnd: HWND) -> Option<String> {
     } else {
         Some(title)
     }
-}
-
-/// Whether `hwnd` was created by this process. Chat and Settings are, and so
-/// is the overlay. `perch_candidate` is told, and does not drop them for it.
-fn belongs_to_this_process(hwnd: HWND) -> bool {
-    let mut window_pid: u32 = 0;
-    // SAFETY: GetWindowThreadProcessId writes the process ID into the
-    // out-pointer window_pid, which lives until this function returns.
-    // hwnd is still valid from EnumWindows.
-    unsafe {
-        GetWindowThreadProcessId(hwnd, &mut window_pid);
-    }
-    let current_pid = std::process::id();
-    window_pid == current_pid
 }
