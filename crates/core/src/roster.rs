@@ -3,7 +3,8 @@
 //! One Engine per Instance. They differ in name, position, and Behavior. Memory is shared.
 
 use crate::character::Character;
-use crate::engine::{BehaviorProposal, Engine, Frame, Point, WorldSnapshot};
+use crate::display::Whereabouts;
+use crate::engine::{BehaviorProposal, Engine, Frame, Point, Rect, WorldSnapshot};
 use std::collections::BTreeMap;
 
 /// A stable identifier for one Character Instance.
@@ -137,6 +138,11 @@ impl Instance {
     /// Where this Instance's feet are.
     pub fn feet(&self) -> Point {
         self.engine.feet()
+    }
+
+    /// Which display this Instance is on, and where its feet sit there.
+    pub fn whereabouts(&self, frames: &[Rect], usable: &[Rect]) -> Whereabouts {
+        Whereabouts::locate(self.feet(), frames, usable)
     }
 
     /// Stand this Instance at `feet`, dropping any motion it had.
@@ -468,6 +474,44 @@ mod tests {
             vec![(id.clone(), "Buddy One".to_string())],
             "the Instance appears in the roster with its name"
         );
+    }
+
+    #[test]
+    fn an_instance_reports_the_display_its_feet_are_on() {
+        let mut roster = Roster::new();
+        let character = test_character("Blip");
+        let id = roster.spawn(
+            &character,
+            "Buddy".to_string(),
+            Point {
+                x: 2000.0,
+                y: 100.0,
+            },
+        );
+        let frames = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ];
+
+        let here = roster
+            .get(&id)
+            .expect("the spawned instance")
+            .whereabouts(&frames, &frames);
+        let place = here.placement().expect("on the right display");
+
+        assert_eq!(place.index(), 1);
+        assert_eq!(place.x(), 80.0);
+        assert_eq!(place.y(), 100.0);
     }
 
     #[test]
