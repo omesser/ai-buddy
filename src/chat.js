@@ -32,6 +32,8 @@ const chat = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
+// New lines stay under the landing until this Harness can answer.
+let holdLogAtTop = false;
 const plan = document.getElementById("plan");
 const namesHintEl = document.getElementById("names-hint");
 const empty = document.getElementById("empty");
@@ -125,7 +127,7 @@ function el(cls, tag) {
 
 function add(node) {
   log.append(node);
-  log.scrollTop = log.scrollHeight;
+  log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;
   return node;
 }
 
@@ -429,6 +431,7 @@ function attached(opening) {
   document.getElementById("landing-sign-in-label").hidden = true;
 
   if (ready) {
+    holdLogAtTop = false;
     return true;
   }
 
@@ -502,13 +505,22 @@ function connect(harness, label) {
   // whose `ReloadChat` pushes a full opening to the `chat-opening` listener.
   // A second read from this side would race that push.
   invoke("select_harness", { harness, instance }).catch((why) => {
+    // No opening follows a refusal, so the note is the status and has to be seen.
+    holdLogAtTop = false;
     console.error(`connect failed:`, why);
     note(`Could not connect to ${label}: ${why}.`);
   });
 }
 
 for (const btn of document.querySelectorAll(".connect-btn")) {
+  // The button sits in the log, so the focus a click gives it scrolls the
+  // landing status off the top.
+  btn.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
   btn.addEventListener("click", () => {
+    holdLogAtTop = true;
+    log.scrollTop = 0;
     connect(btn.dataset.harness, btn.querySelector(".connect-label").textContent);
   });
 }
