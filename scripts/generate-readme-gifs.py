@@ -32,7 +32,7 @@ SHOWCASES = (
     ("nim-sleep.gif", "nim", "sleep", 4, 3),
     # Permission granted by MekaRamen (Yeoh Kher En) to publish (#388).
     ("timber-wolf-walk.gif", "timber-wolf", "walk", 20, 8),
-    ("trump-talk.gif", "trump", "talk", 4, 5),
+    ("trump-wave.gif", "trump", "wave", 3, 4),
 )
 
 
