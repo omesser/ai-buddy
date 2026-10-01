@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Sample a running fidget's resident set, Linux only; WebKitGTK helpers are its
-# children. Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N]
-# [--interval N] [--out FILE] [--bin PATH] [--research]. Env reaches the app; set HOME to scratch.
-
 # RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
 # Compare scenarios on VmHWM and read the RSS series for shape, and record the
 # roster, display count and what the sprite was doing beside the number.
@@ -56,7 +52,8 @@ if [ -z "$displays" ]; then
   exit 1
 fi
 
-sleep 2 # Give helpers time to spawn
+sleep 2
+# WebKitGTK helpers are children of the main pid, so the resident set is that tree.
 children=$(pgrep -P "$app" 2> /dev/null || true)
 pids=$(echo "$app" | cat - <(echo "$children") | tr '\n' ' ' | xargs)
 

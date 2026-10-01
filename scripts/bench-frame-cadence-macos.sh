@@ -13,8 +13,6 @@
 #   counter says whether the per-tick `frame:` print slows the Engine.
 # Every scenario launches fidget on the live desktop, so it refuses to run
 # unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to it.
-# The launch path is the same on Linux when a display exists. The machine
-# header reads Darwin or Linux so a cloud VM can run the same scenarios.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -114,8 +112,10 @@ cpu_count() {
 
 launch_app() {
   local log=$1 frames=$2 characters=$3
-  # Scratch HOME so the bench does not write the user's settings. The API key
-  # skips the Keychain read a worktree build would otherwise block on.
+  # X11 reads its authority file from HOME, so export that path first.
+  if [ -z "${XAUTHORITY:-}" ] && [ -f "${HOME}/.Xauthority" ]; then
+    export XAUTHORITY="${HOME}/.Xauthority"
+  fi
   SCRATCH_HOME=$(mktemp -d)
   FIDGET_DIRECTOR_API_KEY=bench-placeholder \
     FIDGET_DIRECTOR=0 \
