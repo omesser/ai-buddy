@@ -141,7 +141,6 @@ static GRANTED_WINDOW_NAMES: AtomicBool = AtomicBool::new(false);
 
 /// Whether the character should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
-#[cfg_attr(target_os = "linux", allow(dead_code))] // #886
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
         #[cfg(not(target_os = "linux"))]
@@ -1202,13 +1201,6 @@ mod tests {
     fn windows_live_probe_grants_window_titles() {
         let probe = live();
         assert!(probe.granted(CapabilityId::WindowNames));
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn windows_window_titles_prompt_is_noop() {
-        let probe = WindowsProbe;
-        probe.prompt(CapabilityId::WindowNames);
     }
 
     #[test]

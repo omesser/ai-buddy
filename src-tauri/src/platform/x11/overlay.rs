@@ -9,7 +9,6 @@
 //! `wl_surface`, which nothing here matches; the input region is core Wayland
 //! and unwired. DESIGN.md decision 3.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use x11rb::connection::Connection;
@@ -18,21 +17,6 @@ use x11rb::protocol::xproto::{self, AtomEnum, PropMode};
 use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-static MASK_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
-static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
-
-/// Read and reset mask rebuild metrics. Returns (count, total_ns).
-///
-/// Reserved counters; measurement is via TRACE log
-/// (`FIDGET_TRACE_MASK_REBUILD`). The bench script parses that log and
-/// does not call this.
-#[allow(dead_code)]
-pub fn read_mask_rebuild_stats() -> (u64, u64) {
-    let count = MASK_REBUILD_COUNT.swap(0, Ordering::Relaxed);
-    let total_ns = MASK_REBUILD_TOTAL_NS.swap(0, Ordering::Relaxed);
-    (count, total_ns)
-}
 
 /// Float above other windows, non-activating, skip the taskbar and pager.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
@@ -246,8 +230,6 @@ fn apply_input_mask(
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
 
     let rebuild_elapsed = rebuild_start.elapsed().as_nanos() as u64;
-    MASK_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
-    MASK_REBUILD_TOTAL_NS.fetch_add(rebuild_elapsed, Ordering::Relaxed);
 
     if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
         let opaque_count = opaque.iter().filter(|&&b| b).count();
@@ -302,20 +284,4 @@ fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     conn.flush()
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mask_rebuild_stats_readable_and_reset() {
-        let (count1, ns1) = read_mask_rebuild_stats();
-        assert_eq!(count1, 0, "stats should start at zero");
-        assert_eq!(ns1, 0);
-
-        let (count2, ns2) = read_mask_rebuild_stats();
-        assert_eq!(count2, 0, "stats should be zero after reset");
-        assert_eq!(ns2, 0);
-    }
 }
