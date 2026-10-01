@@ -1,23 +1,22 @@
-# Memory (RSS) and multi-monitor scaling
+# Memory, RSS, and multi-monitor scaling
 
-Baseline for #424, under #423's plan. This document covers macOS (measured),
-Linux (method only), and Windows (method only). Each platform has different
-overlay toolkits and process architectures, so numbers are not comparable across
-operating systems.
+Baseline for #424, under #423's plan. This document covers macOS, Linux, and
+Windows. Each platform uses a different overlay toolkit and a different process
+layout, so a number on one operating system is not a number on another.
 
 ## Summary of macOS findings
 
-A two-display, one-Instance character peaks at **583 MB** of physical footprint
-across five processes, and read a median **259 MB** resident in a window with a
-third of the machine's memory free. Footprint scales with **pixels**, not with
-Instances: each display is one `WebContent` process, and the 3456×2234 panel's
-is 75–110 MB heavier than the 1920×1080 one in every run. Four Instances cost
-**+56 MB**, all of it inside the webviews — the Rust process's peak did not move
-at all. Character art is not what makes a character large: all eight installed
-packages are 4.5 MB of base64, and because the app loads every one of them at
-launch, switching Character cannot make RSS grow. What the sprite is doing does
-not move the number either: idle, walking, sitting and talking read within a few
-MB of each other.
+A two-display, one-Instance character peaks at 583 MB of physical footprint
+across five processes. In a window with a third of the machine's memory free,
+the median resident set was 259 MB. Footprint scales with pixels, not with
+Instances. Each display is one `WebContent` process. In every run, the
+3456×2234 panel is 75-110 MB heavier than the 1920×1080 panel. Four Instances
+cost 56 MB more, and all of that cost is inside the webviews. The Rust
+process peak did not move. Character art is not what makes a character large.
+All eight installed packages are 4.5 MB of base64. The app loads every package
+at launch, so switching Character cannot make RSS grow. What the sprite is
+doing does not move the number either. Idle, walking, sitting, and talking
+read within a few MB of each other.
 
 ---
 
@@ -27,28 +26,29 @@ MB of each other.
 
 | | |
 |---|---|
-| Machine | MacBook Pro `Mac15,7`, 36 GB, macOS 26.6.2 (25G83) |
-| Display 1 | DELL P2414H, 1920×1080 at 1×, main, overlay at (0,0) |
-| Display 2 | Built-in Liquid Retina XDR, 3456×2234 at 2× — 1728×1117 in points, overlay at (1920,0) |
-| Build | `target/debug/fidget`, **debug**, ad-hoc signed at a worktree path |
-| Completer | none — `FIDGET_DIRECTOR=0`, so `StaticDirector` picks every Behavior and no HTTP leaves the process |
+| Machine | MacBook Pro `Mac15,7`, 36 GB, macOS 26.6.2, build 25G83 |
+| Display 1 | DELL P2414H, 1920×1080 at 1×, main, overlay at (0, 0) |
+| Display 2 | Built-in Liquid Retina XDR, 3456×2234 at 2×, 1728×1117 in points, overlay at (1920, 0) |
+| Build | `target/debug/fidget`, debug, ad-hoc signed at a worktree path |
+| Completer | None. `FIDGET_DIRECTOR=0`, so `StaticDirector` picks every Behavior and no HTTP leaves the process |
 | Date | 2026-09-09 |
 
-The debug build is what #424 asked to run, and it is not what a user runs. Read
-the Rust process's share as an upper bound; the WebKit helpers are release code
-either way and are unaffected by it.
+#424 asked for the debug build. A user does not run that build. Read the Rust
+process share as an upper bound. The WebKit helpers are release code either
+way, and the debug build does not change them.
 
 ### How to reproduce
 
-`scripts/bench-rss-macos.sh` launches the app, waits out the settling curve below,
-samples every process's RSS on a fixed interval, and reads each one's peak
-physical footprint before it stops the app.
+`scripts/bench-rss-macos.sh` launches the app, waits out the settling curve
+below, samples every process RSS on a fixed interval, and reads each process
+peak physical footprint before it stops the app.
 
-**Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
-matrix with many scenarios. Not a research soak.
+The default is a brief smoke test. It settles for about 3 seconds and samples
+for about 10 seconds. That is fast enough for a test matrix with many
+scenarios. It is not a research soak.
 
-**Research mode: `--research`** restores the long settle + sample (300s each)
-for bathtub curve analysis and measurement studies.
+Research mode passes `--research`. That restores a 300 second settle and a
+300 second sample, for the shape of the curve and for measurement studies.
 
 ```sh
 cd src-tauri && cargo build --bin fidget && cd ..
@@ -63,41 +63,44 @@ scripts/bench-rss-macos.sh --out /tmp/one-instance.tsv
 scripts/bench-rss-macos.sh --research --out /tmp/research-run.tsv
 ```
 
-Five variables carry the run. `FIDGET_INSTANCES` is the roster,
-`FIDGET_CHARACTERS` the set of installed packages, `FIDGET_DIRECTOR=0` keeps
-the network out of it, and `HOME` points at a scratch directory so nothing
-touches the real install's settings or Action Log. `FIDGET_DIRECTOR_API_KEY`
-is not a credential here: a worktree build is a new path to the Keychain, and
-without the variable the launch stops on a password dialog (#283, #290).
+Five variables carry the run. `FIDGET_INSTANCES` is the roster.
+`FIDGET_CHARACTERS` is the set of installed packages. `FIDGET_DIRECTOR=0`
+keeps the network out of the run. `HOME` points at a scratch directory so the
+run does not touch the real install's settings or Action Log.
+`FIDGET_DIRECTOR_API_KEY` is not a credential here. A worktree build is a new
+path to the Keychain, and without the variable the launch stops on a password
+dialog. See #283 and #290.
 
-`FIDGET_TRACE_ENGINE=1` is what makes a run reportable rather than a number.
-An RSS figure with no record of what the sprite was doing is not a measurement,
-and the trace is the only thing that says.
+`FIDGET_TRACE_ENGINE=1` is what makes a run reportable rather than a bare
+number. An RSS figure with no record of what the sprite was doing is not a
+measurement. The trace is the only record of that.
 
 ### Where the memory is
 
-WKWebView runs its content out of process, and those processes are children of
-`launchd`, not of the app — no process-tree walk finds them.
+WKWebView runs its content out of process. Those processes are children of
+`launchd`, not of the app. No process-tree walk finds them.
 
 ```
-fidget                       the Rust binary: Engine, frame loop, art, Tauri
-com.apple.WebKit.WebContent    one per overlay, so one per display
+fidget                          Rust binary. Engine, frame loop, art, Tauri
+com.apple.WebKit.WebContent     one per overlay, so one per display
 com.apple.WebKit.WebContent
-com.apple.WebKit.GPU           one, shared
-com.apple.WebKit.Networking    one, shared
+com.apple.WebKit.GPU            one, shared
+com.apple.WebKit.Networking     one, shared
 ```
 
-`ps -o rss= -p <app>` reports a third of the truth. The script takes the set of
-WebKit helpers before launch and again just after it, and calls the difference
-the app's — which is also its one soft spot, since another application starting
-a helper inside that window lands in the set. The script warns when the count is
-not `displays + 2`; a run that warns is contaminated and should be repeated.
+`ps -o rss= -p <app>` reports a third of the truth. The script takes the set
+of WebKit helpers before launch and again just after it, and calls the
+difference the app's. That difference is also the one place a run can go
+wrong. Another application that starts a helper inside that window lands in
+the set. The script warns when the count is not `displays + 2`. Repeat a run
+that warns.
 
 ### The launch peak is not the number
 
-RSS after launch is a bathtub, not a plateau. Fifteen minutes, one Instance, two
-displays, idle desktop — an earlier run than the four below, and the only one
-with a Completer configured, which is why its resting level is not theirs:
+RSS after launch falls, then climbs. It does not sit on a flat line. The
+series below is fifteen minutes, one Instance, two displays, idle desktop. It
+is an earlier run than the four below, and the only one with a Completer
+configured, which is why its resting level is not theirs.
 
 | Since launch | Total RSS |
 |---|---|
@@ -111,58 +114,60 @@ with a Completer configured, which is why its resting level is not theirs:
 | 750 s | 265 MB |
 | 900 s | 264 MB |
 
-The first minute is the loader's. The dip near 150 s is macOS reclaiming pages
-the launch faulted in and never touched again. Everything below settles
-for 300 s before it samples, for that reason.
+The loader accounts for the first minute. The dip near 150 seconds is macOS
+reclaiming pages the launch faulted in and then never touched. Everything
+below settles for 300 seconds before it samples, for that reason.
 
-The slow climb out of that dip — roughly +1 MB/min, still rising at fifteen
-minutes — is not explained here. It is small enough to be page-in of memory the
-dip compressed away, and large enough that a multi-hour soak is
-worth running before anyone calls it a plateau. **Open question, not a finding.**
+The slow climb out of that dip is about 1 MB per minute, and it is still
+rising at fifteen minutes. This document does not explain it. It is small
+enough to be page-in of memory the dip compressed away, and large enough that
+a multi-hour soak is worth running before anyone calls the curve flat.
 
 ### What RSS on macOS does and does not mean
 
-RSS is what the kernel has let a process keep, not what it needs. A busy machine
-takes pages back from an idle character, and the same app then reads far lighter for
-reasons that have nothing to do with the app. That is not a small effect here —
-it is larger than every difference #424 asks about:
+RSS is what the kernel has let a process keep, not what the process needs. A
+busy machine takes pages back from an idle character, and the same app then
+reads far lighter for reasons that have nothing to do with the app. That
+effect is larger than every difference #424 asks about.
 
 | Run | Free memory during sampling | Median RSS |
 |---|---|---|
-| A — 1 Instance, 8 Characters installed | 33–43 % | 259 MB |
-| B — 4 Instances of one Character | 25–29 % | 226 MB |
-| C — 4 Instances, 4 Characters | 37–42 % | 288 MB |
-| D — 1 Instance, 1 Character installed | 43 % | 309 MB |
+| A, 1 Instance, 8 Characters installed | 33-43% | 259 MB |
+| B, 4 Instances of one Character | 25-29% | 226 MB |
+| C, 4 Instances, 4 Characters | 37-42% | 288 MB |
+| D, 1 Instance, 1 Character installed | 43% | 309 MB |
 
-Read down that column and four Instances look *cheaper* than one, and one
-installed Character looks dearer than eight. Both are artifacts of when each run
-happened to be sampled. This machine was shared with other agents building and
-running throughout, and their load is the free-memory column.
+Read down that column and four Instances look smaller than one, and one
+installed Character looks larger than eight. Both are artifacts of when each
+run happened to be sampled. This machine was shared with other agents building
+and running throughout, and their load is the free-memory column.
 
-Peak physical footprint — Activity Monitor's "Memory", what `vmmap` reports —
-only ever rises, so it survives a noisy machine. Every comparison below is made
-on the footprint. The RSS series is kept for shape, not for ranking.
+Peak physical footprint is Activity Monitor's Memory column, which is what
+`vmmap` reports. It only ever rises, so it survives a noisy machine. Every
+comparison below uses the footprint. The RSS series is kept for shape, not
+for ranking.
 
 ### Results
 
-Peak physical footprint per process, MB, over a 300 s settle plus 300 s sample:
+Peak physical footprint per process, in MB, over a 300 second settle plus a
+300 second sample.
 
-| Run | `fidget` | GPU | Networking | 1920×1080 overlay | 3456×2234 overlay | **Total** |
+| Run | `fidget` | GPU | Networking | 1920×1080 overlay | 3456×2234 overlay | Total |
 |---|---|---|---|---|---|---|
-| A — 1 Instance, 8 Characters installed | 82.9 | 146.3 | 8.0 | 132.7 | 213.2 | **583** |
-| B — 4 Instances of one Character | 82.9 | 147.6 | 7.3 | 162.0 | 239.5 | **639** |
-| C — 4 Instances, 4 Characters | 85.1 | 150.2 | 7.9 | 170.9 | 280.5 | **695** |
-| D — 1 Instance, 1 Character installed | 35.3 | 139.8 | 8.4 | 122.6 | 197.7 | **504** |
+| A, 1 Instance, 8 Characters installed | 82.9 | 146.3 | 8.0 | 132.7 | 213.2 | 583 |
+| B, 4 Instances of one Character | 82.9 | 147.6 | 7.3 | 162.0 | 239.5 | 639 |
+| C, 4 Instances, 4 Characters | 85.1 | 150.2 | 7.9 | 170.9 | 280.5 | 695 |
+| D, 1 Instance, 1 Character installed | 35.3 | 139.8 | 8.4 | 122.6 | 197.7 | 504 |
 
-Which `WebContent` column is which display is not a guess: `place_overlays`
-builds overlay-0 over the main display first, so its helper takes the lower pid,
-and in all four runs the lower pid is also the lighter process.
+`place_overlays` builds overlay-0 over the main display first, so its helper
+takes the lower pid. In all four runs the lower pid is also the lighter
+process. That is how the table assigns each `WebContent` column to a display.
 
 ### Displays cost pixels, not displays
 
-#424's hypothesis is that RSS scales linearly with display count. It scales with
-display *area*. The two overlays are the same document, the same sprite and the
-same art, and one is consistently far heavier than the other:
+#424 guessed that RSS scales linearly with display count. It scales with
+display area. The two overlays are the same document, the same sprite, and
+the same art, and one is consistently far heavier than the other.
 
 | Run | 1920×1080 overlay | 3456×2234 overlay | Difference |
 |---|---|---|---|
@@ -171,39 +176,39 @@ same art, and one is consistently far heavier than the other:
 | C | 170.9 | 280.5 | +109.6 |
 | D | 122.6 | 197.7 | +75.1 |
 
-The ratio of backing stores is the ratio of pixels: 3456 × 2234 × 4 B is 30.9 MB
-a buffer against 1920 × 1080 × 4 B's 8.3 MB, and the gap above is two to three
-buffers' worth. So the planning number is not "N displays × 150 MB". It is
-roughly **120–170 MB for a 1080p display and 200–280 MB for a Retina one**, and
-a 5K panel should be expected to cost more again.
+The ratio of backing stores is the ratio of pixels. 3456 × 2234 × 4 bytes is
+30.9 MB a buffer. 1920 × 1080 × 4 bytes is 8.3 MB a buffer. The gap above is
+two to three buffers. The planning number is not N displays times 150 MB. A
+1080p display is about 120-170 MB. A Retina display is about 200-280 MB. A
+5K panel will cost more.
 
-This is measured from the process split of a two-display configuration, not by
-comparing one display against two: both are permanently attached to this machine
-and unplugging one is not something an agent can do. The split is sound — the
-`WebContent` processes exist one per overlay, and `place_overlays` closes an
-overlay when its display goes away — but a single-display run would still be
-worth taking on a machine where it is possible.
+This measurement is the process split of a two-display configuration. It is
+not a comparison of one display against two. Both displays stay attached to
+this machine, and an agent cannot unplug one. The split is sound. One
+`WebContent` process exists per overlay, and `place_overlays` closes an
+overlay when its display goes away. A single-display run is still worth
+taking on a machine where unplugging a display is possible.
 
 ### Instances cost webview, not engine
 
-Four Instances of one Character against one Instance (B against A) is **+56 MB**,
-and every MB of it is in the two `WebContent` processes: +29 and +26. The Rust
-process's peak was **82.9 MB in both runs, to the tenth of a MB.** The Engine's
-per-Instance state and the frame it emits are nothing next to four `<img>`
-elements and four bubble layers per overlay.
+Four Instances of one Character against one Instance, run B against run A, is
+56 MB more. Every MB of it is in the two `WebContent` processes, 29 MB and
+26 MB. The Rust process peak was 82.9 MB in both runs, to the tenth of a MB.
+The Engine's per-Instance state and the frame it emits are nothing next to
+four `img` elements and four bubble layers per overlay.
 
-Making those four Instances four *different* Characters (C against B) is another
-**+56 MB**, again nearly all in the webviews (+9 and +41) with the Rust side
-moving 2.2 MB. Four Characters on screen means four sprite sheets actually
-decoded by WebKit, where four of one Character means one.
+Making those four Instances four different Characters, run C against run B,
+is another 56 MB. Nearly all of it is in the webviews, 9 MB and 41 MB. The
+Rust side moves 2.2 MB. Four Characters on screen means WebKit decodes four
+sprite sheets. Four Instances of one Character means WebKit decodes one.
 
 ### Character art, and why a switch cannot leak
 
-Every installed package's art is decoded, base64-encoded and held for the life
-of the process — `load_all_characters` runs at launch, not on demand, so that a
-switch or a spawn does not wait for a load the overlay never does. The art is
-keyed by Character rather than by Instance, so two Instances of one Character
-share one copy.
+The app decodes every installed package's art, base64-encodes it, and holds
+it for the life of the process. `load_all_characters` runs at launch, not on
+demand, so a switch or a spawn does not wait for a load the overlay never
+does. The art is keyed by Character rather than by Instance, so two Instances
+of one Character share one copy.
 
 | Character | Frames | PNG | as base64 `data:` URLs |
 |---|---|---|---|
@@ -215,29 +220,31 @@ share one copy.
 | nim | 44 | 18 KB | 23 KB |
 | timber-wolf | 41 | 664 KB | 885 KB |
 | trump | 38 | 635 KB | 846 KB |
-| **all eight** | **342** | **3.3 MB** | **4.5 MB** |
+| all eight | 342 | 3.3 MB | 4.5 MB |
 
-Two answers #424 asks for:
+Two answers #424 asks for.
 
-- **A Character switch cannot grow RSS permanently.** The art switched to is
-  already resident and the art left behind is never freed, so there is nothing
-  to accumulate. The cost was paid at launch. This is a claim about the code
-  path, checked against it, not a measured switch — driving the tray menu is a
-  human step.
-- **Seven unused installed Characters cost 79 MB of peak footprint** (A against
-  D), 47.6 MB of it in the Rust process. That is ten times the 4.5 MB of base64
-  they amount to. The likely reason is that the peak is not the resting size:
-  `art_urls` allocates a fresh `String` per animation frame, and the `character`
-  command serializes the whole map to JSON once per overlay. Neither is
-  confirmed — **a heap profile would settle it, and this document has none.**
+**A Character switch cannot grow RSS permanently.** The art switched to is
+already resident, and the app never frees the art left behind, so there is
+nothing to accumulate. The cost was paid at launch. This is a claim about
+the code path, checked against the code, not a measured switch. Driving the
+tray menu is a human step.
+
+**Seven unused installed Characters cost 79 MB of peak footprint.** That is
+run A against run D. 47.6 MB of it is in the Rust process. That is ten times
+the 4.5 MB of base64 they amount to. The likely reason is that the peak is
+not the resting size. `art_urls` allocates a fresh `String` per animation
+frame, and the `character` command serializes the whole map to JSON once per
+overlay. Neither is confirmed. This document has no heap profile.
 
 ### What the sprite was doing
 
-`StaticDirector` picks ambient Behaviors, so a run is a mix rather than a held
-pose. Run A's 300 s window: idle 59 %, walk 22 %, sit 8 %, talk 5 %, climb 4 %,
-the rest fall/land/react.
+`StaticDirector` picks ambient Behaviors, so a run is a mix rather than a
+held pose. Run A's 300 second window was idle 59 percent, walk 22 percent,
+sit 8 percent, talk 5 percent, climb 4 percent, and the rest fall, land, and
+react.
 
-Matching each RSS sample to the animation live at that instant:
+Matching each RSS sample to the animation live at that instant.
 
 | Animation | Samples | Median RSS |
 |---|---|---|
@@ -247,62 +254,74 @@ Matching each RSS sample to the animation live at that instant:
 | talk | 2 | 260 MB |
 | climb | 2 | 240 MB |
 
-The spread across animations is smaller than the spread within any one of them.
-**Idle perched and walking cost the same memory**, which is the useful negative
-result: whatever the frame loop is costing (#431), it is not costing pages. The
-other three runs agree — B reads 226 MB idle and 226 MB walking.
+The spread across animations is smaller than the spread within any one of
+them. Idle perched and walking cost the same memory. That is the useful
+negative result. Whatever the frame loop costs, it does not cost pages.
+See #431. The other three runs agree. B reads 226 MB idle and 226 MB walking.
 
-### Not measured (macOS)
+### Not measured on macOS
 
-- **A single-display comparison, and three displays.** Both displays are
-  permanently attached and no third exists. See the per-display section for what
-  stands in.
-- **A heap profile with top allocators.** #424 asks for Instruments Allocations
-  or `heaptrack`. Instruments needs a GUI session and a human. The allocator
-  ranking is unanswered, and the 47.6 MB above is the first thing to point it at.
-- **A release build.** Everything here is `target/debug`.
-- **Chat windows open.** Every run is overlays only.
+**A single-display comparison, and three displays.** Both displays are
+permanently attached and no third exists. The per-display section says what
+stands in for that comparison.
+
+**A heap profile with top allocators.** #424 asks for Instruments Allocations
+or `heaptrack`. Instruments needs a GUI session and a human. The allocator
+ranking is unanswered, and the 47.6 MB above is the first thing to point it
+at.
+
+**A release build.** Everything in the macOS section is `target/debug`.
+
+**Chat windows open.** Every macOS run is overlays only.
 
 ---
 
 ## Linux
 
-**Status: Method provided, measurement completed on Grok Bot box.**
+One unattended run completed on Grok Bot box. The method is below.
 
 ### Results
 
-One successful unattended run on Grok Bot box after the stderr-file fix
-(commit f27703b):
+The run followed the stderr-file fix, commit f27703b.
 
 | | |
 |---|---|
 | Machine | Grok Bot box |
-| Display | 1 (DISPLAY=:3) |
+| Display | 1, `DISPLAY=:3` |
 | Scenario | 1 Instance, `bmo:One` |
-| Settle | 5s |
-| Sample duration | 30s |
-| Sample interval | 2s |
+| Settle | 5 seconds |
+| Sample duration | 30 seconds |
+| Sample interval | 2 seconds |
 | Samples | 15 |
-| **Total RSS** | **min 821 MB / median 823 MB / max 933 MB** |
-| Process count | 4 (fidget + WebKitNetworkProcess + 2× WebKitWebProcess) |
+| Total RSS minimum | 821 MB |
+| Total RSS median | 823 MB |
+| Total RSS maximum | 933 MB |
+| Process count | 4. fidget, WebKitNetworkProcess, and two WebKitWebProcess |
 | Exit code | 0 |
 
-Per-process medians and peak RSS (VmHWM): fidget 237/250 MB,
-WebKitNetworkProcess 61/60.5 MB, WebKitWebProcess 238/238 MB,
-WebKitWebProcess 287/396 MB.
+Per-process RSS median and peak RSS, from `VmHWM`.
 
-Total RSS includes the main fidget process plus all WebKitGTK helper processes.
+| Process | RSS median | Peak RSS |
+|---|---|---|
+| fidget | 237 MB | 250 MB |
+| WebKitNetworkProcess | 61 MB | 60.5 MB |
+| WebKitWebProcess | 238 MB | 238 MB |
+| WebKitWebProcess | 287 MB | 396 MB |
 
-### How to run (on a machine with a display)
+Total RSS includes the main fidget process plus all WebKitGTK helper
+processes.
 
-`scripts/bench-rss-linux.sh` implements the same contract as the macOS script,
-adapted for Linux:
+### How to run on a machine with a display
 
-**Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
-matrix with many scenarios. Not a research soak.
+`scripts/bench-rss-linux.sh` implements the same contract as the macOS
+script, adapted for Linux.
 
-**Research mode: `--research`** restores the long settle + sample (300s each)
-for bathtub curve analysis and measurement studies.
+The default is a brief smoke test. It settles for about 3 seconds and samples
+for about 10 seconds. That is fast enough for a test matrix with many
+scenarios. It is not a research soak.
+
+Research mode passes `--research`. That restores a 300 second settle and a
+300 second sample, for the shape of the curve and for measurement studies.
 
 ```sh
 cd src-tauri && cargo build --bin fidget && cd ..
@@ -319,50 +338,58 @@ scripts/bench-rss-linux.sh --research --out /tmp/research-run.tsv
 
 ### Process architecture
 
-WebKitGTK's process model depends on version and build configuration:
+WebKitGTK's process model depends on version and build configuration.
 
-- **Modern WebKitGTK (2.26+)** uses a multi-process architecture similar to
-  macOS: separate processes for WebContent, GPU, Network.
-- **Older or sandboxing-disabled builds** may run everything in-process.
+Modern WebKitGTK, version 2.26 and newer, uses a multi-process layout like
+macOS. It runs separate processes for WebContent, GPU, and Network.
 
-The Linux script uses `pgrep -P <pid>` to find all child processes of the main
-fidget process. WebKitGTK helpers on Linux are children of the main process
-(unlike macOS where they are children of `launchd`), so the process tree walk
-discovers them automatically.
+Older builds, and builds with sandboxing disabled, may run everything in one
+process.
+
+The Linux script uses `pgrep -P <pid>` to find every child of the main fidget
+process. WebKitGTK helpers on Linux are children of the main process. On
+macOS they are children of `launchd`. The process tree walk finds the Linux
+helpers on its own.
 
 ### Measurement method
 
-- **RSS:** Read from `/proc/[pid]/status` field `VmRSS` (current resident set).
-- **Peak RSS:** Read from `/proc/[pid]/status` field `VmHWM` (high-water mark).
-  This is the Linux equivalent of macOS's peak physical footprint and only ever
-  rises, so it survives a noisy machine.
-- **Settling:** Defaults to 3s for brief smoke tests. Use `--research` (or
-  explicit `--settle 300 --seconds 300`) for the full settling curve measured
-  on macOS. The settling curve should be measured independently on Linux to
-  validate or adjust this.
+The script reads RSS from the `VmRSS` field of `/proc/[pid]/status`. That is
+the current resident set.
+
+The script reads peak RSS from the `VmHWM` field of `/proc/[pid]/status`.
+That is the high-water mark. It only ever rises, so it survives a noisy
+machine. It is the Linux equivalent of the macOS peak physical footprint.
+
+Settling defaults to 3 seconds for a brief smoke test. Pass `--research`, or
+pass `--settle 300 --seconds 300`, for the 300 second settle and 300 second
+sample measured on macOS. Measure the settling curve on Linux before treating
+300 seconds as the right wait here.
 
 ### Display count
 
-Run `xrandr` or check the app's log for `overlay: N display` to determine how
-many displays the app detected. If WebKitGTK runs one WebContent process per
-overlay (as WebKit does on macOS), the per-display cost will be visible in the
+Run `xrandr`, or read the app log line `overlay: N display`, to see how many
+displays the app detected. If WebKitGTK runs one WebContent process per
+overlay, as WebKit does on macOS, the per-display cost shows up in the
 process split.
 
-### Expected behavior (based on macOS findings)
+### Expected behavior from the macOS findings
 
-Based on the macOS findings (not yet validated at scale on Linux):
+These expectations come from the macOS findings. Linux has not checked them
+at scale.
 
-- **Displays cost pixels, not count.** A 1920×1080 overlay may be 100–170 MB
-  while a 2560×1440 overlay may be 200–300 MB, depending on WebKitGTK's backing
-  store implementation.
-- **Instances cost webview, not engine.** Multiple Character Instances should
-  add cost to the WebContent processes, not the main Rust process.
-- **Character art is front-loaded.** All installed Characters are loaded at
-  launch, so a Character switch cannot grow RSS permanently.
+**Displays cost pixels, not count.** A 1920×1080 overlay may be 100-170 MB.
+A 2560×1440 overlay may be 200-300 MB. The size depends on WebKitGTK's
+backing store.
 
-### Heap profiling (optional)
+**Instances cost webview, not engine.** Several Character Instances should
+add cost to the WebContent processes, not to the main Rust process.
 
-If heap profiling is desired, use `heaptrack` on Linux:
+**Character art is front-loaded.** The app loads every installed Character
+at launch, so a Character switch cannot grow RSS permanently.
+
+### Heap profiling
+
+To profile the heap on Linux, use `heaptrack`.
 
 ```sh
 heaptrack target/debug/fidget
@@ -370,98 +397,108 @@ heaptrack target/debug/fidget
 heaptrack --analyze heaptrack.fidget.*.gz
 ```
 
-Look for top allocators and whether unused Character art (base64 strings) is
-the 47.6 MB gap found on macOS.
+Look for the top allocators, and for whether unused Character art in base64
+strings accounts for the 47.6 MB gap found on macOS.
 
-### One-Instance cut (#645)
+### One-Instance cut for #645
 
-Measured 2026-09-30 on an Ubuntu 24.04 VM, one display at 1920×1200, WebKitGTK
-2.52.6, **release** `fidget`. Same short scenario as the run above: one
-Instance `bmo:One`, every package on `FIDGET_CHARACTERS`, `FIDGET_DIRECTOR=0`,
-settle 5s, sample 30s, interval 2s, `scripts/bench-rss-linux.sh`. The script's
-binary path is `target/debug/fidget`; that file was a copy of the release
-build.
+Measured on 2026-09-30 on an Ubuntu 24.04 VM. One display, 1920×1200.
+WebKitGTK 2.52.6. Release build of `fidget`. Same short scenario as the Grok
+Bot run above. One Instance, `bmo:One`. Every package on `FIDGET_CHARACTERS`.
+`FIDGET_DIRECTOR=0`. Settle 5 seconds. Sample 30 seconds. Interval 2 seconds.
+The script is `scripts/bench-rss-linux.sh`. The script launches
+`target/debug/fidget`. That file was a copy of the release build.
 
-The release baseline is the same size as the debug short run above (median
-858 MB against 823 MB, different machines). A debug binary is not what makes
-one Instance large, so the cut below is release against release.
+The release baseline median is 858 MB. The debug short run above has a median
+of 823 MB. The machines differ. The two medians are in the same band. A debug
+binary is not what makes one Instance large. The cut below compares a release
+build to a release build.
 
 The installed WebKitGTK 2.52 marks
-`WEBKIT_PROCESS_MODEL_SHARED_SECONDARY_PROCESS` deprecated and without
-effect, so two webviews cannot share a web process.
+`WEBKIT_PROCESS_MODEL_SHARED_SECONDARY_PROCESS` deprecated. The setting has
+no effect. Two webviews cannot share a web process.
 
-Chat and Settings are not built at launch: the fourth process in the baseline
-was the taskbar anchor, a `WebviewWindow` of the overlay page whose only job
-is a panel button. Linux now builds that button as a GTK window with no
-webview. Windows still uses a WebView2 window for the same button; this run
-did not measure it.
+The app does not build Chat or Settings at launch. The fourth process in the
+baseline was the taskbar anchor. That anchor was a `WebviewWindow` of the
+overlay page. Its only job is a panel button. Linux now builds that button
+as a GTK window with no webview. Windows still uses a WebView2 window for
+the same button. This run did not measure Windows.
 
-| | Processes | Total RSS min / median / max |
-|---|---|---|
-| Before, anchor is a webview | 4 | 857 / **858** / 903 MB |
-| After, anchor is a GTK window | 3 | 584 / **585** / 613 MB |
-
-Per process, RSS median and VmHWM:
-
-| | fidget | Network | Web process | Web process |
+| Run | Processes | Minimum RSS | Median RSS | Maximum RSS |
 |---|---|---|---|---|
-| Before | 243 / 247 MB | 48 / 48 MB | 243 / 244 MB | 323 / 369 MB |
-| After | 218 / 222 MB | 48 / 48 MB | 319 / 361 MB | — |
+| Before. The anchor is a webview. | 4 | 857 MB | 858 MB | 903 MB |
+| After. The anchor is a GTK window. | 3 | 584 MB | 585 MB | 613 MB |
 
-The script sums RSS, and WebKit's libraries are mapped in every process, so
-the sum counts those pages more than once. `Pss` and private pages from
+RSS median and `VmHWM` for each process.
+
+| Run | Process | RSS median | VmHWM |
+|---|---|---|---|
+| Before | fidget | 243 MB | 247 MB |
+| Before | Network | 48 MB | 48 MB |
+| Before | Web process | 243 MB | 244 MB |
+| Before | Web process | 323 MB | 369 MB |
+| After | fidget | 218 MB | 222 MB |
+| After | Network | 48 MB | 48 MB |
+| After | Web process | 319 MB | 361 MB |
+
+The script sums RSS. WebKit's libraries are mapped in every process, so the
+sum counts those pages more than once. `Pss` and private pages come from
 `smaps_rollup`, summed over the same pids while the RSS series sat on its
-median: about **501 MB PSS / 350 MB private** before, **381 MB PSS / 285 MB
-private** after. The bench's −273 MB is the script's number. The proportional
-drop is about 120 MB, and the private drop is about 65 MB.
+median. Before, that was about 501 MB proportional and 350 MB private.
+After, that was about 381 MB proportional and 285 MB private. The bench drop
+of 273 MB is the script's summed RSS. The proportional drop is about 120 MB.
+The private drop is about 65 MB.
 
-Focusing the anchor opened Settings and a second web process. The idle bench
-stayed at three. The button asks to be parked at (−32000, −32000); this
-window manager left the 1×1 on the display instead (`anchor: 1x1 at …` in
-the log). It is undecorated and does not take a web process.
+Focusing the anchor opened Settings, and a second web process appeared. The
+idle bench stayed at three processes. The button asks to park at -32000, -32000. This window manager left the 1×1 on the display. The log line
+starts with `anchor: 1x1 at` and then the position. The window is
+undecorated. It does not take a web process.
 
-Loading only `bmo` (`FIDGET_CHARACTERS` pointed at that one package), same
-after binary and same script, did not come out lighter: total RSS median
-**602 MB** (min 559, max 603) against 585 with all eight. VmHWM moved from
-222 MB to 201 MB in `fidget` and from 361 MB to 354 MB in the web process.
-That is not a second web process, and the preload is what a Character switch
-draws from, so it stayed.
+Loading only `bmo`, with `FIDGET_CHARACTERS` pointed at that one package,
+used the same after binary and the same script. It did not come out lighter.
+Total RSS minimum was 559 MB, median 602 MB, maximum 603 MB, against a median
+of 585 MB with all eight packages. `VmHWM` moved from 222 MB to 201 MB in
+`fidget`, and from 361 MB to 354 MB in the web process. That gap is not a
+second web process. A Character switch draws from the preload, so the
+preload stayed.
 
 ---
 
 ## Windows
 
-**Status: Method provided, measurement completed on DESKTOP-UQIE144.**
+One unattended run completed on DESKTOP-UQIE144. The method is below.
 
 ### Results
 
-One successful unattended run on DESKTOP-UQIE144 after the stderr-file fix
-(commit f27703b):
+The run followed the stderr-file fix, commit f27703b.
 
 | | |
 |---|---|
 | Machine | DESKTOP-UQIE144 |
-| Displays | 2 (3440×1440 + 1200×1920) |
+| Displays | 2. 3440×1440 and 1200×1920 |
 | Scenario | 1 Instance, `bmo:One` |
-| Settle | 5s |
-| Sample duration | 30s |
-| Sample interval | 2s |
-| **Total working set** | **min 607 MB / median 612 MB / max 620 MB** |
+| Settle | 5 seconds |
+| Sample duration | 30 seconds |
+| Sample interval | 2 seconds |
+| Total working set minimum | 607 MB |
+| Total working set median | 612 MB |
+| Total working set maximum | 620 MB |
 | Exit code | 0 |
 
-Total working set includes fidget.exe plus all msedgewebview2.exe helper
-processes.
+Total working set includes fidget.exe plus every msedgewebview2.exe helper
+process.
 
 ### How to run
 
-`scripts\bench-rss-windows.ps1` implements the same contract as the macOS and Linux
-scripts, adapted for Windows PowerShell:
+`scripts\bench-rss-windows.ps1` implements the same contract as the macOS and
+Linux scripts, adapted for Windows PowerShell.
 
-**Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
-matrix with many scenarios. Not a research soak.
+The default is a brief smoke test. It settles for about 3 seconds and samples
+for about 10 seconds. That is fast enough for a test matrix with many
+scenarios. It is not a research soak.
 
-**Research mode: `-Research`** restores the long settle + sample (300s each) for
-bathtub curve analysis and measurement studies.
+Research mode passes `-Research`. That restores a 300 second settle and a
+300 second sample, for the shape of the curve and for measurement studies.
 
 ```powershell
 cd src-tauri
@@ -484,58 +521,63 @@ $env:FIDGET_INSTANCES = "bmo:One"
 
 ### Process architecture
 
-WebView2 on Windows uses the Chromium (Edge) multi-process architecture:
+WebView2 on Windows uses the Chromium, Edge, multi-process layout.
 
-- **Main process:** `fidget.exe` (the Rust binary).
-- **WebView2 helpers:** Multiple `msedgewebview2.exe` processes:
-  - **Renderer:** One per webview (so one per display for the overlay).
-  - **GPU process:** Shared.
-  - **Network service:** Shared.
-  - **Utility processes:** Various (audio, storage, etc.).
+The main process is `fidget.exe`, the Rust binary.
+
+WebView2 helpers are several `msedgewebview2.exe` processes. One renderer
+runs per webview, so one renderer runs per display for the overlay. One GPU
+process is shared. One network service is shared. Utility processes cover
+audio, storage, and similar work.
 
 The Windows script uses `Get-Process -Name "msedgewebview2"` before and after
-launch to find all WebView2 helpers that appeared. These are not child processes
-of fidget.exe (they are children of the Edge browser infrastructure), so the
-script uses a set-difference approach similar to the macOS WebKit helper
-discovery.
+launch to find every WebView2 helper that appeared. These helpers are not
+children of fidget.exe. They are children of the Edge browser infrastructure.
+The script takes the set difference, the same way the macOS script finds
+WebKit helpers.
 
 ### Measurement method
 
-- **Working Set:** Current memory usage from `Get-Process | Select-Object
-  WorkingSet64`. This is the Windows equivalent of RSS.
-- **Peak Working Set:** Read from `Get-Process | Select-Object
-  PeakWorkingSet64`. This only ever rises, so it survives a noisy machine.
-- **Settling:** Defaults to 3s for brief smoke tests. Use `-Research` (or
-  explicit `-Settle 300 -Seconds 300`) for the full settling curve measured on
-  macOS. The Windows measurement above used 5s settle / 30s sample for a quick
-  validation run.
+Working set is the current memory usage from `Get-Process`, field
+`WorkingSet64`. That is the Windows equivalent of RSS.
+
+Peak working set is `Get-Process`, field `PeakWorkingSet64`. It only ever
+rises, so it survives a noisy machine.
+
+Settling defaults to 3 seconds for a brief smoke test. Pass `-Research`, or
+pass `-Settle 300 -Seconds 300`, for the 300 second settle and 300 second
+sample measured on macOS. The Windows measurement above used a 5 second
+settle and a 30 second sample, as a quick validation run.
 
 ### Display count
 
-Check the app's log for `overlay: N display` to determine how many displays the
-app detected. Windows has a Renderer process per webview, so the per-display
-cost will be visible in the process split.
+Read the app log line `overlay: N display` to see how many displays the app
+detected. Windows has one renderer process per webview, so the per-display
+cost shows up in the process split.
 
-### Expected behavior (based on macOS findings)
+### Expected behavior from the macOS findings
 
-Based on the macOS findings (not yet validated at scale on Windows):
+These expectations come from the macOS findings. Windows has not checked them
+at scale.
 
-- **Displays cost pixels, not count.** WebView2's Renderer process memory usage
-  should scale with overlay resolution (backing store size).
-- **Instances cost webview, not engine.** Multiple Character Instances should
-  add cost to the Renderer processes, not the main fidget.exe process.
-- **Character art is front-loaded.** All installed Characters are loaded at
-  launch, so a Character switch cannot grow memory permanently.
+**Displays cost pixels, not count.** WebView2 renderer memory should scale
+with overlay resolution, which is the backing store size.
+
+**Instances cost webview, not engine.** Several Character Instances should
+add cost to the renderer processes, not to the main fidget.exe process.
+
+**Character art is front-loaded.** The app loads every installed Character
+at launch, so a Character switch cannot grow memory permanently.
 
 ### Machine details
 
-The successful measurement above ran on DESKTOP-UQIE144 after commit f27703b (the
-stderr-file fix). The script completed unattended with exit code 0.
+The measurement above ran on DESKTOP-UQIE144 after commit f27703b, the
+stderr-file fix. The script finished unattended with exit code 0.
 
-### Heap profiling (optional)
+### Heap profiling
 
-If heap profiling is desired on Windows, use Windows Performance Analyzer (WPA)
-or the Visual Studio profiler:
+To profile the heap on Windows, use Windows Performance Analyzer or the
+Visual Studio profiler.
 
 ```powershell
 # Using Windows Performance Recorder (WPR)
@@ -545,5 +587,5 @@ wpr -stop profile.etl
 # Analyze with Windows Performance Analyzer (wpa.exe profile.etl)
 ```
 
-Look for top allocators in the Rust process and whether unused Character art
-accounts for the gap found on macOS.
+Look for the top allocators in the Rust process, and for whether unused
+Character art accounts for the gap found on macOS.
