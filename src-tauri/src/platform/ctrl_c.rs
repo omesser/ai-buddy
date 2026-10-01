@@ -17,6 +17,9 @@ pub(super) fn enter() -> bool {
 
 /// `true` when this release is the one that should turn the OS bit off.
 /// A release with nothing held does not wrap.
+// `try_update`, the new name for `fetch_update`, is stable only from 1.95; the
+// MSRV is 1.88.
+#[allow(deprecated)]
 pub(super) fn exit() -> bool {
     DEPTH
         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |depth| {
