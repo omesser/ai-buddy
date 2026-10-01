@@ -16,7 +16,7 @@ An embodied AI that lives on your desktop. Pick it up, throw it around, let it n
 
 Each character has a personality and a life of its own.
 
-An AI harness is optional. Attach the one you already use and it can talk and pitch in with tools; leave it off and the pet still works. It never reads your screen and [never takes screenshots](#computer-use).
+An AI harness is optional. Attach the one you already use and it can talk and pitch in with tools; leave it off and the pet still works. It doesn't read your screen without consent and [never takes screenshots](#computer-use).
 
 ![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
