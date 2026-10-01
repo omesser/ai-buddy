@@ -1348,7 +1348,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_opener_is_handed_the_whole_path() {
-        let path = Path::new("/tmp/ai buddy/memory.md");
+        let path = Path::new("/tmp/fidget data/memory.md");
         let command = opener(path.as_os_str());
 
         assert_eq!(command.get_args().last(), Some(path.as_os_str()));
