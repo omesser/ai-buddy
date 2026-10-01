@@ -332,7 +332,12 @@ impl<C: Completer> ModelDirector<C> {
     /// declares none of. A near miss arrives as speech, so without this it is
     /// invisible. Reported, never corrected: guessing a correction is ruled out.
     pub fn wake_and_near_miss(&self, context: &Context) -> Woken {
-        match self.completer.complete(&self.request(context)) {
+        self.wake_request(self.request(context))
+    }
+
+    /// Run a wake whose prompt the caller already finished.
+    pub fn wake_request(&self, request: WakeRequest) -> Woken {
+        match self.completer.complete(&request) {
             // Parsed exactly as a whole reply is. The cap ended the turn, not
             // the contract. The fact that it was cut off rides out beside them.
             Ok(reply) => {

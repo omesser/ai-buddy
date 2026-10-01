@@ -1556,7 +1556,16 @@ pub(crate) fn run_frame_loop(
                             live.addressed = false;
                             live.happened = Happened::Proactive;
                             live.since_proactive = Duration::ZERO;
-                            let payload = model.prompt(&context);
+                            let mut payload = model.prompt(&context);
+                            // The worker builds this prompt again inside `request`.
+                            // The display line has to be on the string that call sends.
+                            let line = instance
+                                .whereabouts(&displays.frames, &displays.usable_frames)
+                                .prompt_line();
+                            if !payload.ends_with('\n') {
+                                payload.push('\n');
+                            }
+                            payload.push_str(&line);
                             // Read before the `Context` is handed to the slot,
                             // and applied only if the slot took the call.
                             let caret = cancelled_caret(live.chat_turn, &context.happened);
@@ -1564,7 +1573,12 @@ pub(crate) fn run_frame_loop(
                             let touched =
                                 director::claim(&context.happened) == director::Claim::Interaction;
                             let cell = director::happened_cell(&context.happened);
-                            match slots.wake(&live.id, Arc::clone(model), context) {
+                            match slots.wake_with_prompt(
+                                &live.id,
+                                Arc::clone(model),
+                                context,
+                                payload.clone(),
+                            ) {
                                 // The call on the wire is the truer one
                                 // (ADR-0016). This wake is dropped, not queued:
                                 // the bookkeeping above has already spent it.

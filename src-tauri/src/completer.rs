@@ -172,11 +172,34 @@ impl Slots {
     /// Send this Character Prompt for `id`. Newest-wins, except where ADR-0016
     /// keeps the wake on the wire: mid-answer, an ambient tick, or a Summon
     /// over a reply still generating. The return says whether this one started.
+    // Tests let the Director build the prompt. The frame loop finishes its own.
+    #[cfg(test)]
     pub fn wake<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,
         director: Arc<ModelDirector<C>>,
         context: Context,
+    ) -> Woke {
+        self.wake_sending(id, director, context, None)
+    }
+
+    /// Send `prompt` as the user turn. The shell has already finished it.
+    pub fn wake_with_prompt<C: Completer + Send + Sync + 'static>(
+        &mut self,
+        id: &InstanceId,
+        director: Arc<ModelDirector<C>>,
+        context: Context,
+        prompt: String,
+    ) -> Woke {
+        self.wake_sending(id, director, context, Some(prompt))
+    }
+
+    fn wake_sending<C: Completer + Send + Sync + 'static>(
+        &mut self,
+        id: &InstanceId,
+        director: Arc<ModelDirector<C>>,
+        context: Context,
+        prompt: Option<String>,
     ) -> Woke {
         let claim = director::claim(&context.happened);
         let reactive = claim != Claim::Ambient;
@@ -212,7 +235,14 @@ impl Slots {
             // Always send. A panic here would leave the slot waiting forever
             // and skip StaticDirector on every later tick.
             let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let woken = director.wake_and_near_miss(&context);
+                let woken = match prompt {
+                    Some(prompt) => {
+                        let mut request = director.request(&context);
+                        request.prompt = prompt;
+                        director.wake_request(request)
+                    }
+                    None => director.wake_and_near_miss(&context),
+                };
                 // Traced here, beside the reply it came from. The Action Log
                 // takes it from `take` instead, where a superseded reply has
                 // already been dropped.
@@ -316,7 +346,7 @@ pub(crate) mod tests {
     };
     use fidget_core::roster::InstanceId;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
 
@@ -550,6 +580,41 @@ pub(crate) mod tests {
             "cat",
             false,
         ))
+    }
+
+    /// The worker builds a prompt of its own unless the shell passes the finished one.
+    #[test]
+    fn a_finished_prompt_is_the_one_the_completer_receives() {
+        struct Noted {
+            prompt: Arc<Mutex<String>>,
+        }
+
+        impl Completer for Noted {
+            fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+                *self.prompt.lock().expect("prompt lock") = request.prompt.clone();
+                Ok(Reply::whole("idle"))
+            }
+        }
+
+        let prompt = Arc::new(Mutex::new(String::new()));
+        let id = "fidget".to_string();
+        let director = Arc::new(ModelDirector::new(
+            Noted {
+                prompt: Arc::clone(&prompt),
+            },
+            ["stroll"],
+            id.clone(),
+            "cat",
+            false,
+        ));
+        let mut slots = Slots::new();
+        let finished =
+            "what just happened: time passed\ndisplays: 1; on display: 0; placement: (100, 200)";
+
+        slots.wake_with_prompt(&id, director, wake_context(), finished.to_string());
+
+        assert!(polled(&mut slots, &id).is_some(), "the wake answers");
+        assert_eq!(prompt.lock().expect("prompt lock").as_str(), finished);
     }
 
     /// A registry with a call already out for `id`, long enough to still be
