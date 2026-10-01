@@ -1122,38 +1122,12 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // Grab is on every held tick. Only the first tick of a hold is a
-                // pick-up; the rest would otherwise wake the session while
-                // dragging.
+                // pick-up; the rest would otherwise name every dragging wake a Grab.
                 let grab_started = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab))
                     && live.last_state != Some(State::Dragged);
-                if live.verbs.iter().any(|verb| {
-                    matches!(
-                        verb,
-                        Verb::Poke | Verb::Summon | Verb::Menu | Verb::Throw { .. }
-                    )
-                }) || grab_started
+                if let Some(what) = touched(&live.verbs, grab_started, live.pointer.poke_settled())
                 {
-                    live.addressed = true;
-                    note_happened(
-                        &mut live.happened,
-                        if live
-                            .verbs
-                            .iter()
-                            .any(|verb| matches!(verb, Verb::Throw { .. }))
-                        {
-                            Happened::Throw
-                        } else if grab_started {
-                            Happened::Grab
-                        } else if live
-                            .verbs
-                            .iter()
-                            .any(|verb| matches!(verb, Verb::Menu | Verb::Poke))
-                        {
-                            Happened::Poke
-                        } else {
-                            Happened::Summon
-                        },
-                    );
+                    note_happened(&mut live.happened, what);
                 }
 
                 // #17: opening the surface is all the Shell adds to a Summon;
@@ -1435,6 +1409,7 @@ pub(crate) fn run_frame_loop(
                 world.composing =
                     platform::overlay_composing().as_deref() == Some(live.id.as_str());
                 world.verbs = std::mem::take(&mut live.verbs);
+                world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
                 let speech_visible = live.speech.visible_at(std::time::Instant::now());
                 let qm_visible =
@@ -1444,9 +1419,8 @@ pub(crate) fn run_frame_loop(
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
 
-                // Engine names a Poke and a Dwell. The pointer loop also
-                // marks verbs so the wake can say `happened: poked`; drop
-                // this and a click never reaches the session.
+                // The Engine decides whether the user addressed the character;
+                // `touched` above only names what the wake says happened.
                 if frame.addressed {
                     live.addressed = true;
                 }
@@ -2302,6 +2276,23 @@ fn answer_tool_call(
         .send(dispatch(&call.tool, call.arguments, &mut context));
 }
 
+/// What the wake says happened, from one tick of pointer input. Whether the
+/// tick addressed the Director at all is `Frame::addressed`.
+fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Happened> {
+    let any = |wanted: fn(&Verb) -> bool| verbs.iter().any(wanted);
+    if any(|verb| matches!(verb, Verb::Throw { .. })) {
+        Some(Happened::Throw)
+    } else if grab_started {
+        Some(Happened::Grab)
+    } else if poke_settled || any(|verb| matches!(verb, Verb::Menu)) {
+        Some(Happened::Poke)
+    } else if any(|verb| matches!(verb, Verb::Summon)) {
+        Some(Happened::Summon)
+    } else {
+        None
+    }
+}
+
 /// Drop the frontmost application's name when the user has not asked for it.
 ///
 /// Two reasons, and both end the same way. One consent covers every name the
@@ -2463,5 +2454,42 @@ mod tests {
             "the Speech bubble draws Frame::dialogue"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// What the Director hears from a run of left-button states, one a tick.
+    fn heard(held: &[bool]) -> Vec<Happened> {
+        let mut pointer = fidget_core::input::Pointer::with_double_click_ms(500);
+        held.iter()
+            .filter_map(|&held| {
+                let verbs = pointer.update(true, held, false, Point { x: 0.0, y: 0.0 }, 16);
+                touched(&verbs, false, pointer.poke_settled())
+            })
+            .collect()
+    }
+
+    fn click() -> Vec<bool> {
+        vec![true, false]
+    }
+
+    fn wait(ms: usize) -> Vec<bool> {
+        vec![false; ms / 16]
+    }
+
+    #[test]
+    fn a_double_click_wakes_the_director_with_the_summon_alone() {
+        let gesture = [click(), wait(100), click(), wait(1000)].concat();
+        assert_eq!(heard(&gesture), vec![Happened::Summon]);
+    }
+
+    #[test]
+    fn a_lone_click_wakes_the_director_once_the_interval_has_passed() {
+        assert_eq!(heard(&[click(), wait(400)].concat()), vec![]);
+        assert_eq!(heard(&[click(), wait(600)].concat()), vec![Happened::Poke]);
+    }
+
+    #[test]
+    fn two_clicks_farther_apart_than_the_interval_are_two_pokes() {
+        let gesture = [click(), wait(700), click(), wait(700)].concat();
+        assert_eq!(heard(&gesture), vec![Happened::Poke, Happened::Poke]);
     }
 }
