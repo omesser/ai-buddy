@@ -1,26 +1,19 @@
 <!doctype html>
 <!--
-  The landing page proposal for omesser/fidget#1210: what a visitor to
-  omesser.github.io/fidget/ sees once the site root stops being the design
-  index.
+  The page shell for the site's landing page. scripts/make-landing-page.py
+  fills each double-brace slot from README.md and characters/ and writes the
+  result into _site; this file is never published as it stands. A Generated page under ADR-0038,
+  so product copy belongs in the README, not here: the shell holds layout,
+  headings, the demo line in the hero bubble, and links.
 
-  A Dated page under ADR-0011: hand-written and frozen at its date. The page it
-  proposes is meant to ship Generated, from README.md, characters/ and the
-  release the Homebrew cask pins, so the copy here is a stand-in for what the
-  generator will read, not a second source for it.
-
-  The art is the published gallery's own frames at characters/<package>/frames/,
-  the paths make-character-gallery.py writes into _site, so this page renders
-  only on the assembled site. Every frame named here is one a Character
-  Manifest declares, which is the only kind the gallery copies.
+  Sprites are the gallery's published frames at characters/<package>/frames/,
+  so the page renders only on the assembled site.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- A frozen proposal must not become the search result for "Fidget". -->
-<meta name="robots" content="noindex">
-<title>Fidget Landing Page</title>
+<title>Fidget</title>
 <style>
   :root {
     --paper: #F4F5F8;
@@ -75,13 +68,6 @@
   }
   a { color: var(--accent); }
   .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1rem; }
-
-  .class {
-    margin: 0; padding: .45rem 1rem; text-align: center;
-    font: .78rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--ink-3); border-bottom: 1px dashed var(--line);
-  }
-  .class a { color: inherit; }
 
   nav { display: flex; align-items: center; gap: 1.25rem; padding: 1rem 0; }
   .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700;
@@ -140,7 +126,7 @@
   h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
   .sub { color: var(--ink-2); margin: 0 0 1.75rem; }
 
-  .cast { display: grid; grid-template-columns: repeat(8, 1fr); gap: .75rem; }
+  .cast { display: grid; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); gap: .75rem; }
   .cast figure { margin: 0; background: var(--win); border: 1px solid var(--line);
     border-radius: 12px; padding: .75rem .5rem .6rem; text-align: center; }
   .cast .art { height: 96px; display: flex; align-items: flex-end; justify-content: center; }
@@ -173,11 +159,9 @@
 </style>
 </head>
 <body>
-<p class="class">Dated proposal · <a href="https://github.com/omesser/fidget/issues/1210">#1210</a> · 2026-10-01 · hand-written and frozen, not a description of shipped behavior</p>
-
 <div class="wrap">
   <nav>
-    <a class="brand" href="#"><img src="characters/buddy-bot/frames/idle-0.png" alt="">Fidget</a>
+    <a class="brand" href="#"><img src="{{brand}}" alt="">Fidget</a>
     <a class="link opt" href="#harnesses">Harnesses</a>
     <a class="link opt" href="#characters">Characters</a>
     <a class="link" href="https://github.com/omesser/fidget">GitHub</a>
@@ -185,26 +169,23 @@
 
   <div class="hero">
     <div>
-      <h1>Fidget keeps you company while you vibe-code, and pitches in when you ask</h1>
-      <p class="lede">A desktop pet that walks on your windows. Pick it up, throw it, let it nap, or
-        double-click to talk to the coding agent you already use.</p>
+      <h1>{{headline}}</h1>
+      <p class="lede">{{lede}}</p>
       <div class="get" id="get">
         <a class="btn primary" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_aarch64.dmg"><b>Download for macOS</b><span>Apple Silicon · .dmg</span></a>
         <a class="btn" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_x64-setup.exe"><b>Windows</b><span>x86_64 · installer</span></a>
         <a class="btn" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_amd64.AppImage"><b>Linux</b><span>x86_64 · AppImage</span></a>
       </div>
-      <div class="brew">or with Homebrew <code>brew install --cask fidget</code></div>
-      <p class="note">Builds are not signed yet, so the first open warns. Works offline with no account;
-        connect an AI in Settings when you want it to talk back. The Homebrew cask lands with #1204.</p>
+      <p class="note">{{notes}} <a href="https://github.com/omesser/fidget#get-it">Install steps</a></p>
     </div>
 
-    <div class="desk" aria-label="Buddy Bot perched on a window's top edge, talking">
-      <div class="say">Perched on your editor. Nice view. Want me to run the tests?</div>
+    <div class="desk">
+      <div class="say" id="hero-say">Perched on your editor. Nice view. Want me to run the tests?</div>
       <div class="window">
         <div class="bar"><i></i><i></i><i></i></div>
         <div class="lines"><div style="width:72%"></div><div style="width:54%"></div><div style="width:81%"></div><div style="width:38%"></div><div style="width:66%"></div></div>
       </div>
-      <div class="perched"><img id="hero-sprite" src="characters/buddy-bot/frames/sit-0.png" alt="Buddy Bot"></div>
+      <div class="perched">{{hero}}</div>
     </div>
   </div>
 </div>
@@ -214,10 +195,7 @@
     <h2>What it does</h2>
     <p class="sub">Presence first. The AI is optional.</p>
     <div class="features">
-      <div><b>Keeps you company</b><p>It walks, naps, and reacts to your windows. No account or subscription needed.</p></div>
-      <div><b>Pitches in</b><p>Double-click to chat with Claude Code, Codex, Cursor or any ACP harness. It answers in speech and motion.</p></div>
-      <div><b>Knows the room</b><p>With your consent it reads window names for context. It never takes screenshots.</p></div>
-      <div><b>Gets out of the way</b><p>Fades in fullscreen, hides on a hotkey, comes back when you want it.</p></div>
+      {{features}}
     </div>
   </div>
 </section>
@@ -226,19 +204,18 @@
   <div class="wrap">
     <h2>Talks to the agent you already use</h2>
     <p class="sub">Any harness that speaks ACP, or a model API with your own key.</p>
-    <ul class="harnesses">
-      <li>Claude Code</li><li>Codex</li><li>Cursor</li><li>Hermes</li><li>OpenCode</li>
-      <li>Pi</li><li>Grok Build</li><li>Copilot</li><li>Goose</li><li>Antigravity</li>
-    </ul>
+    <ul class="harnesses">{{harnesses}}</ul>
   </div>
 </section>
 
 <section id="characters">
   <div class="wrap">
     <h2>Packaged Fidgets</h2>
-    <p class="sub">Eight characters ship with Fidget, each with its own sprites, loops and personality.
+    <p class="sub">{{count}} characters ship with Fidget, each with its own sprites, loops and personality.
       <a href="characters.html">See every animation in the gallery</a>.</p>
-    <div class="cast" id="cast"></div>
+    <div class="cast">
+      {{cast}}
+    </div>
   </div>
 </section>
 
@@ -247,7 +224,7 @@
     <h2>Easily add your own Fidgets</h2>
     <p class="sub">A character is a folder of frames, a manifest and a plain-text personality file.</p>
     <div class="features">
-      <div><b>Change a personality</b><p>Edit any character's prompt or behavior in its plain-text personality file.</p></div>
+      <div><b>Change a personality</b><p>Edit any character's prompt or behavior in its plain-text <a href="https://github.com/omesser/fidget/blob/main/docs/DEVELOPMENT.md#character-packages">personality file</a>.</p></div>
       <div><b>Draw your own</b><p>Add frames and describe the loops in a short <a href="https://github.com/omesser/fidget/blob/main/docs/DEVELOPMENT.md#character-packages">manifest</a>.</p></div>
       <div><b>Import a pet</b><p><a href="https://github.com/omesser/fidget/blob/main/docs/DEVELOPMENT.md#importing-pets">Convert one</a> from the <a href="https://petscodex.com/">Pets Codex</a> or <a href="https://shimejishop.com/">Shimeji Shop</a> galleries.</p></div>
     </div>
@@ -261,51 +238,31 @@
     <a href="https://github.com/omesser/fidget/releases">Releases</a>
     <a href="characters.html">Character gallery</a>
     <a href="design.html">Design pages</a>
+    <span>Generated from README.md and characters/ at deploy</span>
   </footer>
 </div>
 
 <script>
-  const range = (n) => Array.from({ length: n }, (_, i) => i);
-  const walk = (pkg, n, fps, pixel) => ({ pkg, fps, pixel,
-    frames: range(n).map((i) => `characters/${pkg}/frames/walk-${i}.png`) });
-  const CAST = [
-    ["Buddy Bot", walk("buddy-bot", 8, 8)],
-    ["BMO", { pkg: "bmo", fps: 8, frames: [0, 1, 2, 1].map((i) => `characters/bmo/frames/walk-${i}.png`) }],
-    ["Cat", walk("cat", 8, 8)],
-    ["Trump", walk("trump", 8, 8)],
-    ["Jotaro Kujo", walk("jotaro-kujo", 8, 8)],
-    ["Timber Wolf", walk("timber-wolf", 20, 8)],
-    ["Black Mage", walk("black-mage", 4, 8, true)],
-    ["Nim", walk("nim", 8, 12, true)],
-  ];
-
+  // Every sprite carries its manifest loop. Reduced motion keeps the first
+  // frame, and a hidden tab stops every timer until it is shown again.
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function play(img, frames, fps) {
-    if (still) return;
-    let i = 0;
+  const loops = still ? [] : [...document.querySelectorAll("img[data-frames]")].map((img) => {
+    const frames = JSON.parse(img.dataset.frames);
     frames.forEach((src) => { new Image().src = src; });
-    setInterval(() => { i = (i + 1) % frames.length; img.src = frames[i]; }, 1000 / fps);
+    return { img, frames, fps: Number(img.dataset.fps), i: 0, timer: 0 };
+  });
+  function run() {
+    for (const loop of loops) {
+      clearInterval(loop.timer);
+      if (document.hidden) continue;
+      loop.timer = setInterval(() => {
+        loop.i = (loop.i + 1) % loop.frames.length;
+        loop.img.src = loop.frames[loop.i];
+      }, 1000 / loop.fps);
+    }
   }
-
-  const cast = document.getElementById("cast");
-  for (const [name, loop] of CAST) {
-    const fig = document.createElement("figure");
-    const art = document.createElement("div");
-    art.className = "art";
-    const img = document.createElement("img");
-    img.src = loop.frames[0];
-    img.alt = name;
-    if (loop.pixel) img.className = "pixel";
-    art.append(img);
-    const cap = document.createElement("figcaption");
-    cap.textContent = name;
-    fig.append(art, cap);
-    cast.append(fig);
-    play(img, loop.frames, loop.fps);
-  }
-
-  play(document.getElementById("hero-sprite"),
-    range(4).map((i) => `characters/buddy-bot/frames/sit-${i}.png`), 3);
+  document.addEventListener("visibilitychange", run);
+  run();
 </script>
 </body>
 </html>

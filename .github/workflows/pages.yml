@@ -38,11 +38,12 @@ jobs:
           cp docs/design/chat.html  _site/chat.html
           cp docs/design/chat-mockups.html _site/chat-mockups.html
           cp docs/design/window-titles-hint.html _site/window-titles-hint.html
-          cp docs/design/landing.html _site/landing.html
           python3 scripts/make-character-gallery.py --self-check
           python3 scripts/make-character-gallery.py --out _site
           python3 scripts/make-expression-page.py --self-check
           python3 scripts/make-expression-page.py --out _site
+          python3 scripts/make-landing-page.py --self-check
+          python3 scripts/make-landing-page.py --out _site
 
       - name: Verify nothing but a page or its art reached _site
         # What the allowlist keeps off the web is Markdown, so an extension
