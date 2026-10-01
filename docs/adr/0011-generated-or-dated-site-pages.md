@@ -1,5 +1,10 @@
 # Every page on the published site is Generated or Dated
 
+**Status:** Accepted, amended by
+[ADR-0038](./0038-a-generated-landing-page-owns-the-site-root.md): a Generated
+landing page owns the site root, and the design directory moves to
+`/design.html`. The two classes and the allowlist stand.
+
 Every page on `omesser.github.io/fidget` is one of two classes. Nothing else
 may exist.
 
