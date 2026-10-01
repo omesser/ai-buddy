@@ -574,34 +574,16 @@ fn parse_node_version(raw: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-/// Comparison ranges only (`>=22`, `>22`, and the same for `<` and `=`).
-/// Anything else, including `^` and `||`, is unread on purpose: a floor we
-/// cannot parse must not fail a Node that might be fine.
+/// `>=` only. The adapters publish that form. Any other range is unread on
+/// purpose, so a floor we cannot parse does not fail a Node that might be fine.
 fn node_satisfies(current: (u64, u64, u64), requirement: &str) -> Option<bool> {
     let requirement = requirement.trim();
     if requirement.is_empty() || requirement == "*" {
         return Some(true);
     }
-    let (op, rest) = if let Some(rest) = requirement.strip_prefix(">=") {
-        (">=", rest)
-    } else if let Some(rest) = requirement.strip_prefix("<=") {
-        ("<=", rest)
-    } else if let Some(rest) = requirement.strip_prefix('>') {
-        (">", rest)
-    } else if let Some(rest) = requirement.strip_prefix('<') {
-        ("<", rest)
-    } else {
-        let rest = requirement.strip_prefix('=')?;
-        ("=", rest)
-    };
+    let rest = requirement.strip_prefix(">=")?;
     let required = parse_node_version(rest)?;
-    Some(match op {
-        ">=" => current >= required,
-        "<=" => current <= required,
-        ">" => current > required,
-        "<" => current < required,
-        _ => current == required,
-    })
+    Some(current >= required)
 }
 
 fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option<String> {
@@ -613,16 +595,10 @@ fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option
     if node_satisfies(version, requirement) != Some(false) {
         return None;
     }
-    if let Some(floor) = requirement.strip_prefix(">=") {
-        Some(format!(
-            "{name} needs Node {} or newer; `node` on PATH is {current}",
-            floor.trim()
-        ))
-    } else {
-        Some(format!(
-            "{name} needs Node {requirement}; `node` on PATH is {current}"
-        ))
-    }
+    let floor = requirement.strip_prefix(">=")?.trim();
+    Some(format!(
+        "{name} needs Node {floor} or newer; `node` on PATH is {current}"
+    ))
 }
 
 /// The sentence Chat shows for an unhealthy probe. An engine rejection names
@@ -1578,6 +1554,11 @@ impl Session {
         let wire = match self.current_wire() {
             Some(wire) => wire,
             None => {
+                // The probe already refused this launcher. A wake that spawns
+                // it anyway is the hang the probe is there to stop.
+                if let Some(why) = self.inspect().unhealthy {
+                    return Err(why);
+                }
                 {
                     let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
                     // A new child does not have the previous process's sessions.
@@ -7167,6 +7148,58 @@ mod tests {
             unhealthy_sentence(&launch, "`npx --version` timed out after 3.0s"),
             "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong"
         );
+    }
+
+    /// A wake after a refused probe must not start the adapter. That spawn is
+    /// the hang the probe is there to stop.
+    #[test]
+    fn an_unhealthy_probe_does_not_let_a_wake_spawn_the_adapter() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("spawned");
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("hang.sh");
+            std::fs::write(
+                &path,
+                format!("#!/bin/sh\ntouch \"{}\"\nexit 0\n", marker.display()),
+            )
+            .unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        #[cfg(windows)]
+        let script = {
+            let path = dir.join("hang.bat");
+            std::fs::write(
+                &path,
+                format!(
+                    "@echo off\ntype nul > \"{}\"\nexit /b 0\n",
+                    marker.display()
+                ),
+            )
+            .unwrap();
+            path
+        };
+        let session = Session::new(
+            Launch {
+                name: "claude".into(),
+                argv: vec![script.to_string_lossy().to_string()],
+            },
+            Ok(AttachCwd(dir.clone())),
+            SessionDataDir::at(dir.clone()),
+            silent(),
+        );
+        let why = "claude needs Node 22 or newer; `node` on PATH is v20.19.2. Run `node --version` in a terminal to check what is wrong";
+        session.update_inspect(|inspect| inspect.unhealthy = Some(why.to_string()));
+        let err = session.complete(&asking("hi")).unwrap_err();
+        assert_eq!(err, why);
+        assert!(
+            !marker.exists(),
+            "the wake spawned the adapter after preflight refused it"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn claude_npx_launch() -> Launch {
