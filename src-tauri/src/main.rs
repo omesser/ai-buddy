@@ -2240,6 +2240,9 @@ struct ChatHarness {
     install: Option<String>,
     /// Whether ACP handshake/spawn is in progress. Gates chat until ready or failed.
     initializing: bool,
+    /// Why the Harness failed preflight (Node engine check, etc.). The sentence
+    /// Chat shows instead of `not running`. Settings already names it (#659).
+    unhealthy: Option<String>,
     /// Why a launcher that was there gave no wire: its command, the reason,
     /// and what it printed, which the landing draws apart.
     failed: Option<harness::LaunchFailure>,
@@ -2258,6 +2261,7 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
             .and_then(harness::install_page)
             .map(|(_, url)| url.to_string()),
         initializing: attached.initializing,
+        unhealthy: attached.unhealthy.clone(),
         failed: attached.failed.clone(),
     })
 }
@@ -4798,6 +4802,32 @@ mod tests {
             .harness
             .expect("the opening carries the attachment");
         assert_eq!(harness.failed, Some(why));
+    }
+
+    /// An unhealthy Harness (failed preflight like Node engine check) reaches Chat
+    /// with its sentence, or the landing cannot show the concrete reason.
+    #[test]
+    fn chat_opening_carries_an_unhealthy_harness() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let inspect = model::DirectorInspect {
+            harness: Some(crate::harness::HarnessInspect {
+                name: "claude".to_string(),
+                unhealthy: Some("claude needs Node 22 or newer; `node` on PATH is v20.5.0.".to_string()),
+                alive: false,
+                ..Default::default()
+            }),
+            ..stub_inspect()
+        };
+
+        let harness = chat_opening_from(instance, &inspect, "")
+            .harness
+            .expect("the opening carries the attachment");
+        assert_eq!(harness.name, "claude");
+        assert_eq!(harness.unhealthy.as_deref(), Some("claude needs Node 22 or newer; `node` on PATH is v20.5.0."));
+        assert!(!harness.alive);
     }
 
     /// The landing payload while login is still required. The fragment is the

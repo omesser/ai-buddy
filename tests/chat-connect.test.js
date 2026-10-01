@@ -192,6 +192,30 @@ test("initializing Harness gates chat and shows clear state", () => {
   assert.doesNotMatch(copy.lede, /not running/);
 });
 
+test("unhealthy Harness gates chat and shows the concrete reason", () => {
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "claude",
+    harness: {
+      name: "claude",
+      session: null,
+      alive: false,
+      login: null,
+      unhealthy: "claude needs Node 22 or newer; `node` on PATH is v20.5.0.",
+    },
+  };
+  assert.equal(canAnswer(opening), false, "chat is gated when unhealthy");
+  assert.equal(composerPlaceholder(opening), "Nothing can answer yet");
+  const copy = landingCopy(opening);
+  assert.equal(copy.title, "Claude Code is unhealthy");
+  assert.match(copy.lede, /claude needs Node 22 or newer/);
+  assert.match(copy.lede, /`node` on PATH is v20\.5\.0/);
+  assert.match(copy.lede, /pick Claude Code again/);
+  assert.equal(copy.command, null);
+});
+
 test("needs-auth still names the login command", () => {
   const copy = landingCopy({
     name: "bmo",
