@@ -1393,16 +1393,19 @@ fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
             *slot = Some(reveal);
         }
     }
-    show_settings(app.clone());
+    // Off the pump: `names_hint_act` is async, so this queues the build.
+    present_settings(app.clone());
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         platform::refresh_settings(&handle);
     });
 }
 
-/// The notice's two buttons.
+/// The notice's two buttons. `async` is load-bearing on Windows: a sync
+/// command runs on WebView2's pump thread, and building Settings there
+/// leaves the window blank.
 #[tauri::command]
-fn names_hint_act(
+async fn names_hint_act(
     action: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, SettingsState>,
@@ -1418,34 +1421,22 @@ fn names_hint_act(
     Ok(acted.push)
 }
 
-/// Open the Settings window. The build runs on the toolkit main thread, but
-/// not on a Windows caller's stack: WebView2 deadlocks there and the window
-/// stays blank.
+/// Open Settings from a webview. `async` is load-bearing on Windows: a sync
+/// command runs on WebView2's pump thread and building Settings there leaves
+/// the window blank. Tray and the menu call `present_settings` instead.
 #[tauri::command]
-fn show_settings(app: tauri::AppHandle) {
+async fn show_settings(app: tauri::AppHandle) {
+    present_settings(app);
+}
+
+/// Raise Settings, or build it. Main-thread callers run the build inline;
+/// a webview command is async, so this queues off WebView2's pump.
+fn present_settings(app: tauri::AppHandle) {
     if app.try_state::<SettingsState>().is_none() {
         eprintln!("settings: opened before the shell was ready");
         return;
     }
 
-    dispatch_settings_present(cfg!(windows), move || present_settings(app));
-}
-
-/// Whether the build runs before the caller returns. On Windows it must not:
-/// the caller is the main thread, and WebView2 deadlocks on that stack.
-fn settings_build_runs_on_caller(host_is_windows: bool) -> bool {
-    !host_is_windows
-}
-
-fn dispatch_settings_present(host_is_windows: bool, present: impl FnOnce() + Send + 'static) {
-    if settings_build_runs_on_caller(host_is_windows) {
-        present();
-    } else {
-        std::thread::spawn(present);
-    }
-}
-
-fn present_settings(app: tauri::AppHandle) {
     // Same clone-then-post as `open_chat`: the closure takes the handle,
     // `run_on_main_thread` still borrows `app`.
     let handle = app.clone();
@@ -1469,44 +1460,6 @@ fn present_settings(app: tauri::AppHandle) {
         }
     }) {
         eprintln!("settings webview: {why}");
-    }
-}
-
-#[cfg(test)]
-mod settings_open_schedule {
-    use super::{dispatch_settings_present, settings_build_runs_on_caller};
-    use std::sync::mpsc;
-    use std::thread;
-    use std::time::Duration;
-
-    #[test]
-    fn a_windows_open_builds_settings_off_the_caller() {
-        assert!(!settings_build_runs_on_caller(true));
-
-        let caller = thread::current().id();
-        let (tx, rx) = mpsc::channel();
-        dispatch_settings_present(true, move || {
-            let _ = tx.send(thread::current().id());
-        });
-        let builder = rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("settings build did not run");
-        assert_ne!(
-            builder, caller,
-            "building on the caller's thread is the Windows blank window"
-        );
-    }
-
-    #[test]
-    fn other_hosts_still_build_settings_on_the_caller() {
-        assert!(settings_build_runs_on_caller(false));
-
-        let caller = thread::current().id();
-        let (tx, rx) = mpsc::channel();
-        dispatch_settings_present(false, move || {
-            let _ = tx.send(thread::current().id());
-        });
-        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), caller);
     }
 }
 
@@ -2976,7 +2929,7 @@ fn apply_menu_action(
         menu::MenuAction::OpenActionLog => {
             let _ = platform::open_path(&action_log::current_path());
         }
-        menu::MenuAction::OpenSettings => show_settings(app.clone()),
+        menu::MenuAction::OpenSettings => present_settings(app.clone()),
         menu::MenuAction::Summon => {
             if let Some(instance) = roster.get(instance_id) {
                 let title = instance.name.clone();
@@ -3682,7 +3635,9 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
 
     let app_handle = app.clone();
     window.connect_focus_in_event(move |_, _| {
-        show_settings(app_handle.clone());
+        // `show_settings` is async for the Chat webview. This callback is the
+        // shell thread, and dropping that future would never open Settings.
+        present_settings(app_handle.clone());
         gtk::glib::Propagation::Proceed
     });
 
@@ -3770,7 +3725,7 @@ fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
             const WA_CLICKACTIVE: u16 = 2;
             if f_active == WA_CLICKACTIVE {
                 if let Some(app) = APP_HANDLE.get() {
-                    show_settings(app.clone());
+                    present_settings(app.clone());
                 }
             }
         }
@@ -4136,7 +4091,7 @@ fn main() {
             // Dev/test hook: open settings immediately if FIDGET_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.
             if model::env_switch("FIDGET_OPEN_SETTINGS").unwrap_or(false) {
-                show_settings(app.handle().clone());
+                present_settings(app.handle().clone());
             }
 
             let tray = {
@@ -5360,6 +5315,28 @@ mod tests {
         {
         }
         takes_async(overlay_open_chat);
+    }
+
+    /// Pins the Chat entry points as `async`. On Windows a sync command builds
+    /// Settings on WebView2's pump thread and the window stays blank. Tray and
+    /// the menu call `present_settings` on the shell thread.
+    #[test]
+    fn settings_opened_from_chat_stays_off_the_webview_pump() {
+        fn show<F, Fut>(_f: F)
+        where
+            F: Fn(tauri::AppHandle) -> Fut,
+            Fut: std::future::Future<Output = ()>,
+        {
+        }
+        show(show_settings);
+
+        fn hint(action: String, app: tauri::AppHandle, state: tauri::State<'_, SettingsState>) {
+            let fut = names_hint_act(action, app, state);
+            fn assert_send<T: Send>(_: &T) {}
+            assert_send(&fut);
+            let _: &dyn std::future::Future<Output = Result<names_hint::HintPush, String>> = &fut;
+        }
+        let _ = hint as fn(String, tauri::AppHandle, tauri::State<'_, SettingsState>);
     }
 
     /// Asserted on the serialized payload, because the webview reads the wire
