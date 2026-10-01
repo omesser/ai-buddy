@@ -188,7 +188,7 @@ Tools each harness keeps under ACP, session and auth behavior, and per-harness s
 
 Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route the [MCP transport column](./docs/harness.md#harness-support) describes. [harness.md](./docs/harness.md#mcp-server) has the transport details.
 
-**Seven tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917):
+**Eight tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917):
 
 | Tool | Category | What it does |
 |---|---|---|
@@ -199,6 +199,7 @@ Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP,
 | `recall` | Memory | Read everything Memory holds |
 | `remember` | Memory | Write one fact under a heading |
 | `list_instances` | Identity | List Character Instances and their names |
+| `whereabouts` | Placement | Which display each Instance is on, the other displays, and its feet in that display. Each display includes its name when the platform has one, its origin, and its size, in logical points |
 
 **Three readonly resources** (`resources/list`, `resources/read`; no write, no subscribe):
 

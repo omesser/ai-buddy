@@ -5,8 +5,10 @@
 use serde::{Deserialize, Serialize};
 use std::io;
 
-use crate::engine::BehaviorProposal;
+use crate::display::Whereabouts;
+use crate::engine::{BehaviorProposal, Point};
 use crate::memory::MemoryManifest;
+use crate::window_source::Rect;
 
 /// Tool result for the `speak` tool.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +122,91 @@ pub fn remember(memory: &MemoryManifest, heading: &str, fact: &str) -> io::Resul
 pub fn list_instances(instances: &[InstanceInfo]) -> ListInstancesResult {
     ListInstancesResult {
         instances: instances.to_vec(),
+    }
+}
+
+/// One Instance's feet, for the whereabouts report.
+pub struct FeetAt {
+    pub id: String,
+    pub name: String,
+    pub at: Point,
+}
+
+/// One connected display. Origin and size are in `WhereaboutsReport::unit`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ConnectedDisplay {
+    pub index: usize,
+    pub name: Option<String>,
+    pub origin_x: f64,
+    pub origin_y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Where one Instance is. `x` and `y` are already in that display's frame.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InstanceWhere {
+    pub id: String,
+    pub name: String,
+    pub on_display: Option<usize>,
+    pub other_displays: Vec<usize>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+}
+
+/// What `whereabouts` returns. A caller does not convert coordinates.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WhereaboutsReport {
+    pub unit: String,
+    pub displays: Vec<ConnectedDisplay>,
+    pub instances: Vec<InstanceWhere>,
+}
+
+/// Displays, which one each Instance is on, and its feet in that display.
+pub fn whereabouts(
+    frames: &[Rect],
+    usable: &[Rect],
+    names: &[Option<String>],
+    instances: &[FeetAt],
+) -> WhereaboutsReport {
+    let displays = frames
+        .iter()
+        .enumerate()
+        .map(|(index, frame)| ConnectedDisplay {
+            index,
+            name: names.get(index).and_then(Clone::clone),
+            origin_x: frame.x,
+            origin_y: frame.y,
+            width: frame.width,
+            height: frame.height,
+        })
+        .collect::<Vec<_>>();
+    let every: Vec<usize> = (0..displays.len()).collect();
+    let instances = instances
+        .iter()
+        .map(|spot| {
+            let here = Whereabouts::locate(spot.at, frames, usable);
+            let on_display = here.current().map(|display| display.index());
+            let place = here.placement();
+            InstanceWhere {
+                id: spot.id.clone(),
+                name: spot.name.clone(),
+                on_display,
+                other_displays: every
+                    .iter()
+                    .copied()
+                    .filter(|index| Some(*index) != on_display)
+                    .collect(),
+                x: place.map(|place| place.x()),
+                y: place.map(|place| place.y()),
+            }
+        })
+        .collect();
+
+    WhereaboutsReport {
+        unit: "points".to_string(),
+        displays,
+        instances,
     }
 }
 
@@ -632,5 +719,83 @@ mod tests {
         assert!(result.description.contains("Terminal (bash)"));
         assert!(result.description.contains("Safari at"));
         assert!(!result.description.contains("Safari ()"));
+    }
+
+    #[test]
+    fn whereabouts_names_the_display_the_feet_are_on_and_the_others() {
+        let frames = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ];
+        let names = [Some("Built-in".to_string()), None];
+        let instances = [FeetAt {
+            id: "pip".to_string(),
+            name: "Pip".to_string(),
+            at: Point {
+                x: 2000.0,
+                y: 100.0,
+            },
+        }];
+
+        let report = whereabouts(&frames, &frames, &names, &instances);
+
+        assert_eq!(report.unit, "points");
+        assert_eq!(report.displays.len(), 2);
+        assert_eq!(report.displays[0].name.as_deref(), Some("Built-in"));
+        assert_eq!(report.displays[0].origin_x, 0.0);
+        assert_eq!(report.displays[0].width, 1920.0);
+        assert_eq!(report.displays[0].height, 1080.0);
+        assert_eq!(report.displays[1].name, None);
+        assert_eq!(report.displays[1].origin_x, 1920.0);
+        assert_eq!(report.displays[1].origin_y, 0.0);
+        let here = &report.instances[0];
+        assert_eq!(here.on_display, Some(1));
+        assert_eq!(here.other_displays, vec![0]);
+        assert_eq!(here.x, Some(80.0));
+        assert_eq!(here.y, Some(100.0));
+    }
+
+    #[test]
+    fn whereabouts_off_every_display_lists_them_all_as_other() {
+        let frames = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1200.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 1080.0,
+            },
+        ];
+        let instances = [FeetAt {
+            id: "pip".to_string(),
+            name: "Pip".to_string(),
+            at: Point {
+                x: 1100.0,
+                y: 100.0,
+            },
+        }];
+
+        let report = whereabouts(&frames, &frames, &[], &instances);
+        let here = &report.instances[0];
+
+        assert_eq!(here.on_display, None);
+        assert_eq!(here.other_displays, vec![0, 1]);
+        assert_eq!(here.x, None);
+        assert_eq!(here.y, None);
     }
 }

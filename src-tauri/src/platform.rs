@@ -195,6 +195,9 @@ pub struct Displays {
     /// Always the primary's, whichever display the cursor is over: that is the
     /// one factor the layer multiplied by, so that is the one that undoes it.
     pub cursor_scale: f64,
+    /// The platform's name for each display, in the same order as `frames`.
+    /// A label, when the platform has one. Not an id.
+    pub names: Vec<Option<String>>,
 }
 
 impl Default for Displays {
@@ -206,6 +209,7 @@ impl Default for Displays {
             usable_frames: Vec::new(),
             dock: None,
             cursor_scale: 1.0,
+            names: Vec::new(),
         }
     }
 }
@@ -1021,6 +1025,7 @@ pub(crate) fn read_displays(app: &tauri::AppHandle) -> Displays {
         displays
             .usable_frames
             .push(usable_frame(frame, work, monitor.scale_factor()));
+        displays.names.push(monitor.name().cloned());
     }
 
     // With true Dock bounds, that display's floor drops to the bottom edge and

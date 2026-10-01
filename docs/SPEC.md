@@ -324,7 +324,10 @@ points. The index lasts for one arrangement. Index 0 is whichever monitor
 the platform listed first. macOS does not keep CGDirectDisplayID, Windows does
 not keep HMONITOR, and Linux does not keep the GDK monitor. A display attached
 or removed is in the next successful read. Wayland with no X server does not
-refresh the list.
+refresh the list. The `whereabouts` MCP tool returns that report: every
+connected display, with its name when the platform has one, its origin, and
+its size; and for each Instance, which display it is on, the other connected
+displays, and its feet in that display. A caller does not convert coordinates.
 
 Every overlay is told where the sprite is, in its own coordinates, and each draws the
 part that falls inside it. A Character straddling a seam is therefore whole: the two
@@ -454,6 +457,7 @@ Fidget exposes an MCP server. Tool surface, by responsibility:
   [ADR-0031](./adr/0031-drop-capture-tiers.md)).
 - **Memory** — recall; remember.
 - **Identity** — list Character Instances and their names.
+- **Placement** — report connected displays and where each Instance sits on them.
 
 There is no tool that posts mouse or keyboard events. Fidget ships no Executor. See
 [ADR-0003](./adr/0003-no-executor-harness-owns-desktop-control.md).

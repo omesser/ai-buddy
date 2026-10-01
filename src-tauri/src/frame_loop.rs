@@ -5,7 +5,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fidget_core::director::{self, Context, Happened, Wake};
-use fidget_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
+use fidget_core::dispatch::{
+    dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
+};
 use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
@@ -940,7 +942,7 @@ pub(crate) fn run_frame_loop(
                     .lock()
                     .map(|settings| settings.excluded_applications.clone())
                     .unwrap_or_default();
-                answer_tool_call(call, &mut roster, assembler.source(), excluded);
+                answer_tool_call(call, &mut roster, assembler.source(), excluded, &displays);
             }
 
             {
@@ -2266,12 +2268,24 @@ fn answer_tool_call(
     roster: &mut Roster,
     source: &dyn WindowSource,
     excluded_applications: Vec<String>,
+    displays: &platform::Displays,
 ) {
     let watched = crate::names_hint::live().watching(source);
     let live: Vec<InstanceInfo> = roster
         .list()
         .into_iter()
         .map(|(id, name)| InstanceInfo { id, name })
+        .collect();
+    let spots: Vec<FeetAt> = live
+        .iter()
+        .filter_map(|info| {
+            let at = roster.get(&info.id)?.feet();
+            Some(FeetAt {
+                id: info.id.clone(),
+                name: info.name.clone(),
+                at,
+            })
+        })
         .collect();
     let mut context = DispatchContext {
         window_source: &watched,
@@ -2282,6 +2296,12 @@ fn answer_tool_call(
         },
         roster: &live,
         expression: Some(roster),
+        placement: PlacementQuery {
+            frames: &displays.frames,
+            usable: &displays.usable_frames,
+            names: &displays.names,
+            instances: &spots,
+        },
     };
     let _ = call
         .reply
@@ -2450,6 +2470,7 @@ mod tests {
             &mut roster,
             &EmptyDesktop,
             Vec::new(),
+            &platform::Displays::default(),
         );
         let result = answers
             .recv()
@@ -2466,6 +2487,69 @@ mod tests {
             "the Speech bubble draws Frame::dialogue"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The Harness reads placement from the live Instances and the displays
+    /// the frame loop already holds.
+    #[test]
+    fn a_whereabouts_call_reports_the_live_instance_on_its_display() {
+        let mut roster = Roster::new();
+        let id = roster.spawn(
+            &character(),
+            "Pip".to_string(),
+            Point {
+                x: 2000.0,
+                y: 100.0,
+            },
+        );
+        let frame = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let second = Rect {
+            x: 1920.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let displays = platform::Displays {
+            frames: vec![frame, second],
+            usable_frames: vec![frame, second],
+            names: vec![Some("Left".to_string()), None],
+            ..platform::Displays::default()
+        };
+
+        let (reply, answers) = mpsc::channel();
+        answer_tool_call(
+            mcp_http::Call {
+                tool: "whereabouts".to_string(),
+                arguments: json!({}),
+                reply,
+            },
+            &mut roster,
+            &EmptyDesktop,
+            Vec::new(),
+            &displays,
+        );
+        let result = answers
+            .recv()
+            .expect("the call is answered")
+            .expect("dispatch succeeds");
+
+        assert_eq!(result["unit"], json!("points"));
+        assert_eq!(result["displays"][0]["name"], json!("Left"));
+        assert_eq!(result["displays"][1]["name"], json!(null));
+        assert_eq!(result["displays"][1]["origin_x"], json!(1920.0));
+        assert_eq!(result["displays"][1]["width"], json!(1920.0));
+        assert_eq!(result["displays"][1]["height"], json!(1080.0));
+        assert_eq!(result["instances"][0]["id"], json!(id));
+        assert_eq!(result["instances"][0]["name"], json!("Pip"));
+        assert_eq!(result["instances"][0]["on_display"], json!(1));
+        assert_eq!(result["instances"][0]["other_displays"], json!([0]));
+        assert_eq!(result["instances"][0]["x"], json!(80.0));
+        assert_eq!(result["instances"][0]["y"], json!(100.0));
     }
 
     /// What the Director hears from a run of left-button states, one a tick.

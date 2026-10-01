@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_is_the_seven_from_core_and_nothing_else() {
+    fn tools_list_is_the_eight_from_core_and_nothing_else() {
         let (tx, _rx) = mpsc::channel();
         let text = handle(
             &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
@@ -442,8 +442,9 @@ mod tests {
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         let tools = value["result"]["tools"].as_array().expect("a list");
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names.len(), 7, "the seven tools from #15: {names:?}");
+        assert_eq!(names.len(), 8, "the eight tools: {names:?}");
         assert!(names.contains(&"speak"));
+        assert!(names.contains(&"whereabouts"));
         assert!(
             tools[0]["inputSchema"].is_object(),
             "MCP spells it inputSchema"

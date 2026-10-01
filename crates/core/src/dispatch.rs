@@ -7,9 +7,30 @@ use std::path::PathBuf;
 
 use crate::memory::MemoryManifest;
 use crate::tools;
-use crate::window_source::WindowSource;
+use crate::window_source::{Rect, WindowSource};
 
-pub use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
+pub use crate::tools::{DenyList, ExpressionHandle, FeetAt, InstanceInfo};
+
+/// The displays and feet a `whereabouts` call reports. Empty when the caller
+/// has no desktop.
+pub struct PlacementQuery<'a> {
+    pub frames: &'a [Rect],
+    pub usable: &'a [Rect],
+    pub names: &'a [Option<String>],
+    pub instances: &'a [FeetAt],
+}
+
+impl PlacementQuery<'static> {
+    /// No displays and no Instances.
+    pub fn empty() -> Self {
+        Self {
+            frames: &[],
+            usable: &[],
+            names: &[],
+            instances: &[],
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DispatchError {
@@ -31,6 +52,7 @@ pub struct DispatchContext<'a> {
     pub denylist: DenyList,
     pub roster: &'a [InstanceInfo],
     pub expression: Option<&'a mut dyn ExpressionHandle>,
+    pub placement: PlacementQuery<'a>,
 }
 
 /// Reborrow a taken handle for one call. `as_deref_mut` on `Option<&mut dyn>`
@@ -156,6 +178,18 @@ pub fn dispatch(
                 message: format!("Failed to serialize result: {}", e),
             })
         }
+        "whereabouts" => {
+            let result = tools::whereabouts(
+                context.placement.frames,
+                context.placement.usable,
+                context.placement.names,
+                context.placement.instances,
+            );
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
+        }
         _ => Err(DispatchError {
             code: ErrorCode::UnknownTool,
             message: format!("Unknown tool: {}", tool_name),
@@ -170,7 +204,7 @@ pub struct ToolInfo {
     pub input_schema: Value,
 }
 
-/// The seven tools in `tools`, and none that post input events.
+/// The tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
     vec![
         ToolInfo {
@@ -259,6 +293,14 @@ pub fn list_tools() -> Vec<ToolInfo> {
                 "properties": {}
             }),
         },
+        ToolInfo {
+            name: "whereabouts".to_string(),
+            description: "Where each Character Instance is. `displays` lists every connected display with its name when the platform has one, its origin, and its size. Each instance names the display it is on, the other displays, and its feet in that display. Coordinates are logical points, y downward. Origin and size are in that same unit.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
     ]
 }
 
@@ -294,6 +336,7 @@ mod tests {
             denylist: DenyList::default(),
             roster,
             expression: None,
+            placement: PlacementQuery::empty(),
         }
     }
 
@@ -431,10 +474,10 @@ mod tests {
     }
 
     #[test]
-    fn list_tools_returns_exactly_seven_tools() {
+    fn list_tools_returns_exactly_eight_tools() {
         let tools = list_tools();
 
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 8);
     }
 
     #[test]
@@ -449,6 +492,7 @@ mod tests {
         assert!(names.contains(&"recall"));
         assert!(names.contains(&"remember"));
         assert!(names.contains(&"list_instances"));
+        assert!(names.contains(&"whereabouts"));
     }
 
     #[test]
@@ -709,6 +753,7 @@ mod tests {
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut expression),
+            placement: PlacementQuery::empty(),
         };
 
         let first = dispatch("speak", json!({"message": "First line"}), &mut context)
@@ -753,6 +798,7 @@ mod tests {
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut roster),
+            placement: PlacementQuery::empty(),
         };
 
         let args = json!({"message": "Hello, world!"});
@@ -790,6 +836,7 @@ mod tests {
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut roster),
+            placement: PlacementQuery::empty(),
         };
 
         let args = json!({"behavior": "wave"});
@@ -951,6 +998,7 @@ mod tests {
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut live),
+            placement: PlacementQuery::empty(),
         };
 
         let result = dispatch("speak", json!({"message": "Hello"}), &mut context)
@@ -981,6 +1029,7 @@ mod tests {
             denylist: DenyList::default(),
             roster: &roster_info,
             expression: Some(&mut roster),
+            placement: PlacementQuery::empty(),
         };
 
         let args = json!({"behavior": "undeclared_behavior"});
@@ -996,5 +1045,88 @@ mod tests {
             .expect("instance still in roster");
         let frame = instance.tick(&snapshot);
         assert_eq!(frame.behavior, None);
+    }
+
+    /// The payload a caller reads: names, which display, the others, and feet
+    /// already in that display. No subtraction left to do.
+    #[test]
+    fn whereabouts_returns_the_display_and_the_feet_with_nothing_left_to_convert() {
+        use crate::engine::Point;
+
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let frames = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ];
+        let names = [Some("Left".to_string()), None];
+        let spots = [FeetAt {
+            id: "pip".to_string(),
+            name: "Pip".to_string(),
+            at: Point {
+                x: 2000.0,
+                y: 100.0,
+            },
+        }];
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.path().join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &[],
+            expression: None,
+            placement: PlacementQuery {
+                frames: &frames,
+                usable: &frames,
+                names: &names,
+                instances: &spots,
+            },
+        };
+
+        let result = dispatch("whereabouts", json!({}), &mut context).expect("dispatch succeeds");
+
+        assert_eq!(
+            result,
+            json!({
+                "unit": "points",
+                "displays": [
+                    {
+                        "index": 0,
+                        "name": "Left",
+                        "origin_x": 0.0,
+                        "origin_y": 0.0,
+                        "width": 1920.0,
+                        "height": 1080.0
+                    },
+                    {
+                        "index": 1,
+                        "name": null,
+                        "origin_x": 1920.0,
+                        "origin_y": 0.0,
+                        "width": 1920.0,
+                        "height": 1080.0
+                    }
+                ],
+                "instances": [
+                    {
+                        "id": "pip",
+                        "name": "Pip",
+                        "on_display": 1,
+                        "other_displays": [0],
+                        "x": 80.0,
+                        "y": 100.0
+                    }
+                ]
+            })
+        );
     }
 }
