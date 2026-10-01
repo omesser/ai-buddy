@@ -54,7 +54,7 @@ use frame_loop::run_frame_loop;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -332,6 +332,12 @@ struct SettingsState {
     /// navigation finishes. MoveFocus while they differ hangs WebView2.
     settings_built: AtomicU64,
     settings_loaded: AtomicU64,
+    /// When this document started loading. Cleared once navigation finishes.
+    /// An open past the deadline drops the window.
+    loading_since: Mutex<Option<Instant>>,
+    /// Set while a stalled window is being destroyed. The replacement is
+    /// built once `Destroyed` frees the label.
+    rebuild_after_destroy: AtomicBool,
 }
 
 /// How long a hold survives without hearing anything. A backstop: `Closed`
@@ -1402,6 +1408,7 @@ enum SettingsOpen {
     Show,
     Focus,
     FocusAndReload,
+    Rebuild,
 }
 
 /// Side effects of one open, in order. `dispatch_settings` runs this list
@@ -1413,6 +1420,9 @@ enum SettingsEffect {
     Focus,
     Raise,
     Reload,
+    /// Drop the window. Tauri keeps the label until `Destroyed`, so this
+    /// list does not also build. Building before that fails.
+    Destroy,
 }
 
 fn settings_effects(plan: SettingsOpen) -> &'static [SettingsEffect] {
@@ -1431,14 +1441,40 @@ fn settings_effects(plan: SettingsOpen) -> &'static [SettingsEffect] {
             SettingsEffect::Raise,
             SettingsEffect::Reload,
         ],
+        // Focus here would MoveFocus a window that is still loading.
+        SettingsOpen::Rebuild => &[SettingsEffect::Destroy],
     }
 }
 
-/// `reload` is the Chat path. `document_ready` is navigation finished on
-/// this window, not on the about:blank it starts from.
-fn settings_open(exists: bool, reload: bool, document_ready: bool) -> SettingsOpen {
+/// What to run once `Destroyed` has freed the label. A window the user
+/// closed is not built again.
+fn settings_rebuild_effects(rebuild_pending: bool) -> &'static [SettingsEffect] {
+    if rebuild_pending {
+        settings_effects(SettingsOpen::Create)
+    } else {
+        &[]
+    }
+}
+
+/// `reload` is the Chat path. `document_ready` is navigation finished.
+/// `load_stalled` is that load past the deadline. `rebuild_pending` means
+/// destroy has started and this open waits for the label to free.
+fn settings_open(
+    exists: bool,
+    reload: bool,
+    document_ready: bool,
+    load_stalled: bool,
+    rebuild_pending: bool,
+) -> SettingsOpen {
+    if rebuild_pending {
+        // The label stays registered until Destroyed. Building here fails.
+        return SettingsOpen::Show;
+    }
     if !exists {
         return SettingsOpen::Create;
+    }
+    if !document_ready && load_stalled {
+        return SettingsOpen::Rebuild;
     }
     if !document_ready {
         return SettingsOpen::Show;
@@ -1448,6 +1484,36 @@ fn settings_open(exists: bool, reload: bool, document_ready: bool) -> SettingsOp
     } else {
         SettingsOpen::Focus
     }
+}
+
+/// Past this, the next open drops a Settings document that never finished.
+/// Inside it, the open stays a no-op so MoveFocus cannot hang WebView2.
+const SETTINGS_LOAD_TIMEOUT: Duration = Duration::from_secs(15);
+
+fn settings_load_expired(loading_for: Option<Duration>) -> bool {
+    loading_for.is_some_and(|elapsed| elapsed >= SETTINGS_LOAD_TIMEOUT)
+}
+
+fn settings_loading_for(app: &tauri::AppHandle) -> Option<Duration> {
+    let state = app.try_state::<SettingsState>()?;
+    let since = state.loading_since.lock().ok()?;
+    since.map(|started| started.elapsed())
+}
+
+fn settings_rebuild_pending(app: &tauri::AppHandle) -> bool {
+    app.try_state::<SettingsState>()
+        .is_some_and(|state| state.rebuild_after_destroy.load(Ordering::Acquire))
+}
+
+fn arm_settings_rebuild(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<SettingsState>() {
+        state.rebuild_after_destroy.store(true, Ordering::Release);
+    }
+}
+
+fn take_settings_rebuild(app: &tauri::AppHandle) -> bool {
+    app.try_state::<SettingsState>()
+        .is_some_and(|state| state.rebuild_after_destroy.swap(false, Ordering::AcqRel))
 }
 
 fn settings_document_ready(app: &tauri::AppHandle) -> bool {
@@ -1461,9 +1527,13 @@ fn settings_document_ready(app: &tauri::AppHandle) -> bool {
 /// Start a Settings document. The page-load handler passes this generation
 /// back, so a completion from an older window cannot mark the new one ready.
 fn begin_settings_document(app: &tauri::AppHandle) -> u64 {
-    app.try_state::<SettingsState>()
-        .map(|state| state.settings_built.fetch_add(1, Ordering::AcqRel) + 1)
-        .unwrap_or(0)
+    let Some(state) = app.try_state::<SettingsState>() else {
+        return 0;
+    };
+    if let Ok(mut since) = state.loading_since.lock() {
+        *since = Some(Instant::now());
+    }
+    state.settings_built.fetch_add(1, Ordering::AcqRel) + 1
 }
 
 fn finish_settings_document(app: &tauri::AppHandle, generation: u64) {
@@ -1472,6 +1542,9 @@ fn finish_settings_document(app: &tauri::AppHandle, generation: u64) {
     };
     if state.settings_built.load(Ordering::Acquire) == generation {
         state.settings_loaded.store(generation, Ordering::Release);
+        if let Ok(mut since) = state.loading_since.lock() {
+            *since = None;
+        }
     }
 }
 
@@ -1535,42 +1608,83 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
         let existing = handle.get_webview_window("settings");
-        let plan = settings_open(existing.is_some(), reload, settings_document_ready(&handle));
-        let mut window = existing;
-        for effect in settings_effects(plan) {
-            match effect {
-                SettingsEffect::Build => {
-                    let generation = begin_settings_document(&handle);
-                    match build_settings(&handle, generation) {
-                        Ok(built) => window = Some(built),
-                        Err(why) => {
-                            eprintln!("settings webview: {why}");
-                            return;
-                        }
-                    }
-                }
-                SettingsEffect::Unminimize => {
-                    if let Some(window) = &window {
-                        let _ = window.unminimize();
-                    }
-                }
-                SettingsEffect::Focus => {
-                    if let Some(window) = &window {
-                        let _ = window.set_focus();
-                    }
-                }
-                SettingsEffect::Raise => {
-                    if let Some(window) = &window {
-                        if let Err(why) = platform::raise_above_overlay(window) {
-                            eprintln!("settings webview raise: {why}");
-                        }
-                    }
-                }
-                SettingsEffect::Reload => platform::refresh_settings(&handle),
-            }
-        }
+        let ready = settings_document_ready(&handle);
+        let plan = settings_open(
+            existing.is_some(),
+            reload,
+            ready,
+            settings_load_expired(settings_loading_for(&handle)),
+            settings_rebuild_pending(&handle),
+        );
+        apply_settings_effects(&handle, existing, settings_effects(plan));
     }) {
         eprintln!("settings webview: {why}");
+    }
+}
+
+fn apply_settings_effects(
+    handle: &tauri::AppHandle,
+    mut window: Option<tauri::WebviewWindow>,
+    effects: &[SettingsEffect],
+) {
+    for effect in effects {
+        match effect {
+            SettingsEffect::Build => {
+                let generation = begin_settings_document(handle);
+                match build_settings(handle, generation) {
+                    Ok(built) => window = Some(built),
+                    Err(why) => {
+                        eprintln!("settings webview: {why}");
+                        return;
+                    }
+                }
+            }
+            SettingsEffect::Unminimize => {
+                if let Some(window) = &window {
+                    let _ = window.unminimize();
+                }
+            }
+            SettingsEffect::Focus => {
+                if let Some(window) = &window {
+                    let _ = window.set_focus();
+                }
+            }
+            SettingsEffect::Raise => {
+                if let Some(window) = &window {
+                    if let Err(why) = platform::raise_above_overlay(window) {
+                        eprintln!("settings webview raise: {why}");
+                    }
+                }
+            }
+            SettingsEffect::Reload => platform::refresh_settings(handle),
+            SettingsEffect::Destroy => {
+                let Some(open) = window.take() else {
+                    return;
+                };
+                arm_settings_rebuild(handle);
+                let app = handle.clone();
+                open.on_window_event(move |event| {
+                    if !matches!(event, tauri::WindowEvent::Destroyed) {
+                        return;
+                    }
+                    let next = settings_rebuild_effects(take_settings_rebuild(&app));
+                    if next.is_empty() {
+                        return;
+                    }
+                    apply_settings_effects(&app, None, next);
+                });
+                // Controller::Close before the HWND, same order as quit.
+                if let Err(why) = tauri::Webview::close(open.as_ref()) {
+                    eprintln!("settings webview close: {why}");
+                    let _ = take_settings_rebuild(handle);
+                    return;
+                }
+                if let Err(why) = open.destroy() {
+                    eprintln!("settings webview destroy: {why}");
+                    let _ = take_settings_rebuild(handle);
+                }
+            }
+        }
     }
 }
 
@@ -4213,6 +4327,8 @@ fn main() {
                 reveal: Mutex::new(None),
                 settings_built: AtomicU64::new(0),
                 settings_loaded: AtomicU64::new(0),
+                loading_since: Mutex::new(None),
+                rebuild_after_destroy: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&rules));
 
@@ -5456,16 +5572,16 @@ mod tests {
     #[test]
     fn a_menu_open_after_chat_does_not_focus_settings_still_loading() {
         assert_eq!(
-            settings_effects(settings_open(false, true, false)),
+            settings_effects(settings_open(false, true, false, false, false)),
             &[SettingsEffect::Build, SettingsEffect::Raise],
             "Chat's first open builds the window and does not emit into it"
         );
         assert!(
-            settings_effects(settings_open(true, false, false)).is_empty(),
+            settings_effects(settings_open(true, false, false, false, false)).is_empty(),
             "the context menu must not raise or MoveFocus that window yet"
         );
         assert_eq!(
-            settings_effects(settings_open(true, false, true)),
+            settings_effects(settings_open(true, false, true, false, false)),
             &[
                 SettingsEffect::Unminimize,
                 SettingsEffect::Focus,
@@ -5480,11 +5596,12 @@ mod tests {
     #[test]
     fn chat_reloads_settings_only_after_the_document_has_loaded() {
         assert!(
-            !settings_effects(settings_open(true, true, false)).contains(&SettingsEffect::Reload),
+            !settings_effects(settings_open(true, true, false, false, false))
+                .contains(&SettingsEffect::Reload),
             "emitting settings-refresh before navigation leaves the page blank"
         );
         assert_eq!(
-            settings_effects(settings_open(true, true, true)),
+            settings_effects(settings_open(true, true, true, false, false)),
             &[
                 SettingsEffect::Unminimize,
                 SettingsEffect::Focus,
@@ -5492,6 +5609,66 @@ mod tests {
                 SettingsEffect::Reload,
             ],
             "an open page reloads so the reveal lands"
+        );
+    }
+
+    /// A load that never finishes makes every later open a no-op, and the
+    /// window stays up until the process is killed.
+    #[test]
+    fn a_stalled_settings_load_is_not_a_permanent_no_op() {
+        assert!(
+            settings_effects(settings_open(true, false, false, false, false)).is_empty(),
+            "inside the deadline an open still must not MoveFocus"
+        );
+        assert_ne!(
+            settings_open(true, false, false, true, false),
+            settings_open(true, false, false, false, false),
+            "past the deadline the open is not the same no-op as a load still inside the deadline"
+        );
+        assert_eq!(
+            settings_effects(settings_open(true, false, false, true, false)),
+            &[SettingsEffect::Destroy],
+            "past the deadline the open destroys the stuck window and does not MoveFocus it"
+        );
+        assert!(
+            settings_effects(settings_open(false, false, false, true, true)).is_empty(),
+            "an open while that destroy is in flight does not build into a label Tauri still holds"
+        );
+        assert_eq!(
+            settings_open(true, false, true, true, false),
+            SettingsOpen::Focus,
+            "a document that has finished is focused, even if the clock is still set"
+        );
+        assert_eq!(
+            settings_open(false, false, false, true, false),
+            SettingsOpen::Create,
+            "with no window, a stalled flag is a create and not a destroy"
+        );
+        assert_eq!(
+            settings_rebuild_effects(true),
+            &[SettingsEffect::Build, SettingsEffect::Raise],
+            "when the label frees, the replacement is a new window and still not a Focus"
+        );
+        assert!(
+            settings_rebuild_effects(false).is_empty(),
+            "a window the user closed is not built again"
+        );
+    }
+
+    #[test]
+    fn a_settings_load_inside_the_deadline_is_not_stalled() {
+        let inside = SETTINGS_LOAD_TIMEOUT.saturating_sub(Duration::from_millis(1));
+        assert!(
+            !settings_load_expired(Some(inside)),
+            "a load still inside the deadline is left alone"
+        );
+        assert!(
+            settings_load_expired(Some(SETTINGS_LOAD_TIMEOUT)),
+            "a load that has reached the deadline is stalled"
+        );
+        assert!(
+            !settings_load_expired(None),
+            "a missing clock is not a stall, so a healthy open is not destroyed"
         );
     }
 
