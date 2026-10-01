@@ -154,13 +154,13 @@ async function withChat(run, { rejectHarness = false } = {}) {
 
   try {
     let wsUrl = null;
+    const href = pathToFileURL(page).href;
     for (let i = 0; i < 50 && !wsUrl; i++) {
       try {
         const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-        wsUrl = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl)?.webSocketDebuggerUrl;
-      } catch {
-        await sleep(100);
-      }
+        wsUrl = pages.find((item) => item.type === "page" && item.url === href)?.webSocketDebuggerUrl;
+      } catch {}
+      if (!wsUrl) await sleep(100);
     }
     assert.ok(wsUrl, "Chrome did not open a debuggable page");
 
@@ -190,13 +190,15 @@ async function withChat(run, { rejectHarness = false } = {}) {
       return msg.result?.result?.value;
     };
 
-    await evalJs(`new Promise((resolve) => {
-      const wait = () => {
-        if (window.__handlers?.["chat-opening"] && !document.getElementById("empty").hidden) resolve();
-        else setTimeout(wait, 20);
-      };
-      wait();
-    })`);
+    // A navigation swaps the document under a long-lived wait, so poll instead.
+    const ready = `!!(window.__reveal && window.__handlers?.["chat-opening"] && document.getElementById("empty")?.hidden === false)`;
+    let loaded = false;
+    for (let i = 0; i < 100 && !loaded; i++) {
+      const msg = await send("Runtime.evaluate", { expression: ready, returnByValue: true });
+      loaded = msg.result?.result?.value === true;
+      if (!loaded) await sleep(50);
+    }
+    assert.ok(loaded, "chat.html never finished loading");
 
     try {
       await run({ send, evalJs });
