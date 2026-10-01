@@ -32,11 +32,9 @@ pub struct SnapshotAssembler<S> {
     /// A ride needs the frame rate; sitting and sleeping do not. The Shell
     /// flips this from the last Frame.
     fast: bool,
-    /// Set by `detach_poll`. The tick copies `published` and does not read.
     side: Option<SidePoll>,
 }
 
-/// The side thread's wait, and the sample the tick copies.
 struct SidePoll {
     state: Arc<PollState>,
     published: Arc<Mutex<Published>>,
@@ -226,9 +224,7 @@ impl<S> Drop for SnapshotAssembler<S> {
     }
 }
 
-/// When the next side-thread poll starts. The read's own time, and a sleep
-/// that returns late, come off the next wait. Leaving that lateness on every
-/// period is the 55 Hz ride.
+/// Counts as a moving tick, so a late return shortens the next wait.
 fn next_poll_at(interval: Duration, deadline: Instant, woke: Instant, now: Instant) -> Instant {
     crate::scheduler::next_tick(interval, deadline, woke, now, true)
 }
@@ -254,9 +250,9 @@ fn poll_beside_the_tick<S: WindowSource>(
                     break false;
                 }
                 let remaining = deadline - now;
-                // A kernel timeout shorter than one frame returns late enough
-                // that the deadline is already a tick stale, so the ride never
-                // gets that lateness back. Only that slack spins; idle still sleeps.
+                // A kernel sleep this short returns about 48 ms late on the
+                // Actions macOS runner, past one tick, so the deadline stays stale.
+                // Only this slack spins. An idle wait still sleeps.
                 if remaining <= RIDE_POLL_INTERVAL {
                     drop(interval);
                     spin_until(deadline, &state);
@@ -672,9 +668,6 @@ mod tests {
         assert_eq!(polls, 62, "one poll per 16ms tick");
     }
 
-    /// A ~7 ms read leaves a short sleep, and that sleep returns about a quarter
-    /// late. The next wait is counted from the deadline, so the lateness comes
-    /// off it instead of stretching every period out to 55 Hz.
     #[test]
     fn a_seven_millisecond_poll_stays_on_the_frame_cadence_when_sleep_runs_late() {
         let polls = paced_polls(Duration::from_millis(7));
@@ -689,8 +682,6 @@ mod tests {
         );
     }
 
-    /// The tick copies the last finished sample. A read that has not returned
-    /// is not a new generation, and the tick does not start a second one.
     #[test]
     fn a_riding_tick_does_not_wait_on_the_window_poll() {
         let calls = Arc::new(AtomicUsize::new(0));
@@ -751,8 +742,6 @@ mod tests {
         );
     }
 
-    /// Entering a ride wakes the side thread. Waiting out the rest of the idle
-    /// interval would be one more slow sample before the sprite moves.
     #[test]
     fn a_ride_reads_at_once_instead_of_finishing_the_idle_wait() {
         let calls = Arc::new(AtomicUsize::new(0));
@@ -779,9 +768,9 @@ mod tests {
         );
     }
 
-    /// Each read takes 6 ms and the next one is still due 16 ms after the last
-    /// start. Sleeping a whole interval after the read would leave a 22 ms gap.
-    /// The 6 ms is burned, not slept: a short sleep is quantized past one frame.
+    /// The 6 ms is a spin, not `thread::sleep`. On the Actions macOS runner a
+    /// short sleep returns about 48 ms late. Sleeping a whole extra interval
+    /// after the read leaves a 22 ms gap on a precise clock.
     #[test]
     fn a_slow_ride_poll_still_starts_once_per_frame() {
         let stamps = Arc::new(Mutex::new(Vec::new()));
@@ -808,8 +797,6 @@ mod tests {
         );
     }
 
-    /// Until a ride, the side thread stays on the idle poll. A 16 ms loop
-    /// would show up here as a much shorter gap.
     #[test]
     fn a_detached_poll_keeps_the_idle_interval_until_a_ride() {
         let stamps = Arc::new(Mutex::new(Vec::new()));
@@ -1292,8 +1279,6 @@ mod tests {
         requested + over.min(Duration::from_millis(5))
     }
 
-    /// The side thread's steady ride: one read, then `next_poll_at`, and the
-    /// sleep returns late by `late_sleep`.
     fn paced_polls(work: Duration) -> u32 {
         let start = Instant::now();
         let woke = start;
@@ -1312,8 +1297,6 @@ mod tests {
         polls
     }
 
-    /// Sleep the rest of the interval after the read, and keep whatever the
-    /// sleep added. No deadline, so every period grows by the overshoot.
     fn remainder_sleep_polls(work: Duration) -> u32 {
         let start = Instant::now();
         let mut now = start;
