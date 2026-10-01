@@ -408,7 +408,9 @@ A session wake is reactive (the user addressed the character: Poke, Throw, Grab
 start, landing on a Perch, Summon, a chat turn) or proactive (exponential
 backoff whose `model_base` and `model_power` the Character Manifest names).
 It does not run on a fixed interval, and it does not run while the display
-is asleep. The first proactive model call waits two minutes.
+is asleep. The first proactive model call waits two minutes. A Poke wakes it
+once the OS double-click interval passes with no second click, so a
+double-click wakes it once, as a Summon.
 
 A proposal is advisory. The Engine may refuse it if the proposed Behavior is unknown,
 disallowed in the current State, or would repeat a recently played Behavior. Recent

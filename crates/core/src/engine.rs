@@ -196,8 +196,8 @@ pub struct Frame {
     /// horizontal travel turns it, so a stop keeps the last heading and the
     /// renderer can mirror the art by it without flicker at rest.
     pub facing: f64,
-    /// Whether the user addressed the character this tick: a Poke, a Summon, a
-    /// Menu or a Dwell. The Shell wakes the session Director from this bit.
+    /// Whether the user addressed the character this tick: a Summon, a Menu or a
+    /// Dwell. The Shell wakes the session Director from this bit and a settled Poke.
     pub addressed: bool,
     /// The cue this interaction earned, if one landed. A one-tick pulse like
     /// `dialogue`, and at most one a tick — the precedence is in `tick`.
@@ -1060,13 +1060,13 @@ impl Engine {
             }
             started |= self.play(&[Primitive::React]);
         }
-        // A click is how the user tests the Director, and a Summon or a Menu
-        // is the same reach for the sprite. Dwell sets the same bit; the Shell
-        // reads one field for all of them.
+        // A Summon or a Menu is the user reaching for the sprite. A Poke is
+        // not, yet: it may be the first half of a Summon, so the Shell
+        // addresses it once the Pointer knows. Dwell sets the same bit.
         addressed |= snapshot
             .verbs
             .iter()
-            .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Menu));
+            .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
 
         // One cue a tick, and a hand transition outranks a click: the verb that shares a tick with a pickup or a drop is the incidental one.
         // Among the click verbs the first is taken: two clicks cannot land inside one tick.
@@ -3291,11 +3291,10 @@ mod tests {
         );
     }
 
-    /// A click is a Poke, and a Poke addresses the Director. That is how
-    /// the user tests the session: react on screen, and a reactive wake.
-    /// Dwell is the other addressing path; a click must not wait for it.
+    /// A Poke reacts on screen at once and leaves the Director to the Shell,
+    /// which wakes it only once no second click can make the pair a Summon.
     #[test]
-    fn a_poke_addresses_the_director() {
+    fn a_poke_reacts_without_addressing_the_director() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
         settle(&mut engine, &snapshot(100));
 
@@ -3303,10 +3302,7 @@ mod tests {
             verbs: vec![Verb::Poke],
             ..snapshot(100)
         });
-        assert!(
-            poked.addressed,
-            "the Shell wakes the session from Frame.addressed"
-        );
+        assert!(!poked.addressed, "the Shell addresses a settled Poke");
         assert_eq!(poked.animation, "react");
     }
 
@@ -3659,10 +3655,6 @@ mod tests {
             ..a_long_perch()
         });
         assert_eq!(poked.animation, "react");
-        assert!(
-            poked.addressed,
-            "a click mid-stroll still tests the Director"
-        );
         assert_eq!(poked.velocity.x, 0.0, "the click stops the feet");
 
         let held: Vec<Frame> = (0..24).map(|_| engine.tick(&a_long_perch())).collect();
