@@ -10,9 +10,11 @@
 
 </div>
 
-# Fidget walks your window tops, naps, and flies when you throw it
+# Fidget keeps you company while you work or study. It walks, talks, naps and can assist in whatever you are up to
 
-Pick it up and throw it. It walks the top edge of your windows, naps, and arcs across the screen when you let go. No account and no key: offline, it is already a complete toy. Each character has a personality and a life of its own.
+An embodied AI that lives on your desktop. Pick it up, throw it around, let it nap, talk to it, or ask it to do anything that an AI harness can do (which is a lot)! It's a virtual manifestation of your favorite AI model and harness, with all of its capabilities.
+
+Each character has a personality and a life of its own.
 
 An AI harness is optional. Attach the one you already use and it can talk and pitch in with tools; leave it off and the pet still works. It never reads your screen and [never takes screenshots](#computer-use).
 
