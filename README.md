@@ -101,7 +101,7 @@ Buddy Bot is the default. Eight Characters ship; each moves and speaks different
 <td align="center" width="25%"><img src="./docs/readme/jotaro-kujo-react.gif" height="96" alt="Jotaro Kujo" /><br><b><a href="./characters/jotaro-kujo/personality.txt">Jotaro Kujo</a></b><br><sub>Terse, perpetually bored, tougher than he lets on.</sub></td>
 <td align="center" width="25%"><img src="./docs/readme/nim-sleep.gif" height="96" alt="Nim" /><br><b><a href="./characters/nim/personality.txt">Nim</a></b><br><sub>Sleeps eleven hours a day. Soft-spoken.</sub></td>
 <td align="center" width="25%"><img src="./docs/readme/timber-wolf-walk.gif" height="96" alt="Timber Wolf" /><br><b><a href="./characters/timber-wolf/personality.txt">Timber Wolf</a></b><br><sub>Patrol mech. Clan warriors don't waste words.</sub></td>
-<td align="center" width="25%"><img src="./docs/readme/trump-talk.gif" height="96" alt="Trump" /><br><b><a href="./characters/trump/personality.txt">Trump</a></b><br><sub>The desktop is his rally. Bombastic.</sub></td>
+<td align="center" width="25%"><img src="./docs/readme/trump-wave.gif" height="96" alt="Trump" /><br><b><a href="./characters/trump/personality.txt">Trump</a></b><br><sub>The desktop is his rally. Bombastic.</sub></td>
 </tr>
 </table>
 
