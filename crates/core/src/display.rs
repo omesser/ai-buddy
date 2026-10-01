@@ -4,7 +4,7 @@
 //! not provide a native display id.
 
 use crate::engine::Point;
-use crate::overlay::bubble_owner;
+use crate::overlay::stands_on;
 use crate::window_source::Rect;
 
 /// One connected display, in platform enumeration order.
@@ -95,13 +95,18 @@ impl Whereabouts {
     /// One line for a session prompt.
     pub fn prompt_line(&self) -> String {
         match self.placement() {
-            Some(place) => format!(
-                "displays: {}; on display: {}; placement: ({}, {})",
-                self.displays.len(),
-                place.index(),
-                place.x(),
-                place.y()
-            ),
+            Some(place) => {
+                let frame = self.displays[place.index()].frame();
+                format!(
+                    "displays: {}; on display: {}; placement: ({}, {}); frame: {}x{}",
+                    self.displays.len(),
+                    place.index(),
+                    place.x(),
+                    place.y(),
+                    frame.width,
+                    frame.height
+                )
+            }
             None => format!(
                 "displays: {}; on display: none; placement: none",
                 self.displays.len()
@@ -111,19 +116,21 @@ impl Whereabouts {
 
     /// Where `feet` are among `frames`.
     pub fn locate(feet: Point, frames: &[Rect], usable: &[Rect]) -> Self {
-        // `bubble_owner` names the display under the feet, not `display_index_for`.
-        // Nearest display names a display the feet are not on.
-        let place = match bubble_owner((feet.x, feet.y), frames) {
-            Some(index) => {
-                let frame = frames[index];
+        // `stands_on`, not `bubble_owner` or the nearest display. The bubble seam
+        // belongs to the display below, and nearest names a display the feet miss.
+        // The art hangs above the feet, so this floor belongs to the display under them.
+        let place = frames
+            .iter()
+            .enumerate()
+            .find(|(_, frame)| stands_on((feet.x, feet.y), frame))
+            .map(|(index, frame)| {
                 Place::On(Placement {
                     index,
                     x: feet.x - frame.x,
                     y: feet.y - frame.y,
                 })
-            }
-            None => Place::Off,
-        };
+            })
+            .unwrap_or(Place::Off);
         let displays = frames
             .iter()
             .enumerate()
@@ -164,12 +171,12 @@ mod tests {
         assert_eq!(here.displays().len(), 1);
         assert_eq!(
             here.prompt_line(),
-            "displays: 1; on display: 0; placement: (100, 200)"
+            "displays: 1; on display: 0; placement: (100, 200); frame: 1920x1080"
         );
     }
 
     #[test]
-    fn a_seam_with_a_display_below_belongs_to_the_lower_one() {
+    fn a_stacked_floor_belongs_to_the_display_above_the_seam() {
         let frames = [
             frame(0.0, 0.0, 1920.0, 1080.0),
             frame(0.0, 1080.0, 1920.0, 1080.0),
@@ -183,9 +190,10 @@ mod tests {
             &frames,
         );
 
-        assert_eq!(here.current().map(Display::index), Some(1));
-        let place = here.placement().expect("on the lower display");
-        assert_eq!(place.y(), 0.0);
+        assert_eq!(here.current().map(Display::index), Some(0));
+        let place = here.placement().expect("on the upper display");
+        assert_eq!(place.x(), 960.0);
+        assert_eq!(place.y(), 1080.0);
     }
 
     #[test]
@@ -222,7 +230,7 @@ mod tests {
         assert_eq!(place.y(), 100.0);
         assert_eq!(
             here.prompt_line(),
-            "displays: 2; on display: 1; placement: (80, 100)"
+            "displays: 2; on display: 1; placement: (80, 100); frame: 1920x1080"
         );
     }
 

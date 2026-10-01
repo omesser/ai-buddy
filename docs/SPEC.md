@@ -320,10 +320,11 @@ the app runs gains or loses its overlay without a restart.
 An Instance reports which display it is on as the index of that display in the
 current arrangement, and its placement as its feet in that display's full frame.
 The origin is the frame's top-left. Y grows downward. The units are logical
-points. The index lasts for one arrangement. macOS does not keep
-CGDirectDisplayID, Windows does not keep HMONITOR, and Linux does not keep the
-GDK monitor. A display attached or removed is in the next successful read.
-Wayland with no X server does not refresh the list.
+points. The index lasts for one arrangement. Index 0 is whichever monitor
+the platform listed first. macOS does not keep CGDirectDisplayID, Windows does
+not keep HMONITOR, and Linux does not keep the GDK monitor. A display attached
+or removed is in the next successful read. Wayland with no X server does not
+refresh the list.
 
 Every overlay is told where the sprite is, in its own coordinates, and each draws the
 part that falls inside it. A Character straddling a seam is therefore whole: the two

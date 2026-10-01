@@ -180,17 +180,17 @@ impl Slots {
         self.wake_sending(id, director, context, None)
     }
 
-    /// Send `prompt` for `id`. Newest-wins, except where ADR-0016 keeps the
-    /// wake on the wire: mid-answer, an ambient tick, or a Summon over a reply
-    /// still generating. The return says whether this one started.
+    /// Append `line` to the Director's prompt and send it. Newest-wins, except
+    /// where ADR-0016 keeps the wake on the wire: mid-answer, an ambient tick,
+    /// or a Summon over a reply still generating. The return says whether it started.
     pub fn wake_with_prompt<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,
         director: Arc<ModelDirector<C>>,
         context: Context,
-        prompt: String,
+        line: String,
     ) -> Woke {
-        self.wake_sending(id, director, context, Some(prompt))
+        self.wake_sending(id, director, context, Some(line))
     }
 
     fn wake_sending<C: Completer + Send + Sync + 'static>(
@@ -198,7 +198,7 @@ impl Slots {
         id: &InstanceId,
         director: Arc<ModelDirector<C>>,
         context: Context,
-        prompt: Option<String>,
+        line: Option<String>,
     ) -> Woke {
         let claim = director::claim(&context.happened);
         let reactive = claim != Claim::Ambient;
@@ -234,10 +234,13 @@ impl Slots {
             // Always send. A panic here would leave the slot waiting forever
             // and skip StaticDirector on every later tick.
             let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let woken = match prompt {
-                    Some(prompt) => {
+                let woken = match line {
+                    Some(line) => {
                         let mut request = director.request(&context);
-                        request.prompt = prompt;
+                        if !request.prompt.ends_with('\n') {
+                            request.prompt.push('\n');
+                        }
+                        request.prompt.push_str(&line);
                         director.wake_request(request)
                     }
                     None => director.wake_and_near_miss(&context),
@@ -581,7 +584,7 @@ pub(crate) mod tests {
         ))
     }
 
-    /// The worker builds a prompt of its own unless the shell passes the finished one.
+    /// The worker builds the prompt, then appends the display line.
     #[test]
     fn a_finished_prompt_is_the_one_the_completer_receives() {
         struct Noted {
@@ -607,13 +610,24 @@ pub(crate) mod tests {
             false,
         ));
         let mut slots = Slots::new();
-        let finished =
-            "what just happened: time passed\ndisplays: 1; on display: 0; placement: (100, 200)";
+        let line = "displays: 1; on display: 0; placement: (100, 200); frame: 1920x1080";
 
-        slots.wake_with_prompt(&id, director, wake_context(), finished.to_string());
+        slots.wake_with_prompt(&id, director, wake_context(), line.to_string());
 
         assert!(polled(&mut slots, &id).is_some(), "the wake answers");
-        assert_eq!(prompt.lock().expect("prompt lock").as_str(), finished);
+        let got = prompt.lock().expect("prompt lock").clone();
+        assert!(
+            got.ends_with(line),
+            "the display line has to ride on the prompt, got {got}"
+        );
+        assert!(
+            got.contains("what just happened: time passed\n"),
+            "the Director's prompt has to survive, got {got}"
+        );
+        assert!(
+            got.contains("standing on: nothing\n"),
+            "standing has to survive, got {got}"
+        );
     }
 
     /// A registry with a call already out for `id`, long enough to still be
