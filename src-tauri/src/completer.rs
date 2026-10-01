@@ -169,10 +169,7 @@ impl Slots {
         Self::default()
     }
 
-    /// Send this Character Prompt for `id`. Newest-wins, except where ADR-0016
-    /// keeps the wake on the wire: mid-answer, an ambient tick, or a Summon
-    /// over a reply still generating. The return says whether this one started.
-    // Tests let the Director build the prompt. The frame loop finishes its own.
+    /// Tests let the Director build the prompt. The frame loop passes its own.
     #[cfg(test)]
     pub fn wake<C: Completer + Send + Sync + 'static>(
         &mut self,
@@ -183,7 +180,9 @@ impl Slots {
         self.wake_sending(id, director, context, None)
     }
 
-    /// Send `prompt` as the user turn. The shell has already finished it.
+    /// Send `prompt` for `id`. Newest-wins, except where ADR-0016 keeps the
+    /// wake on the wire: mid-answer, an ambient tick, or a Summon over a reply
+    /// still generating. The return says whether this one started.
     pub fn wake_with_prompt<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,

@@ -317,15 +317,13 @@ two of them on only one, so a union-sized overlay is invisible on every display 
 one it belongs to. The set follows the desktop, so a display attached or removed while
 the app runs gains or loses its overlay without a restart.
 
-Which display an Instance is on, and where its feet sit in that display, is
-`Whereabouts` in `crates/core/src/display.rs`. Identity is the index in the list
-`read_displays` last returned. Tauri's Monitor has no native id. macOS does not
-keep CGDirectDisplayID, Windows does not keep HMONITOR, and Linux does not keep
-the GDK monitor. The index lasts for one arrangement. Placement is the feet in
-that display's full frame. The origin is the frame's top-left. Y grows downward.
-The units are logical points. The list updates on the next successful
-`read_displays`. Wayland with no X server still does not refresh the display
-cache.
+An Instance reports which display it is on as the index of that display in the
+current arrangement, and its placement as its feet in that display's full frame.
+The origin is the frame's top-left. Y grows downward. The units are logical
+points. The index lasts for one arrangement. macOS does not keep
+CGDirectDisplayID, Windows does not keep HMONITOR, and Linux does not keep the
+GDK monitor. A display attached or removed is in the next successful read.
+Wayland with no X server does not refresh the list.
 
 Every overlay is told where the sprite is, in its own coordinates, and each draws the
 part that falls inside it. A Character straddling a seam is therefore whole: the two

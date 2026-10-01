@@ -1,10 +1,7 @@
 //! Which display an Instance is on, and where its feet sit in that display.
 //!
-//! Identity is the index in the list `read_displays` last returned. Tauri's
-//! Monitor has no native id. macOS does not keep CGDirectDisplayID, Windows
-//! does not keep HMONITOR, and Linux does not keep the GDK monitor. The index
-//! lasts for one arrangement. The next successful `read_displays` replaces the
-//! list. Wayland with no X server still does not refresh the display cache.
+//! The id is the index in the current arrangement. The windowing layer does
+//! not provide a native display id.
 
 use crate::engine::Point;
 use crate::overlay::bubble_owner;
@@ -12,13 +9,13 @@ use crate::window_source::Rect;
 
 /// One connected display, in platform enumeration order.
 #[derive(Clone, Copy, Debug)]
-pub struct Screen {
+pub struct Display {
     index: usize,
     frame: Rect,
     usable: Rect,
 }
 
-impl Screen {
+impl Display {
     /// Where this display sits in the enumeration.
     pub fn index(&self) -> usize {
         self.index
@@ -63,7 +60,7 @@ impl Placement {
 /// What one Instance can report about the desktop right now.
 #[derive(Clone, Debug)]
 pub struct Whereabouts {
-    displays: Vec<Screen>,
+    displays: Vec<Display>,
     place: Place,
 }
 
@@ -75,12 +72,12 @@ enum Place {
 
 impl Whereabouts {
     /// Connected displays, in enumeration order.
-    pub fn displays(&self) -> &[Screen] {
+    pub fn displays(&self) -> &[Display] {
         &self.displays
     }
 
     /// The display under the feet, when there is one.
-    pub fn current(&self) -> Option<&Screen> {
+    pub fn current(&self) -> Option<&Display> {
         match self.place {
             Place::On(placement) => Some(&self.displays[placement.index]),
             Place::Off => None,
@@ -130,7 +127,7 @@ impl Whereabouts {
         let displays = frames
             .iter()
             .enumerate()
-            .map(|(index, frame)| Screen {
+            .map(|(index, frame)| Display {
                 index,
                 frame: *frame,
                 usable: usable.get(index).copied().unwrap_or(*frame),
@@ -160,7 +157,7 @@ mod tests {
         let frames = [frame(0.0, 0.0, 1920.0, 1080.0)];
         let here = Whereabouts::locate(Point { x: 100.0, y: 200.0 }, &frames, &frames);
 
-        assert_eq!(here.current().map(Screen::index), Some(0));
+        assert_eq!(here.current().map(Display::index), Some(0));
         let place = here.placement().expect("on the only display");
         assert_eq!(place.x(), 100.0);
         assert_eq!(place.y(), 200.0);
@@ -186,7 +183,7 @@ mod tests {
             &frames,
         );
 
-        assert_eq!(here.current().map(Screen::index), Some(1));
+        assert_eq!(here.current().map(Display::index), Some(1));
         let place = here.placement().expect("on the lower display");
         assert_eq!(place.y(), 0.0);
     }
@@ -196,7 +193,7 @@ mod tests {
         let frames = [frame(0.0, 0.0, 1920.0, 1080.0)];
         let here = Whereabouts::locate(Point { x: 10.0, y: 1080.0 }, &frames, &frames);
 
-        assert_eq!(here.current().map(Screen::index), Some(0));
+        assert_eq!(here.current().map(Display::index), Some(0));
         let place = here.placement().expect("still on the display");
         assert_eq!(place.y(), 1080.0);
     }
@@ -218,7 +215,7 @@ mod tests {
 
         assert_eq!(here.displays().len(), 2);
         assert_eq!(here.displays()[1].frame().x, 1920.0);
-        assert_eq!(here.current().map(Screen::index), Some(1));
+        assert_eq!(here.current().map(Display::index), Some(1));
         let place = here.placement().expect("on the right display");
         assert_eq!(place.index(), 1);
         assert_eq!(place.x(), 80.0);
@@ -242,7 +239,7 @@ mod tests {
         let here = Whereabouts::locate(feet, &frames, &frames);
 
         assert_eq!(here.displays().len(), 2);
-        assert_eq!(here.current().map(Screen::index), None);
+        assert_eq!(here.current().map(Display::index), None);
         assert_eq!(here.placement().map(|place| place.index()), None);
         assert_eq!(
             here.prompt_line(),
@@ -252,7 +249,7 @@ mod tests {
         let first_only = [frames[0]];
         let later = Whereabouts::locate(feet, &first_only, &first_only);
         assert_eq!(later.displays().len(), 1);
-        assert_eq!(later.current().map(Screen::index), None);
+        assert_eq!(later.current().map(Display::index), None);
         assert_eq!(later.placement().map(|place| place.x()), None);
     }
 
@@ -302,7 +299,7 @@ mod tests {
         let here = Whereabouts::locate(Point { x: 10.0, y: 10.0 }, &[], &[]);
 
         assert_eq!(here.displays().len(), 0);
-        assert_eq!(here.current().map(Screen::index), None);
+        assert_eq!(here.current().map(Display::index), None);
         assert_eq!(here.placement().map(|place| place.index()), None);
         assert_eq!(
             here.prompt_line(),
