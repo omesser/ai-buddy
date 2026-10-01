@@ -1,6 +1,5 @@
-// A branded Harness button lives in the scrolling log. A click focuses it, and
-// the session note that follows the pick calls the same scroll-to-latest path
-// as any other line, so the landing status leaves the top. Drives src/chat.html.
+// A branded connect leaves the landing status at the top of the log.
+// Drives src/chat.html.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -70,7 +69,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function withChat(run) {
+async function withChat(run, { rejectHarness = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "chat-connect-scroll-"));
   const page = join(dir, "harness.html");
   const stub = `
@@ -83,7 +82,9 @@ async function withChat(run) {
       invoke(name, args) {
         window.__invoked.push({ name, args });
         if (name === "chat_opening") return Promise.resolve(${JSON.stringify(unconfigured)});
-        if (name === "select_harness") return Promise.resolve("ok");
+        if (name === "select_harness") {
+          return ${rejectHarness ? 'Promise.reject("unknown Harness preset: grok")' : 'Promise.resolve("ok")'};
+        }
         return Promise.resolve();
       },
     },
@@ -101,12 +102,16 @@ async function withChat(run) {
     const active = document.activeElement;
     const logBox = log.getBoundingClientRect();
     const titleBox = title.getBoundingClientRect();
+    const note = log.querySelector(".note:last-of-type");
+    const noteBox = note?.getBoundingClientRect();
     return {
       scrollTop: log.scrollTop,
       title: title.textContent,
       titleInView: titleBox.top >= logBox.top - 1 && titleBox.top < logBox.bottom,
       active: active?.dataset?.harness || active?.id || active?.tagName,
       invoked: window.__invoked.map((call) => call.name),
+      note: note?.textContent ?? "",
+      noteInView: Boolean(noteBox && noteBox.top >= logBox.top - 1 && noteBox.bottom <= logBox.bottom + 1),
     };
   };
   window.__reveal = (harness) => {
@@ -243,4 +248,31 @@ test("a branded connect keeps the landing status at the top", { skip, timeout: 6
     const followed = await evalJs("window.__snap()");
     assert.ok(followed.scrollTop > 0, `a later line stayed pinned at ${followed.scrollTop}`);
   });
+});
+
+test("a branded connect the Shell refuses shows its error", { skip, timeout: 60000 }, async () => {
+  await withChat(
+    async ({ send, evalJs }) => {
+      const place = await evalJs(`window.__reveal("grok")`);
+      await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: place.x,
+        y: place.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: place.x,
+        y: place.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await evalJs("new Promise((resolve) => setTimeout(resolve, 0))");
+      const failed = await evalJs("window.__snap()");
+      assert.match(failed.note, /Could not connect to Grok: unknown Harness preset: grok/);
+      assert.equal(failed.noteInView, true);
+    },
+    { rejectHarness: true },
+  );
 });
