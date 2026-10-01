@@ -2082,9 +2082,7 @@ fn note_event(
             forward(Forwarded::Form(form));
         }
         Event::PermissionSettled { request, option } => {
-            // `try_update`, the new name, is stable only from 1.95; the MSRV is 1.88.
-            #[allow(deprecated)]
-            let _ = asked.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |out| {
+            let _ = asked.try_update(Ordering::SeqCst, Ordering::SeqCst, |out| {
                 Some(out.saturating_sub(1))
             });
             forward(Forwarded::Settled { request, option })
