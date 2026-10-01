@@ -1122,12 +1122,11 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // Grab is on every held tick. Only the first tick of a hold is a
-                // pick-up; the rest would otherwise wake the session while
-                // dragging.
+                // pick-up; the rest would otherwise name every dragging wake a Grab.
                 let grab_started = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab))
                     && live.last_state != Some(State::Dragged);
-                if let Some(what) = touched(&live.verbs, grab_started, live.pointer.settle_poke()) {
-                    live.addressed = true;
+                if let Some(what) = touched(&live.verbs, grab_started, live.pointer.poke_settled())
+                {
                     note_happened(&mut live.happened, what);
                 }
 
@@ -1410,6 +1409,7 @@ pub(crate) fn run_frame_loop(
                 world.composing =
                     platform::overlay_composing().as_deref() == Some(live.id.as_str());
                 world.verbs = std::mem::take(&mut live.verbs);
+                world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
                 let speech_visible = live.speech.visible_at(std::time::Instant::now());
                 let qm_visible =
@@ -1419,9 +1419,8 @@ pub(crate) fn run_frame_loop(
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
 
-                // Engine names a Dwell, a Summon and a Menu. The pointer loop
-                // also marks verbs so the wake can say `happened: poked`; drop
-                // this and a Dwell never reaches the session.
+                // The Engine decides whether the user addressed the character;
+                // `touched` above only names what the wake says happened.
                 if frame.addressed {
                     live.addressed = true;
                 }
@@ -2277,8 +2276,8 @@ fn answer_tool_call(
         .send(dispatch(&call.tool, call.arguments, &mut context));
 }
 
-/// What one tick of pointer input tells the Director, if anything. A Poke
-/// counts once `Pointer::settle_poke` says no second click is coming.
+/// What the wake says happened, from one tick of pointer input. Whether the
+/// tick addressed the Director at all is `Frame::addressed`.
 fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Happened> {
     let any = |wanted: fn(&Verb) -> bool| verbs.iter().any(wanted);
     if any(|verb| matches!(verb, Verb::Throw { .. })) {
@@ -2463,7 +2462,7 @@ mod tests {
         held.iter()
             .filter_map(|&held| {
                 let verbs = pointer.update(true, held, false, Point { x: 0.0, y: 0.0 }, 16);
-                touched(&verbs, false, pointer.settle_poke())
+                touched(&verbs, false, pointer.poke_settled())
             })
             .collect()
     }

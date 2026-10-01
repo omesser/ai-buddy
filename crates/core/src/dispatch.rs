@@ -642,6 +642,7 @@ mod tests {
             windows: vec![],
             cursor: Point { x: 100.0, y: 100.0 },
             verbs: vec![],
+            poke_settled: false,
             elapsed_ms: 16,
             proposal: None,
             poll_generation: 0,

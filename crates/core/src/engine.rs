@@ -132,8 +132,10 @@ pub struct WorldSnapshot {
     /// Visible windows in descending z-order.
     pub windows: Vec<Window>,
     pub cursor: Point,
-    /// Interaction verbs pending since the previous tick.
+    /// Interaction verbs pending since the previous tick: what the user did.
     pub verbs: Vec<Verb>,
+    /// A Poke settled into one the Director hears, from `Pointer::poke_settled`.
+    pub poke_settled: bool,
     /// Milliseconds since the previous tick.
     pub elapsed_ms: u32,
     /// A Behavior proposal delivered since the previous tick, if the Director
@@ -196,8 +198,8 @@ pub struct Frame {
     /// horizontal travel turns it, so a stop keeps the last heading and the
     /// renderer can mirror the art by it without flicker at rest.
     pub facing: f64,
-    /// Whether the user addressed the character this tick: a Summon, a Menu or a
-    /// Dwell. The Shell wakes the session Director from this bit and a settled Poke.
+    /// Whether the user addressed the character this tick: a settled Poke, a
+    /// Summon, a Menu, a pickup, a Throw or a Dwell. The Shell wakes the session from this bit.
     pub addressed: bool,
     /// The cue this interaction earned, if one landed. A one-tick pulse like
     /// `dialogue`, and at most one a tick — the precedence is in `tick`.
@@ -1060,13 +1062,15 @@ impl Engine {
             }
             started |= self.play(&[Primitive::React]);
         }
-        // A Summon or a Menu is the user reaching for the sprite. A Poke is
-        // not, yet: it may be the first half of a Summon, so the Shell
-        // addresses it once the Pointer knows. Dwell sets the same bit.
-        addressed |= snapshot
-            .verbs
-            .iter()
-            .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
+        // Every way the user reaches for the sprite addresses the Director here,
+        // and only here. A Poke counts once settled: on its own tick it may be
+        // the first half of a Summon. Dwell sets the same bit above.
+        addressed |= snapshot.poke_settled
+            || matches!(cue, Some(Cue::Pickup | Cue::Throw))
+            || snapshot
+                .verbs
+                .iter()
+                .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
 
         // One cue a tick, and a hand transition outranks a click: the verb that shares a tick with a pickup or a drop is the incidental one.
         // Among the click verbs the first is taken: two clicks cannot land inside one tick.
@@ -2842,6 +2846,8 @@ mod tests {
         let grabbed = engine.tick(&held);
         assert_eq!(grabbed.state, State::Dragged);
         assert_eq!(grabbed.cue, Some(Cue::Pickup));
+        assert!(grabbed.addressed, "a pickup addresses the Director");
+        assert!(!engine.tick(&held).addressed, "a carry does not");
 
         let carried: Vec<Option<Cue>> = (0..5).map(|_| engine.tick(&held).cue).collect();
         assert!(
@@ -2882,6 +2888,11 @@ mod tests {
             });
             assert_eq!(released.state, State::Falling);
             assert_eq!(released.cue, Some(cue), "released with {release:?}");
+            assert_eq!(
+                released.addressed,
+                cue == Cue::Throw,
+                "only a Throw addresses"
+            );
 
             let falling = engine.tick(&snapshot(100));
             assert_eq!(falling.cue, None, "and once, after {release:?}");
@@ -3291,10 +3302,10 @@ mod tests {
         );
     }
 
-    /// A Poke reacts on screen at once and leaves the Director to the Shell,
-    /// which wakes it only once no second click can make the pair a Summon.
+    /// A Poke reacts on screen at once and addresses the Director only once it
+    /// settles, when no second click can make the pair a Summon.
     #[test]
-    fn a_poke_reacts_without_addressing_the_director() {
+    fn a_poke_reacts_at_once_and_addresses_the_director_once_settled() {
         let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
         settle(&mut engine, &snapshot(100));
 
@@ -3302,7 +3313,15 @@ mod tests {
             verbs: vec![Verb::Poke],
             ..snapshot(100)
         });
-        assert!(!poked.addressed, "the Shell addresses a settled Poke");
+        assert!(!poked.addressed, "not yet: it may be half a Summon");
+        let settled = engine.tick(&WorldSnapshot {
+            poke_settled: true,
+            ..snapshot(100)
+        });
+        assert!(
+            settled.addressed,
+            "the Shell wakes the session from Frame.addressed"
+        );
         assert_eq!(poked.animation, "react");
     }
 
@@ -6863,6 +6882,7 @@ mod tests {
             cursor: Point { x: 0.0, y: 0.0 },
             elapsed_ms: 16,
             verbs: vec![],
+            poke_settled: false,
             proposal: None,
             poll_generation: 0,
             composing: false,

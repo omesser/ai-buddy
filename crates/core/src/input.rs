@@ -67,9 +67,10 @@ pub struct Pointer {
     /// alone would only re-arm it on the click after, so drumming on the
     /// sprite would open a chat surface every second click.
     summoned: bool,
-    /// A Poke went out and its pair window is still open. The Director hears
-    /// it only once the window closes, so a double-click reaches it as a Summon alone.
+    /// A Poke went out and its pair window is still open.
     unsettled_poke: bool,
+    /// See `poke_settled`.
+    poke_settled: bool,
     /// How close together two clicks must be to count as one double-click, in
     /// milliseconds. Injected from the OS double-click setting, or the
     /// fallback when that is not available.
@@ -100,6 +101,7 @@ impl Pointer {
             since_click_ms: u32::MAX,
             summoned: false,
             unsettled_poke: false,
+            poke_settled: false,
             double_click_ms,
         }
     }
@@ -127,6 +129,8 @@ impl Pointer {
         self.cursor = Some(cursor);
         self.sample(moved, elapsed_ms);
         self.since_click_ms = self.since_click_ms.saturating_add(elapsed_ms);
+        self.poke_settled = self.unsettled_poke && self.since_click_ms > self.double_click_ms;
+        self.unsettled_poke &= !self.poke_settled;
 
         let pressed = held && !self.was_held;
         self.was_held = held;
@@ -174,7 +178,7 @@ impl Pointer {
                 // The second click is a Summon instead of a Poke, not as well,
                 // so a cue keyed on the verb stream hears one gesture. The first
                 // already went out as a Poke: holding the verb back would delay
-                // every click's reaction, so `settle_poke` holds only the Director's.
+                // every click's reaction, so `poke_settled` holds only the Director's.
                 let summon = paired && !self.summoned;
                 self.summoned |= summon;
                 self.unsettled_poke = !summon;
@@ -203,12 +207,11 @@ impl Pointer {
         verbs
     }
 
-    /// Whether a lone click's pair window closed since the last call. True once
-    /// per such click, and never for the first click of a double-click.
-    pub fn settle_poke(&mut self) -> bool {
-        let settled = self.unsettled_poke && self.since_click_ms > self.double_click_ms;
-        self.unsettled_poke &= !settled;
-        settled
+    /// Whether a Poke settled this tick: its pair window closed with no second
+    /// click. `Verb::Poke` is the click the sprite reacts to at once; this is
+    /// the Poke the Director hears. Never true for the first click of a double-click.
+    pub fn poke_settled(&self) -> bool {
+        self.poke_settled
     }
 
     /// Whether the sprite is being held. The Shell suspends its hit-test while true.
