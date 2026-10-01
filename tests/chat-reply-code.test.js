@@ -208,7 +208,7 @@ function paint(theme) {
 
 test(
   "a harness reply's inline and fenced code read apart from the panel",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 90000 },
   () => {
     for (const theme of ["minimal", "terminal"]) {
       const report = paint(theme);
