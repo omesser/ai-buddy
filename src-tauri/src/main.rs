@@ -3277,6 +3277,10 @@ fn load_all_characters(
             Err(_) => continue,
         };
         if let Ok(character) = fidget_core::character::load(&files) {
+            // Earlier directories win, so a package the user added is the one a switch loads.
+            if cache.contains_key(&character.name) {
+                continue;
+            }
             art.insert(
                 character.name.clone(),
                 CharacterArt {
@@ -3593,10 +3597,56 @@ fn anchor_position_locked(flags: u32, nomove: u32) -> bool {
     (flags & nomove) != 0
 }
 
-/// The taskbar/panel anchor on Windows and Linux, matching the macOS Dock.
-/// Clicking it opens Settings. Main thread only: builds a window and
-/// registers event handlers.
-#[cfg(not(target_os = "macos"))]
+/// Taskbar button that opens Settings. Main thread only. A webview here
+/// would be a second WebKit process beside the overlay, and it draws nothing.
+#[cfg(target_os = "linux")]
+fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use gtk::prelude::*;
+
+    let window = gtk::Window::new(gtk::WindowType::Toplevel);
+    window.set_title("Fidget");
+    window.set_resizable(false);
+    window.set_decorated(false);
+    window.set_accept_focus(true);
+    // A mapped window takes focus, and focus opens Settings. A launch must not.
+    window.set_focus_on_map(false);
+    window.set_skip_taskbar_hint(false);
+    // GTK's unset size is 200×200, which would sit on the desktop. The button
+    // is the point; the window itself stays one pixel. Opacity covers a window
+    // manager that refuses the off-screen park and would otherwise leave a pixel.
+    window.set_size_request(1, 1);
+    window.set_default_size(1, 1);
+    window.set_opacity(0.0);
+    if let Ok(icon) = gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(
+        include_bytes!("../icons/icon.png").as_slice(),
+    )) {
+        window.set_icon(Some(&icon));
+    }
+
+    let app_handle = app.clone();
+    window.connect_focus_in_event(move |_, _| {
+        show_settings(app_handle.clone());
+        gtk::glib::Propagation::Proceed
+    });
+
+    let (x, y) = anchor_origin((0, 0), false);
+    window.show_all();
+    window.resize(1, 1);
+    // Drop destroys the button. It has to live as long as the process.
+    let anchor: &'static gtk::Window = Box::leak(Box::new(window));
+    // move_ before the loop runs does not stick. Ask again once it is mapped.
+    gtk::glib::idle_add_local_once(move || {
+        anchor.resize(1, 1);
+        anchor.move_(x, y);
+        let (placed_x, placed_y) = anchor.position();
+        eprintln!("anchor: 1x1 at ({placed_x},{placed_y})");
+    });
+    Ok(())
+}
+
+/// The taskbar anchor on Windows. WebView2 is the window; the subclass keeps
+/// it parked and opens Settings on a taskbar click.
+#[cfg(target_os = "windows")]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
@@ -3612,17 +3662,6 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         .visible(false)
         .build()?;
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        let app_handle = app.clone();
-        window.on_window_event(move |event| {
-            if let tauri::WindowEvent::Focused(true) = event {
-                show_settings(app_handle.clone());
-            }
-        });
-    }
-
-    #[cfg(target_os = "windows")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         let app_handle = app.clone();

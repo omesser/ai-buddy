@@ -1,12 +1,184 @@
-# Performance Baseline v1
+# Performance baseline v1
 
-Measured baselines for fidget performance before optimization work. See parent issue [#423](https://github.com/omesser/fidget/issues/423) for context and child benchmarks.
+Rollup for [#423](https://github.com/omesser/fidget/issues/423). Each number below comes from a script run or a merged pull request, or the row says unavailable and why.
 
-Since this was measured, #1165 (for #1156) replaces `active_wait` with `scheduler::next_tick`, so a moving sprite no longer loses each sleep's overshoot. See the frame cadence section. The frame cadence bench has also changed since (#1172). Its idle scenarios run a copy of BMO whose only weighted Behavior is `fidget`, because `FIDGET_DIRECTOR=0` still lets the Static Director walk BMO on patrol, and `idle` fails on a walk frame. Its report splits Engine ticks into moving and still rows.
+Anchor: `31d2f245`. The architecture section names symbols from that tree. Linux numbers were measured on `target/release/fidget` built from that tree. The bench scripts on this branch do not change that binary. The cadence script printed `git_rev=57d12388` because that was `HEAD` during the run. Rust sources at `57d12388` match the anchor.
 
-Since this was measured, a macOS ride no longer reads the window list on the frame-loop thread. `SnapshotAssembler::detach_poll` polls on a thread named `window-poll`, and the tick copies the last finished sample. `poll_generation` advances when that read returns, so the sprite coasts until then, and a read still running is not started twice. No new numbers: `scripts/bench-window-list-macos.sh` is macOS-only, and `riding` and `matrix` refuse to run without `FIDGET_BENCH_GREEN_LIGHT=1` because they take the operator's screen. The last cited release riding row remains the [#1133](https://github.com/omesser/fidget/pull/1133) measurement (55.73 Hz, median about 7 ms, 152 windows, on the `active_wait` build `24cd91ca`). That rate is what a ~7 ms read leaves when the following sleep returns about a quarter late and the next wait does not get the lateness back. The side thread counts its wait from the deadline, the same rule `next_tick` uses for a moving sprite.
+Since that anchor, macOS riding calls `SnapshotAssembler::detach_poll`. The window-list read runs on a thread named `window-poll`, and the tick copies the last finished sample. This branch did not run a new `riding` bench. `riding` and `matrix` in `scripts/bench-window-list-macos.sh` still need `FIDGET_BENCH_GREEN_LIGHT=1`.
 
-## Linux (issue #432)
+Fidget is the product. A fidget is one running instance. Character stays the name of a package such as BMO.
+
+## What to optimize first
+
+The rank is milliseconds of one core per second in the scenario that was measured. A cost that only happens while the pointer is on the sprite, or only while riding, is ranked on that rate.
+
+1. **Software paint of a moving overlay on this VM.** A 60 s read of `/proc`, pointer at (2, 2), held the heavier `WebKitWebProcess` at 83.8% of one core across 1475 walk frames and 612 climb frames. That is 838 ms of one core per second. Xtigervnc in that same window was 36.2%. The scripted 15 s walk from `scripts/bench-gpu-compositing-linux.sh`, 495 walk frames with the pointer away, held Xtigervnc at 54.5%, which is 545 ms per second. That script does not sample the fidget tree. Held-still idle on the same machine held the heavier `WebKitWebProcess` at 5.4% and Xtigervnc at 3.0%. GPU% is unavailable. `glxinfo -B` reports `llvmpipe` and acceleration off, and there is no DRM device. A Mac with a GPU measured 0.6% GPU and 0.06 W for the perched case, in the macOS GPU section.
+
+2. **Click-through mask rebuild while the pointer is on a moving sprite.** On the Grok Bot X11 desktop, a BMO walk under the cursor rebuilt at 26.7/s and 15.0 ms per call. Computed from those two published figures, that is 400 ms of one core per second of that walk. On the Windows workstation the walk-attributed subset was 44.4/s at 14.54 ms, which is 646 ms of one core per second. Both machines recorded 0.0/s with the pointer away from the sprite. Sources are [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) from [#968](https://github.com/omesser/fidget/pull/968) and [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md) from [#983](https://github.com/omesser/fidget/pull/983). This VM's release build, same opaque counts of 6290 to 7888, logged 11 rebuilds at 2.187 ms to 2.904 ms, mean 2.55 ms. The 5 s pointer-on-sprite window counted 8 of them, 1.60/s, and the walk aborted after 12 walk frames. Per-call time depends on the machine. The desktop rates are the ones that spend a large fraction of a core. Idle with the pointer away stays at 0.
+
+3. **macOS WindowSource poll while riding, once many windows are open.** Riding at 156 windows polled at 40.2 Hz with a median of 2.79 ms. The WindowSource section computes 112 ms of one core per second from that row, and the p95 was 10.8 ms. Riding at 56 windows was 68 ms per second. The sweep at 351 windows, idle only, had a p95 of 14.6 ms and a max of 39 ms. Idle polls at about 10 Hz, so one of those polls stalls one tick. Sources are the WindowSource section below, from [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). A quiet desk at about 50 windows is about 21 ms per second, which would not make this list.
+
+macOS idle host CPU ranks under those three. On a quiet Mac15,7, release build of `ecb92b8d`, four interleaved rounds, a perched fidget used 8.4% of one core, range 8.0 to 8.5. That is 84 ms of one core per second for as long as the fidget is perched, with 179.8 interrupt wakeups/s, range 178.9 to 186.4. Package-idle wakeups were 2.32/s, range 1.77 to 2.44. The per-thread census after the display-link fixes names the frame loop at about 35/s and the host `libpas` scavenger at about 27/s. `powermetrics` counted 187 interrupt wakeups/s for the host pid in that census launch. Source is [macos-idle-wakeups.md](./macos-idle-wakeups.md), quiet-machine table and the census under #761, from [#960](https://github.com/omesser/fidget/pull/960) and [#843](https://github.com/omesser/fidget/pull/843). Cluster idle residency stayed below what the instrument resolved. The same research file records that.
+
+GPU compositing of the transparent overlay, the other suspect in #423, measured 0.6% GPU and 0.06 W on that Mac while perched, the same wattage as the desktop with no fidget running. The section below is [#1034](https://github.com/omesser/fidget/pull/1034).
+
+## Where each child stands
+
+| Issue | State | Result |
+| --- | --- | --- |
+| [#431](https://github.com/omesser/fidget/issues/431) macOS idle | Closed | Host 8.4% CPU and 179.8 interrupt wakeups/s perched, quiet machine. Detail in [macos-idle-wakeups.md](./macos-idle-wakeups.md). |
+| [#432](https://github.com/omesser/fidget/issues/432) Linux idle | Open | Release idle, walking, and hidden are below. C-state residency unavailable on this VM. Chat was not sampled. |
+| [#429](https://github.com/omesser/fidget/issues/429) macOS GPU | Closed | Idle 0.6% GPU, 0.06 W. Section below, [#1034](https://github.com/omesser/fidget/pull/1034). |
+| [#430](https://github.com/omesser/fidget/issues/430) Windows GPU | Closed | Section below, [#1025](https://github.com/omesser/fidget/pull/1025). xperf frame time was not measured. |
+| [#425](https://github.com/omesser/fidget/issues/425) Linux GPU | Open | GPU% unavailable. Release X server proxy measured below. Wayland, a second compositor, and uncomposited X11 were not running. |
+| [#427](https://github.com/omesser/fidget/issues/427) WindowSource | Closed | Section below, [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). |
+| [#428](https://github.com/omesser/fidget/issues/428) mask rebuild | Open | Desktop numbers in the mask docs. This VM adds release per-call times. No `perf` flamegraph. |
+| [#424](https://github.com/omesser/fidget/issues/424) RSS | Open | macOS footprint in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md). This VM has one display. heaptrack was not installed. |
+| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS tables below. Linux release tables in the measurement section. Riding a window, and crossing a display seam, were not measured. |
+
+## How a frame gets on screen
+
+The frame loop `run_frame_loop` waits with `scheduler::next_tick`. `ENGINE_TICK` is 16 ms. `scheduler::mode` returns `ScheduleMode::Active` while the fidget is visible and a Behavior is playing, and while it is falling, dragged, or climbing. It returns `ScheduleMode::Idle` when the fidget is hidden, asleep, or visible and still with nothing playing. `scheduler::moving` is true when velocity is non-zero, or the state is falling, dragged, climbing, or riding. A moving Active tick counts from the last deadline. A still Active tick counts from the wake.
+
+Each display is one transparent webview. `arm` in `src/main.js` calls `requestAnimationFrame` only when `draw` still has a placement to interpolate. `FRAME_RESEND` is 250 ms. The frame loop resends an unchanged placement on that interval so a webview that just started listening still hears `visible`.
+
+On macOS, `WindowSource` reads the on-screen window list every `POLL_INTERVAL`, 100 ms, and every `RIDE_POLL_INTERVAL`, 16 ms, while any fidget is riding. On X11 and Windows the click-through region is rebuilt only while the pointer is over the sprite. The cache key includes position, so a walk under the pointer rebuilds as the sprite moves.
+
+## Linux measurement on this VM
+
+Host is Ubuntu 24.04.4 LTS, kernel 6.12.94+, 4 vCPU, X11 on `DISPLAY=:1` via Xtigervnc, one screen 1920x1200 at 60 Hz, compositor `xfwm4` with compositing on and `vblank_mode` auto. `WAYLAND_DISPLAY` unset. No `/dev/dri`. `intel_gpu_top` found no i915 device. `radeontop` found no DRM device. `glxinfo -B` reported `llvmpipe (LLVM 20.1.2, 256 bits)` and `Accelerated: no`. Character package BMO, sprite 126x128. Release binary. There is no `/sys/devices/system/cpu/cpu0/cpuidle`. `powertop` 2.15 wrote a CSV whose overview wakeup column is blank and whose processor idle-state table is empty. `modprobe cpufreq_stats` failed. C-state residency is unavailable here.
+
+Held-still idle used a copy of BMO whose Behavior weights are 0 except `fidget`. The copy is how the cadence bench keeps StaticDirector from walking. The GPU script's own `idle` row does not do that. One default `idle` window happened to contain no `walk` frames and is listed separately.
+
+### Idle wakeups, #432
+
+60 s windows. CPU% is utime plus stime from `/proc/<pid>/stat`, as a percent of one core. Wakeups are voluntary context switches from `/proc/<pid>/status`, divided by the same window. Baseline X and `xfwm4` are two sequential 60 s windows with no fidget running. The idle window is one 60 s window after the overlay line, with the pointer parked at x=2, y=2. The process log for that launch has 3744 `idle` frames, 39 `talk`, 38 `land`, 26 `fall`, and zero `walk` frames. The spawn fall can overlap the start of the window. No walk frame exists anywhere in that log.
+
+| Process | CPU% of one core | Voluntary switches/s |
+| --- | --- | --- |
+| Xtigervnc, no fidget | 0.0 | 0.2 |
+| xfwm4, no fidget | 0.0 | 0.1 |
+| fidget, idle perched | 2.3 | 146.9 |
+| WebKitNetworkProcess | 0.0 | 0.0 |
+| WebKitWebProcess, lighter | 0.0 | 2.4 |
+| WebKitWebProcess, heavier | 5.4 | 16.4 |
+| Xtigervnc, during that idle window | 2.3 | 353.3 |
+| xfwm4, during that idle window | 0.0 | 8.5 |
+
+The four fidget processes together are 7.7% of one core and 165.7 voluntary switches/s. The earlier debug capture further down in this file reported about 271 voluntary switches/s and about 3% CPU for one pid, without a still-only Character. It is a different scenario.
+
+Walking and hidden use the same `/proc` reads for 60 s. Walking starts after a `walk#` frame, pointer at (2, 2). Hidden starts after `presence: hidden over 500ms`, under a fullscreen terminal. The walking window contained 1475 walk frames and 612 climb frames. Frames in the hidden window are about 1 s apart (15 walk, 33 idle, 6 land, 6 talk). Chat was not sampled.
+
+| Process | Walking CPU% | Walking voluntary/s | Hidden CPU% | Hidden voluntary/s |
+| --- | --- | --- | --- | --- |
+| fidget | 6.3 | 322.8 | 0.5 | 16.3 |
+| WebKitNetworkProcess | 0.0 | 0.2 | 0.0 | 0.2 |
+| WebKitWebProcess, lighter | 0.0 | 2.3 | 0.0 | 2.3 |
+| WebKitWebProcess, heavier | 83.8 | 240.9 | 2.5 | 51.4 |
+| Xtigervnc | 36.2 | 427.9 | 1.0 | 39.4 |
+| xfwm4 | 0.6 | 301.1 | 0.0 | 4.9 |
+
+The four fidget processes while walking are 90.1% of one core and 566.2 voluntary switches/s. While hidden they are 3.0% and 70.2 voluntary switches/s. These two windows are a shell sample of `/proc`. Multi-monitor was not sampled. The host has one display.
+
+### GPU proxy and mask rate, #425 and #428
+
+`scripts/bench-gpu-compositing-linux.sh matrix --seconds 15 --bin target/release/fidget`. GPU% is N/A on every row. Chat is unavailable this run. Three attempts, one of them on the still Character, each logged `verbs: ... [Poke]` and none logged `Summon`.
+
+| Scenario | Mask calls | Mask Hz | xfwm4 CPU% | Xtigervnc CPU% | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Baseline, no fidget | N/A | N/A | 0.0 | 0.0 | |
+| Idle, default script, no walk frames in the log | 0 | 0.00 | 0.1 | 4.9 | 1071 idle frames, plus land and react |
+| Idle, still Character, pointer at (2, 2) | 0 | 0.00 | 0.0 | 3.0 | 1074 idle frames, plus the spawn fall, land, and 7 talk |
+| Walking, pointer away | 0 | 0.00 | 0.9 | 54.5 | 495 walk frames |
+| Pointer on sprite, 5 s | 8 | 1.60 | 0.0 | 5.0 | 12 walk frames, then the walk aborted |
+| Chat | N/A | N/A | N/A | N/A | Double-click did not log Summon |
+| Multi-monitor | N/A | N/A | N/A | N/A | xrandr reports 1 display |
+| Hidden, fullscreen terminal | 0 | 0.00 | 0.1 | 1.2 | Log line `presence: hidden` |
+| Wayland | N/A | N/A | N/A | N/A | No Wayland display |
+| Mutter, KWin, uncomposited X11 | N/A | N/A | N/A | N/A | Not running |
+
+A second default `idle` window included 516 walk frames and 358 climb frames, and Xtigervnc read 49.7% CPU. That row is a motion sample that the script labeled idle. The held-still number is the 3.0% row.
+
+The walking log contains 11 `mask_rebuild:` lines, 2.187 ms to 2.904 ms, mean 2.55 ms, opaque counts 6290 to 7888. The script's 8 calls are the 5 s window. The other lines are earlier in the same process. Per-call time on the Grok Bot desktop for a similar opaque count was about 15 ms. Both figures are measured. They are different machines.
+
+### RSS, #424
+
+`scripts/bench-rss-linux.sh --settle 30 --seconds 45 --interval 3 --bin target/release/fidget`, still Character, one display. The run did not set `HOME` to a scratch directory. Median of 15 samples.
+
+| Roster | Total RSS median | fidget RSS median | fidget VmHWM |
+| --- | --- | --- | --- |
+| `bmo:One` | 846 MB | 210 MB | 209.8 MB |
+| `bmo:One,bmo:Two,bmo:Three,bmo:Four` | 816 MB | 210 MB | 210.4 MB |
+
+The log line for the second run is `BMO as One, BMO as Two, BMO as Three, BMO as Four`. The Rust peak did not move. Total RSS did not rise. Each launch had four processes, the main pid plus `WebKitNetworkProcess` plus two `WebKitWebProcess`. One display, so a second overlay was not measured. heaptrack was not installed, so this run has no heap profile. The macOS peak footprint for one fidget on two displays is 583 MB in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md), debug build, 300 s settle. These RSS figures are a different OS and a shorter settle, so they do not extend that curve.
+
+### Frame cadence, #426
+
+`scripts/bench-frame-cadence-macos.sh` with `FIDGET_BENCH_GREEN_LIGHT=1`, `--seconds 20`, `--bin target/release/fidget`. The machine header printed `x86_64`, Ubuntu 24.04.4 LTS, refresh 60.00, 4 cpus, `git_rev=57d12388`. The X authority export this branch adds was already in the working tree. That is why the script could open the display.
+
+The first `walking` and `load` windows played a walk animation at a single position, `pos(960,1200)`. Those windows are not moving-sprite samples. The walking and load rows below are the reruns, which changed position. Unique positions were 928 and 978. Idle is the matrix run. Walk frames in that idle window were 0.
+
+| Scenario | Display frames | Mean fps of armed stretches | Drops over 20 ms | Restarts | Engine Hz, loop counter | Moving ticks | Still ticks | Lag p50, moving | Lag p95, moving |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Idle, still Character | 58 | N/A | 0 | 57 | 62 | 0 | 1240 at 16.1 ms, 62 Hz | N/A | N/A |
+| Idle, `FIDGET_TRACE_FRAMES` off | 22 | 52.6 | 0 | 20 | 62.1 | untraced | untraced | N/A | N/A |
+| Walking, position changed | 801 | 60 | 4 | 140 | 62.3 | 814 at 16.1 ms, 61.9 Hz | 433 at 15.9 ms, 63.1 Hz | 16 ms, 1 sample | 21 ms, 1.14 samples |
+| Walking plus one `yes` per core | 539 | 34.9 | 371 | 105 | 61.9 | 896 at 16.5 ms, 60.6 Hz | 343 at 15.2 ms, 65.6 Hz | 18 ms, 1 sample | 29 ms, 1.71 samples |
+
+Mean fps counts only consecutive frames where the first asked for the second. Idle's 57 restarts in 58 frames means the loop did not stay armed. The engine still ticked at 62 Hz. On this VM a still Active tick and a moving tick both sit near 16 ms. The macOS capture further down measured a 16 ms sleep returning in about 20 ms, and still ticks near 53 Hz. That overshoot did not show up in these Linux tick gaps.
+
+Under load, 371 of the armed gaps exceeded 20 ms, and the engine stayed at 61.9 Hz. The present path dropped frames while the engine did not. This is one software-rendered VM with all four CPUs in `yes`. Riding and a display seam were not measured.
+
+Armed-stretch histogram for the moving walking window, display frames then engine ticks. 0 to 10 ms is 1 and 44. 10 to 14 is 5 and 63. 14 to 18 is 511 and 909. 18 to 20 is 126 and 141. 20 to 25 is 16 and 79. 25 to 34 is 0 and 9. 34 to 50 is 1 and 2. 50 and above is 0 and 0.
+
+Armed-stretch histogram for the load window. 0 to 10 ms is 2 and 152. 10 to 14 is 5 and 143. 14 to 18 is 27 and 571. 18 to 20 is 15 and 108. 20 to 25 is 84 and 162. 25 to 34 is 201 and 95. 34 to 50 is 94 and 8. 50 and above is 5 and 0.
+
+## How to reproduce the Linux numbers
+
+Build the release binary, then run the blocks from `/workspace` with `DISPLAY=:1`. The still Character is required for a perched idle that does not walk.
+
+```bash
+cargo build --release -p fidget --bin fidget
+dir=/tmp/still-characters
+rm -rf "$dir" && mkdir -p "$dir" && cp -R characters/bmo "$dir/bmo"
+awk '/^\[/ { section = $0 }
+  /^weight = / && section ~ /^\[behaviors\./ && section != "[behaviors.fidget]" { $0 = "weight = 0" }
+  1' characters/bmo/character.manifest > "$dir/bmo/character.manifest"
+```
+
+GPU matrix, then held-still idle:
+
+```bash
+DISPLAY=:1 scripts/bench-gpu-compositing-linux.sh matrix --seconds 15 --bin target/release/fidget --out /tmp/fidget-bench-425
+DISPLAY=:1 FIDGET_CHARACTERS=/tmp/still-characters FIDGET_INSTANCES=BMO \
+  scripts/bench-gpu-compositing-linux.sh idle --seconds 15 --bin target/release/fidget --out /tmp/fidget-bench-425-still
+```
+
+RSS, one fidget and four:
+
+```bash
+DISPLAY=:1 FIDGET_DIRECTOR=0 FIDGET_TRACE_ENGINE=1 FIDGET_CHARACTERS=/tmp/still-characters FIDGET_INSTANCES='bmo:One' \
+  scripts/bench-rss-linux.sh --settle 30 --seconds 45 --interval 3 --bin target/release/fidget --out /tmp/fidget-rss-1.tsv
+DISPLAY=:1 FIDGET_DIRECTOR=0 FIDGET_TRACE_ENGINE=1 FIDGET_CHARACTERS=/tmp/still-characters \
+  FIDGET_INSTANCES='bmo:One,bmo:Two,bmo:Three,bmo:Four' \
+  scripts/bench-rss-linux.sh --settle 30 --seconds 45 --interval 3 --bin target/release/fidget --out /tmp/fidget-rss-4.tsv
+```
+
+Cadence. The matrix idle row is the idle sample. Rerun `walking` and `load` when the first window stays on one `pos(...)`.
+
+```bash
+DISPLAY=:1 FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh matrix --seconds 20 --bin target/release/fidget --out /tmp/fidget-cadence
+DISPLAY=:1 FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh walking --seconds 20 --bin target/release/fidget --out /tmp/fidget-cadence-walk2
+DISPLAY=:1 FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh load --seconds 20 --bin target/release/fidget --out /tmp/fidget-cadence-load2
+```
+
+Idle wakeups. Sample Xtigervnc for 60 s with no fidget, then launch the release binary with the still Character, park the pointer at x=2, y=2, and sample the main pid plus `pgrep -P` children for 60 s. CPU% is `utime+stime` from `/proc/<pid>/stat` over `CLK_TCK`. Voluntary switches are the delta of `voluntary_ctxt_switches` in `/proc/<pid>/status`. The idle table did those two reads in one window for the fidget tree, and a separate 60 s window for X before launch. Walking used the same 60 s read after a `walk#` frame, pointer at (2, 2), with `FIDGET_TRACE_FRAMES=1`. Hidden used it after `presence: hidden over 500ms`, under `xfce4-terminal --fullscreen`. `sudo powertop --time=10 --csv=/tmp/powertop.csv` prints a blank wakeup column and an empty idle-state table on this VM.
+
+## Earlier captures
+
+The tables below are the captures already on main. Linux idle here is the debug VM run from [#927](https://github.com/omesser/fidget/pull/927). The release measurement is the section above.
+
+## Earlier capture, Linux idle (#432)
 
 **Environment:**
 - Ubuntu 24.04.4 LTS (Noble)
@@ -81,9 +253,9 @@ director: StaticDirector
 
 _Measured in cloud agent environment. Real laptop measurements would capture C-state residency and battery impact._
 
-## macOS (issue #431)
+## macOS idle (#431)
 
-_Pending._
+Closed. The numbers live in [macos-idle-wakeups.md](./macos-idle-wakeups.md). Quiet-machine medians, release build of `ecb92b8d`, four rounds of 45 s. Idle perched is 8.4% CPU, range 8.0 to 8.5, 179.8 interrupt wakeups/s, range 178.9 to 186.4, and 2.32 package-idle wakeups/s. An earlier interleaved run on the same machine put hidden at 2.9% CPU, range 1.7 to 4.3, against perched at 7.9%, range 6.5 to 9.5. Cluster residency did not resolve a magnitude. `pmset -g assertions` did not gain an assertion named fidget. Multi-monitor wakeups were left to #424.
 
 ## GPU Compositing
 
@@ -168,6 +340,8 @@ Crop Task Manager's Performance GPU page during idle perched to about 280px wide
 Walking-over mask rate is 0.00/s because the walk aborted once the pointer was on the sprite. The aim hit.
 
 ### Linux X11/Wayland (issue #425)
+
+This table is the earlier debug capture. The release measurement above records held-still idle at 3.0% Xtigervnc CPU. A default idle window that contained walk and climb frames read 49.7%.
 
 Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `--shot path.png` to grab the GPU tool window during idle perched. The grab stays out of the tree.
 
@@ -326,13 +500,18 @@ See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed 
 - **Large sprite** (Black Mage 37×33@3x): **~1.4 ms/rebuild** (477–579 opaque pixels) — much faster than BMO@1x despite 3× scale, because fewer source opaque pixels. Scale multiplies rendered size, not source opaque count.
 - Small sprite: No genuinely smaller shipped character at scale=1; scenario dropped.
 - Prior cloud-VM idle: 0.05/sec, 11–13 ms (kept for comparison in detailed doc)
-- **Windows:** Not measured (pending DESKTOP approval)
+- **Windows:** Measured on the workstation. See [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). Walk under the cursor was about 44/s at 14.5 ms.
 - **`perf` flamegraph:** Not yet collected
 
-## Memory & multi-monitor (issue #424)
-_Pending._
+## Memory and multi-monitor (#424)
 
-## Frame cadence (issue #426)
+macOS is measured in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md), debug build, 300 s settle. One fidget on two displays peaked at 583 MB physical footprint. Four fidgets of one Character added 56 MB, all of it in the webviews. The Rust peak stayed 82.9 MB. The heavier panel is the larger one. A single-display macOS run was not taken, because both displays stay attached. No Instruments heap profile.
+
+Linux and Windows in that file are short settles on other machines. The Grok Bot Linux run, debug, one display, one fidget, median RSS 823 MB over 30 s. The Windows workstation, two displays, one fidget, median working set 612 MB over 30 s. This VM's release numbers are in the Linux measurement section above. One display, so the multi-monitor slope was not measured here. No heap profile on any platform.
+
+## Frame cadence (#426)
+
+Linux release numbers from this VM are in the measurement section above. The tables here are the macOS release captures.
 
 ### macOS
 

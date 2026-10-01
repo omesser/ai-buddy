@@ -47,9 +47,10 @@ const MAX_PACKAGE_FILES: usize = 4096;
 /// walked.
 const MAX_PACKAGE_DEPTH: usize = 8;
 
-/// The environment variable that overrides where packages are looked for, as a
-/// `:`-separated list of directories. Present for development and for the
-/// verification script; a user never needs it.
+/// Directories added in front of the user directory and the shipped packages.
+///
+/// `:`-separated on macOS and Linux, `;`-separated on Windows. For development
+/// and the verification script; a user never needs it.
 pub const SEARCH_PATH_VAR: &str = "FIDGET_CHARACTERS";
 
 /// The Character a new user meets, when nothing has chosen another.
@@ -113,24 +114,124 @@ pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
     Ok(files)
 }
 
-/// Where fidget looks for Character Packages, in the order it looks.
-///
-/// A package the user added wins over a shipped one of the same name, because the user's copy is the one they can edit.
-pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
-    if let Some(override_paths) = std::env::var_os(SEARCH_PATH_VAR) {
-        return std::env::split_paths(&override_paths).collect();
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Desktop {
+    // The other two are what `host` returns on that OS. On this one they are
+    // constructed only from tests, which is what checks the list without that machine.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Macos,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    Linux,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    Windows,
+}
+
+impl Desktop {
+    fn host() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Macos
+        } else {
+            Self::Linux
+        }
     }
 
+    /// A colon is a drive letter on Windows.
+    fn separator(self) -> u8 {
+        match self {
+            Self::Windows => b';',
+            Self::Macos | Self::Linux => b':',
+        }
+    }
+}
+
+struct PackageRoots<'a> {
+    extra: Option<&'a OsStr>,
+    data_dir: &'a Path,
+    xdg_data_dirs: Option<&'a OsStr>,
+    desktop: Desktop,
+}
+
+/// Unset or empty `$XDG_DATA_DIRS` means these two, per the XDG base spec.
+const XDG_DATA_DIRS_DEFAULT: &[&str] = &["/usr/local/share", "/usr/share"];
+
+/// Where a user adds a Character Package, beside settings and Memory.
+pub fn user_characters_dir() -> PathBuf {
+    fidget_core::memory::data_dir().join("characters")
+}
+
+/// Where fidget looks for Character Packages, in the order it looks.
+///
+/// `FIDGET_CHARACTERS` is added in front, the way `PATH` is. Earlier wins.
+/// Replacing the other directories hides the user folder and the shipped packages.
+pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
+    let data_dir = fidget_core::memory::data_dir();
+    let extra = std::env::var_os(SEARCH_PATH_VAR);
+    let xdg_data_dirs = std::env::var_os("XDG_DATA_DIRS");
+    search_paths_from(
+        bundled,
+        PackageRoots {
+            extra: extra.as_deref(),
+            data_dir: &data_dir,
+            xdg_data_dirs: xdg_data_dirs.as_deref(),
+            desktop: Desktop::host(),
+        },
+    )
+}
+
+fn search_paths_from(bundled: Option<PathBuf>, roots: PackageRoots<'_>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    if let Some(home) = std::env::var_os("HOME") {
-        paths.push(
-            PathBuf::from(home)
-                .join("Library/Application Support/fidget")
-                .join("characters"),
-        );
+    if let Some(extra) = roots.extra {
+        paths.extend(split_list(extra, roots.desktop.separator()));
+    }
+    paths.push(roots.data_dir.join("characters"));
+    if roots.desktop == Desktop::Linux {
+        // An XDG base is `/usr/share`, not `.../fidget`, so both components are added.
+        for base in xdg_bases(roots.xdg_data_dirs) {
+            paths.push(base.join("fidget").join("characters"));
+        }
     }
     paths.extend(bundled);
     paths
+}
+
+fn xdg_bases(raw: Option<&OsStr>) -> Vec<PathBuf> {
+    let Some(raw) = raw.filter(|value| !value.is_empty()) else {
+        return XDG_DATA_DIRS_DEFAULT
+            .iter()
+            .copied()
+            .map(PathBuf::from)
+            .collect();
+    };
+    // A relative entry is not a base directory, so it is not searched.
+    split_list(raw, b':')
+        .into_iter()
+        .filter(|path| path.is_absolute())
+        .collect()
+}
+
+fn split_list(raw: &OsStr, separator: u8) -> Vec<PathBuf> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        raw.as_bytes()
+            .split(|byte| *byte == separator)
+            .filter(|part| !part.is_empty())
+            .map(|part| PathBuf::from(OsStr::from_bytes(part)))
+            .collect()
+    }
+    #[cfg(windows)]
+    {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let sep = u16::from(separator);
+        let wide: Vec<u16> = raw.encode_wide().collect();
+        wide.split(|unit| *unit == sep)
+            .filter(|part| !part.is_empty())
+            .map(|part| PathBuf::from(OsString::from_wide(part)))
+            .collect()
+    }
 }
 
 /// The candidates named `wanted`, or all of them when nothing is named.
@@ -865,6 +966,253 @@ mod tests {
             vec![characters.join("blip"), characters.join("mochi.zip")],
             "a directory and an archive count; a loose file does not, \
              and a search path that is not there is not an error"
+        );
+    }
+
+    fn roots<'a>(
+        desktop: Desktop,
+        data_dir: &'a Path,
+        extra: Option<&'a OsStr>,
+        xdg_data_dirs: Option<&'a OsStr>,
+    ) -> PackageRoots<'a> {
+        PackageRoots {
+            extra,
+            data_dir,
+            xdg_data_dirs,
+            desktop,
+        }
+    }
+
+    #[test]
+    fn macos_search_paths_are_the_user_directory_then_the_bundle() {
+        let data_dir = Path::new("/Users/buddy/Library/Application Support/fidget");
+        let bundled = PathBuf::from("/Applications/fidget.app/Contents/Resources/characters");
+        assert_eq!(
+            search_paths_from(
+                Some(bundled.clone()),
+                roots(
+                    Desktop::Macos,
+                    data_dir,
+                    None,
+                    Some(OsStr::new("/usr/share"))
+                ),
+            ),
+            vec![data_dir.join("characters"), bundled]
+        );
+    }
+
+    #[test]
+    fn linux_search_paths_use_the_xdg_defaults_when_the_variable_is_unset() {
+        let data_dir = Path::new("/home/buddy/.local/share/fidget");
+        let bundled = PathBuf::from("/usr/lib/fidget/characters");
+        assert_eq!(
+            search_paths_from(
+                Some(bundled.clone()),
+                roots(Desktop::Linux, data_dir, None, None)
+            ),
+            vec![
+                data_dir.join("characters"),
+                PathBuf::from("/usr/local/share/fidget/characters"),
+                PathBuf::from("/usr/share/fidget/characters"),
+                bundled,
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_search_paths_follow_xdg_data_dirs_when_it_is_set() {
+        let data_dir = Path::new("/srv/xdg/fidget");
+        let bundled = PathBuf::from("/opt/fidget/characters");
+        let set = search_paths_from(
+            Some(bundled.clone()),
+            roots(
+                Desktop::Linux,
+                data_dir,
+                None,
+                Some(OsStr::new("/opt/share:/usr/local/share")),
+            ),
+        );
+        assert_eq!(
+            set,
+            vec![
+                data_dir.join("characters"),
+                PathBuf::from("/opt/share/fidget/characters"),
+                PathBuf::from("/usr/local/share/fidget/characters"),
+                bundled.clone(),
+            ]
+        );
+
+        let empty = search_paths_from(
+            Some(bundled.clone()),
+            roots(Desktop::Linux, data_dir, None, Some(OsStr::new(""))),
+        );
+        assert_eq!(
+            empty,
+            vec![
+                data_dir.join("characters"),
+                PathBuf::from("/usr/local/share/fidget/characters"),
+                PathBuf::from("/usr/share/fidget/characters"),
+                bundled,
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_search_paths_skip_a_relative_xdg_data_dir() {
+        let data_dir = Path::new("/home/buddy/.local/share/fidget");
+        let paths = search_paths_from(
+            None,
+            roots(
+                Desktop::Linux,
+                data_dir,
+                None,
+                Some(OsStr::new("relative:/usr/share")),
+            ),
+        );
+        assert_eq!(
+            paths,
+            vec![
+                data_dir.join("characters"),
+                PathBuf::from("/usr/share/fidget/characters"),
+            ]
+        );
+    }
+
+    #[test]
+    fn fidget_characters_is_added_in_front_on_each_desktop() {
+        let data_dir = Path::new("/Users/buddy/Library/Application Support/fidget");
+        let bundled = PathBuf::from("/bundled/characters");
+        let macos = search_paths_from(
+            Some(bundled.clone()),
+            roots(
+                Desktop::Macos,
+                data_dir,
+                Some(OsStr::new("/tmp/one:/tmp/two")),
+                None,
+            ),
+        );
+        assert_eq!(
+            macos,
+            vec![
+                PathBuf::from("/tmp/one"),
+                PathBuf::from("/tmp/two"),
+                data_dir.join("characters"),
+                bundled.clone(),
+            ]
+        );
+
+        let windows_data = Path::new(r"C:\Users\buddy\AppData\Roaming\fidget");
+        let windows = search_paths_from(
+            Some(bundled.clone()),
+            roots(
+                Desktop::Windows,
+                windows_data,
+                Some(OsStr::new(r"D:\one;E:\two")),
+                Some(OsStr::new("/usr/share")),
+            ),
+        );
+        assert_eq!(
+            windows,
+            vec![
+                PathBuf::from(r"D:\one"),
+                PathBuf::from(r"E:\two"),
+                windows_data.join("characters"),
+                bundled,
+            ]
+        );
+    }
+
+    #[test]
+    fn windows_fidget_characters_does_not_split_on_colons() {
+        let data_dir = Path::new(r"C:\Users\buddy\AppData\Roaming\fidget");
+        let paths = search_paths_from(
+            None,
+            roots(
+                Desktop::Windows,
+                data_dir,
+                Some(OsStr::new(r"D:\chars:still")),
+                None,
+            ),
+        );
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from(r"D:\chars:still"),
+                data_dir.join("characters")
+            ]
+        );
+    }
+
+    #[test]
+    fn windows_search_paths_keep_the_user_directory_without_home() {
+        let data_dir = Path::new(r"C:\Users\buddy\AppData\Roaming\fidget");
+        let bundled = PathBuf::from(r"C:\Program Files\fidget\characters");
+        let paths = search_paths_from(
+            Some(bundled.clone()),
+            roots(Desktop::Windows, data_dir, None, None),
+        );
+        assert_eq!(paths, vec![data_dir.join("characters"), bundled]);
+        assert!(
+            paths.iter().all(|path| !path
+                .components()
+                .any(|component| component.as_os_str() == "Library")),
+            "the macOS Library path is not a Windows search path: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_fidget_characters_does_not_hide_the_user_directory() {
+        let data_dir = Path::new("/home/buddy/.local/share/fidget");
+        let bundled = PathBuf::from("/bundled/characters");
+        let unset = search_paths_from(
+            Some(bundled.clone()),
+            roots(
+                Desktop::Linux,
+                data_dir,
+                None,
+                Some(OsStr::new("/usr/share")),
+            ),
+        );
+        let empty = search_paths_from(
+            Some(bundled),
+            roots(
+                Desktop::Linux,
+                data_dir,
+                Some(OsStr::new("")),
+                Some(OsStr::new("/usr/share")),
+            ),
+        );
+        assert_eq!(empty, unset);
+        assert_eq!(
+            empty,
+            vec![
+                data_dir.join("characters"),
+                PathBuf::from("/usr/share/fidget/characters"),
+                PathBuf::from("/bundled/characters"),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn search_paths_on_linux_read_the_data_directory() {
+        let user = fidget_core::memory::data_dir().join("characters");
+        let bundled = PathBuf::from("/bundled/characters");
+        let paths = search_paths(Some(bundled.clone()));
+        assert!(
+            paths.contains(&user),
+            "the user directory is missing from {paths:?}"
+        );
+        assert_eq!(
+            paths.last(),
+            Some(&bundled),
+            "the bundled directory stays last: {paths:?}"
+        );
+        assert!(
+            paths.iter().all(|path| !path
+                .components()
+                .any(|component| component.as_os_str() == "Library")),
+            "linux does not search the macOS Library directory: {paths:?}"
         );
     }
 
