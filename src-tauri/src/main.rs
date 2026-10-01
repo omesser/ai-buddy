@@ -2243,6 +2243,8 @@ struct ChatHarness {
     /// Why a launcher that was there gave no wire: its command, the reason,
     /// and what it printed, which the landing draws apart.
     failed: Option<harness::LaunchFailure>,
+    /// Why preflight refused the launcher, with the command to run.
+    unhealthy: Option<String>,
 }
 
 fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
@@ -2259,6 +2261,7 @@ fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
             .map(|(_, url)| url.to_string()),
         initializing: attached.initializing,
         failed: attached.failed.clone(),
+        unhealthy: attached.unhealthy.clone(),
     })
 }
 

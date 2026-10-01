@@ -391,9 +391,9 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                     attached.name
                 ),
                 None if attached.unhealthy.is_some() => format!(
-                    "{} is unhealthy: {} The fidget runs on static weights until it is fixed.",
+                    "{} is unhealthy: {}. The fidget runs on static weights until it is fixed.",
                     attached.name,
-                    attached.unhealthy.as_deref().unwrap_or_default()
+                    attached.unhealthy.as_deref().unwrap_or_default().trim_end_matches('.')
                 ),
                 None if attached.failed.is_some() => format!(
                     "{} failed to start: {} The fidget runs on static weights until it answers.",

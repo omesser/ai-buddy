@@ -151,7 +151,7 @@ export function landingCopy(opening) {
   if (harness?.unhealthy) {
     return {
       title: `${name} is unhealthy`,
-      lede: `${harness.unhealthy} Then pick ${name} again, or pick a different Harness below.`,
+      lede: `${String(harness.unhealthy).replace(/\.$/, "")}. Then pick ${name} again, or pick a different Harness below.`,
       command: null,
       signInLabel: null,
       hint: null,
