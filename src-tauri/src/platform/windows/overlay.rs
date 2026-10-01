@@ -7,7 +7,6 @@
 //! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
 //! when the capturable setting, on by default (ADR-0024), is turned off.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -18,20 +17,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE,
     WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
 };
-
-static MASK_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
-static MASK_REBUILD_TOTAL_NS: AtomicU64 = AtomicU64::new(0);
-
-/// Read and reset mask rebuild metrics. Returns (count, total_ns).
-///
-/// Reserved counters; measurement is via TRACE log
-/// (`FIDGET_TRACE_MASK_REBUILD`).
-#[allow(dead_code)]
-pub fn read_mask_rebuild_stats() -> (u64, u64) {
-    let count = MASK_REBUILD_COUNT.swap(0, Ordering::Relaxed);
-    let total_ns = MASK_REBUILD_TOTAL_NS.swap(0, Ordering::Relaxed);
-    (count, total_ns)
-}
 
 /// Float above other windows, non-activating. Capturable unless Presence or
 /// `FIDGET_CAPTURABLE=0` excludes it from shares.
@@ -304,8 +289,6 @@ fn apply_input_mask(
     }
 
     let rebuild_ns = rebuild_start.elapsed().as_nanos() as u64;
-    MASK_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
-    MASK_REBUILD_TOTAL_NS.fetch_add(rebuild_ns, Ordering::Relaxed);
 
     if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
         let rebuild_ms = rebuild_ns as f64 / 1_000_000.0;
@@ -332,20 +315,4 @@ fn clear_input_region(hwnd: HWND) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mask_rebuild_stats_readable_and_reset() {
-        let (count1, ns1) = read_mask_rebuild_stats();
-        assert_eq!(count1, 0, "stats should start at zero");
-        assert_eq!(ns1, 0);
-
-        let (count2, ns2) = read_mask_rebuild_stats();
-        assert_eq!(count2, 0, "stats should be zero after reset");
-        assert_eq!(ns2, 0);
-    }
 }

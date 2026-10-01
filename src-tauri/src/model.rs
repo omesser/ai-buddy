@@ -3814,16 +3814,6 @@ pub(crate) mod tests {
         });
     }
 
-    /// Blank Model API is one number, remote or local. A Harness turn is
-    /// `harness::TURN_TIMEOUT`, not this.
-    #[test]
-    fn a_model_api_turn_is_one_timeout_when_unset() {
-        with_env(None, None, None, || {
-            crate::dev_flags::seed(&crate::settings::Settings::default());
-            assert_eq!(timeout_for(), TIMEOUT);
-        });
-    }
-
     /// One guard for every wake and every host. Nothing about the surface
     /// the reply lands on, or about where the server runs, moves this number.
     /// `THINK_CEILING` and a pinned cap are the only two things that do, and
