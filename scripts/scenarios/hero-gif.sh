@@ -92,6 +92,9 @@ case "$harness_kind" in
   claude)
     harness=claude
     command -v npx > /dev/null || fail "npx is not on PATH; the claude Harness runs on Node"
+    # claude-agent-acp needs Node 22 and, on an older one, hangs instead of attaching.
+    node_major=$(node -p 'process.versions.node.split(".")[0]')
+    [ "$node_major" -ge 22 ] || fail "node $(node -v) is on PATH; the claude Harness needs 22 or newer"
     # The login sits in the login keychain, not under ~/.claude, and `security`
     # falls back to `$HOME/Library/Keychains/login.keychain-db` for its search
     # list, so CLAUDE_CONFIG_DIR alone would still read no keychain.
@@ -135,7 +138,7 @@ cue "recording. Pick the sprite up and throw it hard at the window's top edge."
 at 4
 cue "it has landed. Click it once: a poke."
 at 7
-cue "double-click it. Chat opens; leave it open, or the tour bubble lands at 21 s."
+cue "once it stands still, double-click it without moving the mouse. Chat opens; leave it open."
 at 10
 cue "type in Chat: What's in the news today?  Then press Enter."
 asked=$(replies)
