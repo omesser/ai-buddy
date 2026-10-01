@@ -8,6 +8,8 @@
 
 <img src="./branding/banner.jpg" width="100%" alt="Fidget, a desktop pet" />
 
+[omesser.github.io/fidget](https://omesser.github.io/fidget/)
+
 </div>
 
 # Fidget keeps you company while you work or study. It walks, talks, naps and can assist in whatever you are up to
