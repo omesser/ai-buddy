@@ -27,15 +27,13 @@
     --paper-2: #E9EBF1;
     --ink: #1D2027;
     --ink-2: #4A5060;
-    --ink-3: #8A90A0;
+    --ink-3: #646A7A;
     --line: #D3D7E0;
     --accent: #2C8C7C;
     --accent-ink: #FFFFFF;
     --win: #FBFCFE;
     --desk-a: #CFE3EC;
     --desk-b: #E8D9EC;
-    --bubble: #FFFFFF;
-    --bubble-ink: #1D2027;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -51,8 +49,6 @@
       --win: #232835;
       --desk-a: #1F3440;
       --desk-b: #34283D;
-      --bubble: #2C3340;
-      --bubble-ink: #EEF0F5;
       color-scheme: dark;
     }
   }
@@ -68,8 +64,6 @@
     --win: #232835;
     --desk-a: #1F3440;
     --desk-b: #34283D;
-    --bubble: #2C3340;
-    --bubble-ink: #EEF0F5;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -110,6 +104,7 @@
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .btn.primary span { color: inherit; opacity: .8; }
   .btn:hover { filter: brightness(1.05); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .brew { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
     font-size: .9rem; color: var(--ink-3); }
   code { font: .88rem ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -131,12 +126,15 @@
   .perched { position: absolute; left: 56%; bottom: 44%; width: 128px; height: 128px;
     transform: translateY(6px); }
   .perched img { width: 100%; height: 100%; object-fit: contain; }
-  .say { position: absolute; left: 16%; bottom: calc(44% + 132px); max-width: 16rem;
-    background: var(--bubble); color: var(--bubble-ink); border-radius: 14px;
-    padding: .65rem .85rem; font-size: .92rem; line-height: 1.4;
-    box-shadow: 0 6px 18px rgb(0 0 0 / .15); }
-  .say::after { content: ""; position: absolute; right: 2.2rem; bottom: -7px;
-    width: 14px; height: 14px; background: var(--bubble); transform: rotate(45deg); }
+  .say { position: absolute; left: 16%; bottom: calc(44% + 136px); max-width: 16rem;
+    padding: 10px 13px; border-radius: 12px; background: #14171E; color: #E8EBF2;
+    border: 2px solid #E8EBF2; box-shadow: 0 4px 16px rgb(0 0 0 / .55);
+    font: 13.5px/1.55 system-ui, -apple-system, sans-serif; }
+  .say::before, .say::after { content: ""; position: absolute; right: 2.2rem; width: 0; height: 0;
+    border-left: 10px solid transparent; border-right: 10px solid transparent; }
+  .say::before { bottom: -10px; border-top: 10px solid #E8EBF2; }
+  .say::after { bottom: -7px; margin-right: 2px; border-left-width: 8px; border-right-width: 8px;
+    border-top: 8px solid #14171E; }
 
   section { padding: 3rem 0; border-top: 1px solid var(--line); }
   h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
@@ -170,7 +168,7 @@
     .cast { grid-template-columns: repeat(4, 1fr); }
     .desk { aspect-ratio: 1 / 1; }
     .perched { width: 96px; height: 96px; }
-    .say { left: 6%; bottom: calc(44% + 102px); font-size: .85rem; }
+    .say { left: 6%; bottom: calc(44% + 106px); }
   }
 </style>
 </head>
@@ -182,7 +180,6 @@
     <a class="brand" href="#"><img src="characters/buddy-bot/frames/idle-0.png" alt="">Fidget</a>
     <a class="link opt" href="#harnesses">Harnesses</a>
     <a class="link opt" href="#characters">Characters</a>
-    <a class="link" href="index.html">Design pages</a>
     <a class="link" href="https://github.com/omesser/fidget">GitHub</a>
   </nav>
 
@@ -192,13 +189,13 @@
       <p class="lede">A desktop pet that walks on your windows. Pick it up, throw it, let it nap, or
         double-click to talk to the coding agent you already use.</p>
       <div class="get" id="get">
-        <a class="btn primary" href="https://github.com/omesser/fidget/releases"><b>Download for macOS</b><span>Apple Silicon · .dmg</span></a>
-        <a class="btn" href="https://github.com/omesser/fidget/releases"><b>Windows</b><span>x86_64 · installer</span></a>
-        <a class="btn" href="https://github.com/omesser/fidget/releases"><b>Linux</b><span>x86_64 · AppImage, .deb</span></a>
+        <a class="btn primary" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_aarch64.dmg"><b>Download for macOS</b><span>Apple Silicon · .dmg</span></a>
+        <a class="btn" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_x64-setup.exe"><b>Windows</b><span>x86_64 · installer</span></a>
+        <a class="btn" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_amd64.AppImage"><b>Linux</b><span>x86_64 · AppImage</span></a>
       </div>
-      <div class="brew">or with Homebrew <code>brew install --cask https://raw.githubusercontent.com/omesser/fidget/main/packaging/homebrew/Casks/fidget.rb</code></div>
+      <div class="brew">or with Homebrew <code>brew install --cask fidget</code></div>
       <p class="note">Builds are not signed yet, so the first open warns. Works offline with no account;
-        connect an AI in Settings when you want it to talk back.</p>
+        connect an AI in Settings when you want it to talk back. The Homebrew cask lands with #1204.</p>
     </div>
 
     <div class="desk" aria-label="Buddy Bot perched on a window's top edge, talking">
@@ -207,7 +204,7 @@
         <div class="bar"><i></i><i></i><i></i></div>
         <div class="lines"><div style="width:72%"></div><div style="width:54%"></div><div style="width:81%"></div><div style="width:38%"></div><div style="width:66%"></div></div>
       </div>
-      <div class="perched"><img id="hero-sprite" src="characters/buddy-bot/frames/idle-0.png" alt="Buddy Bot"></div>
+      <div class="perched"><img id="hero-sprite" src="characters/buddy-bot/frames/sit-0.png" alt="Buddy Bot"></div>
     </div>
   </div>
 </div>
@@ -308,7 +305,7 @@
   }
 
   play(document.getElementById("hero-sprite"),
-    range(16).map((i) => `characters/buddy-bot/frames/idle-${i}.png`), 5);
+    range(4).map((i) => `characters/buddy-bot/frames/sit-${i}.png`), 3);
 </script>
 </body>
 </html>
