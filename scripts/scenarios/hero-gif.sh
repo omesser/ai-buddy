@@ -136,7 +136,7 @@ replies() { grep -c '^harness: reply ' "$log" || true; }
 
 cue "recording. Pick the sprite up and throw it hard at the window's top edge."
 at 4
-cue "it has landed. Click it once: a poke."
+cue "it has landed. Click it once, a poke, then move the mouse off him."
 at 7
 cue "once it stands still, double-click it without moving the mouse. Chat opens; leave it open."
 at 10
