@@ -68,13 +68,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Set up Node
-        # Only for the renderer tests. The front end is static files Tauri embeds.
-        if: steps.changes.outputs.code == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 'lts/*'
-
       - name: Install Rust
         if: steps.changes.outputs.code == 'true'
         run: rustup toolchain install stable --profile minimal --component clippy
@@ -184,10 +177,64 @@ jobs:
         env:
           RUNNER_OS: ${{ runner.os }}
 
+  # Own job: no node test depends on the OS, and only Ubuntu ships the Chrome the
+  # headless renderer tests drive. Without Rust or apt it finishes beside `checks`.
+  # Like `checks`, it skips a pull request that changes only Markdown and LICENSE.
+  renderer:
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Find what this run changed
+        id: changed
+        # `files_ignore` lists what is not code, so an unanticipated file type,
+        # this workflow included, counts as code and cannot switch itself off.
+        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files_ignore: |
+            **/*.md
+            LICENSE
+
+      - name: Decide whether this run touches code
+        id: changes
+        # Fails open: only a pull request whose changed files were all ignored
+        # skips. A broken changed-files step, a dispatch or a push runs in full.
+        env:
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
+        run: |
+          code=true
+          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
+            [ "${{ github.event_name }}" = pull_request ]; then
+            code=false
+          fi
+          echo "touches code: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 'lts/*'
+
       - name: Renderer tests
+        if: steps.changes.outputs.code == 'true'
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         # Pillow is for tests/readme-gifs.test.js.
-        if: steps.changes.outputs.code == 'true'
         run: |
           pip install pillow
           node --test tests/*.test.js
