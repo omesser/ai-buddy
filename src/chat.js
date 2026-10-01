@@ -32,6 +32,9 @@ const chat = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
+// A branded connect scrolls the log onto the button and then onto the session
+// note. Hold the landing status at the top until that Harness can answer.
+let holdLogAtTop = false;
 const plan = document.getElementById("plan");
 const namesHintEl = document.getElementById("names-hint");
 const empty = document.getElementById("empty");
@@ -125,7 +128,7 @@ function el(cls, tag) {
 
 function add(node) {
   log.append(node);
-  log.scrollTop = log.scrollHeight;
+  log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;
   return node;
 }
 
@@ -429,6 +432,7 @@ function attached(opening) {
   document.getElementById("landing-sign-in-label").hidden = true;
 
   if (ready) {
+    holdLogAtTop = false;
     return true;
   }
 
@@ -508,7 +512,14 @@ function connect(harness, label) {
 }
 
 for (const btn of document.querySelectorAll(".connect-btn")) {
+  // The button sits in the log, so the focus a click gives it scrolls the
+  // landing status off the top.
+  btn.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
   btn.addEventListener("click", () => {
+    holdLogAtTop = true;
+    log.scrollTop = 0;
     connect(btn.dataset.harness, btn.querySelector(".connect-label").textContent);
   });
 }
