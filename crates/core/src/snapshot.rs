@@ -812,11 +812,13 @@ mod tests {
             ),
             "the idle poll did not repeat"
         );
-        // No upper bound: the Actions macOS runner wakes this 100 ms kernel sleep
-        // 130 to 150 ms late. The ride test pins the deadline arithmetic.
+        // The Actions macOS runner wakes this 100 ms sleep up to 150 ms late, and
+        // the next gap catches up short (229, 249 and 74 ms medians seen). So the
+        // bound only separates idle from the 16 ms ride; the ride test pins the
+        // deadline arithmetic.
         let median = median_gap(&stamps.lock().expect("stamps"));
         assert!(
-            median >= Duration::from_millis(80),
+            median >= Duration::from_millis(40),
             "median idle gap {median:?} is ride cadence"
         );
     }
