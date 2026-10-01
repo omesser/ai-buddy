@@ -12,10 +12,11 @@ use crate::mcp_resources::WindowTitle;
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
-    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
+    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowTextW, IsWindowVisible, GWL_EXSTYLE,
+    GWL_STYLE,
 };
 
+use super::super::windows_perch::perch_candidate;
 use super::process::window_owner;
 
 /// The Windows window manager's view of the desktop.
@@ -124,20 +125,16 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
 fn window_rect(hwnd: HWND, can_read_names: bool) -> Option<WindowRect> {
     // SAFETY: hwnd comes from EnumWindows, which guarantees it is valid for
     // the callback's execution. IsWindowVisible is a simple read.
-    if unsafe { IsWindowVisible(hwnd) } == 0 {
-        return None;
-    }
+    let is_window_visible = unsafe { IsWindowVisible(hwnd) } != 0;
 
     // SAFETY: GetWindowLongW on GWL_STYLE reads the window's style bits.
     // hwnd is still valid.
     let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) };
-    if (style & (WS_VISIBLE as i32)) == 0 {
-        return None;
-    }
 
     // SAFETY: GetWindowLongW on GWL_EXSTYLE reads the extended style bits.
     let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) };
-    if (ex_style & (WS_EX_TOOLWINDOW as i32)) != 0 {
+
+    if !perch_candidate(is_window_visible, style, ex_style) {
         return None;
     }
 
@@ -151,10 +148,6 @@ fn window_rect(hwnd: HWND, can_read_names: bool) -> Option<WindowRect> {
     }
 
     if rect.right <= rect.left || rect.bottom <= rect.top {
-        return None;
-    }
-
-    if is_own_overlay(hwnd) {
         return None;
     }
 
@@ -206,19 +199,4 @@ fn read_window_title(hwnd: HWND) -> Option<String> {
     } else {
         Some(title)
     }
-}
-
-/// Whether this window is one of our own overlay windows.
-/// Overlays run in this process, so the process ID answers it and they
-/// cannot block Perch detection.
-fn is_own_overlay(hwnd: HWND) -> bool {
-    let mut window_pid: u32 = 0;
-    // SAFETY: GetWindowThreadProcessId writes the process ID into the
-    // out-pointer window_pid, which lives until this function returns.
-    // hwnd is still valid from EnumWindows.
-    unsafe {
-        GetWindowThreadProcessId(hwnd, &mut window_pid);
-    }
-    let current_pid = std::process::id();
-    window_pid == current_pid
 }

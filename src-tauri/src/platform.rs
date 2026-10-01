@@ -265,6 +265,9 @@ mod x11;
 #[cfg(not(unix))]
 mod windows;
 
+#[cfg(any(test, not(unix)))]
+mod windows_perch;
+
 mod ctrl_c;
 
 /// Children spawned while this is held inherit "ignore Ctrl+C".

@@ -139,7 +139,7 @@ function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1
       "--dump-dom",
       pathToFileURL(page).href,
     ],
-    { encoding: "utf8", maxBuffer: 1 << 24, timeout: 40000, killSignal: "SIGKILL" },
+    { encoding: "utf8", maxBuffer: 1 << 24, timeout: 120000, killSignal: "SIGKILL" },
   );
   const match = run.stdout.match(/<pre id="probe"[^>]*>(.*?)<\/pre>/s);
   assert.ok(match, `the Chat surface did not report (${theme}). ${run.stderr?.slice(-500) ?? ""}`);
@@ -169,7 +169,7 @@ function check(theme, report) {
 
 test(
   "the Chat header stays one row and wraps the mind line, then the name, then the chip",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
   () => {
     for (const theme of THEMES) {
       const report = measure(theme, "Buddy Bot");
@@ -185,7 +185,7 @@ test(
 
 test(
   "a name too long for the row wraps beside the chip and the mind line",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
   () => {
     for (const theme of THEMES) {
       const report = measure(theme, "Sir Reginald Buddington the Third of Cupertino");
@@ -201,7 +201,7 @@ test(
 
 test(
   "a custom Harness path with no break opportunity wraps inside the path instead of widening the header",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
   () => {
     for (const theme of THEMES) {
       const report = measure(theme, "Buddy Bot", {

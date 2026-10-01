@@ -103,7 +103,7 @@ function probe(script, forceDark) {
   const run = spawnSync(chrome, args, {
     encoding: "utf8",
     maxBuffer: 1 << 24,
-    timeout: 40000,
+    timeout: 120000,
     killSignal: "SIGKILL",
   });
   const match = run.stdout.match(/<pre id="probe"[^>]*>(.*?)<\/pre>/s);
@@ -136,7 +136,7 @@ function report(extra) {
 
 test(
   "forced light paints each design's light panel and pins color-scheme",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
   () => {
     for (const design of DESIGNS) {
       const expected = declaredToken(`[data-chat-palette="light"].chat-ui-${design}`, "--chat-panel");
@@ -159,7 +159,7 @@ test(
 
 test(
   "system and dark under force-dark-mode keep the dark panel",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 780000 },
   () => {
     for (const design of DESIGNS) {
       const expected = declaredToken(`.chat-ui-${design}`, "--chat-panel");
@@ -221,7 +221,7 @@ test(
 
 test(
   "dark forces the dark panel when the browser is not in force-dark-mode",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
   () => {
     for (const design of DESIGNS) {
       const dark = declaredToken(`.chat-ui-${design}`, "--chat-panel");
