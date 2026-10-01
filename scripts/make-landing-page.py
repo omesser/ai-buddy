@@ -31,7 +31,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
 CHARACTERS = ROOT / "characters"
 SHELL = ROOT / "docs" / "design" / "landing.html"
-PAGE = "landing.html"
+PAGE = "index.html"
 REPO = "https://github.com/omesser/fidget"
 # The README names Buddy Bot as the default Character; the hero is that one.
 HERO = "buddy-bot"
@@ -218,6 +218,7 @@ def render(readme_text, characters_root, rust_source, shell):
     )
     slots = {
         "headline": html.escape(words["headline"], quote=False),
+        "description": html.escape(re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", words["lede"])),
         "lede": inline(words["lede"]),
         "notes": " ".join(inline(n) for n in words["notes"]),
         "features": "\n".join(f"<div><b>{inline(t)}</b><p>{inline(b)}</p></div>" for t, b in words["features"]),
@@ -231,8 +232,8 @@ def render(readme_text, characters_root, rust_source, shell):
     page = shell
     for name, value in slots.items():
         marker = "{{" + name + "}}"
-        if page.count(marker) != 1:
-            raise Malformed(f"{SHELL.name} holds {page.count(marker)} {marker} markers, not one")
+        if marker not in page:
+            raise Malformed(f"{SHELL.name} holds no {marker} marker")
         page = page.replace(marker, value)
     left = re.search(r"\{\{\w+\}\}", page)
     if left:

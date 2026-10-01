@@ -31,8 +31,7 @@ jobs:
         # `_site/characters/`.
         run: |
           mkdir -p _site
-          cp docs/design/index.html _site/index.html
-          cp docs/design/index.html _site/design.html
+          cp docs/design/design.html _site/design.html
           cp docs/design/cues.html  _site/cues.html
           cp docs/design/bubble.html _site/bubble.html
           cp docs/design/chat.html  _site/chat.html
@@ -44,6 +43,7 @@ jobs:
           python3 scripts/make-expression-page.py --out _site
           python3 scripts/make-landing-page.py --self-check
           python3 scripts/make-landing-page.py --out _site
+          cp src-tauri/icons/icon.png _site/icon.png
 
       - name: Verify nothing but a page or its art reached _site
         # What the allowlist keeps off the web is Markdown, so an extension

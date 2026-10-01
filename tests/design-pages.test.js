@@ -25,7 +25,7 @@ function cls(entry) {
 }
 
 test("index cues entry is the #277 Dated proposal, not a live spec", () => {
-  const entry = indexEntry(design("index.html"), "cues.html");
+  const entry = indexEntry(design("design.html"), "cues.html");
   const named = cls(entry);
   assert.match(named, /Dated proposal/);
   assert.match(named, /#277/);
@@ -42,7 +42,7 @@ test("cues.html carries noindex and a visible Dated class line", () => {
 });
 
 test("index chat-mockups entry is the #339 Dated proposal", () => {
-  const named = cls(indexEntry(design("index.html"), "chat-mockups.html"));
+  const named = cls(indexEntry(design("design.html"), "chat-mockups.html"));
   assert.match(named, /Dated proposal/);
   assert.match(named, /#339/);
   assert.doesNotMatch(named, /in review on #17/);
@@ -69,7 +69,7 @@ test("chat-mockups.html class line attributes #339", () => {
 });
 
 test("index window-titles-hint entry is the #916 Dated proposal", () => {
-  const named = cls(indexEntry(design("index.html"), "window-titles-hint.html"));
+  const named = cls(indexEntry(design("design.html"), "window-titles-hint.html"));
   assert.match(named, /Dated proposal/);
   assert.match(named, /#916/);
 });
@@ -81,11 +81,6 @@ test("window-titles-hint.html carries noindex and a visible Dated class line", (
     html,
     /Dated proposal · <a href="https:\/\/github\.com\/omesser\/fidget\/issues\/916">#916<\/a> · .+ · hand-written and frozen, not a description of shipped behavior/,
   );
-});
-
-test("index landing entry names its Generated sources", () => {
-  const named = cls(indexEntry(design("index.html"), "landing.html"));
-  assert.match(named, /Generated from README\.md and characters\/ at deploy/);
 });
 
 // #916 and ADR-0032: the hint names what the fidget knows, never the grant that
@@ -165,7 +160,7 @@ test("quick-message showcase matches the overlay", () => {
 });
 
 test("index names the quick-message on the cues and bubble pages", () => {
-  const index = design("index.html");
+  const index = design("design.html");
   const cues = indexEntry(index, "cues.html");
   const bubble = indexEntry(index, "bubble.html");
   assert.match(cues, /1\.5s/);

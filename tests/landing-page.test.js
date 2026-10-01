@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "make-landing-page.py");
-const PAGE = "landing.html";
+const PAGE = "index.html";
 
 function assembleScript(site) {
   const workflow = readFileSync(join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
@@ -42,7 +42,7 @@ test("the generator self-check passes", () => {
 test("the page leads with the README headline", () => {
   const readme = readFileSync(join(ROOT, "README.md"), "utf8");
   const headline = readme.match(/^# (.+)$/m)[1];
-  assert.match(published(PAGE), new RegExp(`<h1>${headline.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</h1>`));
+  assert.ok(published(PAGE).includes(`<h1>${headline}</h1>`), `the page leads with: ${headline}`);
 });
 
 test("the page names every Character a manifest declares", () => {
@@ -84,4 +84,31 @@ test("a fixture README reaches the page, and one with no H1 fails the build", ()
     () => execFileSync("python3", [SCRIPT, "--readme", readme, "--out", out], { cwd: ROOT, stdio: "pipe" }),
     (error) => /no H1/.test(error.stderr.toString()),
   );
+});
+
+// The URL plan in #1210: the root is the landing page, the directory moves to
+// /design.html, and every design page it lists stays published.
+test("the root is the landing page and every design page stays reachable", () => {
+  const pages = ["characters.html", "cues.html", "bubble.html", "chat.html", "chat-mockups.html",
+    "expression.html", "window-titles-hint.html"];
+  const root = published("index.html");
+  const directory = published("design.html");
+  assert.match(root, /<link rel="canonical" href="https:\/\/omesser\.github\.io\/fidget\/">/);
+  assert.match(root, /<a href="design\.html">Design pages<\/a>/);
+  assert.match(directory, /<title>Fidget design pages<\/title>/);
+  for (const page of pages) {
+    assert.ok(existsSync(join(site, page)), `${page} is published`);
+    assert.ok(directory.includes(`href="${page}"`), `design.html links ${page}`);
+  }
+  assert.ok(!existsSync(join(site, "landing.html")), "nothing publishes landing.html");
+});
+
+test("the root carries a description and an Open Graph image the site publishes", () => {
+  const root = published("index.html");
+  const description = root.match(/<meta name="description" content="([^"]+)">/);
+  assert.ok(description, "the root has a description");
+  assert.ok(root.includes(`<meta property="og:description" content="${description[1]}">`), "og:description matches");
+  const image = root.match(/<meta property="og:image" content="https:\/\/omesser\.github\.io\/fidget\/([^"]+\.png)">/);
+  assert.ok(image, "og:image is an absolute PNG URL on the site");
+  assert.ok(existsSync(join(site, image[1])), `${image[1]} is published`);
 });
