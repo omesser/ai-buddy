@@ -1727,8 +1727,7 @@ pub struct Live {
     /// Filled the way `api_key_placeholder` is: only `settings_snapshot`
     /// has the view that lists them, so `current()` leaves it empty (#921).
     pub installed: Vec<String>,
-    /// The user directory the Character picker reads. A path, so a fixture
-    /// compared byte for byte cannot hold this machine's.
+    /// The user directory the Character picker reads.
     pub characters_dir: String,
 }
 
@@ -1814,8 +1813,7 @@ pub(crate) mod tests {
     /// one. Shaped like the macOS answer the fixtures otherwise carry.
     const FIXTURE_ATTACH_CWD: &str = "/Users/buddy/Library/Application Support/fidget";
 
-    /// The user directory the Character picker shows. A literal, for the same
-    /// reason as `FIXTURE_ATTACH_CWD`.
+    /// A literal, for the same reason as `FIXTURE_ATTACH_CWD`.
     const FIXTURE_CHARACTERS_DIR: &str =
         "/Users/buddy/Library/Application Support/fidget/characters";
 
@@ -2493,8 +2491,6 @@ pub(crate) mod tests {
         ));
     }
 
-    /// The picker names the directory it reads, so a user can find a package
-    /// without the docs.
     #[test]
     fn the_character_picker_shows_the_user_directory_it_reads() {
         let description = describe_with(&fixture_live(false, false));
@@ -2513,7 +2509,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// `describe` reads the process, so the path on screen is the one searched.
     #[test]
     fn the_running_character_picker_shows_this_machines_user_directory() {
         let description = describe();

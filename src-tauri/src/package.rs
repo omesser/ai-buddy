@@ -114,10 +114,6 @@ pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
     Ok(files)
 }
 
-/// Which desktop's path conventions a search follows.
-///
-/// The running process is one of these. A test names another, so the Windows
-/// list is checked without a Windows machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Desktop {
     // The other two are what `host` returns on that OS. On this one they are
@@ -141,7 +137,7 @@ impl Desktop {
         }
     }
 
-    /// `FIDGET_CHARACTERS` splits on this. A colon is a drive letter on Windows.
+    /// A colon is a drive letter on Windows.
     fn separator(self) -> u8 {
         match self {
             Self::Windows => b';',
@@ -150,13 +146,9 @@ impl Desktop {
     }
 }
 
-/// The directories `search_paths` is built from, apart from the bundled one.
 struct PackageRoots<'a> {
-    /// `FIDGET_CHARACTERS` when set, still unsplit.
     extra: Option<&'a OsStr>,
-    /// `memory::data_dir()`, which already ends in `fidget`.
     data_dir: &'a Path,
-    /// `$XDG_DATA_DIRS` when set. Only Linux reads it.
     xdg_data_dirs: Option<&'a OsStr>,
     desktop: Desktop,
 }
@@ -171,8 +163,8 @@ pub fn user_characters_dir() -> PathBuf {
 
 /// Where fidget looks for Character Packages, in the order it looks.
 ///
-/// `FIDGET_CHARACTERS` is added in front, the way `PATH` is. Replacing the
-/// other directories hid the user folder and the shipped packages. Earlier wins.
+/// `FIDGET_CHARACTERS` is added in front, the way `PATH` is. Earlier wins.
+/// Replacing the other directories hides the user folder and the shipped packages.
 pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
     let data_dir = fidget_core::memory::data_dir();
     let extra = std::env::var_os(SEARCH_PATH_VAR);
@@ -219,8 +211,6 @@ fn xdg_bases(raw: Option<&OsStr>) -> Vec<PathBuf> {
         .collect()
 }
 
-/// An empty entry is not a directory: searching it would list the process's
-/// current directory.
 fn split_list(raw: &OsStr, separator: u8) -> Vec<PathBuf> {
     #[cfg(unix)]
     {
@@ -993,8 +983,6 @@ mod tests {
         }
     }
 
-    /// macOS keeps the Application Support directory `data_dir` already
-    /// resolved, and does not consult `$XDG_DATA_DIRS`.
     #[test]
     fn macos_search_paths_are_the_user_directory_then_the_bundle() {
         let data_dir = Path::new("/Users/buddy/Library/Application Support/fidget");
@@ -1013,8 +1001,6 @@ mod tests {
         );
     }
 
-    /// Linux searches the user data directory, then the XDG defaults, then
-    /// the bundle. Unset `$XDG_DATA_DIRS` is `/usr/local/share` and `/usr/share`.
     #[test]
     fn linux_search_paths_use_the_xdg_defaults_when_the_variable_is_unset() {
         let data_dir = Path::new("/home/buddy/.local/share/fidget");
@@ -1033,8 +1019,6 @@ mod tests {
         );
     }
 
-    /// A set `$XDG_DATA_DIRS` replaces the defaults. An empty one does not:
-    /// the spec treats empty the same as unset.
     #[test]
     fn linux_search_paths_follow_xdg_data_dirs_when_it_is_set() {
         let data_dir = Path::new("/srv/xdg/fidget");
@@ -1073,7 +1057,6 @@ mod tests {
         );
     }
 
-    /// A relative `$XDG_DATA_DIRS` entry is not a base directory.
     #[test]
     fn linux_search_paths_skip_a_relative_xdg_data_dir() {
         let data_dir = Path::new("/home/buddy/.local/share/fidget");
@@ -1095,8 +1078,6 @@ mod tests {
         );
     }
 
-    /// `FIDGET_CHARACTERS` is added in front and split on the desktop's
-    /// separator. It does not replace the user directory or the bundle.
     #[test]
     fn fidget_characters_is_added_in_front_on_each_desktop() {
         let data_dir = Path::new("/Users/buddy/Library/Application Support/fidget");
@@ -1141,7 +1122,6 @@ mod tests {
         );
     }
 
-    /// On Windows the separator is `;`. A colon is part of a path (`C:`), not a split.
     #[test]
     fn windows_fidget_characters_does_not_split_on_colons() {
         let data_dir = Path::new(r"C:\Users\buddy\AppData\Roaming\fidget");
@@ -1163,8 +1143,6 @@ mod tests {
         );
     }
 
-    /// Windows still has a user directory when `HOME` is unset. The search
-    /// never reads `HOME`; the roaming data directory is the path.
     #[test]
     fn windows_search_paths_keep_the_user_directory_without_home() {
         let data_dir = Path::new(r"C:\Users\buddy\AppData\Roaming\fidget");
@@ -1182,7 +1160,6 @@ mod tests {
         );
     }
 
-    /// An empty `FIDGET_CHARACTERS` adds nothing and leaves the other directories.
     #[test]
     fn an_empty_fidget_characters_does_not_hide_the_user_directory() {
         let data_dir = Path::new("/home/buddy/.local/share/fidget");
@@ -1216,8 +1193,6 @@ mod tests {
         );
     }
 
-    /// The process entry uses this machine's data directory, not the macOS
-    /// Library path hardcoded on every OS.
     #[cfg(target_os = "linux")]
     #[test]
     fn search_paths_on_linux_read_the_data_directory() {
