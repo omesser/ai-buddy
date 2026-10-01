@@ -81,7 +81,7 @@ def section(found, heading):
 
 
 def paragraphs(lines):
-    return [" ".join(chunk.split()) for chunk in "\n".join(lines).split("\n\n") if chunk.strip()]
+    return [" ".join(chunk.split()) for chunk in re.split(r"\n\s*\n", "\n".join(lines)) if chunk.strip()]
 
 
 def sentence(lines, needle):
@@ -158,11 +158,14 @@ def loop(package, declared, name, default_fps):
         raise Malformed(f"{package.name}: declares no {name} frames")
     frames = []
     for path in animation["frames"]:
-        if not isinstance(path, str) or ".." in path or not path.endswith(".png") \
-                or not (package / path).is_file():
+        if not isinstance(path, str) or not re.fullmatch(r"[\w./-]+\.png", path) \
+                or path.startswith("/") or ".." in path or not (package / path).is_file():
             raise Malformed(f"{package.name}: {name} frame {path!r} is not a PNG in the package")
         frames.append(f"characters/{package.name}/{path}")
-    return {"frames": frames, "fps": animation.get("fps", default_fps)}
+    fps = animation.get("fps", default_fps)
+    if not isinstance(fps, int) or isinstance(fps, bool) or fps < 1:
+        raise Malformed(f"{package.name}: {name} fps {fps!r} is not a positive integer")
+    return {"frames": frames, "fps": fps}
 
 
 def read_cast(characters_root, default_fps):
@@ -218,12 +221,13 @@ def render(readme_text, characters_root, rust_source, shell):
     )
     slots = {
         "headline": html.escape(words["headline"], quote=False),
-        "description": html.escape(re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", words["lede"])),
+        "description": html.escape(re.sub(r"[*`]", "", re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", words["lede"]))),
         "lede": inline(words["lede"]),
         "notes": " ".join(inline(n) for n in words["notes"]),
         "features": "\n".join(f"<div><b>{inline(t)}</b><p>{inline(b)}</p></div>" for t, b in words["features"]),
         "harnesses": "".join(f"<li>{html.escape(h)}</li>" for h in words["harnesses"]),
-        "count": COUNT[len(cast)] if len(cast) < len(COUNT) else str(len(cast)),
+        "count": (COUNT[len(cast)] if len(cast) < len(COUNT) else str(len(cast)))
+        + (" character ships" if len(cast) == 1 else " characters ship"),
         "cast": figures,
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
@@ -290,7 +294,7 @@ def self_check():
 
         (package / "frames" / "walk-0.png").write_bytes(art)
         page = render(readme, scratch, rust, shell)
-        assert "One characters ship" in page, "the cast count is not the package count"
+        assert "One character ships with Fidget" in page, "the cast count is not the package count"
         assert "<figcaption>Solo</figcaption>" in page
 
     print(f"self-check: {len(words['features'])} features, {len(words['harnesses'])} Harnesses, checks passed")

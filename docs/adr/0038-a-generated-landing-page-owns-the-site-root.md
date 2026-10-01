@@ -32,8 +32,9 @@ A source the generator cannot find fails the build, as it does for the
 gallery. The README stays the canonical text. The landing page is a rendering
 of it, so the two front doors cannot drift.
 
-The page's fixed copy is limited to layout, section headings, the demo line in
-the hero bubble, and links to the documents that own each claim. A product
+The page's fixed copy is limited to layout, section headings and their
+one-line subtitles, the demo line in the hero bubble, and short cards that
+link to the document owning each claim. A product
 claim the page makes and the README does not is the Described class, and it
 does not belong in the shell.
 

@@ -1,13 +1,7 @@
 <!doctype html>
 <!--
-  The page shell for the site's landing page. scripts/make-landing-page.py
-  fills each double-brace slot from README.md and characters/ and writes the
-  result into _site; this file is never published as it stands. A Generated page under ADR-0038,
-  so product copy belongs in the README, not here: the shell holds layout,
-  headings, the demo line in the hero bubble, and links.
-
-  Sprites are the gallery's published frames at characters/<package>/frames/,
-  so the page renders only on the assembled site.
+  The landing page shell. scripts/make-landing-page.py fills each double-brace
+  slot from README.md and characters/; product copy belongs there (ADR-0038).
 -->
 <html lang="en">
 <head>
@@ -218,7 +212,7 @@
 <section id="characters">
   <div class="wrap">
     <h2>Packaged Fidgets</h2>
-    <p class="sub">{{count}} characters ship with Fidget, each with its own sprites, loops and personality.
+    <p class="sub">{{count}} with Fidget, each with its own sprites, loops and personality.
       <a href="characters.html">See every animation in the gallery</a>.</p>
     <div class="cast">
       {{cast}}
