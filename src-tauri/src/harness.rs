@@ -397,12 +397,26 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
 /// `probe_launcher` with the timeout as a parameter, so a test need not wait out
 /// the production one.
 fn probe_launcher_within(launch: &Launch, timeout: Duration) -> ProbeOutcome {
+    probe_launcher_with_path(launch, timeout, None)
+}
+
+/// `path` replaces `PATH` for the probe commands. Production passes `None`
+/// and the child inherits the process path. Tests pass a directory of stand-ins
+/// so they do not race other tests by editing the process path.
+fn probe_launcher_with_path(
+    launch: &Launch,
+    timeout: Duration,
+    path: Option<&Path>,
+) -> ProbeOutcome {
     let mut command = Command::new(&launch.argv[0]);
     command
         .arg(launch.version_flag())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
 
     let child = match command.spawn() {
         Ok(child) => child,
@@ -6921,5 +6935,67 @@ mod tests {
             other => panic!("expected Unhealthy from no output, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `npx --version` prints npm's version and exits 0 when Node is too old
+    /// for the adapter. Preflight has to fail before attach hangs on that.
+    #[test]
+    fn an_npx_preset_fails_preflight_when_node_is_older_than_the_adapter_engine() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        write_npx_engine_fixture(&dir, "v20.19.2", ">=22\n", true);
+        let launch = Launch {
+            name: "claude".into(),
+            argv: vec![
+                "npx".into(),
+                "-y".into(),
+                "@agentclientprotocol/claude-agent-acp@latest".into(),
+            ],
+        };
+        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
+            ProbeOutcome::Unhealthy(why) => {
+                assert_eq!(
+                    why,
+                    "claude needs Node 22 or newer; `node` on PATH is v20.19.2"
+                );
+            }
+            other => panic!("expected Unhealthy, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn write_npx_engine_fixture(dir: &Path, node_version: &str, engines_node: &str, npm_ok: bool) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("engines.node"), engines_node).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let write = |name: &str, body: &str| {
+                let path = dir.join(name);
+                std::fs::write(&path, body).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            };
+            write("npx", "#!/bin/sh\necho 11.16.0\n");
+            write("node", &format!("#!/bin/sh\necho {node_version}\n"));
+            if npm_ok {
+                write("npm", "#!/bin/sh\ncat \"$(dirname \"$0\")/engines.node\"\n");
+            } else {
+                write("npm", "#!/bin/sh\nexit 1\n");
+            }
+        }
+        #[cfg(windows)]
+        {
+            std::fs::write(dir.join("npx.cmd"), "@echo off\r\necho 11.16.0\r\n").unwrap();
+            std::fs::write(
+                dir.join("node.cmd"),
+                format!("@echo off\r\necho {node_version}\r\n"),
+            )
+            .unwrap();
+            let npm = if npm_ok {
+                "@echo off\r\ntype \"%~dp0engines.node\"\r\n".to_string()
+            } else {
+                "@echo off\r\nexit /b 1\r\n".to_string()
+            };
+            std::fs::write(dir.join("npm.cmd"), npm).unwrap();
+        }
     }
 }
