@@ -118,6 +118,16 @@ trap 'kill "$pid" 2> /dev/null || true; pkill -f "count=$marks" || true' EXIT
 
 sleep 4
 kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
+# A real Harness opens with its own turn. Record once that reply lands, or a
+# question typed on cue queues behind it and misses the take.
+if [ "$harness_kind" = claude ]; then
+  echo ">>> warming up: waiting for Claude's first reply before recording (60 s at most)"
+  for _ in $(seq 60); do
+    grep -q '^harness: reply ' "$log" && break
+    kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
+    sleep 1
+  done
+fi
 "$ffmpeg" -y -v error -f avfoundation -capture_cursor 1 -framerate 30 -i "$screen:none" \
   -t "$record" -vf 'crop=trunc(iw/2)*2:trunc(ih/2)*2' -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p \
   "$rec" > "$out/ffmpeg.log" 2>&1 &
