@@ -11,7 +11,7 @@
 # Asserts: the recording exists and runs 44 to 46 s. The look is yours to judge
 #   from the contact sheet and the full-frame GIF in the evidence directory.
 #
-# Usage: hero-gif.sh --go [--harness fixture|claude] [--character <id>] <fidget binary> <fidget test binary>
+# Usage: hero-gif.sh --go [--harness fixture|claude|grok] [--character <id>] <fidget binary> <fidget test binary>
 #        hero-gif.sh --crop x:y:w:h <recording.mp4> [<from s> [<length s>]]
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # --harness claude links ~/.claude, ~/.claude.json, ~/.npm and ~/Library/Keychains
@@ -55,7 +55,7 @@ case "${1:-}" in
 esac
 shift
 
-usage="usage: hero-gif.sh --go [--harness fixture|claude] [--character <id>] <fidget binary> <fidget test binary>"
+usage="usage: hero-gif.sh --go [--harness fixture|claude|grok] [--character <id>] <fidget binary> <fidget test binary>"
 harness_kind=fixture character=buddy-bot
 while [ $# -gt 2 ]; do
   case "$1" in
@@ -74,6 +74,7 @@ test_bin=${2:?$usage}
 test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
 out="${TMPDIR:-/tmp}/fidget-scenario-hero-gif-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out/home"
+home="$out/home"
 log="$out/app.log" marks="$out/harness.log" rec="$out/recording.mp4"
 : > "$marks"
 
@@ -105,10 +106,15 @@ case "$harness_kind" in
       ln -s "$HOME/$entry" "$out/home/$entry"
     done
     ;;
+  grok)
+    # grok signs in from its own files under the real HOME and needs no Node.
+    harness=grok home=$HOME
+    command -v grok > /dev/null || fail "grok is not on PATH"
+    ;;
   *) fail "$usage" ;;
 esac
 
-env HOME="$out/home" \
+env HOME="$home" \
   FIDGET_HARNESS="$harness" FIDGET_TRACE_DIRECTOR=1 \
   FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 \
   FIDGET_CHARACTER="$character" FIDGET_CHARACTERS="$root/characters" \
@@ -120,8 +126,8 @@ sleep 4
 kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
 # A real Harness opens with its own turn. Record once that reply lands, or a
 # question typed on cue queues behind it and misses the take.
-if [ "$harness_kind" = claude ]; then
-  echo ">>> warming up: waiting for Claude's first reply before recording (60 s at most)"
+if [ "$harness_kind" != fixture ]; then
+  echo ">>> warming up: waiting for $harness_kind's first reply before recording (60 s at most)"
   for _ in $(seq 60); do
     grep -q '^harness: reply ' "$log" && break
     kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
