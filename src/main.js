@@ -349,6 +349,8 @@ function syncQuick(view) {
 function notePointerLeft(view) {
   if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
   else view.quickMachine.leaveSprite();
+  if (view.quick.matches(":hover")) view.quickMachine.enterPill();
+  else view.quickMachine.leavePill();
 }
 
 function attachQuickMessage(view, id) {
@@ -750,6 +752,7 @@ async function start() {
         // `latest` rather than `sprite` for the two answers that belong to the
         // desktop: whether the Character is on screen, and whether it may be heard.
         view.cues.event(view.latest);
+        view.quickMachine.setChatOpen(sprite.chatting);
         notePointerLeft(view);
 
         if (changed && needsFrame(view)) arm();

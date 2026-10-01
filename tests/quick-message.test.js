@@ -339,15 +339,56 @@ test("Escape does not dismiss", () => {
   assert.equal(qm.visible, true);
 });
 
-test("Send delivers the trimmed line, clears text, and keeps the composer", () => {
+test("Send delivers the trimmed line and puts the pill away", () => {
   const { qm, sent } = shown();
+  qm.enterPill();
   qm.setText("  hey, status?  ");
 
   assert.equal(qm.submit(), true);
   assert.deepEqual(sent, ["hey, status?"]);
-  assert.equal(qm.visible, true, "pill stays up so thinking can push it");
+  assert.equal(qm.visible, false, "the pointer still on the pill does not keep it up");
   assert.equal(qm.text, "");
-  assert.equal(qm.typing, true, "caret stays for a follow-up");
+  assert.equal(qm.typing, false, "no caret left to hold the pet");
+});
+
+test("no pill opens while Chat is up, and a fresh hover opens it once Chat is gone", () => {
+  const { qm, advance } = harness();
+
+  qm.setChatOpen(true);
+  for (let tick = 0; tick < 10; tick += 1) {
+    qm.enterSprite();
+    advance(HOVER_DELAY_MS);
+  }
+  assert.equal(qm.visible, false, "a hover over the pet with Chat open is not a quick message");
+  assert.equal(qm.takeFocus(), false, "the pill never claims the caret from Chat");
+
+  qm.setChatOpen(false);
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true);
+});
+
+test("a dwell under way when Chat opens does not open the pill", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS - 100);
+  qm.setChatOpen(true);
+  advance(100);
+  assert.equal(qm.visible, false);
+});
+
+test("Chat opening keeps a draft in an open pill", () => {
+  const { qm, advance } = shown();
+  qm.setText("half a thought");
+
+  qm.setChatOpen(true);
+  qm.leaveSprite();
+  qm.leavePill();
+  advance(10_000);
+  assert.equal(qm.visible, true, "typing in progress is not thrown away");
+  assert.equal(qm.text, "half a thought");
 });
 
 test("an empty line is not sent", () => {
@@ -538,7 +579,7 @@ test("Enter sends and Shift+Enter does not", () => {
 
   assert.equal(qm.keydown("Enter"), true);
   assert.deepEqual(sent, ["hey"]);
-  assert.equal(qm.visible, true, "Enter keeps the pill for the turn in flight");
+  assert.equal(qm.visible, false, "Enter is a Send, so the pill goes too");
 });
 
 test("the composer sits above Speech when the two would share a box", () => {
@@ -698,6 +739,16 @@ test("the overlay autofocuses, dismisses on the locked gestures, and reports typ
     js,
     /function notePointerLeft\(view\) \{\s*if \(!view\.quickMachine\.visible\) return;/,
     "a leave during the 1.5s dwell has to cancel the timer",
+  );
+  assert.match(
+    js,
+    /function notePointerLeft\(view\) \{[\s\S]*?view\.quick\.matches\(":hover"\)\) view\.quickMachine\.enterPill\(\);\s*else view\.quickMachine\.leavePill\(\);/,
+    "a pill leave lost to click-through still starts the auto-hide",
+  );
+  assert.match(
+    js,
+    /quickMachine\.setChatOpen\(sprite\.chatting\)/,
+    "every frame says whether this Instance's Chat is up",
   );
 });
 

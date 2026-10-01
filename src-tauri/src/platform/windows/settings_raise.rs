@@ -1,4 +1,4 @@
-//! Raise the Settings webview into the overlay's HWND_TOPMOST band.
+//! Raise a window into the overlay's HWND_TOPMOST band.
 //!
 //! Overlay is HWND_TOPMOST. BringWindowToTop on a normal window cannot beat that band (#799).
 
@@ -12,22 +12,22 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 pub(crate) const SETTINGS_RAISE_POS_FLAGS: u32 = SWP_NOMOVE | SWP_NOSIZE;
 
 /// Put `window` in the topmost band and order it front inside that band.
-pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let raw_window_handle = window
         .window_handle()
-        .map_err(|e| format!("settings window has no native handle: {e}"))?;
+        .map_err(|e| format!("window has no native handle: {e}"))?;
 
     let hwnd = match raw_window_handle.as_raw() {
         RawWindowHandle::Win32(win32_window) => win32_window.hwnd.get() as HWND,
         _ => return Err("Not a Windows window handle".to_string()),
     };
 
-    // SAFETY: hwnd is the live Settings HWND from Tauri. HWND_TOPMOST and
+    // SAFETY: hwnd is the live HWND from Tauri. HWND_TOPMOST and
     // these flags are the documented z-order insert; BringWindowToTop and
     // SetForegroundWindow order it front inside that band.
     unsafe {
         if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SETTINGS_RAISE_POS_FLAGS) == 0 {
-            return Err("Failed to insert Settings into the topmost band".to_string());
+            return Err("Failed to insert the window into the topmost band".to_string());
         }
         BringWindowToTop(hwnd);
         SetForegroundWindow(hwnd);
