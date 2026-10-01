@@ -480,6 +480,23 @@ enum TimedCommandError {
 
 /// The wait both probes share. A timeout kills the child. Callers decide
 /// what a miss means, so a second command does not grow a second wait.
+/// Build a probe PATH that isolates the fixture directory but keeps System32
+/// on Windows so nested .cmd/.bat calls can find cmd.exe and system utilities.
+#[cfg(windows)]
+fn build_probe_path(dir: &Path) -> std::ffi::OsString {
+    let mut paths = vec![dir.to_path_buf()];
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        let system32 = PathBuf::from(system_root).join("System32");
+        paths.push(system32);
+    }
+    std::env::join_paths(paths).unwrap_or_else(|_| dir.as_os_str().to_owned())
+}
+
+#[cfg(not(windows))]
+fn build_probe_path(dir: &Path) -> &std::ffi::OsStr {
+    dir.as_os_str()
+}
+
 fn timed_command(
     program: &str,
     args: &[&str],
@@ -494,7 +511,7 @@ fn timed_command(
         .stdout(Stdio::piped())
         .stderr(stderr);
     if let Some(path) = path {
-        command.env("PATH", path);
+        command.env("PATH", build_probe_path(path));
     }
     let child = match command.spawn() {
         Ok(child) => child,
@@ -518,8 +535,10 @@ fn timed_command(
     }
 }
 
-/// Windows `Command` appends `.exe` and does not consult `PATHEXT`. npm's
-/// `npx` is `npx.cmd`, so a fixture directory of those names is `NotFound`.
+/// On Windows, resolves stand-in executables (.cmd, .bat, .exe) to absolute
+/// paths because CreateProcess with a bare name + PATH override does not
+/// reliably find them the way the shell does. Rust's Command wraps .cmd/.bat
+/// via ComSpec/cmd.exe automatically when given an absolute path.
 fn resolved_program(program: &str, path_override: Option<&Path>) -> OsString {
     windows_program(program, path_override).unwrap_or_else(|| OsString::from(program))
 }
