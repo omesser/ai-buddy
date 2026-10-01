@@ -120,7 +120,7 @@
               "id": "character",
               "label": null,
               "writes": "Character",
-              "help": "The character your fidget wears.",
+              "help": "The character your fidget wears. Read from /Users/buddy/Library/Application Support/fidget/characters.",
               "options": [
                 "bmo",
                 "ghost"

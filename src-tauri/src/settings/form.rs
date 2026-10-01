@@ -1199,7 +1199,10 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 id: CHARACTER_ID.to_string(),
                 label: None,
                 writes: TextField::Character,
-                help: Some("The character your fidget wears.".to_string()),
+                help: Some(format!(
+                    "The character your fidget wears. Read from {}.",
+                    live.characters_dir
+                )),
                 options: live.installed.clone(),
                 frozen: false,
                 batched: false,
@@ -1724,6 +1727,8 @@ pub struct Live {
     /// Filled the way `api_key_placeholder` is: only `settings_snapshot`
     /// has the view that lists them, so `current()` leaves it empty (#921).
     pub installed: Vec<String>,
+    /// The user directory the Character picker reads.
+    pub characters_dir: String,
 }
 
 impl Live {
@@ -1740,6 +1745,7 @@ impl Live {
             pi_mcp_dir: crate::harness::project_dir_label(""),
             api_key_placeholder: String::new(),
             installed: Vec::new(),
+            characters_dir: crate::package::user_characters_dir().display().to_string(),
         }
     }
 }
@@ -1807,6 +1813,10 @@ pub(crate) mod tests {
     /// one. Shaped like the macOS answer the fixtures otherwise carry.
     const FIXTURE_ATTACH_CWD: &str = "/Users/buddy/Library/Application Support/fidget";
 
+    /// A literal, for the same reason as `FIXTURE_ATTACH_CWD`.
+    const FIXTURE_CHARACTERS_DIR: &str =
+        "/Users/buddy/Library/Application Support/fidget/characters";
+
     /// The fixtures hold the macOS form. Linux builds two tabs deliberately
     /// smaller: no capture-exclusion row and no consent rows, because there is
     /// nothing there to grant (#250). Windows builds Privacy one row smaller
@@ -1832,6 +1842,7 @@ pub(crate) mod tests {
             // files cannot disagree about what the key row says or offers.
             api_key_placeholder: fixture_view(driving).api_key_placeholder(),
             installed: fixture_view(driving).installed,
+            characters_dir: FIXTURE_CHARACTERS_DIR.to_string(),
         }
     }
 
@@ -2478,6 +2489,43 @@ pub(crate) mod tests {
             character.rows[0],
             FormRow::Popup { ref id, .. } if id == CHARACTER_ID
         ));
+    }
+
+    #[test]
+    fn the_character_picker_shows_the_user_directory_it_reads() {
+        let description = describe_with(&fixture_live(false, false));
+        let help = description
+            .sections()
+            .find_map(|section| {
+                section.rows.iter().find_map(|row| match row {
+                    FormRow::Popup { id, help, .. } if id == CHARACTER_ID => help.clone(),
+                    _ => None,
+                })
+            })
+            .expect("the Character picker has help");
+        assert!(
+            help.contains(FIXTURE_CHARACTERS_DIR),
+            "the picker should show the user directory, got {help}"
+        );
+    }
+
+    #[test]
+    fn the_running_character_picker_shows_this_machines_user_directory() {
+        let description = describe();
+        let help = description
+            .sections()
+            .find_map(|section| {
+                section.rows.iter().find_map(|row| match row {
+                    FormRow::Popup { id, help, .. } if id == CHARACTER_ID => help.clone(),
+                    _ => None,
+                })
+            })
+            .expect("the Character picker has help");
+        let dir = crate::package::user_characters_dir().display().to_string();
+        assert!(
+            help.contains(&dir),
+            "the picker should show {dir}, got {help}"
+        );
     }
 
     #[test]

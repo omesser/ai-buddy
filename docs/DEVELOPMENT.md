@@ -161,12 +161,17 @@ For multiple instances, start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` 
 
 ## Character Packages
 
-Search paths, in order:
+Search paths, in order. An earlier directory wins when two packages share a name.
 
-1. The user path. Today `search_paths` in `src-tauri/src/package.rs` builds it as `$HOME/Library/Application Support/fidget/characters/` on macOS and Linux alike, and leaves it unset on Windows. [#1189](https://github.com/omesser/fidget/issues/1189) moves it to the per-platform data directory (`dirs::data_dir()`, where `settings.json` lives).
-2. Shipped characters (copied from `characters/` at build time)
+`FIDGET_CHARACTERS`, when set, is searched first. It adds directories and does not replace the rest. Separate entries with `:` on macOS and Linux, and with `;` on Windows.
 
-`FIDGET_CHARACTERS=/path/to/chars` overrides them (colon-separated).
+| Platform | User directory | System directories | Shipped |
+|---|---|---|---|
+| macOS | `~/Library/Application Support/fidget/characters` | none | bundled `characters/` |
+| Linux | `$XDG_DATA_HOME/fidget/characters`, or `~/.local/share/fidget/characters` when that variable is unset | each `$XDG_DATA_DIRS` entry plus `/fidget/characters`. Unset or empty is `/usr/local/share/fidget/characters`, then `/usr/share/fidget/characters` | bundled `characters/` |
+| Windows | `%APPDATA%\fidget\characters` | none | bundled `characters/` |
+
+The user directory is the same per-platform data directory as `settings.json`, with `characters` under it. The Settings window's Character picker shows that path.
 
 Eight characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Timber Wolf, Trump.
 
@@ -184,7 +189,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
    export FIDGET_CHARACTERS=~/fidget-characters
    ```
 
-   `FIDGET_CHARACTERS` replaces every search path, so a list separated by `:` (`;` on Windows) must also name the shipped `characters/` directory if you want those characters too. On macOS and Linux the user [search path](#character-packages) works without the variable; [#1189](https://github.com/omesser/fidget/issues/1189) settles where it lands per platform.
+   `FIDGET_CHARACTERS` is searched first and the other directories stay, so this copy wins when names collide and the shipped characters remain available. Drop a package in the user directory from the table above and leave the variable unset to have it read from there.
 
 2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
 3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and delete `[source]` or rewrite it for your art.
