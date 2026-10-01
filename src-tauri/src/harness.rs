@@ -558,21 +558,24 @@ fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option
     let requirement = requirement
         .trim()
         .trim_matches(|character| character == '"' || character == '\'');
+    // `||` and a space-separated npm range do not parse. That stays unread.
     let version = Version::parse(current.trim_start_matches(['v', 'V'])).ok()?;
     if node_meets(&version, &VersionReq::parse(requirement).ok()?) {
         return None;
     }
-    let needed = match requirement.strip_prefix(">=") {
-        Some(floor) => format!("Node {} or newer", floor.trim()),
-        None => format!("Node {requirement}"),
+    let needed = match requirement.strip_prefix(">=").map(str::trim) {
+        Some(floor) if !floor.contains([',', '<', '>', '=', '^', '~', '|']) => {
+            format!("Node {floor} or newer")
+        }
+        _ => format!("Node {requirement}"),
     };
     Some(format!(
         "{name} needs {needed}; `node` on PATH is {current}"
     ))
 }
 
-/// `matches` drops a prerelease unless the range names that tuple, so a
-/// lone `>=` uses version order. `*` is an empty comparator list.
+/// `matches` rejects a prerelease unless the range names that same prerelease.
+/// A lone `>=` uses version order. `*` has no comparators.
 fn node_meets(version: &Version, requirement: &VersionReq) -> bool {
     match requirement.comparators.as_slice() {
         [] => true,
@@ -7120,6 +7123,14 @@ mod tests {
         );
         assert_eq!(node_engine_rejection("claude", "v22.5.0", ">=22.5.0"), None);
         assert_eq!(
+            node_engine_rejection("claude", "v20.19.2", "not-a-range"),
+            None
+        );
+    }
+
+    #[test]
+    fn node_engine_rejection_orders_a_prerelease_and_leaves_an_npm_or_unread() {
+        assert_eq!(
             node_engine_rejection("claude", "v20.19.2-nightly", ">=20.19.2"),
             Some(
                 "claude needs Node 20.19.2 or newer; `node` on PATH is v20.19.2-nightly"
@@ -7140,8 +7151,12 @@ mod tests {
         );
         assert_eq!(node_engine_rejection("claude", "v22.0.0", "^22.0.0"), None);
         assert_eq!(
-            node_engine_rejection("claude", "v20.19.2", "not-a-range"),
+            node_engine_rejection("claude", "v22.5.0", ">=22, <23"),
             None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v26.0.0", ">=22, <23"),
+            Some("claude needs Node >=22, <23; `node` on PATH is v26.0.0".to_string())
         );
         assert_eq!(
             node_engine_rejection("claude", "v22.0.0", ">=20.19.0 || >=22.12.0"),
