@@ -69,7 +69,9 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
-function probe(script, forceDark) {
+// One Chrome launch per test: `body` runs once per design on the same page and
+// returns that design's readings. A launch costs seconds, the loop costs nothing.
+function probe(body, forceDark) {
   const dir = mkdtempSync(join(tmpdir(), "chat-appearance-paint-"));
   const page = join(dir, "harness.html");
   const appearance = pathToFileURL(join(SRC, "chat-appearance.js")).href;
@@ -82,7 +84,25 @@ function probe(script, forceDark) {
   <body>
     <script type="module">
       import { mountChatAppearance } from ${JSON.stringify(appearance)};
-      ${script}
+      const html = document.documentElement;
+      const panel = () => getComputedStyle(html).getPropertyValue("--chat-panel").trim();
+      const read = (extra) => ({
+        panel: panel(),
+        colorScheme: getComputedStyle(html).colorScheme,
+        palette: html.dataset.chatPalette,
+        ...extra,
+      });
+      const out = {};
+      for (const design of ${JSON.stringify(DESIGNS)}) {
+        html.className = "chat-ui-" + design;
+        out[design] = (() => {
+          ${body}
+        })();
+      }
+      const pre = document.createElement("pre");
+      pre.id = "probe";
+      pre.textContent = JSON.stringify(out);
+      document.body.append(pre);
     </script>
   </body>
 </html>`;
@@ -103,7 +123,7 @@ function probe(script, forceDark) {
   const run = spawnSync(chrome, args, {
     encoding: "utf8",
     maxBuffer: 1 << 24,
-    timeout: 120000,
+    timeout: 40000,
     killSignal: "SIGKILL",
   });
   const match = run.stdout.match(/<pre id="probe"[^>]*>(.*?)<\/pre>/s);
@@ -117,138 +137,91 @@ function probe(script, forceDark) {
   );
 }
 
-const REPORT = `
-function report(extra) {
-  const html = document.documentElement;
-  const style = getComputedStyle(html);
-  const out = document.createElement("pre");
-  out.id = "probe";
-  out.textContent = JSON.stringify({
-    panel: style.getPropertyValue("--chat-panel").trim(),
-    colorScheme: style.colorScheme,
-    palette: html.dataset.chatPalette,
-    className: html.className,
-    ...extra,
-  });
-  document.body.append(out);
-}
-`;
+const flat = (value) => value.replace(/\s+/g, "");
+const browser = { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 };
 
-test(
-  "forced light paints each design's light panel and pins color-scheme",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
-  () => {
-    for (const design of DESIGNS) {
-      const expected = declaredToken(`[data-chat-palette="light"].chat-ui-${design}`, "--chat-panel");
-      const report = probe(
-        `
-        ${REPORT}
-        const html = document.documentElement;
-        html.className = ${JSON.stringify(`chat-ui-${design}`)};
-        const apply = mountChatAppearance(html);
-        apply("light");
-        report();
-      `,
-        true,
-      );
-      assert.equal(report.colorScheme, "light", design);
-      assert.equal(report.panel.replace(/\s+/g, ""), expected, design);
-    }
-  },
-);
+test("forced light paints each design's light panel and pins color-scheme", browser, () => {
+  const reports = probe(
+    `
+    mountChatAppearance(html)("light");
+    return read();
+  `,
+    true,
+  );
+  for (const design of DESIGNS) {
+    const expected = declaredToken(`[data-chat-palette="light"].chat-ui-${design}`, "--chat-panel");
+    assert.equal(reports[design].colorScheme, "light", design);
+    assert.equal(flat(reports[design].panel), expected, design);
+  }
+});
 
-test(
-  "system and dark under force-dark-mode keep the dark panel",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 780000 },
-  () => {
-    for (const design of DESIGNS) {
-      const expected = declaredToken(`.chat-ui-${design}`, "--chat-panel");
-      const dark = probe(
-        `
-        ${REPORT}
-        const html = document.documentElement;
-        html.className = ${JSON.stringify(`chat-ui-${design}`)};
-        const apply = mountChatAppearance(html);
-        apply("dark");
-        report();
-      `,
-        true,
-      );
-      assert.equal(dark.colorScheme, "dark", design);
-      assert.equal(dark.panel.replace(/\s+/g, ""), expected, `${design} dark`);
+test("system and dark under force-dark-mode keep the dark panel", browser, () => {
+  const reports = probe(
+    `
+    mountChatAppearance(html)("dark");
+    const dark = read();
+    mountChatAppearance(html)("system");
+    return { dark, system: read() };
+  `,
+    true,
+  );
+  for (const design of DESIGNS) {
+    const expected = declaredToken(`.chat-ui-${design}`, "--chat-panel");
+    const { dark, system } = reports[design];
+    assert.equal(dark.colorScheme, "dark", design);
+    assert.equal(flat(dark.panel), expected, `${design} dark`);
+    assert.equal(system.palette, "dark", `${design} system`);
+    assert.equal(flat(system.panel), expected, `${design} system panel`);
+  }
+});
 
-      const system = probe(
-        `
-        ${REPORT}
-        const html = document.documentElement;
-        html.className = ${JSON.stringify(`chat-ui-${design}`)};
-        const apply = mountChatAppearance(html);
-        apply("system");
-        report({ after: html.dataset.chatPalette });
-      `,
-        true,
-      );
-      assert.equal(system.palette, "dark", `${design} system`);
-      assert.equal(system.panel.replace(/\s+/g, ""), expected, `${design} system panel`);
-    }
-  },
-);
-
-test(
-  "changing data-chat-palette from dark to light repaints the panel",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 180000 },
-  () => {
-    const light = declaredToken(`[data-chat-palette="light"].chat-ui-minimal`, "--chat-panel");
-    const dark = declaredToken(`.chat-ui-minimal`, "--chat-panel");
-    const report = probe(
-      `
-      ${REPORT}
-      const html = document.documentElement;
-      html.className = "chat-ui-minimal";
-      const apply = mountChatAppearance(html);
-      apply("dark");
-      const before = getComputedStyle(html).getPropertyValue("--chat-panel").trim();
-      apply("light");
-      report({ before });
-    `,
-      true,
+test("changing data-chat-palette from dark to light repaints the panel", browser, () => {
+  const reports = probe(
+    `
+    const apply = mountChatAppearance(html);
+    apply("dark");
+    const before = panel();
+    apply("light");
+    return read({ before });
+  `,
+    true,
+  );
+  for (const design of DESIGNS) {
+    const report = reports[design];
+    assert.equal(flat(report.before), declaredToken(`.chat-ui-${design}`, "--chat-panel"), design);
+    assert.equal(
+      flat(report.panel),
+      declaredToken(`[data-chat-palette="light"].chat-ui-${design}`, "--chat-panel"),
+      design,
     );
-    assert.equal(report.before.replace(/\s+/g, ""), dark);
-    assert.equal(report.panel.replace(/\s+/g, ""), light);
-    assert.equal(report.colorScheme, "light");
-  },
-);
+    assert.equal(report.colorScheme, "light", design);
+  }
+});
 
-test(
-  "dark forces the dark panel when the browser is not in force-dark-mode",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
-  () => {
-    for (const design of DESIGNS) {
-      const dark = declaredToken(`.chat-ui-${design}`, "--chat-panel");
-      const light = declaredToken(`[data-chat-palette="light"].chat-ui-${design}`, "--chat-panel");
-      const report = probe(
-        `
-        ${REPORT}
-        const html = document.documentElement;
-        html.className = ${JSON.stringify(`chat-ui-${design}`)};
-        const apply = mountChatAppearance(html);
-        apply("system");
-        const systemPalette = html.dataset.chatPalette;
-        const systemPanel = getComputedStyle(html).getPropertyValue("--chat-panel").trim();
-        apply("dark");
-        const darkPanel = getComputedStyle(html).getPropertyValue("--chat-panel").trim();
-        const darkScheme = getComputedStyle(html).colorScheme;
-        apply("light");
-        report({ systemPalette, systemPanel, darkPanel, darkScheme });
-      `,
-        false,
-      );
-      assert.equal(report.systemPalette, "light", `${design} system`);
-      assert.equal(report.systemPanel.replace(/\s+/g, ""), light, `${design} system panel`);
-      assert.equal(report.darkPanel.replace(/\s+/g, ""), dark, `${design} dark panel`);
-      assert.equal(report.darkScheme, "dark", `${design} dark scheme`);
-      assert.equal(report.panel.replace(/\s+/g, ""), light, `${design} light panel`);
-      assert.equal(report.colorScheme, "light", `${design} light scheme`);
-    }
-  },
-);
+test("dark forces the dark panel when the browser is not in force-dark-mode", browser, () => {
+  const reports = probe(
+    `
+    const apply = mountChatAppearance(html);
+    apply("system");
+    const systemPalette = html.dataset.chatPalette;
+    const systemPanel = panel();
+    apply("dark");
+    const darkPanel = panel();
+    const darkScheme = getComputedStyle(html).colorScheme;
+    apply("light");
+    return read({ systemPalette, systemPanel, darkPanel, darkScheme });
+  `,
+    false,
+  );
+  for (const design of DESIGNS) {
+    const dark = declaredToken(`.chat-ui-${design}`, "--chat-panel");
+    const light = declaredToken(`[data-chat-palette="light"].chat-ui-${design}`, "--chat-panel");
+    const report = reports[design];
+    assert.equal(report.systemPalette, "light", `${design} system`);
+    assert.equal(flat(report.systemPanel), light, `${design} system panel`);
+    assert.equal(flat(report.darkPanel), dark, `${design} dark panel`);
+    assert.equal(report.darkScheme, "dark", `${design} dark scheme`);
+    assert.equal(flat(report.panel), light, `${design} light panel`);
+    assert.equal(report.colorScheme, "light", `${design} light scheme`);
+  }
+});

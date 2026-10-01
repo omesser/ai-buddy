@@ -133,7 +133,7 @@ function paint(settled = false) {
       "--dump-dom",
       pathToFileURL(page).href,
     ],
-    { encoding: "utf8", maxBuffer: 1 << 24, timeout: 120000, killSignal: "SIGKILL" },
+    { encoding: "utf8", maxBuffer: 1 << 24, timeout: 40000, killSignal: "SIGKILL" },
   );
   const match = run.stdout.match(/<pre id="probe"[^>]*>(.*?)<\/pre>/s);
   assert.ok(match, `the form did not report. ${run.stderr?.slice(-500) ?? ""}`);
@@ -147,7 +147,7 @@ function paint(settled = false) {
 
 const skip = chrome ? false : "headless Chromium is not installed";
 
-test("a sign-in link is drawn whole and Open opens it before answering yes", { skip, timeout: 150000 }, () => {
+test("a sign-in link is drawn whole and Open opens it before answering yes", { skip, timeout: 60000 }, () => {
   const report = paint();
   assert.deepEqual(report.code, [URL_]);
   assert.deepEqual(report.buttons, [
@@ -162,7 +162,7 @@ test("a sign-in link is drawn whole and Open opens it before answering yes", { s
   assert.equal(report.disabled, true);
 });
 
-test("a completed link goes dead with nothing chosen and nothing sent", { skip, timeout: 150000 }, () => {
+test("a completed link goes dead with nothing chosen and nothing sent", { skip, timeout: 60000 }, () => {
   const report = paint(true);
   assert.deepEqual(report.code, [URL_], "the row stays, so the log says what was asked");
   assert.equal(report.disabled, true);
