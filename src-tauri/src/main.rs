@@ -1418,8 +1418,9 @@ fn names_hint_act(
     Ok(acted.push)
 }
 
-/// Open the Settings window. Native Shell furniture, so this runs on the
-/// toolkit main thread.
+/// Open the Settings window. The build runs on the toolkit main thread, but
+/// not on a Windows caller's stack: WebView2 deadlocks there and the window
+/// stays blank.
 #[tauri::command]
 fn show_settings(app: tauri::AppHandle) {
     if app.try_state::<SettingsState>().is_none() {
@@ -1427,6 +1428,24 @@ fn show_settings(app: tauri::AppHandle) {
         return;
     }
 
+    dispatch_settings_present(cfg!(windows), move || present_settings(app));
+}
+
+/// Whether the build runs before the caller returns. On Windows it must not:
+/// the caller is the main thread, and WebView2 deadlocks on that stack.
+fn settings_build_runs_on_caller(host_is_windows: bool) -> bool {
+    !host_is_windows
+}
+
+fn dispatch_settings_present(host_is_windows: bool, present: impl FnOnce() + Send + 'static) {
+    if settings_build_runs_on_caller(host_is_windows) {
+        present();
+    } else {
+        std::thread::spawn(present);
+    }
+}
+
+fn present_settings(app: tauri::AppHandle) {
     // Same clone-then-post as `open_chat`: the closure takes the handle,
     // `run_on_main_thread` still borrows `app`.
     let handle = app.clone();
@@ -1450,6 +1469,44 @@ fn show_settings(app: tauri::AppHandle) {
         }
     }) {
         eprintln!("settings webview: {why}");
+    }
+}
+
+#[cfg(test)]
+mod settings_open_schedule {
+    use super::{dispatch_settings_present, settings_build_runs_on_caller};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn a_windows_open_builds_settings_off_the_caller() {
+        assert!(!settings_build_runs_on_caller(true));
+
+        let caller = thread::current().id();
+        let (tx, rx) = mpsc::channel();
+        dispatch_settings_present(true, move || {
+            let _ = tx.send(thread::current().id());
+        });
+        let builder = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("settings build did not run");
+        assert_ne!(
+            builder, caller,
+            "building on the caller's thread is the Windows blank window"
+        );
+    }
+
+    #[test]
+    fn other_hosts_still_build_settings_on_the_caller() {
+        assert!(settings_build_runs_on_caller(false));
+
+        let caller = thread::current().id();
+        let (tx, rx) = mpsc::channel();
+        dispatch_settings_present(false, move || {
+            let _ = tx.send(thread::current().id());
+        });
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), caller);
     }
 }
 
