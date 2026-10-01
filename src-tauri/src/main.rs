@@ -1434,9 +1434,16 @@ fn settings_effects(plan: SettingsOpen) -> &'static [SettingsEffect] {
     }
 }
 
-/// `reload` is the Chat path. `document_ready` is navigation finished on
-/// this window, not on the about:blank it starts from.
-fn settings_open(exists: bool, reload: bool, document_ready: bool) -> SettingsOpen {
+/// `reload` is the Chat path. `document_ready` is navigation finished.
+/// `load_stalled` is that load past the deadline. `rebuild_pending` means
+/// destroy has started and this open waits for the label to free.
+fn settings_open(
+    exists: bool,
+    reload: bool,
+    document_ready: bool,
+    _load_stalled: bool,
+    _rebuild_pending: bool,
+) -> SettingsOpen {
     if !exists {
         return SettingsOpen::Create;
     }
@@ -1535,7 +1542,13 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
         let existing = handle.get_webview_window("settings");
-        let plan = settings_open(existing.is_some(), reload, settings_document_ready(&handle));
+        let plan = settings_open(
+            existing.is_some(),
+            reload,
+            settings_document_ready(&handle),
+            false,
+            false,
+        );
         let mut window = existing;
         for effect in settings_effects(plan) {
             match effect {
@@ -5456,16 +5469,16 @@ mod tests {
     #[test]
     fn a_menu_open_after_chat_does_not_focus_settings_still_loading() {
         assert_eq!(
-            settings_effects(settings_open(false, true, false)),
+            settings_effects(settings_open(false, true, false, false, false)),
             &[SettingsEffect::Build, SettingsEffect::Raise],
             "Chat's first open builds the window and does not emit into it"
         );
         assert!(
-            settings_effects(settings_open(true, false, false)).is_empty(),
+            settings_effects(settings_open(true, false, false, false, false)).is_empty(),
             "the context menu must not raise or MoveFocus that window yet"
         );
         assert_eq!(
-            settings_effects(settings_open(true, false, true)),
+            settings_effects(settings_open(true, false, true, false, false)),
             &[
                 SettingsEffect::Unminimize,
                 SettingsEffect::Focus,
@@ -5480,11 +5493,12 @@ mod tests {
     #[test]
     fn chat_reloads_settings_only_after_the_document_has_loaded() {
         assert!(
-            !settings_effects(settings_open(true, true, false)).contains(&SettingsEffect::Reload),
+            !settings_effects(settings_open(true, true, false, false, false))
+                .contains(&SettingsEffect::Reload),
             "emitting settings-refresh before navigation leaves the page blank"
         );
         assert_eq!(
-            settings_effects(settings_open(true, true, true)),
+            settings_effects(settings_open(true, true, true, false, false)),
             &[
                 SettingsEffect::Unminimize,
                 SettingsEffect::Focus,
@@ -5492,6 +5506,21 @@ mod tests {
                 SettingsEffect::Reload,
             ],
             "an open page reloads so the reveal lands"
+        );
+    }
+
+    /// A load that never finishes makes every later open a no-op, and the
+    /// window stays up until the process is killed.
+    #[test]
+    fn a_stalled_settings_load_is_not_a_permanent_no_op() {
+        assert!(
+            settings_effects(settings_open(true, false, false, false, false)).is_empty(),
+            "inside the deadline an open still must not MoveFocus"
+        );
+        assert_ne!(
+            settings_open(true, false, false, true, false),
+            settings_open(true, false, false, false, false),
+            "past the deadline the open is not the same no-op as a load still inside the deadline"
         );
     }
 
