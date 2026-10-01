@@ -328,6 +328,10 @@ struct SettingsState {
     /// Taken by the next snapshot. A window that is still loading has no
     /// listeners, so an event aimed at it would be gone.
     reveal: Mutex<Option<settings::form::Reveal>>,
+    /// Generation of the Settings window. `settings_loaded` matches it once
+    /// navigation finishes. MoveFocus while they differ hangs WebView2.
+    settings_built: AtomicU64,
+    settings_loaded: AtomicU64,
 }
 
 /// How long a hold survives without hearing anything. A backstop: `Closed`
@@ -1384,8 +1388,88 @@ fn run_operation(
     }
 }
 
-/// Open or raise Settings aimed at one row. An open window reloads from the
-/// next snapshot; one still loading has no listener, so the snapshot carries
+/// What one open does with the shared Settings window.
+#[derive(Debug, PartialEq, Eq)]
+enum SettingsOpen {
+    Create,
+    Show,
+    Focus,
+    FocusAndReload,
+}
+
+/// Side effects of one open, in order. `dispatch_settings` runs this list
+/// and nothing else, so a second open cannot grow a focus call unnoticed.
+#[derive(Debug, PartialEq, Eq)]
+enum SettingsEffect {
+    Build,
+    Unminimize,
+    Focus,
+    Raise,
+    Reload,
+}
+
+fn settings_effects(plan: SettingsOpen) -> &'static [SettingsEffect] {
+    match plan {
+        SettingsOpen::Create => &[SettingsEffect::Build, SettingsEffect::Raise],
+        // Raise delivers WM_SETFOCUS. Wry's subclass then MoveFocus and hangs.
+        SettingsOpen::Show => &[],
+        SettingsOpen::Focus => &[
+            SettingsEffect::Unminimize,
+            SettingsEffect::Focus,
+            SettingsEffect::Raise,
+        ],
+        SettingsOpen::FocusAndReload => &[
+            SettingsEffect::Unminimize,
+            SettingsEffect::Focus,
+            SettingsEffect::Raise,
+            SettingsEffect::Reload,
+        ],
+    }
+}
+
+/// `reload` is the Chat path. `document_ready` is navigation finished on
+/// this window, not on the about:blank it starts from.
+fn settings_open(exists: bool, reload: bool, document_ready: bool) -> SettingsOpen {
+    if !exists {
+        return SettingsOpen::Create;
+    }
+    if !document_ready {
+        return SettingsOpen::Show;
+    }
+    if reload {
+        SettingsOpen::FocusAndReload
+    } else {
+        SettingsOpen::Focus
+    }
+}
+
+fn settings_document_ready(app: &tauri::AppHandle) -> bool {
+    let Some(state) = app.try_state::<SettingsState>() else {
+        return false;
+    };
+    let built = state.settings_built.load(Ordering::Acquire);
+    built != 0 && built == state.settings_loaded.load(Ordering::Acquire)
+}
+
+/// Start a Settings document. The page-load handler passes this generation
+/// back, so a completion from an older window cannot mark the new one ready.
+fn begin_settings_document(app: &tauri::AppHandle) -> u64 {
+    app.try_state::<SettingsState>()
+        .map(|state| state.settings_built.fetch_add(1, Ordering::AcqRel) + 1)
+        .unwrap_or(0)
+}
+
+fn finish_settings_document(app: &tauri::AppHandle, generation: u64) {
+    let Some(state) = app.try_state::<SettingsState>() else {
+        return;
+    };
+    if state.settings_built.load(Ordering::Acquire) == generation {
+        state.settings_loaded.store(generation, Ordering::Release);
+    }
+}
+
+/// Open or raise Settings aimed at one row. A loaded window reloads from the
+/// next snapshot. One still loading has no listener, so the snapshot carries
 /// the aim.
 fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
     if let Some(state) = app.try_state::<SettingsState>() {
@@ -1394,11 +1478,7 @@ fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
         }
     }
     // Off the pump: `names_hint_act` is async, so this queues the build.
-    present_settings(app.clone());
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        platform::refresh_settings(&handle);
-    });
+    dispatch_settings(app.clone(), true);
 }
 
 /// The notice's two buttons. `async` is load-bearing on Windows: a sync
@@ -1432,6 +1512,12 @@ async fn show_settings(app: tauri::AppHandle) {
 /// Raise Settings, or build it. Main-thread callers run the build inline;
 /// a webview command is async, so this queues off WebView2's pump.
 fn present_settings(app: tauri::AppHandle) {
+    dispatch_settings(app, false);
+}
+
+/// `reload` asks the open page to pick up a new aim. A window this call
+/// creates is not reloaded: the emit would run before navigation finishes.
+fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
     if app.try_state::<SettingsState>().is_none() {
         eprintln!("settings: opened before the shell was ready");
         return;
@@ -1441,22 +1527,40 @@ fn present_settings(app: tauri::AppHandle) {
     // `run_on_main_thread` still borrows `app`.
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
-        let window = match handle.get_webview_window("settings") {
-            Some(window) => {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-                window
-            }
-            None => match build_settings(&handle) {
-                Ok(window) => window,
-                Err(why) => {
-                    eprintln!("settings webview: {why}");
-                    return;
+        let existing = handle.get_webview_window("settings");
+        let plan = settings_open(existing.is_some(), reload, settings_document_ready(&handle));
+        let mut window = existing;
+        for effect in settings_effects(plan) {
+            match effect {
+                SettingsEffect::Build => {
+                    let generation = begin_settings_document(&handle);
+                    match build_settings(&handle, generation) {
+                        Ok(built) => window = Some(built),
+                        Err(why) => {
+                            eprintln!("settings webview: {why}");
+                            return;
+                        }
+                    }
                 }
-            },
-        };
-        if let Err(why) = platform::raise_settings_window(&window) {
-            eprintln!("settings webview raise: {why}");
+                SettingsEffect::Unminimize => {
+                    if let Some(window) = &window {
+                        let _ = window.unminimize();
+                    }
+                }
+                SettingsEffect::Focus => {
+                    if let Some(window) = &window {
+                        let _ = window.set_focus();
+                    }
+                }
+                SettingsEffect::Raise => {
+                    if let Some(window) = &window {
+                        if let Err(why) = platform::raise_settings_window(window) {
+                            eprintln!("settings webview raise: {why}");
+                        }
+                    }
+                }
+                SettingsEffect::Reload => platform::refresh_settings(&handle),
+            }
         }
     }) {
         eprintln!("settings webview: {why}");
@@ -1711,14 +1815,29 @@ fn chat_origin(feet: Point, displays: &[Rect], size: (f64, f64)) -> Option<(f64,
     ))
 }
 
-/// Build the Settings webview window.
-fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+/// Build the Settings webview window. `generation` is the document this
+/// build started; the load handler records it when navigation finishes.
+fn build_settings(
+    app: &tauri::AppHandle,
+    generation: u64,
+) -> Result<tauri::WebviewWindow, tauri::Error> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
+    let handle = app.clone();
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")
         .inner_size(600.0, 520.0)
         .min_inner_size(480.0, 400.0)
         .focused(true)
+        .on_page_load(move |_window, payload| {
+            if payload.event() != tauri::webview::PageLoadEvent::Finished {
+                return;
+            }
+            // about:blank finishes first. It is not the Settings document.
+            if payload.url().as_str().starts_with("about:") {
+                return;
+            }
+            finish_settings_document(&handle, generation);
+        })
         .build()
 }
 
@@ -4085,6 +4204,8 @@ fn main() {
                 rules: Arc::clone(&rules),
                 secrets: Arc::clone(&secrets),
                 reveal: Mutex::new(None),
+                settings_built: AtomicU64::new(0),
+                settings_loaded: AtomicU64::new(0),
             });
             app.manage(Arc::clone(&rules));
 
@@ -5315,6 +5436,51 @@ mod tests {
         {
         }
         takes_async(overlay_open_chat);
+    }
+
+    /// Chat builds Settings, then the context menu opens it again. The menu
+    /// must not activate a document that has not finished loading: raise
+    /// delivers WM_SETFOCUS, and wry's subclass then MoveFocus and hangs.
+    #[test]
+    fn a_menu_open_after_chat_does_not_focus_settings_still_loading() {
+        assert_eq!(
+            settings_effects(settings_open(false, true, false)),
+            &[SettingsEffect::Build, SettingsEffect::Raise],
+            "Chat's first open builds the window and does not emit into it"
+        );
+        assert!(
+            settings_effects(settings_open(true, false, false)).is_empty(),
+            "the context menu must not raise or MoveFocus that window yet"
+        );
+        assert_eq!(
+            settings_effects(settings_open(true, false, true)),
+            &[
+                SettingsEffect::Unminimize,
+                SettingsEffect::Focus,
+                SettingsEffect::Raise,
+            ],
+            "once the document has loaded, the menu raises and focuses it"
+        );
+    }
+
+    /// An emit before navigation leaves the page on about:blank. The reveal
+    /// rides the snapshot until the document is up, then a reload aims the row.
+    #[test]
+    fn chat_reloads_settings_only_after_the_document_has_loaded() {
+        assert!(
+            !settings_effects(settings_open(true, true, false)).contains(&SettingsEffect::Reload),
+            "emitting settings-refresh before navigation leaves the page blank"
+        );
+        assert_eq!(
+            settings_effects(settings_open(true, true, true)),
+            &[
+                SettingsEffect::Unminimize,
+                SettingsEffect::Focus,
+                SettingsEffect::Raise,
+                SettingsEffect::Reload,
+            ],
+            "an open page reloads so the reveal lands"
+        );
     }
 
     /// Pins the Chat entry points as `async`. On Windows a sync command builds
