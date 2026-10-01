@@ -480,9 +480,6 @@ enum TimedCommandError {
 
 /// The wait both probes share. A timeout kills the child. Callers decide
 /// what a miss means, so a second command does not grow a second wait.
-///
-/// On Windows, when a path override is provided, System32 is appended
-/// so .cmd fixtures can still spawn via cmd.exe.
 fn timed_command(
     program: &str,
     args: &[&str],
@@ -497,20 +494,7 @@ fn timed_command(
         .stdout(Stdio::piped())
         .stderr(stderr);
     if let Some(path) = path {
-        #[cfg(target_os = "windows")]
-        {
-            let mut extended_path = path.as_os_str().to_os_string();
-            if let Ok(system_root) = std::env::var("SystemRoot") {
-                use std::path::PathBuf;
-                extended_path.push(";");
-                extended_path.push(PathBuf::from(system_root).join("System32"));
-            }
-            command.env("PATH", extended_path);
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            command.env("PATH", path);
-        }
+        command.env("PATH", path);
     }
     let child = match command.spawn() {
         Ok(child) => child,
