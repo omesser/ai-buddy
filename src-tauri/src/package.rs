@@ -204,14 +204,15 @@ fn xdg_bases(raw: Option<&OsStr>) -> Vec<PathBuf> {
             .map(PathBuf::from)
             .collect();
     };
+    // A relative entry is not a base. Windows does not call `/usr/share` absolute.
     split_list(raw, b':')
         .into_iter()
         .filter(|path| {
             path.is_absolute()
                 || path
+                    .as_os_str()
                     .to_str()
-                    .map(|s| s.starts_with('/'))
-                    .unwrap_or(false)
+                    .is_some_and(|text| text.starts_with('/'))
         })
         .collect()
 }
