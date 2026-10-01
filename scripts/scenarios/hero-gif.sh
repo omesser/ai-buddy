@@ -6,7 +6,7 @@
 #   it open, or the first-run tour bubble lands 25 s after launch), type a
 #   question, Enter, and throw it again once the reply lands as a speech bubble
 #   and in Chat: Claude Code's words under --harness claude, "Hello" from the fixture.
-# Input: yours, at the mouse and keyboard, on the terminal's cue. None sent.
+# Input: yours, at the mouse and keyboard. Each cue waits for the sprite to speak. None sent.
 # Duration: about 70 s, 2 min at most. Grants: Screen Recording, Accessibility.
 # Asserts: the recording exists and runs 44 to 46 s. The look is yours to judge
 #   from the contact sheet and the full-frame GIF in the evidence directory.
@@ -129,7 +129,7 @@ kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
 if [ "$harness_kind" != fixture ]; then
   echo ">>> warming up: waiting for $harness_kind's first reply before recording (60 s at most)"
   for _ in $(seq 60); do
-    grep -q '^harness: reply ' "$log" && break
+    grep -q '^director: .* playing ' "$log" && break
     kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
     sleep 1
   done
@@ -147,23 +147,22 @@ at() { # <s>: sleep until s seconds into the recording
 cue() { # <text>
   echo ">>> $(now)s  $1"
 }
-# FIDGET_TRACE_DIRECTOR prints every reply the Completer returns.
-replies() { grep -c '^harness: reply ' "$log" || true; }
+# FIDGET_TRACE_DIRECTOR logs a `playing` line for every bubble the sprite speaks.
+spoken() { grep -c '^director: .* playing ' "$log" || true; }
+# Each beat starts once the sprite answers the last one. A beat that gets no
+# answer is cued anyway while there is time left to act on it.
+after_speech() { # <text>
+  local before
+  before=$(spoken)
+  while [ "$(spoken)" -le "$before" ] && [ "$(now)" -lt $((record - 5)) ]; do sleep 0.5; done
+  cue "$1"
+}
 
 cue "recording. Pick the sprite up and throw it hard at the window's top edge."
-at 4
-cue "it has landed. Click it once, a poke, then move the mouse off him."
-at 7
-cue "once it stands still, double-click it without moving the mouse. Chat opens; leave it open."
-at 10
-cue "type in Chat: What's in the news today?  Then press Enter."
-asked=$(replies)
-while [ "$(replies)" -le "$asked" ] && [ "$(now)" -lt $((record - 7)) ]; do sleep 1; done
-if [ "$(replies)" -gt "$asked" ]; then
-  cue "the reply landed. Pick it up and throw it once more, anywhere."
-else
-  cue "no reply yet. Throw it once more anyway; see $log after."
-fi
+after_speech "it spoke. Click it once, a poke, then move the mouse off him."
+after_speech "it spoke. Double-click it without moving the mouse. Chat opens; leave it open."
+after_speech "it spoke. Type in Chat: What's in the news today?  Then press Enter."
+after_speech "it answered. Pick it up and throw it once more, anywhere."
 at "$record"
 cue "done. Hands off while the recording closes."
 wait "$ffpid" || fail "ffmpeg failed; see $out/ffmpeg.log"
