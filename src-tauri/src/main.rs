@@ -4815,7 +4815,9 @@ mod tests {
         let inspect = model::DirectorInspect {
             harness: Some(crate::harness::HarnessInspect {
                 name: "claude".to_string(),
-                unhealthy: Some("claude needs Node 22 or newer; `node` on PATH is v20.5.0.".to_string()),
+                unhealthy: Some(
+                    "claude needs Node 22 or newer; `node` on PATH is v20.5.0.".to_string(),
+                ),
                 alive: false,
                 ..Default::default()
             }),
@@ -4826,7 +4828,10 @@ mod tests {
             .harness
             .expect("the opening carries the attachment");
         assert_eq!(harness.name, "claude");
-        assert_eq!(harness.unhealthy.as_deref(), Some("claude needs Node 22 or newer; `node` on PATH is v20.5.0."));
+        assert_eq!(
+            harness.unhealthy.as_deref(),
+            Some("claude needs Node 22 or newer; `node` on PATH is v20.5.0.")
+        );
         assert!(!harness.alive);
     }
 
