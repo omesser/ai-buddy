@@ -1,4 +1,4 @@
-//! Raise Settings or Chat into the overlay's HWND_TOPMOST band.
+//! Raise a window into the overlay's HWND_TOPMOST band.
 //!
 //! Overlay is HWND_TOPMOST. BringWindowToTop on a normal window cannot beat that band (#799).
 

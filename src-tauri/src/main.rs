@@ -376,6 +376,8 @@ struct SpritePlacement<'a> {
     asking: bool,
     /// Whether this Instance has a Chat window. Sent to every overlay, because
     /// the pill that must stay down can open on any of them.
+    /// ponytail: a minimized Chat still counts. Asking `is_minimized` each tick
+    /// is a main-thread hop on macOS; track the window's events if that matters.
     chatting: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were

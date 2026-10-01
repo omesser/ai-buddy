@@ -335,7 +335,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
 }
 
-/// Raise Settings or Chat above the overlay, and give it the keyboard. Main thread only.
+/// Raise `window` above the overlay, and give it the keyboard. Main thread only.
 ///
 /// NSStatusWindowLevel sits above the overlay's NSFloatingWindowLevel, so tray-open is not a no-op.
 #[cfg(target_os = "macos")]
@@ -377,7 +377,7 @@ pub fn tune_tray_icon(tray: &tauri::tray::TrayIcon) -> Result<(), tauri::Error> 
     macos::tune_tray_icon(tray)
 }
 
-/// Raise Settings or Chat above the overlay, and give it the keyboard. Main thread only.
+/// Raise `window` above the overlay, and give it the keyboard. Main thread only.
 ///
 /// The overlay is `_NET_WM_STATE_ABOVE`. keep_above shares that band (#799).
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -396,7 +396,7 @@ pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> 
     Ok(())
 }
 
-/// Raise Settings or Chat above the overlay, and give it the keyboard. Main thread only.
+/// Raise `window` above the overlay, and give it the keyboard. Main thread only.
 ///
 /// The overlay is HWND_TOPMOST. A normal window cannot stack above that band.
 #[cfg(not(unix))]
