@@ -67,8 +67,8 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let autoHideTimer = null;
   let overSprite = false;
   let overPill = false;
-  // Set by a Summon. The overlay re-reports the hover every tick, so without
-  // this the dwell re-arms under the cursor that just opened Chat.
+  // The overlay re-reports the hover every tick, so without this the dwell
+  // re-arms under the cursor that just opened Chat.
   let yielded = false;
   let ready = available;
 
