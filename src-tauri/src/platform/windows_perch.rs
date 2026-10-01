@@ -1,10 +1,5 @@
 const WS_VISIBLE: i32 = 0x1000_0000;
-const WS_EX_TOPMOST: i32 = 0x0000_0008;
-const WS_EX_TRANSPARENT: i32 = 0x0000_0020;
 const WS_EX_TOOLWINDOW: i32 = 0x0000_0080;
-const WS_EX_APPWINDOW: i32 = 0x0004_0000;
-const WS_EX_LAYERED: i32 = 0x0008_0000;
-const WS_EX_NOACTIVATE: i32 = 0x0800_0000;
 
 pub(super) fn perch_candidate(is_window_visible: bool, style: i32, ex_style: i32) -> bool {
     is_window_visible && (style & WS_VISIBLE) != 0 && (ex_style & WS_EX_TOOLWINDOW) == 0
@@ -13,6 +8,12 @@ pub(super) fn perch_candidate(is_window_visible: bool, style: i32, ex_style: i32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const WS_EX_TOPMOST: i32 = 0x0000_0008;
+    const WS_EX_TRANSPARENT: i32 = 0x0000_0020;
+    const WS_EX_APPWINDOW: i32 = 0x0004_0000;
+    const WS_EX_LAYERED: i32 = 0x0008_0000;
+    const WS_EX_NOACTIVATE: i32 = 0x0800_0000;
 
     #[test]
     fn a_chat_window_is_a_perch() {
