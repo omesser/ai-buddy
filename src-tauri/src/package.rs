@@ -204,10 +204,15 @@ fn xdg_bases(raw: Option<&OsStr>) -> Vec<PathBuf> {
             .map(PathBuf::from)
             .collect();
     };
-    // A relative entry is not a base directory, so it is not searched.
     split_list(raw, b':')
         .into_iter()
-        .filter(|path| path.is_absolute())
+        .filter(|path| {
+            path.is_absolute()
+                || path
+                    .to_str()
+                    .map(|s| s.starts_with('/'))
+                    .unwrap_or(false)
+        })
         .collect()
 }
 
