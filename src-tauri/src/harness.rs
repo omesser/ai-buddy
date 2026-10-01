@@ -3,6 +3,7 @@
 //! (ADR-0008, ADR-0018). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -206,7 +207,7 @@ impl Launch {
     /// variables instead of the values. Own process group once `own_interrupt`
     /// has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
     fn command(&self, cwd: &AttachCwd) -> Command {
-        let mut command = Command::new(&self.argv[0]);
+        let mut command = Command::new(resolved_program(&self.argv[0], None));
         command.args(&self.argv[1..]).current_dir(cwd.as_path());
         if self.name == "pi" {
             if let Some(endpoint) = crate::mcp_http::endpoint() {
@@ -489,7 +490,7 @@ fn timed_command(
     path: Option<&Path>,
     stderr: Stdio,
 ) -> Result<std::process::Output, TimedCommandError> {
-    let mut command = Command::new(program);
+    let mut command = Command::new(resolved_program(program, path));
     command
         .args(args)
         .stdin(Stdio::null())
@@ -531,6 +532,50 @@ fn timed_command(
             Err(TimedCommandError::TimedOut)
         }
     }
+}
+
+/// Windows `Command` appends `.exe` and does not consult `PATHEXT`. npm's
+/// `npx` is `npx.cmd`, so a fixture directory of those names is `NotFound`.
+fn resolved_program(program: &str, path_override: Option<&Path>) -> OsString {
+    windows_program(program, path_override).unwrap_or_else(|| OsString::from(program))
+}
+
+#[cfg(windows)]
+fn windows_program(program: &str, path_override: Option<&Path>) -> Option<OsString> {
+    if program.contains(['/', '\\']) {
+        return None;
+    }
+    let dirs: Vec<PathBuf> = match path_override {
+        Some(dir) => vec![dir.to_path_buf()],
+        None => std::env::var_os("PATH")
+            .map(|path| std::env::split_paths(&path).collect())
+            .unwrap_or_default(),
+    };
+    for dir in dirs {
+        for candidate in windows_candidates(&dir, program) {
+            if candidate.is_file() {
+                return Some(candidate.into_os_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn windows_candidates(dir: &Path, program: &str) -> Vec<PathBuf> {
+    let base = dir.join(program);
+    if Path::new(program).extension().is_some() {
+        return vec![base];
+    }
+    ["exe", "cmd", "bat"]
+        .into_iter()
+        .map(|extension| base.with_extension(extension))
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsString> {
+    None
 }
 
 /// `None` is not a failed launcher. The version probe already decided the
@@ -7296,5 +7341,27 @@ mod tests {
             };
             std::fs::write(dir.join("npm.cmd"), npm).unwrap();
         }
+    }
+
+    /// `Command` looks for `npx.exe`. The stand-in is `npx.cmd`, which is what
+    /// npm installs, so the probe has to name that file or every Windows run
+    /// is `NotFound` before the engine check.
+    #[cfg(windows)]
+    #[test]
+    fn a_cmd_stand_in_is_the_program_when_path_is_only_the_fixture() {
+        let dir = std::env::temp_dir().join(format!("fidget-cmd-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("npx.cmd"), "@echo off\r\n").unwrap();
+        std::fs::write(dir.join("npx.exe"), "").unwrap();
+        assert_eq!(
+            windows_program("npx", Some(&dir)).as_deref(),
+            Some(dir.join("npx.exe").as_os_str())
+        );
+        std::fs::remove_file(dir.join("npx.exe")).unwrap();
+        assert_eq!(
+            windows_program("npx", Some(&dir)).as_deref(),
+            Some(dir.join("npx.cmd").as_os_str())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
