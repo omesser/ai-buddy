@@ -113,6 +113,27 @@ test("clicking away during the dwell does not show the composer later", () => {
   assert.equal(qm.visible, false);
 });
 
+// The overlay re-reports the hover on every placement, so a double-click
+// that leaves the cursor on the sprite enters it again each tick.
+test("a double-click keeps the composer down until the pointer leaves", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(500);
+  qm.summon();
+  for (let tick = 0; tick < 10; tick += 1) {
+    qm.enterSprite();
+    advance(HOVER_DELAY_MS);
+  }
+  assert.equal(qm.visible, false, "Chat is up, so the pill stays down");
+  assert.equal(qm.takeFocus(), false, "the field never claims the caret");
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "a fresh hover opens it again");
+});
+
 test("leaving after the pill is up does not dismiss it immediately", () => {
   const { qm, advance } = shown();
 
