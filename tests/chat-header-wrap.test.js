@@ -30,11 +30,14 @@ function chromeBin() {
 }
 
 const chrome = chromeBin();
+const THEMES = ["minimal", "terminal", "glass"];
 
 // A custom Harness command's argv[0]. No hyphen: a hyphen is a break opportunity.
 const LONG_HARNESS_PATH = "/Users/me/.local/share/agentlauncher/versions/2.4.1/bin/agentacp";
 
-function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1a2-497f-4899-a827-a4e42fbdc1f2" }) {
+// One launch per call: every design is measured on the same page by switching
+// the root class, which is all a design changes.
+function measure(name, harness = { name: "cursor-agent", session: "fd4be1a2-497f-4899-a827-a4e42fbdc1f2" }) {
   const opening = {
     name,
     character: "Buddy Bot",
@@ -49,7 +52,7 @@ function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1
     },
     model: "",
     host: "",
-    chat_ui: theme,
+    chat_ui: "minimal",
     login: null,
     harness_name: harness.name,
     instructions: "",
@@ -89,29 +92,36 @@ function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1
     const chip = document.getElementById("character");
     const mind = document.getElementById("mind");
     const text = document.getElementById("mind-text");
-    const report = { mind: text.textContent, mindMin: minContent(mind), nameMin: minContent(name), widths: [] };
-    for (const width of ${JSON.stringify(WIDTHS)}) {
-      document.body.style.width = width + "px";
-      const n = name.getBoundingClientRect();
-      const c = chip.getBoundingClientRect();
-      const m = mind.getBoundingClientRect();
-      report.widths.push({
-        width,
-        oneRow: side(n, c) && side(c, m),
-        clipped: text.scrollWidth > text.clientWidth + 0.5 || m.right > header.getBoundingClientRect().right + 0.5,
-        sideways:
-          header.getBoundingClientRect().right > document.body.getBoundingClientRect().right + 0.5 ||
-          document.body.scrollWidth > document.body.clientWidth + 0.5,
-        name: lines(name),
-        chip: lines(chip),
-        mind: lines(text),
-        mindWidth: m.width,
-        nameWidth: n.width,
-      });
+    const { applyChatUiClass } = await import("./chat-ui-class.js");
+    const reports = {};
+    for (const theme of ${JSON.stringify(THEMES)}) {
+      applyChatUiClass(document.documentElement, theme);
+      document.body.style.width = "";
+      const report = { mind: text.textContent, mindMin: minContent(mind), nameMin: minContent(name), widths: [] };
+      reports[theme] = report;
+      for (const width of ${JSON.stringify(WIDTHS)}) {
+        document.body.style.width = width + "px";
+        const n = name.getBoundingClientRect();
+        const c = chip.getBoundingClientRect();
+        const m = mind.getBoundingClientRect();
+        report.widths.push({
+          width,
+          oneRow: side(n, c) && side(c, m),
+          clipped: text.scrollWidth > text.clientWidth + 0.5 || m.right > header.getBoundingClientRect().right + 0.5,
+          sideways:
+            header.getBoundingClientRect().right > document.body.getBoundingClientRect().right + 0.5 ||
+            document.body.scrollWidth > document.body.clientWidth + 0.5,
+          name: lines(name),
+          chip: lines(chip),
+          mind: lines(text),
+          mindWidth: m.width,
+          nameWidth: n.width,
+        });
+      }
     }
     const out = document.createElement("pre");
     out.id = "probe";
-    out.textContent = JSON.stringify(report);
+    out.textContent = JSON.stringify(reports);
     document.body.append(out);
   }
   window.addEventListener("load", drive);
@@ -139,14 +149,12 @@ function measure(theme, name, harness = { name: "cursor-agent", session: "fd4be1
       "--dump-dom",
       pathToFileURL(page).href,
     ],
-    { encoding: "utf8", maxBuffer: 1 << 24, timeout: 120000, killSignal: "SIGKILL" },
+    { encoding: "utf8", maxBuffer: 1 << 24, timeout: 40000, killSignal: "SIGKILL" },
   );
   const match = run.stdout.match(/<pre id="probe"[^>]*>(.*?)<\/pre>/s);
-  assert.ok(match, `the Chat surface did not report (${theme}). ${run.stderr?.slice(-500) ?? ""}`);
+  assert.ok(match, `the Chat surface did not report. ${run.stderr?.slice(-500) ?? ""}`);
   return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
 }
-
-const THEMES = ["minimal", "terminal", "glass"];
 
 function check(theme, report) {
   const { mindMin, nameMin } = report;
@@ -169,10 +177,11 @@ function check(theme, report) {
 
 test(
   "the Chat header stays one row and wraps the mind line, then the name, then the chip",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {
+    const reports = measure("Buddy Bot");
     for (const theme of THEMES) {
-      const report = measure(theme, "Buddy Bot");
+      const report = reports[theme];
       assert.equal(report.mind, "cursor-agent · session fd4be1a2", theme);
       const widest = report.widths[0];
       const narrowest = report.widths.at(-1);
@@ -185,10 +194,11 @@ test(
 
 test(
   "a name too long for the row wraps beside the chip and the mind line",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {
+    const reports = measure("Sir Reginald Buddington the Third of Cupertino");
     for (const theme of THEMES) {
-      const report = measure(theme, "Sir Reginald Buddington the Third of Cupertino");
+      const report = reports[theme];
       const at = report.widths.find((w) => w.width === 320);
       assert.ok(at.name > 1, `${theme} at 320px ${JSON.stringify(at)}: the name did not wrap`);
       assert.equal(at.chip, 1, `${theme} at 320px ${JSON.stringify(at)}: the chip wrapped`);
@@ -201,13 +211,14 @@ test(
 
 test(
   "a custom Harness path with no break opportunity wraps inside the path instead of widening the header",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 400000 },
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {
+    const reports = measure("Buddy Bot", {
+      name: LONG_HARNESS_PATH,
+      session: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    });
     for (const theme of THEMES) {
-      const report = measure(theme, "Buddy Bot", {
-        name: LONG_HARNESS_PATH,
-        session: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-      });
+      const report = reports[theme];
       assert.equal(report.mind, `${LONG_HARNESS_PATH} · session 7c9e6679`, theme);
       check(theme, report);
     }
