@@ -1,10 +1,10 @@
 # Quick message
 
-Hovering the sprite for a couple of seconds opens a composer pill above the Character so the user can type a short line without opening Chat. Sending the line talks to the fidget the same way Chat does; leaving both the sprite and the pill for three seconds hides an empty pill.
+Hovering the sprite for about 1.5 seconds opens a composer pill above the Character so the user can type a short line without opening Chat. Sending the line talks to the fidget the same way Chat does; leaving both the sprite and the pill for three seconds hides an empty pill.
 
 ## Sub-features
 
-- `qm-hover-show` after ~2.5s continuous hover on the sprite body, the pill appears (focused when an AI can answer).
+- `qm-hover-show` after ~1.5s continuous hover on the sprite body, the pill appears (focused when an AI can answer).
 - `qm-send` typing a non-empty line and activating Send (or Enter) delivers the line and hides the pill.
 - `qm-auto-hide` after ~3s continuous away from both sprite and pill, an empty pill hides; re-entering either resets the timer.
 - `qm-connect` when no AI can answer yet, the pill shows a connect prompt and an **Open chat** control that opens Chat (not a Summon verb).
@@ -12,7 +12,7 @@ Hovering the sprite for a couple of seconds opens a composer pill above the Char
 
 ## How to get to it (user POV)
 
-- Rest the pointer on the sprite body without clicking until the pill appears (~2.5s).
+- Rest the pointer on the sprite body without clicking until the pill appears (~1.5s).
 - Type a line and send, or click away / leave until auto-hide.
 - When disconnected, use the pill's **Open chat** control to finish setup in Chat.
 
@@ -25,12 +25,12 @@ Preconditions:
 - Live hover needs an overlay session (X11 under Xvfb+WM is enough for the hover gesture; Chat send needs a configured AI).
 
 - **Units (preferred proof on CI / this box).** Run `node --test tests/quick-message.test.js tests/quick-message-connect.test.js` (also covered by `.agents/skills/verify-fidget/helpers/doctor.sh --units` / `prove-units.sh`). Exit `0` with all tests pass. Copy the tap summary into `$FIDGET_VERIFY_EVIDENCE/quick-message/` when proving alone.
-- **Live hover (X11).** After overlay is up with `FIDGET_TRACE_FRAMES=1`, read sprite feet `pos()` from the last `frame:` line, `xdotool mousemove --sync $X $(($Y - 40))`, sleep ≥2.5s. There is **no** `verbs:` line for show/hide — proof is a screenshot of the `.quick-message` pill (`FIDGET_CAPTURABLE=1`) or observing locomotion freeze while the pill is up. Put artifacts under `$FIDGET_VERIFY_EVIDENCE/quick-message/`.
+- **Live hover (X11).** After overlay is up with `FIDGET_TRACE_FRAMES=1`, read sprite feet `pos()` from the last `frame:` line, `xdotool mousemove --sync $X $(($Y - 40))`, sleep ≥1.5s. There is **no** `verbs:` line for show/hide — proof is a screenshot of the `.quick-message` pill (`FIDGET_CAPTURABLE=1`) or observing locomotion freeze while the pill is up. Put artifacts under `$FIDGET_VERIFY_EVIDENCE/quick-message/`.
 - **Proof.** Prefer the unit suite exit code and tap summary. Treat live screenshots as a second observer when a capture tool exists.
 
 ## Gotchas
 
-- A glance shorter than `HOVER_DELAY_MS` (2500) must not open the pill; do not click (that is Poke) or double-click (Summon).
+- A glance shorter than `HOVER_DELAY_MS` (1500) must not open the pill; do not click (that is Poke) or double-click (Summon).
 - Auto-hide is 3000ms away from **both** sprite and pill; text in the field blocks auto-hide.
 - Opening Chat from the connect control is `overlay_open_chat`, not `verbs:.*Summon` — do not mark Summon verified from this path.
 - Live X11 under headless boxes often lacks a screenshot tool; say so and rely on units rather than inventing a parallel harness.
