@@ -221,13 +221,14 @@ A Character Manifest is at most 1 MiB. A package is at most 64 MiB, 4096 files, 
 
 #### Animations
 
-Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`, `react`, `talk`, and `hold`. The Engine also asks for three optional ones, and draws a stand-in when a package omits them:
+Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`, `react`, `talk`, and `hold`. The Engine also asks for four optional ones, and draws a stand-in when a package omits them:
 
 | Animation | Plays when | Without it |
 |---|---|---|
 | `grab` | The user drags the sprite | `fall` |
 | `climb` | The sprite climbs | `walk` |
 | `jump` | A Behavior plays the `jump` Primitive | `fall` |
+| `wave` | A Behavior plays the `wave` Primitive | `idle` |
 
 Any other name draws only as a Variant or a Left Strip of one of these.
 
@@ -267,6 +268,7 @@ The Primitives, and the Animation each plays:
 | `idle`, `walk`, `land`, `sit`, `sleep`, `react`, `talk`, `hold` | The Animation of the same name |
 | `chase` | `walk`, steered toward the cursor's x along the ground |
 | `jump` | `jump`, or `fall` without it |
+| `wave` | `wave`, or `idle` without it |
 
 `when` takes one of three forms. A duration is a whole number followed by `s` or `m`.
 

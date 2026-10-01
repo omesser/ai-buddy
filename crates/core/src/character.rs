@@ -174,10 +174,13 @@ pub enum Primitive {
     /// velocity and nothing more. `Falling` carries the arc and the existing
     /// landing path ends it, so a jump reuses the Throw's physics.
     Jump,
+    /// A greeting gesture. Optional art: a Character that draws no `wave`
+    /// waves in its `idle`, so the Required Animation Set stays at nine.
+    Wave,
 }
 
 /// Every Primitive by the name a Character Manifest writes.
-const PRIMITIVES: [(&str, Primitive); 10] = [
+const PRIMITIVES: [(&str, Primitive); 11] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
     ("land", Primitive::Land),
@@ -188,6 +191,7 @@ const PRIMITIVES: [(&str, Primitive); 10] = [
     ("hold", Primitive::Hold),
     ("chase", Primitive::Chase),
     ("jump", Primitive::Jump),
+    ("wave", Primitive::Wave),
 ];
 
 /// A named frame sequence and how it plays.
@@ -442,12 +446,13 @@ impl Character {
 
 /// Optional Animations, and what draws when a package does not declare them:
 /// used when present, and absent silently, never as a missing sprite.
-const OPTIONAL_FALLBACKS: [(&str, &str); 3] = [
+const OPTIONAL_FALLBACKS: [(&str, &str); 4] = [
     ("climb", "walk"),
     ("grab", "fall"),
     // The Required Animation Set is closed at nine, so a jump is optional art.
     // A Character without it rises and falls in its `fall`.
     ("jump", "fall"),
+    ("wave", "idle"),
 ];
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
@@ -1204,6 +1209,39 @@ mod tests {
         assert_eq!(
             character.draw("jump", 0, 0, 1.0).expect("draws").animation,
             "jump"
+        );
+    }
+
+    /// Wave art is optional too. A Character without it waves in its `idle`.
+    #[test]
+    fn wave_is_optional_and_falls_back_to_idle() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(
+            character.draw("wave", 0, 0, 1.0).expect("draws").animation,
+            "idle"
+        );
+
+        let drawn = format!(
+            "{}[animations.wave]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&drawn).expect("loads");
+        assert_eq!(
+            character.draw("wave", 0, 0, 1.0).expect("draws").animation,
+            "wave"
+        );
+    }
+
+    #[test]
+    fn a_behavior_may_play_wave() {
+        let manifest = format!(
+            "{}[behaviors.greet]\nplay = [\"wave\", \"talk\", \"wave\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("wave is a Primitive");
+        assert_eq!(
+            character.behaviors["greet"].primitives,
+            vec![Primitive::Wave, Primitive::Talk, Primitive::Wave]
         );
     }
 

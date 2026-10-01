@@ -676,7 +676,7 @@ mod tests {
             errors,
             vec![
                 "behavior \"greet\" declares \"pounce\", which is not a Primitive; \
-                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase, jump"
+                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase, jump, wave"
                     .to_string()
             ],
             "the author is told the offending word and what they may write instead"
@@ -879,13 +879,13 @@ mod tests {
                  as then = \"settle\""
                     .to_string(),
                 "behavior \"pounce\" declares 7, which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold, chase, jump"
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase, jump, wave"
                     .to_string(),
                 "when for behavior \"pounce\" is 6, which is not a condition; a condition \
                  reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\""
                     .to_string(),
                 "behavior \"фыр\" declares [], which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold, chase, jump"
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase, jump, wave"
                     .to_string(),
             ],
             "each nonsense declaration is rejected by name, saying what is wrong"
