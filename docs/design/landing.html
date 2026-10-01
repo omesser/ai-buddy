@@ -1,0 +1,311 @@
+<!doctype html>
+<!--
+  The landing page proposal for omesser/fidget#1210: what a visitor to
+  omesser.github.io/fidget/ sees once the site root stops being the design
+  index.
+
+  A Dated page under ADR-0011: hand-written and frozen at its date. The page it
+  proposes is meant to ship Generated, from README.md, characters/ and the
+  release the Homebrew cask pins, so the copy here is a stand-in for what the
+  generator will read, not a second source for it.
+
+  The art is the published gallery's own frames at characters/<package>/frames/,
+  the paths make-character-gallery.py writes into _site, so this page renders
+  only on the assembled site. Every frame named here is one a Character
+  Manifest declares, which is the only kind the gallery copies.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A frozen proposal must not become the search result for "Fidget". -->
+<meta name="robots" content="noindex">
+<title>Fidget Landing Page</title>
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #646A7A;
+    --line: #D3D7E0;
+    --accent: #2C8C7C;
+    --accent-ink: #FFFFFF;
+    --win: #FBFCFE;
+    --desk-a: #CFE3EC;
+    --desk-b: #E8D9EC;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1E222C;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      --accent-ink: #14171E;
+      --win: #232835;
+      --desk-a: #1F3440;
+      --desk-b: #34283D;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --paper-2: #1E222C;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    --accent-ink: #14171E;
+    --win: #232835;
+    --desk-a: #1F3440;
+    --desk-b: #34283D;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1rem; }
+
+  .class {
+    margin: 0; padding: .45rem 1rem; text-align: center;
+    font: .78rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ink-3); border-bottom: 1px dashed var(--line);
+  }
+  .class a { color: inherit; }
+
+  nav { display: flex; align-items: center; gap: 1.25rem; padding: 1rem 0; }
+  .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700;
+    font-size: 1.15rem; color: var(--ink); text-decoration: none; margin-right: auto; }
+  .brand img { width: 30px; height: 30px; }
+  nav a.link { color: var(--ink-2); text-decoration: none; font-size: .95rem; }
+  nav a.link:hover { color: var(--ink); }
+
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 2.5rem;
+    align-items: center; padding: 2.5rem 0 3.5rem; }
+  h1 { font-size: clamp(2rem, 4.2vw, 3.1rem); line-height: 1.1;
+    letter-spacing: -0.02em; margin: 0 0 1rem; }
+  .lede { font-size: 1.15rem; color: var(--ink-2); margin: 0 0 1.75rem; max-width: 34rem; }
+  .get { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin-bottom: 1rem; }
+  .btn { display: inline-flex; flex-direction: column; padding: .7rem 1.1rem;
+    border-radius: 10px; text-decoration: none; border: 1px solid var(--line);
+    color: var(--ink); background: var(--win); }
+  .btn b { font-size: 1rem; }
+  .btn span { font-size: .8rem; color: var(--ink-3); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary span { color: inherit; opacity: .8; }
+  .btn:hover { filter: brightness(1.05); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .brew { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    font-size: .9rem; color: var(--ink-3); }
+  code { font: .88rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: .2rem .45rem; color: var(--ink); overflow-wrap: anywhere; }
+  .note { font-size: .85rem; color: var(--ink-3); margin-top: .8rem; max-width: 34rem; }
+
+  .desk { position: relative; aspect-ratio: 4 / 3; border-radius: 14px;
+    background: linear-gradient(135deg, var(--desk-a), var(--desk-b));
+    border: 1px solid var(--line); overflow: hidden; }
+  .window { position: absolute; left: 12%; right: 10%; top: 56%; bottom: -4%;
+    background: var(--win); border-radius: 10px; border: 1px solid var(--line);
+    box-shadow: 0 18px 40px rgb(0 0 0 / .18); }
+  .window .bar { height: 28px; border-bottom: 1px solid var(--line);
+    display: flex; gap: 6px; align-items: center; padding: 0 10px; }
+  .window .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .window .lines { padding: 14px 16px; display: grid; gap: 9px; }
+  .window .lines div { height: 8px; border-radius: 4px; background: var(--paper-2); }
+  .perched { position: absolute; left: 56%; bottom: 44%; width: 128px; height: 128px;
+    transform: translateY(6px); }
+  .perched img { width: 100%; height: 100%; object-fit: contain; }
+  .say { position: absolute; left: 16%; bottom: calc(44% + 136px); max-width: 16rem;
+    padding: 10px 13px; border-radius: 12px; background: #14171E; color: #E8EBF2;
+    border: 2px solid #E8EBF2; box-shadow: 0 4px 16px rgb(0 0 0 / .55);
+    font: 13.5px/1.55 system-ui, -apple-system, sans-serif; }
+  .say::before, .say::after { content: ""; position: absolute; right: 2.2rem; width: 0; height: 0;
+    border-left: 10px solid transparent; border-right: 10px solid transparent; }
+  .say::before { bottom: -10px; border-top: 10px solid #E8EBF2; }
+  .say::after { bottom: -7px; margin-right: 2px; border-left-width: 8px; border-right-width: 8px;
+    border-top: 8px solid #14171E; }
+
+  section { padding: 3rem 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
+  .sub { color: var(--ink-2); margin: 0 0 1.75rem; }
+
+  .cast { display: grid; grid-template-columns: repeat(8, 1fr); gap: .75rem; }
+  .cast figure { margin: 0; background: var(--win); border: 1px solid var(--line);
+    border-radius: 12px; padding: .75rem .5rem .6rem; text-align: center; }
+  .cast .art { height: 96px; display: flex; align-items: flex-end; justify-content: center; }
+  .cast img { max-height: 96px; max-width: 100%; }
+  .cast img.pixel { image-rendering: pixelated; height: 96px; }
+  .cast figcaption { font-size: .88rem; color: var(--ink-2); margin-top: .4rem; }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+  .features div { background: var(--win); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.2rem; }
+  .features b { display: block; margin-bottom: .3rem; }
+  .features p { margin: 0; color: var(--ink-2); font-size: .95rem; }
+
+  .harnesses { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; margin: 0; list-style: none; }
+  .harnesses li { border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem;
+    font-size: .9rem; background: var(--win); }
+
+  footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; color: var(--ink-3);
+    font-size: .9rem; display: flex; flex-wrap: wrap; gap: 1.25rem; }
+  footer a { color: inherit; }
+
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; padding-top: 1rem; }
+    nav a.link.opt { display: none; }
+    .get { grid-template-columns: 1fr; }
+    .cast { grid-template-columns: repeat(4, 1fr); }
+    .desk { aspect-ratio: 1 / 1; }
+    .perched { width: 96px; height: 96px; }
+    .say { left: 6%; bottom: calc(44% + 106px); }
+  }
+</style>
+</head>
+<body>
+<p class="class">Dated proposal · <a href="https://github.com/omesser/fidget/issues/1210">#1210</a> · 2026-10-01 · hand-written and frozen, not a description of shipped behavior</p>
+
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><img src="characters/buddy-bot/frames/idle-0.png" alt="">Fidget</a>
+    <a class="link opt" href="#harnesses">Harnesses</a>
+    <a class="link opt" href="#characters">Characters</a>
+    <a class="link" href="https://github.com/omesser/fidget">GitHub</a>
+  </nav>
+
+  <div class="hero">
+    <div>
+      <h1>Fidget keeps you company while you vibe-code, and pitches in when you ask</h1>
+      <p class="lede">A desktop pet that walks on your windows. Pick it up, throw it, let it nap, or
+        double-click to talk to the coding agent you already use.</p>
+      <div class="get" id="get">
+        <a class="btn primary" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_aarch64.dmg"><b>Download for macOS</b><span>Apple Silicon · .dmg</span></a>
+        <a class="btn" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_x64-setup.exe"><b>Windows</b><span>x86_64 · installer</span></a>
+        <a class="btn" href="https://github.com/omesser/fidget/releases/download/v0.0.1-dev/ai-buddy_0.0.1-dev_amd64.AppImage"><b>Linux</b><span>x86_64 · AppImage</span></a>
+      </div>
+      <div class="brew">or with Homebrew <code>brew install --cask fidget</code></div>
+      <p class="note">Builds are not signed yet, so the first open warns. Works offline with no account;
+        connect an AI in Settings when you want it to talk back. The Homebrew cask lands with #1204.</p>
+    </div>
+
+    <div class="desk" aria-label="Buddy Bot perched on a window's top edge, talking">
+      <div class="say">Perched on your editor. Nice view. Want me to run the tests?</div>
+      <div class="window">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div class="lines"><div style="width:72%"></div><div style="width:54%"></div><div style="width:81%"></div><div style="width:38%"></div><div style="width:66%"></div></div>
+      </div>
+      <div class="perched"><img id="hero-sprite" src="characters/buddy-bot/frames/sit-0.png" alt="Buddy Bot"></div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="sub">Presence first. The AI is optional.</p>
+    <div class="features">
+      <div><b>Keeps you company</b><p>It walks, naps, and reacts to your windows. No account or subscription needed.</p></div>
+      <div><b>Pitches in</b><p>Double-click to chat with Claude Code, Codex, Cursor or any ACP harness. It answers in speech and motion.</p></div>
+      <div><b>Knows the room</b><p>With your consent it reads window names for context. It never takes screenshots.</p></div>
+      <div><b>Gets out of the way</b><p>Fades in fullscreen, hides on a hotkey, comes back when you want it.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="harnesses">
+  <div class="wrap">
+    <h2>Talks to the agent you already use</h2>
+    <p class="sub">Any harness that speaks ACP, or a model API with your own key.</p>
+    <ul class="harnesses">
+      <li>Claude Code</li><li>Codex</li><li>Cursor</li><li>Hermes</li><li>OpenCode</li>
+      <li>Pi</li><li>Grok Build</li><li>Copilot</li><li>Goose</li><li>Antigravity</li>
+    </ul>
+  </div>
+</section>
+
+<section id="characters">
+  <div class="wrap">
+    <h2>Packaged Fidgets</h2>
+    <p class="sub">Eight characters ship with Fidget, each with its own sprites, loops and personality.
+      <a href="characters.html">See every animation in the gallery</a>.</p>
+    <div class="cast" id="cast"></div>
+  </div>
+</section>
+
+<section id="your-own">
+  <div class="wrap">
+    <h2>Easily add your own Fidgets</h2>
+    <p class="sub">A character is a folder of frames, a manifest and a plain-text personality file.</p>
+    <div class="features">
+      <div><b>Change a personality</b><p>Edit any character's prompt or behavior in its plain-text personality file.</p></div>
+      <div><b>Draw your own</b><p>Add frames and describe the loops in a short <a href="https://github.com/omesser/fidget/blob/main/docs/DEVELOPMENT.md#character-packages">manifest</a>.</p></div>
+      <div><b>Import a pet</b><p><a href="https://github.com/omesser/fidget/blob/main/docs/DEVELOPMENT.md#importing-pets">Convert one</a> from the <a href="https://petscodex.com/">Pets Codex</a> or <a href="https://shimejishop.com/">Shimeji Shop</a> galleries.</p></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span>MIT licensed</span>
+    <a href="https://github.com/omesser/fidget">Source</a>
+    <a href="https://github.com/omesser/fidget/releases">Releases</a>
+    <a href="characters.html">Character gallery</a>
+    <a href="index.html">Design pages</a>
+  </footer>
+</div>
+
+<script>
+  const range = (n) => Array.from({ length: n }, (_, i) => i);
+  const walk = (pkg, n, fps, pixel) => ({ pkg, fps, pixel,
+    frames: range(n).map((i) => `characters/${pkg}/frames/walk-${i}.png`) });
+  const CAST = [
+    ["Buddy Bot", walk("buddy-bot", 8, 8)],
+    ["BMO", { pkg: "bmo", fps: 8, frames: [0, 1, 2, 1].map((i) => `characters/bmo/frames/walk-${i}.png`) }],
+    ["Cat", walk("cat", 8, 8)],
+    ["Trump", walk("trump", 8, 8)],
+    ["Jotaro Kujo", walk("jotaro-kujo", 8, 8)],
+    ["Timber Wolf", walk("timber-wolf", 20, 8)],
+    ["Black Mage", walk("black-mage", 4, 8, true)],
+    ["Nim", walk("nim", 8, 12, true)],
+  ];
+
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function play(img, frames, fps) {
+    if (still) return;
+    let i = 0;
+    frames.forEach((src) => { new Image().src = src; });
+    setInterval(() => { i = (i + 1) % frames.length; img.src = frames[i]; }, 1000 / fps);
+  }
+
+  const cast = document.getElementById("cast");
+  for (const [name, loop] of CAST) {
+    const fig = document.createElement("figure");
+    const art = document.createElement("div");
+    art.className = "art";
+    const img = document.createElement("img");
+    img.src = loop.frames[0];
+    img.alt = name;
+    if (loop.pixel) img.className = "pixel";
+    art.append(img);
+    const cap = document.createElement("figcaption");
+    cap.textContent = name;
+    fig.append(art, cap);
+    cast.append(fig);
+    play(img, loop.frames, loop.fps);
+  }
+
+  play(document.getElementById("hero-sprite"),
+    range(4).map((i) => `characters/buddy-bot/frames/sit-${i}.png`), 3);
+</script>
+</body>
+</html>
