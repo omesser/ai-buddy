@@ -42,6 +42,7 @@ pub fn set_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<
     }
     let window = window.clone();
     window
+        .clone()
         .run_on_main_thread(move || {
             if let Err(why) = apply_click_through(&window, ignore) {
                 eprintln!("overlay: click-through restore failed: {why}");
