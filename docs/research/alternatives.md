@@ -79,13 +79,13 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 | Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) | free (GitHub) / $5.49 (Steam) |
 | Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) | free (VRM + Workshop) |
 | Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
+| Distribution | GitHub releases + Homebrew cask (macOS arm64) | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
 
 ## User-language comparison
 
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
+| fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); no Steam/store — Homebrew cask (macOS arm64) + GitHub Releases | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 41 official DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,874 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
@@ -509,8 +509,9 @@ package-authored.
    (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are shipped; #17 tracks polish/bugs.
 
 3. **Distribution reach.** Desktop Mate, VPet, and MateEngine are on Steam;
-   OpenPets has signed Windows builds and catalog. fidget is GitHub releases
-   with no store presence.
+   OpenPets has signed Windows builds and catalog. fidget ships via GitHub
+   Releases plus a Homebrew cask (macOS Apple Silicon, `omesser/homebrew-fidget`);
+   still no Steam/store presence.
 
 ## Evidence footer
 
@@ -523,8 +524,9 @@ package-authored.
   #587, cursor-agent verified #762, goose verified #971, copilot verified #1017,
   antigravity verified #1143).
 - **❌** = not found in cited sources. The fidget column was checked against
-  main on 2026-09-28; the other columns were re-checked this pass for stars,
-  Steam review counts, and OpenPets URLs.
+  main on 2026-10-02. The other columns keep the 2026-09-28 re-check for stars,
+  Steam review counts, and OpenPets URLs. OpenPets and MateEngine star counts
+  have drifted since that re-check. Those cells stay as written.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
   has Steam 1,032 reviews 97% + GitHub 3,709 stars.
@@ -534,7 +536,7 @@ package-authored.
 Capabilities marked ✅, ~, or ❌ for fidget are verified against docs/SPEC.md,
 DESIGN.md, README.md, ADR-0008, ADR-0026, the Director prompt
 (`app_instructions` in `crates/core/src/director/prompt.rs`), and `git log` on
-main at `3e0ffff2007d5d0cb7944cc9db10df156db04ea3` as of September 28, 2026
+main at `543dad19aef348fd27bf8f6d9cce16961b9a7aef` as of October 2, 2026
 (Director tool invitation #987;
 Pi handshake #1007/#1009, tool listing unmeasured #984, project MCP file #1019
 checked and not treated as a listing; Harness `goose` named+verified #971 / #989;
@@ -543,6 +545,8 @@ config #1024; `antigravity` named+verified #1143, Google first-party ACP
 `agy_acp_server.par`, smoked on agy_acp_server 1.2.1 #604, MCP listed on a stock
 run with goose, copilot, and codex; prior ACP: cursor-agent #762, grok #587,
 codex #623, pi #628).
+The README Get It section, #1204, and #1259 record the Homebrew cask. The tap
+`omesser/homebrew-fidget` pins cask v0.1.0 for macOS arm64.
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,310, 41 DLC on the Steam `dlc` list, store copy still
