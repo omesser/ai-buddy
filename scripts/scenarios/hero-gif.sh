@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Scenario: hero-gif (macOS)
 # On screen: launches Fidget as one Character (default Buddy Bot) with a Harness
-#   and records the main display for 45 s. The terminal cues five beats: throw
+#   and records the main display until the last beat, 90 s at most. The terminal cues five beats: throw
 #   the sprite at a window's top edge, poke it, double-click it (Chat opens; keep
 #   it open, or the first-run tour bubble lands 25 s after launch), type a
 #   question, Enter, and throw it again once the reply lands as a speech bubble
 #   and in Chat: Claude Code's words under --harness claude, "Hello" from the fixture.
-# Input: yours, at the mouse and keyboard. Each cue waits for the sprite to speak. None sent.
-# Duration: about 70 s, 2 min at most. Grants: Screen Recording, Accessibility.
-# Asserts: the recording exists and runs 44 to 46 s. The look is yours to judge
+# Input: yours, at the mouse and keyboard. Each cue waits for the last action's reply. None sent.
+# Duration: about 90 s, 3 min at most. Grants: Screen Recording, Accessibility.
+# Asserts: the recording exists and ffprobe reads it. The look is yours to judge
 #   from the contact sheet and the full-frame GIF in the evidence directory.
 #
 # Usage: hero-gif.sh --go [--harness fixture|claude|grok] [--character <id>] <fidget binary> <fidget test binary>
@@ -22,7 +22,7 @@ set -euo pipefail
 
 ffmpeg=/opt/homebrew/bin/ffmpeg
 root=$(cd "$(dirname "$0")/../.." && pwd)
-record=45
+record=90
 
 fail() {
   echo "FAIL: $*" >&2
@@ -141,37 +141,51 @@ ffpid=$!
 t0=$SECONDS
 
 now() { echo $((SECONDS - t0)); }
-at() { # <s>: sleep until s seconds into the recording
-  while [ "$(now)" -lt "$1" ]; do sleep 1; done
-}
 cue() { # <text>
   echo ">>> $(now)s  $1"
 }
-# FIDGET_TRACE_DIRECTOR logs a `playing` line for every bubble the sprite speaks.
-spoken() { grep -c '^director: .* playing ' "$log" || true; }
-# Each beat starts once the sprite answers the last one. A beat that gets no
-# answer is cued anyway while there is time left to act on it.
-after_speech() { # <text>
-  local before
-  before=$(spoken)
-  while [ "$(spoken)" -le "$before" ] && [ "$(now)" -lt $((record - 5)) ]; do sleep 0.5; done
-  cue "$1"
+# Every action makes the sprite think and then talk, and a newer action cancels
+# the reply in flight. So each cue waits for the action's trigger, the next
+# bubble after it, and a beat to read it. Log lines are matched past `heard`.
+heard=$(wc -l < "$log")
+wait_for() { # <ERE>: true once a log line past `heard` matches; moves `heard` to it
+  local n
+  while [ "$(now)" -lt $((record - 3)) ]; do
+    n=$(tail -n +"$((heard + 1))" "$log" | grep -n -m1 -E "$1" | cut -d: -f1)
+    if [ -n "$n" ]; then
+      heard=$((heard + n))
+      return 0
+    fi
+    kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
+    sleep 0.5
+  done
+  return 1
+}
+beat() { # <trigger> <next cue>
+  if wait_for "happened=$1" && wait_for '^director: .* playing '; then
+    sleep 2
+    cue "$2"
+  else
+    cue "no $1 reply by $((record - 3)) s. Hands off."
+    return 1
+  fi
 }
 
-cue "recording. Pick the sprite up and throw it hard at the window's top edge."
-after_speech "it spoke. Click it once, a poke, then move the mouse off him."
-after_speech "it spoke. Double-click it without moving the mouse. Chat opens; leave it open."
-after_speech "it spoke. Type in Chat: What's in the news today?  Then press Enter."
-after_speech "it answered. Pick it up and throw it once more, anywhere."
-at "$record"
-cue "done. Hands off while the recording closes."
-wait "$ffpid" || fail "ffmpeg failed; see $out/ffmpeg.log"
+cue "recording. Throw it at the window's top edge, then wait for it to speak."
+beat Perch "it spoke. Poke it once, move the mouse off, and wait." &&
+  beat Poke "it spoke. Double-click it. Chat opens; leave it open and wait." &&
+  beat Summon "it spoke. Type in Chat: What's in the news today?  Then press Enter." &&
+  beat 'Chat\(' "it answered. Throw it once more, anywhere." &&
+  beat Perch "done. Hands off while the recording closes." || true
+# SIGINT makes ffmpeg finish the file; it exits 255 for that, so judge the file.
+kill -INT "$ffpid" 2> /dev/null || true
+wait "$ffpid" || true
 
-[ -s "$rec" ] || fail "no recording at $rec"
+[ -s "$rec" ] || fail "no recording at $rec; see $out/ffmpeg.log"
 secs=$(/opt/homebrew/bin/ffprobe -v error -show_entries format=duration -of csv=p=0 "$rec")
-awk -v s="$secs" -v r="$record" 'BEGIN { exit !(s >= r - 1 && s <= r + 1) }' || fail "recording runs ${secs}s, want $((record - 1)) to $((record + 1))"
+[ -n "$secs" ] || fail "ffprobe cannot read $rec; see $out/ffmpeg.log"
 
-"$ffmpeg" -y -v error -i "$rec" -vf 'fps=1,scale=480:-1,tile=5x9' "$out/contact-sheet.png"
-to_gif "$rec" "$out/full-frame.gif" "" 0 "$record"
+"$ffmpeg" -y -v error -i "$rec" -vf "fps=45/$secs,scale=480:-1,tile=5x9" -frames:v 1 "$out/contact-sheet.png"
+to_gif "$rec" "$out/full-frame.gif" "" 0 "$secs"
 echo "PASS: evidence in $out"
 echo "next: $0 --crop x:y:w:h $rec [<from s> [<length s>]]"
