@@ -103,61 +103,36 @@ next to the icon it previews, not by being in a pull request description.
 
 ## An agent signs what it writes on GitHub
 
-End every issue comment, pull request description, review and inline reply an
-agent writes with one line of its own. Who wrote is the opening of the line,
-including any parentheses. A reader can tell a Cursor cloud agent launched
-from a Grok bot from the bot itself, and from any other Harness agent.
+An agent ends every issue, pull request description, review, comment, and gist
+it writes through Oded's account with one line.
 
-**A Cursor cloud agent launched from a Grok bot** names Cursor, then that bot:
+A Cursor cloud agent whose launch message names a Grok bot must name that bot.
+Put the bot's name where `Coder` is. Bare `Cursor agent` is wrong for this
+agent.
 
 ```
 _— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-The name in parentheses is the bot named in the message that launched the
-agent. `Coder` is the example. Substitute that name. If the launch message
-names no Grok bot, use the Harness line below. The bare line is wrong when a
-Grok bot launched the agent:
-
-```
-_— Cursor agent, on [@omesser](https://github.com/omesser)'s behalf._
-```
-
-**Any other Harness agent** names the Harness, then `agent`, with no
-parentheses:
+Every other Harness agent names its Harness, with no parentheses. The Harness
+names are `Cursor`, `Claude Code`, `Grok Build`, `Codex`, `OpenCode`, `Hermes`,
+and `Pi`. An attach not on this list uses its command name.
 
 ```
 _— Grok Build agent, on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-The Harness is the product, written as the README Harness Support table already
-names it for humans: `Cursor`, `Claude Code`, `Grok Build`, `Codex`,
-`OpenCode`, `Hermes`, `Pi`. An unnamed attach uses that command (`copilot`,
-not a made-up brand). Do not add a parenthetical on this line.
-`_— Grok Build agent (Coder)_` is not one of these lines.
-
-A Cursor cloud agent uses this line only when the launch message names no
-Grok bot. When a Grok bot launched that agent, use the Cursor cloud-agent line
-above.
-
-**A Grok bot** writing as itself, not through a Harness it launched, names the
-bot:
+A Grok bot writing as itself names itself. Only this line and the Cursor line
+carry a Grok bot name.
 
 ```
 _— Grok bot (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-The name in parentheses is that bot's configured name. Only the Cursor
-cloud-agent line and this line may use a Grok bot name.
+GitHub shows the owner as the author of everything an agent posts. The line
+tells a reader which text an agent wrote and which text is the owner's.
+`Co-authored-by` covers commits only.
 
-This applies to every issue, PR body, review, comment, and gist on any GitHub
-repository when writing through Oded's account.
-
-When an agent writes through an owner's account, the author name never says
-who wrote a comment. A reader following a back-and-forth needs that: which line
-to argue with, and which is a decision already taken. `Co-authored-by` records
-authorship on commits only, and GitHub has no author field an agent can set.
-
-Sign once per body, at the end. What the owner writes stays unsigned, so the
-missing line carries meaning too. If an agent revises a body the owner wrote,
-leave that text unsigned and say what changed in a comment of its own.
+Sign once, at the end of the body. Owner text stays unsigned. If an agent edits
+a body the owner wrote, leave it unsigned and explain the edit in a signed
+comment.

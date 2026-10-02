@@ -48,17 +48,5 @@ Comments say why, not what, and earn their length. See `docs/agents/comments.md`
 
 ## Writing
 
-Squash merges make the pull request title the only line that reaches `git log`.
-An agent signs every issue, pull request description, review, comment, and gist
-it writes on GitHub.
-
-A Cursor cloud agent launched from a Grok bot signs with that bot's name in
-parentheses. The name is the one in the message that launched the agent. Bare
-`Cursor agent`, with no bot name, is the wrong line for that launch.
-
-```
-_— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
-```
-
-`Coder` stands for the bot named in the launch message. Substitute that name.
-See `docs/agents/writing.md`.
+An agent signs what it writes on GitHub. See `docs/agents/writing.md` for the
+pull request title and the exact sign-off line.
