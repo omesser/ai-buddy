@@ -104,11 +104,26 @@ next to the icon it previews, not by being in a pull request description.
 ## An agent signs what it writes on GitHub
 
 End every issue comment, pull request description, review and inline reply an
-agent writes with one line of its own. There are two kinds of signer. The first
-words of the line say which, so a Grok Build session and a Grok bot named Coder
-cannot be mistaken for each other.
+agent writes with one line of its own. The first words say who wrote. A reader
+can tell a Cursor cloud agent launched by a Grok bot from the bot itself, and
+from a Harness session that no bot launched.
 
-**A Harness agent** names the Harness that launched the session, then `agent`:
+**A Cursor cloud agent launched from a Grok bot** names Cursor, then that bot:
+
+```
+_— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
+```
+
+The name in parentheses is the bot that launched the agent. `Coder` is the
+example. Substitute the launching bot's configured name. This is the required
+line for that launch. The bare line is wrong for it:
+
+```
+_— Cursor agent, on [@omesser](https://github.com/omesser)'s behalf._
+```
+
+**A Harness session that no Grok bot launched** names the Harness, then
+`agent`, with no parentheses:
 
 ```
 _— Grok Build agent, on [@omesser](https://github.com/omesser)'s behalf._
@@ -117,17 +132,22 @@ _— Grok Build agent, on [@omesser](https://github.com/omesser)'s behalf._
 The Harness is the product, written as the README Harness Support table already
 names it for humans: `Cursor`, `Claude Code`, `Grok Build`, `Codex`,
 `OpenCode`, `Hermes`, `Pi`. An unnamed attach uses that command (`copilot`,
-not a made-up brand). Do not add a parenthetical after `agent`. `Coder` and
-`Architect` are Grok bot instance names. `_— Cursor agent (Coder)_` and
-`_— Grok Build agent (Coder)_` both read as that bot.
+not a made-up brand). Do not add a parenthetical on this line. A Grok bot
+name here claims a launch that did not happen. `_— Grok Build agent (Coder)_`
+names a bot on a session that no bot launched.
 
-**A Grok bot** (a named bot in Grok, not a Harness attach) names the bot:
+A Cursor session is this case only when no Grok bot launched it. When a Grok
+bot launched the Cursor session, use the Cursor line above.
+
+**A Grok bot** writing as itself, not through a Harness it launched, names the
+bot:
 
 ```
 _— Grok bot (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-`<Name>` is the bot's configured name. Only this line may use those names.
+The name in parentheses is that bot's configured name. Only the Cursor
+cloud-agent line and this line may use a Grok bot name.
 
 This applies to every issue, PR body, review, comment, and gist on any GitHub
 repository when writing through Oded's account.
