@@ -80,6 +80,7 @@ static HARNESS_TURN_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 /// value is any string a host takes, not a number. Blank is unset;
 /// `model::effort_for` turns unset into `low`, so storing the default here would make the placeholder a lie.
 static REASONING_EFFORT: Mutex<String> = Mutex::new(String::new());
+static HARNESS_REASONING_EFFORT: Mutex<String> = Mutex::new(String::new());
 
 /// Where the stdio MCP server is, as the variable or the file gives it.
 ///
@@ -125,6 +126,15 @@ pub fn director_reasoning_effort() -> Option<String> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     (!effort.is_empty()).then(|| effort.clone())
+}
+
+/// The Harness reasoning effort to ask for. Blank and anything outside
+/// `low` / `medium` / `high` is medium. Not the HTTP row.
+pub fn harness_reasoning_effort() -> String {
+    let effort = HARNESS_REASONING_EFFORT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    crate::settings::form::harness_effort_level(&effort).to_string()
 }
 
 /// The stdio MCP server path in force, if one is set.
@@ -228,6 +238,10 @@ pub fn seed(settings: &Settings) {
         model::env_or_file(model::REASONING_EFFORT, &settings.director_reasoning_effort)
             .trim()
             .to_string();
+    *HARNESS_REASONING_EFFORT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+        settings.harness_reasoning_effort.trim().to_string();
     *MCP_BIN
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) =

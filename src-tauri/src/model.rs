@@ -3178,6 +3178,47 @@ pub(crate) mod tests {
         });
     }
 
+    /// The Harness row does not ride on the HTTP body. A high Harness effort
+    /// and a low director effort still send `low`.
+    #[test]
+    fn the_model_api_sends_director_effort_not_the_harness_effort() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                harness_reasoning_effort: "high".to_string(),
+                director_reasoning_effort: "low".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(effort_for(), "low");
+            let chat = request_body(
+                "gpt-oss-20b",
+                &session,
+                false,
+                TURN_CEILING,
+                Wire::Stream,
+                true,
+                &effort_for(),
+                true,
+            );
+            assert_eq!(chat["reasoning_effort"], "low");
+            let responses = request_body(
+                "grok-4.6",
+                &session,
+                true,
+                TURN_CEILING,
+                Wire::Whole,
+                true,
+                &effort_for(),
+                true,
+            );
+            assert_eq!(responses["reasoning"]["effort"], "low");
+            assert!(responses.get("reasoning_effort").is_none());
+        });
+    }
+
     /// o-series models refuse `max_tokens`, but it is the only name Ollama
     /// reads. The rename is what a refusal buys, not the shape every request
     /// opens with.

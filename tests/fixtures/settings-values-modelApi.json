@@ -29,6 +29,7 @@
   "harness_command": "",
   "harness_cwd": "",
   "harness_state": "Not attached. The HTTP endpoint below is the AI brain.",
+  "harness_reasoning_effort": "medium",
   "harness_turn_timeout_secs": "300",
   "hidden": false,
   "hotkey": "Control-Option-Command-B",

@@ -21,8 +21,9 @@ use agent_client_protocol::schema::v1::{
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
+    SessionConfigOption, SessionConfigOptionCategory, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -349,6 +350,8 @@ pub enum OpenError {
     /// The child is gone.
     Lost,
     Failed(String),
+    /// The session exists. The harness refused the reasoning effort.
+    EffortRejected(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1228,14 +1231,17 @@ async fn open(
             .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
             .block_task()
             .await;
-        if loaded.is_ok() {
-            return Ok(SessionId::new(id));
+        if let Ok(response) = loaded {
+            let session_id = SessionId::new(id);
+            apply_harness_reasoning_effort(cx, &session_id, response.config_options.as_deref())
+                .await?;
+            return Ok(session_id);
         }
     }
-    cx.send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+    let response = cx
+        .send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
         .block_task()
         .await
-        .map(|response| response.session_id)
         .map_err(|error| {
             if auth_refused(&error) {
                 OpenError::AuthRequired
@@ -1244,7 +1250,50 @@ async fn open(
             } else {
                 OpenError::Failed(error_text(error))
             }
+        })?;
+    apply_harness_reasoning_effort(cx, &response.session_id, response.config_options.as_deref())
+        .await?;
+    Ok(response.session_id)
+}
+
+/// Ask for the Development harness effort once the session id exists.
+///
+/// `thought_level` wins over `model_config`. No such select means the harness
+/// keeps its own default, and attach still succeeds.
+async fn apply_harness_reasoning_effort(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    options: Option<&[SessionConfigOption]>,
+) -> Result<(), OpenError> {
+    let Some(config_id) = effort_config_id(options.unwrap_or(&[])) else {
+        return Ok(());
+    };
+    let effort = crate::dev_flags::harness_reasoning_effort();
+    match cx
+        .send_request(SetSessionConfigOptionRequest::new(
+            session_id.clone(),
+            config_id,
+            effort.as_str(),
+        ))
+        .block_task()
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(_) if cx.is_incoming_closed() => Err(OpenError::Lost),
+        Err(error) => Err(OpenError::EffortRejected(error_text(error))),
+    }
+}
+
+fn effort_config_id(options: &[SessionConfigOption]) -> Option<SessionConfigId> {
+    let select = |category: SessionConfigOptionCategory| {
+        options.iter().find(|option| {
+            option.category.as_ref() == Some(&category)
+                && matches!(option.kind, SessionConfigKind::Select(_))
         })
+    };
+    select(SessionConfigOptionCategory::ThoughtLevel)
+        .or_else(|| select(SessionConfigOptionCategory::ModelConfig))
+        .map(|option| option.id.clone())
 }
 
 /// One prompt turn. Chunks accumulate, other updates become `Event`s, and a

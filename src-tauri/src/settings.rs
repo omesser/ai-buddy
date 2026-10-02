@@ -297,6 +297,10 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
             form::HARNESS_CWD_ID.to_string(),
             model::env_or_file(crate::harness::CWD, &settings.harness_cwd),
         ),
+        (
+            form::HARNESS_REASONING_EFFORT_ID.to_string(),
+            form::harness_effort_level(&settings.harness_reasoning_effort).to_string(),
+        ),
     ])
 }
 
@@ -828,6 +832,10 @@ impl SettingsView {
                     .unwrap_or_default(),
             )),
             "chat_appearance" => Some(self.chat_appearance.title().to_string()),
+            form::HARNESS_REASONING_EFFORT_ID => self
+                .development_texts
+                .get(form::HARNESS_REASONING_EFFORT_ID)
+                .cloned(),
             _ => None,
         }
     }
@@ -1573,6 +1581,7 @@ pub struct CompleterPatch {
     pub harness_command: Option<String>,
     pub harness_auth_retry_secs: Option<String>,
     pub harness_turn_timeout_secs: Option<String>,
+    pub harness_reasoning_effort: Option<String>,
     pub harness_cwd: Option<String>,
     pub mcp_bin: Option<String>,
     pub byo_harness: Option<String>,
@@ -1646,6 +1655,7 @@ pub enum TextField {
     HarnessCommand,
     HarnessAuthRetrySecs,
     HarnessTurnTimeoutSecs,
+    HarnessReasoningEffort,
     /// Which Harness the registration box is written for. A view preference
     /// and nothing else: no launch reads it (#577).
     ByoHarness,
@@ -1726,6 +1736,10 @@ impl SettingsPatch {
             TextField::HarnessTurnTimeoutSecs => {
                 self.completer.harness_turn_timeout_secs = Some(value.to_string())
             }
+            TextField::HarnessReasoningEffort => {
+                self.completer.harness_reasoning_effort =
+                    Some(form::harness_effort_level(value).to_string())
+            }
             // Trimmed like the command line beside it: a path pasted out of a
             // terminal carries the space that follows it.
             TextField::ByoHarness => self.completer.byo_harness = Some(value.trim().to_string()),
@@ -1787,6 +1801,7 @@ impl fmt::Debug for CompleterPatch {
             )
             .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
             .field("harness_turn_timeout_secs", &self.harness_turn_timeout_secs)
+            .field("harness_reasoning_effort", &self.harness_reasoning_effort)
             .field("harness_cwd", &self.harness_cwd)
             .field("mcp_bin", &self.mcp_bin)
             .field("byo_harness", &self.byo_harness)
@@ -1873,6 +1888,9 @@ impl Settings {
         }
         if let Some(value) = patch.completer.harness_turn_timeout_secs {
             self.harness_turn_timeout_secs = value;
+        }
+        if let Some(value) = patch.completer.harness_reasoning_effort {
+            self.harness_reasoning_effort = value;
         }
         if let Some(value) = patch.completer.byo_harness {
             self.byo_harness = value;
@@ -2049,6 +2067,9 @@ pub struct Settings {
     /// unset, and leaves `harness::TURN_TIMEOUT`. Not the Model API field
     /// (#690).
     pub harness_turn_timeout_secs: String,
+    /// How hard a Harness should think. `low`, `medium`, or `high`. Asked once
+    /// a session opens. Not the HTTP row: a blank there still means `low`.
+    pub harness_reasoning_effort: String,
     /// Which Harness the registration box on the AI tab is written for. A
     /// view preference: the box is something a BYO user comes back to every
     /// launch, so the pick is worth keeping. Blank rests on the first name
@@ -2137,6 +2158,7 @@ impl Default for Settings {
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
             harness_turn_timeout_secs: String::new(),
+            harness_reasoning_effort: form::HARNESS_EFFORT_DEFAULT.to_string(),
             byo_harness: String::new(),
             mcp_bin: String::new(),
             harness_cwd: String::new(),
@@ -2403,6 +2425,7 @@ mod tests {
             harness_command: "opencode acp".into(),
             harness_auth_retry_secs: "5".into(),
             harness_turn_timeout_secs: "90".into(),
+            harness_reasoning_effort: "high".into(),
             byo_harness: "hermes".into(),
             mcp_bin: "/opt/fidget-mcp".into(),
             harness_cwd: String::new(),
@@ -2708,6 +2731,14 @@ mod tests {
         assert!(settings.director_base_url.is_empty());
         assert!(settings.director_model.is_empty());
         assert!(settings.pi_project_mcp);
+        assert_eq!(
+            settings.harness_reasoning_effort, "medium",
+            "a file from before the Harness effort row rests on medium"
+        );
+        assert!(
+            settings.director_reasoning_effort.is_empty(),
+            "the HTTP effort row stays blank, and blank there still means low"
+        );
         assert_eq!(settings.chat_appearance, ChatAppearance::System);
         let _ = fs::remove_file(&path);
     }
@@ -2818,6 +2849,7 @@ mod tests {
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
             harness_turn_timeout_secs: String::new(),
+            harness_reasoning_effort: form::HARNESS_EFFORT_DEFAULT.to_string(),
             byo_harness: String::new(),
             mcp_bin: String::new(),
             harness_cwd: String::new(),

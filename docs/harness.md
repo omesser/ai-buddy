@@ -63,7 +63,7 @@ Switches read the same words as the trace variables. Any other value is a typo: 
 
 ### Settings and Keyring
 
-Settings → AI persists base URL, model, and first wake interval, and stores the API key in the OS secret store. Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory.
+Settings → AI persists base URL, model, and first wake interval, and stores the API key in the OS secret store. Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, the Harness turn timeout, auth-retry interval, MCP server binary, working directory, and Harness reasoning effort (`low`, `medium`, `high`, default `medium`). That effort is asked with `session/set_config_option` when a Harness session opens, on the option the agent advertises as `thought_level`, or `model_config` when that is the option it has. It is not `FIDGET_DIRECTOR_REASONING_EFFORT`. A Harness that advertises neither option is left alone. A value it rejects is shown in Chat.
 
 - A working-directory edit respawns the Harness, so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach.
 - Editing the Completer source or HTTP endpoint retargets the running Director with no restart. The session in flight is dropped; a streaming call closes its connection, so the old host stops generating.

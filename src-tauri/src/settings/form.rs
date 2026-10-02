@@ -501,6 +501,7 @@ pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 pub const HARNESS_CWD_ID: &str = "harness_cwd";
+pub const HARNESS_REASONING_EFFORT_ID: &str = "harness_reasoning_effort";
 
 /// A place in Settings the Shell can send the user to. A capability, not a
 /// tab index: the per-OS row id stays in the consent catalog.
@@ -633,6 +634,25 @@ pub fn endpoint_title(base_url: &str) -> String {
 /// rather than to any spec. The field beside the picker is what covers all of
 /// that, and nothing validates what is typed there (#638).
 const EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
+
+/// Stored default for the Harness effort row. The HTTP row's blank still means
+/// `low`; this one is a pick, so an older file rests on medium rather than blank.
+pub const HARNESS_EFFORT_DEFAULT: &str = "medium";
+
+/// The level a Harness is asked for. A blank or a word outside the portable
+/// three is the default, including a file from before the row existed.
+pub fn harness_effort_level(raw: &str) -> &'static str {
+    effort_value(raw.trim()).unwrap_or(HARNESS_EFFORT_DEFAULT)
+}
+
+/// The Harness row's choices. Closed, unlike the HTTP picker, which keeps a
+/// field for whatever the server takes.
+pub fn harness_effort_options() -> Vec<String> {
+    EFFORT_LEVELS
+        .iter()
+        .map(|level| (*level).to_string())
+        .collect()
+}
 
 /// The reasoning-effort picker's choices, Custom first, exactly as the Base
 /// URL picker is shaped: the field below is the setting, and the picker only
@@ -1645,6 +1665,17 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             )),
             status: None,
             rows: vec![
+                FormRow::Popup {
+                    id: HARNESS_REASONING_EFFORT_ID.to_string(),
+                    label: Some("Harness reasoning effort".to_string()),
+                    writes: TextField::HarnessReasoningEffort,
+                    help: Some("low, medium, or high. Default medium.".to_string()),
+                    options: harness_effort_options(),
+                    frozen: false,
+                    batched: false,
+                    disclosure: Some("Asked with session/set_config_option when a Harness session opens, on the option that Harness advertises. A Harness that advertises none is left alone. This is not the HTTP Reasoning effort row.".to_string()),
+                    status: None,
+                },
                 FormRow::TextField {
                     id: HARNESS_TURN_TIMEOUT_SECS_ID.to_string(),
                     label: Some(harness_turn_label),
@@ -2916,6 +2947,7 @@ pub(crate) mod tests {
         match row {
             FormRow::Checkbox { id, .. }
             | FormRow::TextField { id, .. }
+            | FormRow::Popup { id, .. }
             | FormRow::Composite { id, .. } => Some(id.as_str()),
             _ => None,
         }
@@ -3215,6 +3247,40 @@ pub(crate) mod tests {
                 "{id} writes the field it names"
             );
         }
+    }
+
+    /// The Harness row is the portable three, on Development, and it does not
+    /// write the HTTP field.
+    #[test]
+    fn the_harness_reasoning_effort_row_offers_the_portable_levels() {
+        let description = describe();
+        let section = development_tab(&description)
+            .sections
+            .iter()
+            .find(|section| section.heading == "Harness attachment")
+            .expect("the Harness attachment section exists");
+        let row = section
+            .rows
+            .iter()
+            .find(|row| row_id(row) == Some(HARNESS_REASONING_EFFORT_ID))
+            .expect("the harness effort row exists");
+        match row {
+            FormRow::Popup {
+                options, writes, ..
+            } => {
+                assert_eq!(
+                    options,
+                    &["low".to_string(), "medium".to_string(), "high".to_string()]
+                );
+                assert_eq!(*writes, TextField::HarnessReasoningEffort);
+            }
+            _ => panic!("the harness effort is a popup"),
+        }
+        assert_eq!(
+            description.text_write(DIRECTOR_REASONING_EFFORT_ID),
+            Some(TextField::DirectorReasoningEffort),
+            "the HTTP row still writes its own field"
+        );
     }
 
     /// #638: nobody picks a thinking budget for a two-line Behavior pick, so

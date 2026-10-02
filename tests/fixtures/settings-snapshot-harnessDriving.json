@@ -801,6 +801,22 @@
           "heading": "Harness attachment",
           "rows": [
             {
+              "type": "Popup",
+              "id": "harness_reasoning_effort",
+              "label": "Harness reasoning effort",
+              "writes": "HarnessReasoningEffort",
+              "help": "low, medium, or high. Default medium.",
+              "options": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "Asked with session/set_config_option when a Harness session opens, on the option that Harness advertises. A Harness that advertises none is left alone. This is not the HTTP Reasoning effort row.",
+              "status": null
+            },
+            {
               "type": "TextField",
               "id": "harness_turn_timeout_secs",
               "label": "Turn timeout, in seconds",

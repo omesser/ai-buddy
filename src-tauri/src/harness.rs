@@ -80,6 +80,10 @@ const HANDOVER_POLL: Duration = Duration::from_millis(20);
 /// What every caller is told when the child is gone.
 pub(crate) const LOST: &str = "harness exited";
 
+/// Prefix on an attach error that is a rejected reasoning effort. The agent's
+/// own words follow it, and Chat shows the whole line.
+const EFFORT_REJECTED: &str = "reasoning effort: ";
+
 /// How long a withdrawal waits for the `parsed` line that belongs to it. The
 /// Shell writes that line frames after the turn ended, so this only has to
 /// outlast one frame. Being wrong mislabels one wake and does not leak.
@@ -1170,9 +1174,16 @@ impl Session {
     /// `turn` so the load retry pays the same bookkeeping the first attempt
     /// did. `Err` is a wake that never reached the wire, already refused.
     fn attempt(&self, request: &WakeRequest) -> Result<(String, Result<Reply, TurnError>), String> {
-        let (wire, session_id) = self
-            .attach(Some(&SessionKey::from_request(request)))
-            .map_err(|why| self.refused(request, &why))?;
+        let (wire, session_id) = match self.attach(Some(&SessionKey::from_request(request))) {
+            Ok(pair) => pair,
+            // A rejected effort is the harness answering, so Chat reads it on
+            // the same path as a failed turn. Other attach refusals never
+            // reached `session/prompt`.
+            Err(why) if why.starts_with(EFFORT_REJECTED) => {
+                return Ok((String::new(), Err(TurnError::Failed(why))));
+            }
+            Err(why) => return Err(self.refused(request, &why)),
+        };
         // The Instance and the wake kind come through the seam rather than
         // from anything here. One child serves every character, so the process is
         // not whose wake this is.
@@ -1642,6 +1653,7 @@ impl Session {
                 let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
                 return Err(self.refuse_login(&mut state));
             }
+            Err(OpenError::EffortRejected(why)) => return Err(format!("{EFFORT_REJECTED}{why}")),
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
         let replaced = {
@@ -2866,6 +2878,44 @@ mod tests {
         say(json!({"jsonrpc": "2.0", "id": id, "result": {"stopReason": reason}}));
     }
 
+    fn effort_option(category: &str, id: &str) -> Value {
+        json!({
+            "id": id,
+            "name": "Reasoning",
+            "category": category,
+            "type": "select",
+            "currentValue": "low",
+            "options": [
+                {"value": "low", "name": "Low"},
+                {"value": "medium", "name": "Medium"},
+                {"value": "high", "name": "High"}
+            ]
+        })
+    }
+
+    /// What the fake advertises. `thought_level` is listed after `model_config`
+    /// so a client that takes the first select would pick the wrong one.
+    fn advertised_effort(script: &str) -> Option<Value> {
+        match script {
+            "effort-thought" | "effort-reject" | "load-effort" => Some(json!([
+                effort_option("model_config", "knob"),
+                effort_option("thought_level", "reasoning"),
+            ])),
+            "effort-model-config" => Some(json!([
+                {
+                    "id": "model",
+                    "name": "Model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "one",
+                    "options": [{"value": "one", "name": "One"}]
+                },
+                effort_option("model_config", "knob"),
+            ])),
+            _ => None,
+        }
+    }
+
     fn fake_main(script: &str, count: Option<&Path>) {
         // libtest writes `test <name> ... ` with no newline before the test
         // runs; end that line so the first reply is a line of its own.
@@ -2950,7 +3000,11 @@ mod tests {
                         } else {
                             format!("fresh-id-{n}")
                         };
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
+                        let mut result = json!({"sessionId": session});
+                        if let Some(options) = advertised_effort(script) {
+                            result["configOptions"] = options;
+                        }
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
                         if script == "mcp-link" || script == "mcp-link-complete-turn" {
                             mcp_link(&session, None);
                         }
@@ -3009,7 +3063,32 @@ mod tests {
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "no such session"}}),
                         );
                     } else {
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+                        let mut result = json!({});
+                        if let Some(options) = advertised_effort(script) {
+                            result["configOptions"] = options;
+                        }
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
+                    }
+                }
+                Some("session/set_config_option") => {
+                    let config_id = message
+                        .pointer("/params/configId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let value = message
+                        .pointer("/params/value")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    record(count, &format!("config={config_id}"));
+                    record(count, &format!("effort={value}"));
+                    if script == "effort-reject" {
+                        say(json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {"code": -32602, "message": "not a level this agent takes"}
+                        }));
+                    } else {
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": []}}));
                     }
                 }
                 Some("session/prompt") => {
@@ -4669,6 +4748,167 @@ mod tests {
             "{:?}",
             session.inspect().last_error
         );
+        session.shutdown();
+    }
+
+    /// Presets checked against `harness::launch`. None of them pass an effort
+    /// flag. A custom line is the user's argv, so it is not in this list.
+    #[test]
+    fn no_preset_argv_carries_an_effort_flag() {
+        for name in [
+            "claude",
+            "codex",
+            "copilot",
+            "cursor-agent",
+            "grok",
+            "goose",
+            "hermes",
+            "opencode",
+            "pi",
+            "antigravity",
+        ] {
+            let line = launch(Some(name)).expect(name).argv.join(" ");
+            assert!(
+                !line.to_ascii_lowercase().contains("effort"),
+                "{name} argv names effort: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_default_harness_session_asks_for_medium() {
+        let (fx, session) = Fixture::new("effort-thought");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        });
+        assert_eq!(fx.count("effort=medium"), 1);
+        assert_eq!(fx.count("config=reasoning"), 1);
+        assert_eq!(
+            fx.count("config=knob"),
+            0,
+            "thought_level wins over model_config"
+        );
+        assert_eq!(fx.count("new"), 1);
+        session.shutdown();
+    }
+
+    #[test]
+    fn low_and_high_are_the_strings_sent_on_session_open() {
+        for level in ["low", "high"] {
+            let (fx, session) = Fixture::new("effort-thought");
+            crate::model::tests::with_env(None, None, None, || {
+                crate::dev_flags::seed(&crate::settings::Settings {
+                    harness_reasoning_effort: level.to_string(),
+                    director_reasoning_effort: "high".to_string(),
+                    ..crate::settings::Settings::default()
+                });
+                assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            });
+            assert_eq!(fx.count(&format!("effort={level}")), 1, "{level}");
+            assert_eq!(fx.count("effort=high"), if level == "high" { 1 } else { 0 });
+            assert_eq!(fx.count("config=reasoning"), 1, "{level}");
+            session.shutdown();
+        }
+    }
+
+    #[test]
+    fn a_model_config_option_is_used_when_thought_level_is_absent() {
+        let (fx, session) = Fixture::new("effort-model-config");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        });
+        assert_eq!(fx.count("config=knob"), 1);
+        assert_eq!(
+            fx.count("config=model"),
+            0,
+            "the model selector is not the effort option"
+        );
+        assert_eq!(fx.count("effort=medium"), 1);
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_loaded_session_is_asked_for_the_same_effort() {
+        let (fx, session) = Fixture::new("load-effort");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                harness_reasoning_effort: "low".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        });
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("new"), 0);
+        assert_eq!(fx.count("effort=low"), 1);
+        assert_eq!(fx.count("config=reasoning"), 1);
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_harness_with_no_effort_option_still_attaches() {
+        let (fx, session) = Fixture::new("hello");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(fx.count("prompt"), 1);
+        let recorded = std::fs::read_to_string(&fx.count).unwrap_or_default();
+        assert!(
+            !recorded
+                .lines()
+                .any(|line| line.starts_with("effort=") || line.starts_with("config=")),
+            "{recorded}"
+        );
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_rejected_effort_shows_on_the_turn_failure_path_and_attach_is_not_stuck() {
+        let (fx, session) = Fixture::new("effort-reject");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                harness_reasoning_effort: "high".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            let first = session.complete(&asking("hi"));
+            assert!(
+                first
+                    .as_ref()
+                    .is_err_and(|why| why.contains("not a level this agent takes")),
+                "{first:?}"
+            );
+            let inspect = session.inspect();
+            assert!(
+                inspect
+                    .last_error
+                    .as_deref()
+                    .is_some_and(|why| why.contains("not a level this agent takes")),
+                "{:?}",
+                inspect.last_error
+            );
+            assert!(
+                inspect
+                    .turn_failure
+                    .as_deref()
+                    .is_some_and(|why| why.contains("not a level this agent takes")),
+                "{:?}",
+                inspect.turn_failure
+            );
+            assert_eq!(fx.count("prompt"), 0, "the rejection is not a prompt");
+            assert_eq!(fx.count("effort=high"), 1);
+            assert!(inspect.alive, "the child is still attached");
+            let second = session.complete(&asking("again"));
+            assert!(
+                second.is_err(),
+                "a second wake returns instead of hanging: {second:?}"
+            );
+            assert!(session.inspect().alive, "attach is still there");
+        });
         session.shutdown();
     }
 
