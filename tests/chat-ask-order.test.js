@@ -20,6 +20,3 @@ test("the newest waiting turn is the one an ask lands under", () => {
   turns.settle({ said: "hi" });
   assert.equal(turns.newest(), null);
 });
-
-// DROPPED (#1268): "an ask and a form both move the waiting caret below themselves"
-// matches lowerCaret() in the ask function source. It does not draw a row.

@@ -11,10 +11,3 @@ test("the names notice calls the on-screen presence a fidget", () => {
     "The fidget knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.",
   );
 });
-
-// DROPPED (#1268): "window titles use the product name Fidget"
-// matches <title>Fidget in html files.
-// DROPPED (#1268): "the bundle identifier and product name are Fidget"
-// asserts tauri.conf productName and identifier strings.
-// DROPPED (#1268): "development switches are FIDGET_ variables"
-// matches Flag::new("FIDGET_TRACE_FRAMES") in source.

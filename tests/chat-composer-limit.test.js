@@ -25,6 +25,3 @@ test("the composer field is bounded at CHAT_LIMIT", () => {
     "a field that holds more than chat_send takes puts unsent text in the log",
   );
 });
-
-// DROPPED (#1268): "the log row and what is sent are the same string"
-// matches trim, said, and chat_send in chat.js. The maxlength pin stays.

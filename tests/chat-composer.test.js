@@ -64,8 +64,3 @@ test("the send key reuses the submit path rather than opening a second one", () 
     "one place a turn is actually sent, so the empty-line and attach guards cannot be bypassed",
   );
 });
-
-// DROPPED (#1268): "the composer field rests at one row and scrolls a paste inside itself"
-// matches rows=1 and max-height in CSS. The textarea newline pin stays.
-// DROPPED (#1268): "no rule is still addressed to the input the composer no longer has"
-// asserts .composer input is absent from the stylesheet.

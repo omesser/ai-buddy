@@ -887,8 +887,3 @@ test("a redraw preserves open disclosure state across rebuild", () => {
     assert.equal(secondDetails[1].open, true, "second disclosure stays open across redraw");
   }
 });
-
-// DROPPED (#1268): "the controls are the platform's own elements"
-// matches el("select") and type checkbox in settings.js source.
-// DROPPED (#1268): "every selector in settings.css is prefixed .set-"
-// parses settings.css selectors and requires a .set- prefix.

@@ -68,6 +68,3 @@ describe("the gate covers every control this page renders", () => {
     assert.equal(shouldBeginDrag(tagged("h1")), true);
   });
 });
-
-// DROPPED (#1268): "the selector names every element the renderer builds a control from"
-// asserts CONTROL_SELECTOR contains tag names. shouldBeginDrag is already called for label and textarea.

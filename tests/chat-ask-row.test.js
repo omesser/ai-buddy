@@ -79,8 +79,3 @@ test("a prose question stays prose, and argument fallback is code", () => {
     ],
   );
 });
-
-// DROPPED (#1268): "asked and elicited still mount the options under the question"
-// matches the option-mount call in source.
-// DROPPED (#1268): "ask options stack one per line and keep their words"
-// matches CSS for one option per line.

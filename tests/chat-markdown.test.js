@@ -496,6 +496,3 @@ test("the vendored parser is the file src/vendor/README.md documents", () => {
     "marked@18.0.13 lib/marked.esm.js; see src/vendor/README.md to re-vendor",
   );
 });
-
-// DROPPED (#1268): "the stand-in refuses an insertBefore against a node that is not a child"
-// asserts the test's fake DOM throws. markdown.js is not called.
