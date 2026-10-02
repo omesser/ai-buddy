@@ -3033,6 +3033,15 @@ mod tests {
                                 "data": {"errorKind": "authentication_failed"},
                             }}))
                         }
+                        // grok's out-of-credit answer: the reason is in `data` only.
+                        "balance-exhausted" => say(json!({"jsonrpc": "2.0", "id": id, "error": {
+                            "code": -32603,
+                            "message": "Internal error",
+                            "data": {
+                                "message": "API error (status 402 Payment Required): Grok Build usage balance exhausted",
+                                "http_status": 402,
+                            },
+                        }})),
                         "auth-turn-32000" if prompts == 1 => say(
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "Authentication required"}}),
                         ),
@@ -5397,6 +5406,20 @@ mod tests {
             assert_eq!(fx.count("new"), 1, "{script}: the session was kept");
             session.shutdown();
         }
+    }
+
+    const BALANCE_EXHAUSTED: &str = "Internal error: API error (status 402 Payment Required): Grok Build usage balance exhausted";
+
+    /// A Harness that fails the turn says why in `data`. Dropping it left
+    /// Chat with "Internal error" and nothing to act on.
+    #[test]
+    fn a_failed_turn_carries_the_reason_the_harness_put_in_data() {
+        let (_fx, session) = Fixture::new("balance-exhausted");
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(BALANCE_EXHAUSTED.to_string())
+        );
+        session.shutdown();
     }
 
     #[test]
