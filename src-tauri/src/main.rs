@@ -2243,8 +2243,8 @@ struct ChatHarness {
     /// Why a launcher that was there gave no wire: its command, the reason,
     /// and what it printed, which the landing draws apart.
     failed: Option<harness::LaunchFailure>,
-    /// Why preflight refused the launcher, with the command to run.
-    unhealthy: Option<String>,
+    /// Why preflight refused the launcher. Drawn as `failed` is.
+    unhealthy: Option<harness::LaunchFailure>,
 }
 
 fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
@@ -4816,18 +4816,30 @@ mod tests {
         let character = stub_character("nim");
         let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
         let instance = roster.get(&id).expect("still there");
-        let why = "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong";
         let inspect = model::DirectorInspect {
             harness: Some(crate::harness::HarnessInspect {
                 name: "claude".to_string(),
-                unhealthy: Some(why.to_string()),
+                unhealthy: Some(crate::harness::LaunchFailure {
+                    command: Some("npx --version".to_string()),
+                    reason: "exited with exit status: 1".to_string(),
+                    output: "npm ERR! code ENOENT".to_string(),
+                    node_check: Some("node --version".to_string()),
+                }),
                 ..Default::default()
             }),
             ..stub_inspect()
         };
 
         let opening = serde_json::to_value(chat_opening_from(instance, &inspect, "")).unwrap();
-        assert_eq!(opening["harness"]["unhealthy"], why);
+        assert_eq!(
+            opening["harness"]["unhealthy"],
+            serde_json::json!({
+                "command": "npx --version",
+                "reason": "exited with exit status: 1",
+                "output": "npm ERR! code ENOENT",
+                "node_check": "node --version",
+            })
+        );
     }
 
     /// The landing payload while login is still required. The fragment is the

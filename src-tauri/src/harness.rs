@@ -384,7 +384,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 #[derive(Debug)]
 enum ProbeOutcome {
     NotFound,
-    Unhealthy(String),
+    Unhealthy(LaunchFailure),
     Healthy,
 }
 
@@ -399,55 +399,43 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
 /// the production one.
 fn probe_launcher_within(launch: &Launch, timeout: Duration) -> ProbeOutcome {
     let flag = launch.version_flag();
+    let node_check = (launch.argv[0] == "npx").then(|| "node --version".to_string());
+    let refused = |reason: String, output: String| {
+        ProbeOutcome::Unhealthy(LaunchFailure {
+            command: Some(format!("{} {flag}", launch.argv[0])),
+            reason,
+            output,
+            node_check: node_check.clone(),
+        })
+    };
     let output = match timed_command(&launch.argv[0], &[flag], timeout) {
         Ok(output) => output,
         Err(TimedCommandError::NotFound) => return ProbeOutcome::NotFound,
         Err(TimedCommandError::Spawn(error)) => {
-            return ProbeOutcome::Unhealthy(format!(
-                "`{}` could not be run: {error}",
-                launch.argv[0]
-            ));
+            return refused(format!("could not be run: {error}"), String::new());
         }
         Err(TimedCommandError::Wait(error)) => {
-            return ProbeOutcome::Unhealthy(format!(
-                "`{} {}` could not be monitored: {error}",
-                launch.argv[0], flag
-            ));
+            return refused(format!("could not be monitored: {error}"), String::new());
         }
         Err(TimedCommandError::TimedOut) => {
-            return ProbeOutcome::Unhealthy(format!(
-                "`{} {}` timed out after {:.1}s",
-                launch.argv[0],
-                flag,
-                timeout.as_secs_f32()
-            ));
+            let secs = timeout.as_secs_f32();
+            return refused(format!("timed out after {secs:.1}s"), String::new());
         }
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let printed = [&output.stdout, &output.stderr]
+        .map(|bytes| String::from_utf8_lossy(bytes).trim().to_string())
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     if !output.status.success() {
-        let output_summary = if !stdout.is_empty() || !stderr.is_empty() {
-            let combined = format!("{}{}", stdout.trim(), stderr.trim())
-                .chars()
-                .take(200)
-                .collect::<String>();
-            format!(" Output: {combined}")
-        } else {
-            String::new()
-        };
-        return ProbeOutcome::Unhealthy(format!(
-            "`{} {}` exited with {}.{}",
-            launch.argv[0], flag, output.status, output_summary
-        ));
+        return refused(format!("exited with {}", output.status), printed);
     }
 
-    if stdout.trim().is_empty() && stderr.trim().is_empty() {
-        return ProbeOutcome::Unhealthy(format!(
-            "`{} {}` produced no output",
-            launch.argv[0], flag
-        ));
+    if printed.is_empty() {
+        return refused("produced no output".to_string(), printed);
     }
 
     ProbeOutcome::Healthy
@@ -592,9 +580,9 @@ pub struct HarnessInspect {
     /// The Harness's own words when it failed the last turn, as against an
     /// error the Shell names. Chat boxes them under the Harness's name.
     pub turn_failure: Option<String>,
-    /// Why the launcher is present but unhealthy: nonzero exit, no output, or
-    /// timeout on version check. The sentence Chat and Settings show.
-    pub unhealthy: Option<String>,
+    /// Why preflight refused a launcher that is there: its version check
+    /// exited nonzero, timed out, or printed nothing. Chat boxes it as `failed`.
+    pub unhealthy: Option<LaunchFailure>,
 }
 
 /// Why a launcher that was there gave no wire. Chat draws the parts apart:
@@ -978,18 +966,14 @@ impl Session {
                     (session.forward)(Forwarded::AttachSettled);
                     return;
                 }
-                ProbeOutcome::Unhealthy(why) => {
-                    let sentence = format!(
-                        "{why}. Run `{} {}` in a terminal to check what is wrong",
-                        session.launch.argv[0],
-                        session.launch.version_flag()
-                    );
+                ProbeOutcome::Unhealthy(failure) => {
+                    let sentence = failure.sentence();
                     session.update_inspect(|inspect| {
                         inspect.alive = false;
                         inspect.initializing = false;
-                        inspect.unhealthy = Some(sentence.clone());
+                        inspect.unhealthy = Some(failure);
                     });
-                    eprintln!("harness: {sentence}; StaticDirector is in force until it is fixed");
+                    eprintln!("harness: {sentence} StaticDirector is in force until it is fixed");
                     (session.forward)(Forwarded::AttachSettled);
                     return;
                 }
@@ -1495,8 +1479,8 @@ impl Session {
             None => {
                 // The probe already refused this launcher. A wake that spawns
                 // it anyway is the hang the probe is there to stop.
-                if let Some(why) = self.inspect().unhealthy {
-                    return Err(why);
+                if let Some(failure) = self.inspect().unhealthy {
+                    return Err(failure.sentence());
                 }
                 {
                     let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
@@ -6905,8 +6889,9 @@ mod tests {
             argv: vec!["false".into()],
         };
         match probe_launcher(&launch) {
-            ProbeOutcome::Unhealthy(why) => {
-                assert!(why.contains("exited with"), "got {why}");
+            ProbeOutcome::Unhealthy(failure) => {
+                assert_eq!(failure.command.as_deref(), Some("false --version"));
+                assert!(failure.reason.starts_with("exited with"), "{failure:?}");
             }
             other => panic!("expected Unhealthy, got {other:?}"),
         }
@@ -6991,8 +6976,8 @@ mod tests {
             argv: vec![script.to_string_lossy().to_string()],
         };
         match probe_launcher_within(&launch, Duration::from_millis(100)) {
-            ProbeOutcome::Unhealthy(why) => {
-                assert!(why.contains("timed out after 0.1s"), "got {why}");
+            ProbeOutcome::Unhealthy(failure) => {
+                assert_eq!(failure.reason, "timed out after 0.1s");
             }
             other => panic!("expected Unhealthy from timeout, got {other:?}"),
         }
@@ -7026,8 +7011,9 @@ mod tests {
             argv: vec![script.to_string_lossy().to_string()],
         };
         match probe_launcher(&launch) {
-            ProbeOutcome::Unhealthy(why) => {
-                assert!(why.contains("produced no output"), "got {why}");
+            ProbeOutcome::Unhealthy(failure) => {
+                assert_eq!(failure.reason, "produced no output");
+                assert_eq!(failure.output, "");
             }
             other => panic!("expected Unhealthy from no output, got {other:?}"),
         }
@@ -7075,10 +7061,15 @@ mod tests {
             SessionDataDir::at(dir.clone()),
             silent(),
         );
-        let why = "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong";
-        session.update_inspect(|inspect| inspect.unhealthy = Some(why.to_string()));
+        let failure = LaunchFailure {
+            command: Some("npx --version".to_string()),
+            reason: "timed out after 3.0s".to_string(),
+            output: String::new(),
+            node_check: None,
+        };
+        session.update_inspect(|inspect| inspect.unhealthy = Some(failure));
         let err = session.complete(&asking("hi")).unwrap_err();
-        assert_eq!(err, why);
+        assert_eq!(err, "`npx --version` timed out after 3.0s.");
         assert!(
             !marker.exists(),
             "the wake spawned the adapter after preflight refused it"
