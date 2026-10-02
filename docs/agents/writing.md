@@ -103,8 +103,9 @@ next to the icon it previews, not by being in a pull request description.
 
 ## An agent signs what it writes on GitHub
 
-An agent ends every issue, pull request description, review, comment, and gist
-it writes through Oded's account with one line.
+An agent that writes on GitHub through a person's account ends every issue,
+pull request description, review, comment, and gist with one line. The handle
+in the line is the account owner.
 
 A Cursor cloud agent whose launch message names a Grok bot must name that bot.
 Put the bot's name where `Coder` is. Bare `Cursor agent` is wrong for this
