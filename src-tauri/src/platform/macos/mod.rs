@@ -8,6 +8,7 @@
 
 mod dock;
 mod input_events;
+mod minimize;
 mod overlay_panel;
 mod pointer;
 mod sensing;
@@ -16,6 +17,7 @@ mod window_source;
 
 pub use dock::dock_bounds;
 pub use input_events::{spawn_listener as spawn_event_tap, EventTap};
+pub use minimize::{observe_minimize, MinimizeObserver};
 pub use overlay_panel::configure_overlay;
 pub use pointer::{
     control_click, double_click_interval_ms, primary_button_down, primary_press_began,
