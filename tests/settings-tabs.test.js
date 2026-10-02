@@ -1,6 +1,5 @@
-// The tab bar is the one part of the Settings page the form description does
-// not draw: settings.html writes the buttons out, and `tabTitles()` says what
-// the snapshot expects. A tab added in Rust and not here is one nobody can reach.
+// `tabTitles()` is the list the form description exposes, and `selectTab`
+// maps a title onto that list. An unknown title opens the first tab.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

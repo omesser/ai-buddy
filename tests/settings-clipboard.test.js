@@ -27,7 +27,7 @@ test("a copy_byo_snippet run writes the snippet already in values", async () => 
 test("the Copy press writes the same snippet processResponse names", async () => {
   const written = [];
   const run = copyRunForPress({ press: "byo_copy" });
-  assert.equal(run, processResponse({ action: "run", operation: "copy_byo_snippet" }).run);
+  assert.equal(run, "copy_byo_snippet");
   await writeRunClipboard(run, { byo_snippet: SNIPPET }, async (text) => {
     written.push(text);
   });

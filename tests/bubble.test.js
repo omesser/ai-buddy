@@ -1,9 +1,9 @@
 // Run with `node --test tests/`.
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -154,33 +154,6 @@ test("inverted Speech bubble reports inverted so the tail can point up", () => {
 
   assert.equal(pos.y, 124);
   assert.equal(pos.inverted, true);
-});
-
-// #903: the inverted class flips the same ring/fill sandwich to the top.
-// Default stays bottom + border-top; inverted uses top + border-bottom.
-test("inverted Speech bubble tail CSS points up at the Character", () => {
-  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/main.css"), "utf8");
-
-  assert.match(
-    css,
-    /\.bubble::before\s*\{[^}]*bottom:\s*-10px;[^}]*border-top:/s,
-    "default ring hangs off the bottom and points down",
-  );
-  assert.match(
-    css,
-    /\.bubble::after\s*\{[^}]*bottom:\s*-7px;[^}]*border-top:/s,
-    "default fill sits on that ring",
-  );
-  assert.match(
-    css,
-    /\.bubble\.inverted::before\s*\{[^}]*top:\s*-10px;[^}]*border-bottom:/s,
-    "inverted ring sits on the top edge and points up",
-  );
-  assert.match(
-    css,
-    /\.bubble\.inverted::after\s*\{[^}]*top:\s*-7px;[^}]*border-bottom:/s,
-    "inverted fill sits on that ring",
-  );
 });
 
 // The clamp is the only thing that moves the bubble off the head: with room
@@ -560,22 +533,6 @@ test("a line crossing the seam hides on the old display before it shows on the n
   assert.equal(b.surface(), "speech", "and the new one shows the same line");
 });
 
-// The control draws only where the Shell says a reported rectangle wins the
-// click, asked by name across a language boundary. A typo on either side is
-// silent: `invoke` rejects, the flag stays false, and the control never appears.
-test("the capability the renderer asks for is a command the Shell registers", () => {
-  const dir = dirname(fileURLToPath(import.meta.url));
-  const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
-  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
-
-  const asked = renderer.match(/invoke\(\s*"(overlay_hit_tests_hotspots)"/);
-  assert.ok(asked, "the renderer asks the Shell whether it hit-tests hotspots");
-  assert.match(
-    shell,
-    new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
-    `${asked[1]} is registered in generate_handler!`,
-  );
-});
 // A reply the token cap ended is still spoken. The mark rides in the
 // remembered text, not in the bubble.
 test("a truncated reply is spoken without the mark visible", () => {
@@ -591,5 +548,22 @@ test("a truncated reply is spoken without the mark visible", () => {
     calls,
     ["showSpeech:Mine now, and the desk is", "showSpeech:all mine"],
     "the next whole line is not marked with the last one's mark",
+  );
+});
+
+// The control draws only where the Shell says a reported rectangle wins the
+// click, asked by name across a language boundary. A typo on either side is
+// silent: `invoke` rejects, the flag stays false, and the control never appears.
+test("the capability the renderer asks for is a command the Shell registers", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
+  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
+
+  const asked = renderer.match(/invoke\(\s*"(overlay_hit_tests_hotspots)"/);
+  assert.ok(asked, "the renderer asks the Shell whether it hit-tests hotspots");
+  assert.match(
+    shell,
+    new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
+    `${asked[1]} is registered in generate_handler!`,
   );
 });

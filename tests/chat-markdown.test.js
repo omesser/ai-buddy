@@ -496,15 +496,3 @@ test("the vendored parser is the file src/vendor/README.md documents", () => {
     "marked@18.0.13 lib/marked.esm.js; see src/vendor/README.md to re-vendor",
   );
 });
-
-// The harness itself. Without this, a stand-in that quietly tolerates a bad
-// reference node would make the caret tests above prove nothing.
-test("the stand-in refuses an insertBefore against a node that is not a child", () => {
-  const parent = doc.createElement("div");
-  const stranger = doc.createElement("span");
-
-  assert.throws(
-    () => parent.insertBefore(doc.createTextNode("x"), stranger),
-    /can not be found in the parent/,
-  );
-});

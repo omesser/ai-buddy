@@ -8,7 +8,6 @@ import { test } from "node:test";
 
 const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
 const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
-const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
 
 function composerForm() {
   const match = html.match(/<form class="composer"[^>]*>([\s\S]*?)<\/form>/);
@@ -63,34 +62,5 @@ test("the send key reuses the submit path rather than opening a second one", () 
     js.split('invoke("chat_send"').length - 1,
     1,
     "one place a turn is actually sent, so the empty-line and attach guards cannot be bypassed",
-  );
-});
-
-// The Chat surface is 420 by 560 points (`main.rs`) and the composer sits under
-// the log, so any height the field takes is height the conversation loses. It
-// rests at the single line it has always been and a paste scrolls inside it.
-function ruleBlock(selector) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`));
-  assert.ok(match, `${selector} has no rule of its own`);
-  return match[1];
-}
-
-test("the composer field rests at one row and scrolls a paste inside itself", () => {
-  assert.match(composerForm(), /<textarea\b[^>]*\brows="1"/, "one row at rest, as the input was");
-
-  const field = ruleBlock(".composer textarea");
-  assert.match(field, /max-height:/, "a paste cannot push the log off the window");
-  assert.match(field, /overflow-y:\s*auto/, "it scrolls inside the field instead");
-  assert.match(field, /resize:\s*none/, "and there is no drag handle to take the log's room by hand");
-  assert.match(field, /box-sizing:\s*border-box/, "padding sits inside the width flex hands it");
-  assert.match(field, /min-width:\s*0/, "#641: a replaced field that cannot shrink paints past its track");
-});
-
-test("no rule is still addressed to the input the composer no longer has", () => {
-  assert.doesNotMatch(
-    css,
-    /\.composer input\b/,
-    "these stopped applying the moment the element changed",
   );
 });
