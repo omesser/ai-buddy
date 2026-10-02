@@ -409,6 +409,10 @@ mod tests {
             Endpoint::new("http://127.0.0.1.evil.example.com:80/mcp", "token").is_err(),
             "a host that merely starts with the loopback one"
         );
+        assert!(
+            Endpoint::new("http://127.0.0.1:80@evil.com/mcp", "token").is_err(),
+            "userinfo that looks like loopback is not the host"
+        );
         assert!(Endpoint::new("https://example.com/mcp", "token").is_err());
         assert!(Endpoint::new("http://127.0.0.1:9/mcp", "token").is_ok());
         assert!(Endpoint::new("http://[::1]:9/mcp", "token").is_ok());
