@@ -4,7 +4,7 @@
 // <code> lacks kind/paths or paints unlike reply code. FIDGET_CHROME picks Chromium.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -109,7 +109,7 @@ const stub = `
 
 const dir = mkdtempSync(join(tmpdir(), "chat-ask-order-"));
 const page = join(dir, "harness.html");
-const html = spawnSync("cat", [join(SRC, "chat.html")], { encoding: "utf8" }).stdout
+const html = readFileSync(join(SRC, "chat.html"), "utf8")
   .replace("<head>", `<head><base href="${pathToFileURL(SRC).href}">${stub}`);
 writeFileSync(page, html);
 
