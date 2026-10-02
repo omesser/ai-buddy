@@ -221,15 +221,26 @@ function New-StillCharacters {
 }
 
 function Start-LineReader($Reader, $Writer) {
+    # AddArgument($null) throws on Windows PowerShell 5.1, so the drain path
+    # is a separate script block with no writer.
     $hostPs = [powershell]::Create()
-    $null = $hostPs.AddScript({
-        param($reader, $writer)
-        try {
-            while ($null -ne ($line = $reader.ReadLine())) {
-                if ($null -ne $writer) { $writer.WriteLine($line) }
-            }
-        } catch {}
-    }).AddArgument($Reader).AddArgument($Writer)
+    if ($null -ne $Writer) {
+        $null = $hostPs.AddScript({
+            param($reader, $writer)
+            try {
+                while ($null -ne ($line = $reader.ReadLine())) {
+                    $writer.WriteLine($line)
+                }
+            } catch {}
+        }).AddArgument($Reader).AddArgument($Writer)
+    } else {
+        $null = $hostPs.AddScript({
+            param($reader)
+            try {
+                while ($null -ne ($line = $reader.ReadLine())) {}
+            } catch {}
+        }).AddArgument($Reader)
+    }
     return @{ Host = $hostPs; Async = $hostPs.BeginInvoke() }
 }
 
