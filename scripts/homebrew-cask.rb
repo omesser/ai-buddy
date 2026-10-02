@@ -16,17 +16,11 @@ ROOT = File.expand_path("..", __dir__)
 CASK_PATH = File.join(ROOT, "packaging/homebrew/Casks/fidget.rb")
 REPO = "omesser/fidget"
 
-# Leaf under Application Support for each bundle id this repo has shipped.
-# The pre-rename binary joins "ai-buddy"; main joins "fidget". An id with
-# no entry fails the check instead of guessing a directory to delete.
+# Leaf under Application Support for each bundle id this repo ships. An id
+# with no entry fails the check instead of guessing a directory to delete.
 DATA_DIR_LEAF = {
-  "dev.omesser.ai-buddy" => "ai-buddy",
   "dev.omesser.fidget" => "fidget",
 }.freeze
-
-# Pre-rename disk images wrote this leaf. Zap keeps it beside the current
-# one so uninstall still clears an old install.
-LEGACY_DATA_LEAF = "ai-buddy"
 
 Facts = Struct.new(
   :tag, :version, :sha256, :url, :asset_name, :prefix, :app,
@@ -300,9 +294,7 @@ def facts_for(tag)
 end
 
 def zap_paths(leaf)
-  current = "~/Library/Application Support/#{leaf}"
-  legacy = "~/Library/Application Support/#{LEGACY_DATA_LEAF}"
-  leaf == LEGACY_DATA_LEAF ? [current] : [current, legacy]
+  ["~/Library/Application Support/#{leaf}"]
 end
 
 def zap_source(facts)

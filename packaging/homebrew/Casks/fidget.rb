@@ -24,7 +24,6 @@ cask "fidget" do
 
   zap trash: [
     "~/Library/Application Support/fidget",
-    "~/Library/Application Support/ai-buddy",
   ]
 
   caveats <<~EOS
