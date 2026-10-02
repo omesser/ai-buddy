@@ -64,7 +64,8 @@ wait_for 15 pgrep -f "FIDGET_CHARACTER=bmo" || fail "Fidget did not start; see $
 sleep 2
 
 # Find the sprite window bounds from the window server
-sprite_bounds=$(swift - "$pid" <<'SWIFT'
+sprite_bounds=$(
+  swift - "$pid" << 'SWIFT'
 import CoreGraphics
 import Foundation
 
@@ -97,7 +98,7 @@ cy=$((y + h / 2))
 echo "ok: sprite at ($x,$y) size ${w}x${h}, centre ($cx,$cy)"
 
 # Send Control-click to the sprite centre
-swift - "$cx" "$cy" <<'SWIFT' || fail "Control-click failed"
+swift - "$cx" "$cy" << 'SWIFT' || fail "Control-click failed"
 import AppKit
 
 let args = CommandLine.arguments
@@ -128,7 +129,8 @@ SWIFT
 echo "ok: sent Control-click to ($cx,$cy)"
 
 # Wait for a menu-layer window to appear
-menu_count_before=$(swift - "$pid" <<'SWIFT'
+menu_count_before=$(
+  swift - "$pid" << 'SWIFT'
 import CoreGraphics
 let args = CommandLine.arguments
 guard args.count >= 2, let pid = Int(args[1]) else { exit(2) }
@@ -142,7 +144,7 @@ print(menus.count)
 SWIFT
 )
 
-wait_for 5 swift - "$pid" "$menu_count_before" <<'SWIFT' || fail "no menu window appeared after Control-click"
+wait_for 5 swift - "$pid" "$menu_count_before" << 'SWIFT' || fail "no menu window appeared after Control-click"
 import CoreGraphics
 let args = CommandLine.arguments
 guard args.count >= 3, let pid = Int(args[1]), let before = Int(args[2]) else { exit(2) }
@@ -165,7 +167,7 @@ echo "ok: $menu_count menu window(s) via AX"
 
 # Dump the first menu's items
 menu_dump="$out/menu.ax.txt"
-swift - "$pid" > "$menu_dump" <<'SWIFT' || fail "could not dump menu"
+swift - "$pid" > "$menu_dump" << 'SWIFT' || fail "could not dump menu"
 import AppKit
 import ApplicationServices
 import Foundation
