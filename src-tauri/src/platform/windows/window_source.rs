@@ -16,7 +16,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE,
 };
 
-use super::super::windows_perch::perch_candidate;
+use super::super::windows_perch::counts_for_desktop;
+use super::overlay::overlay_hwnds;
 use super::process::window_owner;
 
 /// The Windows window manager's view of the desktop.
@@ -82,7 +83,7 @@ impl WindowSource for WindowsWindowSource {
 
 /// Visible application windows, frontmost first (z-order).
 fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
-    let state = Mutex::new((Vec::new(), can_read_names));
+    let state = Mutex::new((Vec::new(), can_read_names, overlay_hwnds()));
 
     // SAFETY: EnumWindows takes a callback and a pointer-sized parameter. The
     // callback's signature matches the required WNDENUMPROC ABI. The state
@@ -110,11 +111,11 @@ pub fn visible_window_titles() -> Vec<WindowTitle> {
 /// SAFETY: hwnd is valid for the call; lparam is the pointer
 /// `visible_windows` passed in, still live and pointing at the Mutex.
 unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let state = &*(lparam as *const Mutex<(Vec<WindowRect>, bool)>);
+    let state = &*(lparam as *const Mutex<(Vec<WindowRect>, bool, Vec<u64>)>);
 
     if let Ok(mut locked) = state.lock() {
-        let (ref mut windows, can_read_names) = *locked;
-        if let Some(window_rect) = window_rect(hwnd, can_read_names) {
+        let (ref mut windows, can_read_names, ref overlays) = *locked;
+        if let Some(window_rect) = window_rect(hwnd, can_read_names, overlays) {
             windows.push(window_rect);
         }
     }
@@ -122,7 +123,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
     TRUE
 }
 
-fn window_rect(hwnd: HWND, can_read_names: bool) -> Option<WindowRect> {
+fn window_rect(hwnd: HWND, can_read_names: bool, overlays: &[u64]) -> Option<WindowRect> {
     // SAFETY: hwnd comes from EnumWindows, which guarantees it is valid for
     // the callback's execution. IsWindowVisible is a simple read.
     let is_window_visible = unsafe { IsWindowVisible(hwnd) } != 0;
@@ -134,7 +135,7 @@ fn window_rect(hwnd: HWND, can_read_names: bool) -> Option<WindowRect> {
     // SAFETY: GetWindowLongW on GWL_EXSTYLE reads the extended style bits.
     let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) };
 
-    if !perch_candidate(is_window_visible, style, ex_style) {
+    if !counts_for_desktop(is_window_visible, style, ex_style, hwnd as u64, overlays) {
         return None;
     }
 

@@ -2096,7 +2096,7 @@ pub(crate) fn run_frame_loop(
                                 && ignoring[index] != Some(false)
                             {
                                 flipped = true;
-                                if window.set_ignore_cursor_events(false).is_ok() {
+                                if platform::set_overlay_click_through(&window, false).is_ok() {
                                     ignoring[index] = Some(false);
                                 }
                             }
@@ -2132,7 +2132,7 @@ pub(crate) fn run_frame_loop(
 
                             if ignoring[index] != Some(true) {
                                 flipped = true;
-                                if window.set_ignore_cursor_events(true).is_ok() {
+                                if platform::set_overlay_click_through(&window, true).is_ok() {
                                     ignoring[index] = Some(true);
                                 }
                             }
@@ -2161,7 +2161,7 @@ pub(crate) fn run_frame_loop(
 
                         if ignoring[index] != Some(true) {
                             flipped = true;
-                            if window.set_ignore_cursor_events(true).is_ok() {
+                            if platform::set_overlay_click_through(&window, true).is_ok() {
                                 ignoring[index] = Some(true);
                             }
                         }
@@ -2175,7 +2175,7 @@ pub(crate) fn run_frame_loop(
                     // forever, leaving click-through stuck.
                     if ignoring[index] != Some(ignore) {
                         flipped = true;
-                        if window.set_ignore_cursor_events(ignore).is_ok() {
+                        if platform::set_overlay_click_through(&window, ignore).is_ok() {
                             ignoring[index] = Some(ignore);
                         }
                     }

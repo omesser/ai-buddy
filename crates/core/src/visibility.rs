@@ -580,6 +580,42 @@ mod tests {
         }
     }
 
+    /// In the window list these cover both displays, so the Character fades
+    /// and Come back cannot bring it back while that rule stays true.
+    #[test]
+    fn display_sized_overlays_hide_the_character_until_they_leave_the_list() {
+        let displays = [
+            rect(0.0, 0.0, 3440.0, 1440.0),
+            rect(-1200.0, -209.0, 1200.0, 1920.0),
+        ];
+        assert!(
+            fullscreen_frontmost(&displays, &displays),
+            "each overlay covers the display it was built for"
+        );
+
+        let mut rules = HideRules::default();
+        assert_eq!(
+            rules.update(Desktop {
+                fullscreen_frontmost: true,
+            }),
+            faded_out()
+        );
+        rules.toggle();
+        rules.toggle();
+        assert_eq!(
+            rules.update(Desktop {
+                fullscreen_frontmost: true,
+            }),
+            None,
+            "come back does not outrank a fullscreen rule that is still true"
+        );
+        assert!(!rules.presence().visible);
+
+        assert!(!fullscreen_frontmost(&[], &displays));
+        assert_eq!(rules.update(Desktop::default()), faded_in());
+        assert!(rules.presence().visible);
+    }
+
     #[test]
     fn a_window_covering_its_whole_display_is_a_fullscreen_application() {
         assert!(fullscreen_frontmost(
