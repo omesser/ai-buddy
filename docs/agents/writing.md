@@ -107,27 +107,29 @@ An agent that writes on GitHub through a person's account ends every issue,
 pull request description, review, comment, and gist with one line. The handle
 in the line is the account owner.
 
-A Cursor cloud agent whose launch message names a Grok bot must name that bot.
-Put the bot's name where `Coder` is. Bare `Cursor agent` is wrong for this
-agent.
+A bot with a name puts that name in parentheses. Parentheses hold a bot's name
+and nothing else.
+
+A named bot writing as itself names its platform, then itself:
+
+```
+_— Grok bot (Coder), on [@omesser](https://github.com/omesser)'s behalf._
+```
+
+A subagent names itself, then its parent bot. A Cursor cloud agent launched by
+the Coder bot signs this way. Take the parent's name from the launch message.
+Bare `Cursor agent` is wrong for that agent.
 
 ```
 _— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-Every other Harness agent names its Harness, with no parentheses. The Harness
-names are `Cursor`, `Claude Code`, `Grok Build`, `Codex`, `OpenCode`, `Hermes`,
-and `Pi`. An attach not on this list uses its command name.
+A Harness agent with no parent bot names its Harness, with no parentheses. The
+Harness names are `Cursor`, `Claude Code`, `Grok Build`, `Codex`, `OpenCode`,
+`Hermes`, and `Pi`. An attach not on this list uses its command name.
 
 ```
 _— Grok Build agent, on [@omesser](https://github.com/omesser)'s behalf._
-```
-
-A Grok bot writing as itself names itself. Only this line and the Cursor line
-carry a Grok bot name.
-
-```
-_— Grok bot (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
 GitHub shows the owner as the author of everything an agent posts. The line
