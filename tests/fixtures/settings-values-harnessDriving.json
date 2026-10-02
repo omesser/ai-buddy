@@ -27,6 +27,7 @@
   "harness": "Harness · claude",
   "harness_auth_retry_secs": "30",
   "harness_command": "",
+  "harness_model": "",
   "harness_cwd": "",
   "harness_state": "claude attached, session 01J8ZC6K9QF3TSN4PYRWX2HDAB.",
   "harness_turn_timeout_secs": "300",

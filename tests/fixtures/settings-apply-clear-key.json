@@ -12,6 +12,7 @@
     "director_api_key": "",
     "harness": "Model API",
     "harness_command": "",
+    "harness_model": "",
     "clear_key": true
   }
 }

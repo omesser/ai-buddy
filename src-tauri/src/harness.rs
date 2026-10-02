@@ -1603,6 +1603,12 @@ impl Session {
         Ok(wire)
     }
 
+    /// The harness model name from this session's settings file. Empty when
+    /// the file is missing or the field is blank.
+    fn harness_model_name(data: &Path) -> String {
+        crate::settings::Settings::load(&crate::settings::settings_path(data)).harness_model
+    }
+
     /// `session/load` when the Harness can and the file names this Harness,
     /// else `session/new`. Either way the file ends up naming what is open.
     fn open_session(
@@ -1631,7 +1637,14 @@ impl Session {
             .as_ref()
             .map_err(|error| error.to_string())?
             .as_path();
-        let id = match wire.open(saved.clone(), cwd, mcp.clone(), self.attach_timeout()) {
+        let model = Self::harness_model_name(self.data.as_path());
+        let id = match wire.open(
+            saved.clone(),
+            cwd,
+            mcp.clone(),
+            self.attach_timeout(),
+            &model,
+        ) {
             Ok(id) => id,
             Err(OpenError::Lost) => {
                 let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
@@ -1642,7 +1655,13 @@ impl Session {
                 let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
                 return Err(self.refuse_login(&mut state));
             }
-            Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
+            Err(OpenError::Failed(why)) => {
+                // Chat reads `last_error`. A rejected model never reaches
+                // `session/prompt`, so the turn path that records
+                // `TurnError::Failed` does not run.
+                self.update_inspect(|inspect| inspect.last_error = Some(why.clone()));
+                return Err(format!("session/new: {why}"));
+            }
         };
         let replaced = {
             let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
@@ -2818,6 +2837,32 @@ mod tests {
             .map_or(0, |text| text.lines().filter(|line| *line == what).count())
     }
 
+    /// A thought-level option first, so a client that picks by position rather
+    /// than by the `model` category sends the wrong id.
+    fn harness_model_options() -> Value {
+        json!([
+            {
+                "id": "thought",
+                "name": "Thinking",
+                "category": "thought_level",
+                "type": "select",
+                "currentValue": "medium",
+                "options": [{"value": "medium", "name": "Medium"}]
+            },
+            {
+                "id": "llm",
+                "name": "Model",
+                "category": "model",
+                "type": "select",
+                "currentValue": "default-model",
+                "options": [
+                    {"value": "default-model", "name": "Default"},
+                    {"value": "some-model", "name": "Some"}
+                ]
+            }
+        ])
+    }
+
     fn say(value: Value) {
         // Authenticate can answer from another thread while this loop writes
         // the next reply. One line at a time, or the two JSON objects join.
@@ -2950,7 +2995,11 @@ mod tests {
                         } else {
                             format!("fresh-id-{n}")
                         };
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
+                        let mut result = json!({"sessionId": session});
+                        if script.contains("model") {
+                            result["configOptions"] = harness_model_options();
+                        }
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
                         if script == "mcp-link" || script == "mcp-link-complete-turn" {
                             mcp_link(&session, None);
                         }
@@ -3009,7 +3058,30 @@ mod tests {
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "no such session"}}),
                         );
                     } else {
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+                        let mut result = json!({});
+                        if script.contains("model") {
+                            result["configOptions"] = harness_model_options();
+                        }
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
+                    }
+                }
+                Some("session/set_config_option") => {
+                    let config_id = message
+                        .pointer("/params/configId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let value = message
+                        .pointer("/params/value")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    record(count, "set-config");
+                    record(count, &format!("config={config_id}={value}"));
+                    if value == "nope" {
+                        say(
+                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "unknown model"}}),
+                        );
+                    } else {
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": []}}));
                     }
                 }
                 Some("session/prompt") => {
@@ -4668,6 +4740,102 @@ mod tests {
                 .is_some_and(|why| why.contains("refusal")),
             "{:?}",
             session.inspect().last_error
+        );
+        session.shutdown();
+    }
+
+    fn write_harness_model(dir: &std::path::Path, model: &str) {
+        let settings = crate::settings::Settings {
+            harness_model: model.to_string(),
+            ..crate::settings::Settings::default()
+        };
+        settings
+            .save(&crate::settings::settings_path(dir))
+            .expect("settings");
+    }
+
+    /// `some-model` goes out on the option whose category is model, for a new
+    /// session and a loaded one. Blank sends nothing.
+    #[test]
+    fn a_named_harness_model_is_sent_and_a_blank_one_is_not() {
+        let (fx, session) = Fixture::new("model");
+        write_harness_model(&fx.dir, "some-model");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(fx.count("config=llm=some-model"), 1);
+        assert_eq!(fx.count("set-config"), 1);
+        session.shutdown();
+
+        let (fx, session) = Fixture::new("model");
+        write_harness_model(&fx.dir, "   ");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("set-config"), 0, "blank is the harness's own pick");
+        session.shutdown();
+
+        let (fx, session) = Fixture::new("load-model");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        write_harness_model(&fx.dir, "some-model");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("new"), 0, "a saved id was not opened as new");
+        assert_eq!(fx.count("config=llm=some-model"), 1);
+        session.shutdown();
+    }
+
+    /// A name the harness rejects is the Chat error, and the child stays up
+    /// so a later model, or a cleared field, can attach.
+    #[test]
+    fn a_rejected_harness_model_is_the_last_error_and_a_later_value_attaches() {
+        let (fx, session) = Fixture::new("model");
+        write_harness_model(&fx.dir, "nope");
+        let reply = session.complete(&asking("hi"));
+        assert!(
+            reply
+                .as_ref()
+                .is_err_and(|why| why.contains("unknown model")),
+            "{reply:?}"
+        );
+        assert!(
+            session
+                .inspect()
+                .last_error
+                .as_deref()
+                .is_some_and(|why| why.contains("unknown model")),
+            "{:?}",
+            session.inspect().last_error
+        );
+        assert!(
+            session.inspect().alive,
+            "a rejected name must not kill the child"
+        );
+        assert_eq!(
+            fx.count("prompt"),
+            0,
+            "the rejection happens before the turn"
+        );
+
+        write_harness_model(&fx.dir, "some-model");
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("config=llm=some-model"), 1);
+        assert_eq!(session.inspect().last_error, None);
+
+        session.drop_conversation("buddy-1");
+        write_harness_model(&fx.dir, "");
+        assert_eq!(
+            session.complete(&asking("cleared")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(
+            fx.count("set-config"),
+            2,
+            "a cleared field sends nothing more"
         );
         session.shutdown();
     }

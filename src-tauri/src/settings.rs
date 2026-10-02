@@ -256,6 +256,10 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
             harness_in_force(settings).1,
         ),
         (
+            form::HARNESS_MODEL_ID.to_string(),
+            settings.harness_model.clone(),
+        ),
+        (
             form::DIRECTOR_TIMEOUT_SECS_ID.to_string(),
             limit_in_force::<u64>(model::TIMEOUT_SECS, &settings.director_timeout_secs),
         ),
@@ -1571,6 +1575,8 @@ pub struct CompleterPatch {
     pub director_blank: Option<bool>,
     pub harness: Option<String>,
     pub harness_command: Option<String>,
+    #[serde(default)]
+    pub harness_model: Option<String>,
     pub harness_auth_retry_secs: Option<String>,
     pub harness_turn_timeout_secs: Option<String>,
     pub harness_cwd: Option<String>,
@@ -1644,6 +1650,8 @@ pub enum TextField {
     /// that translates.
     Harness,
     HarnessCommand,
+    /// Model name sent to an attached Harness. Not the HTTP model row.
+    HarnessModel,
     HarnessAuthRetrySecs,
     HarnessTurnTimeoutSecs,
     /// Which Harness the registration box is written for. A view preference
@@ -1720,6 +1728,9 @@ impl SettingsPatch {
             TextField::HarnessCommand => {
                 self.completer.harness_command = Some(value.trim().to_string())
             }
+            TextField::HarnessModel => {
+                self.completer.harness_model = Some(value.trim().to_string())
+            }
             TextField::HarnessAuthRetrySecs => {
                 self.completer.harness_auth_retry_secs = Some(value.to_string())
             }
@@ -1785,6 +1796,7 @@ impl fmt::Debug for CompleterPatch {
                 "harness_command",
                 &self.harness_command.as_deref().map(command_line_debug),
             )
+            .field("harness_model", &self.harness_model)
             .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
             .field("harness_turn_timeout_secs", &self.harness_turn_timeout_secs)
             .field("harness_cwd", &self.harness_cwd)
@@ -1867,6 +1879,9 @@ impl Settings {
         }
         if let Some(value) = patch.completer.harness_command {
             self.harness_command = value;
+        }
+        if let Some(value) = patch.completer.harness_model {
+            self.harness_model = value;
         }
         if let Some(value) = patch.completer.harness_auth_retry_secs {
             self.harness_auth_retry_secs = value;
@@ -2040,6 +2055,10 @@ pub struct Settings {
     /// own value is. Kept when a preset is picked, so coming back to Custom
     /// does not lose what was typed.
     pub harness_command: String,
+    /// Model name sent when a Harness session opens. Empty leaves the
+    /// Harness's own pick and sends nothing. Not the HTTP `director_model`.
+    #[serde(default)]
+    pub harness_model: String,
     /// How long an unauthenticated Harness is left alone before `session/new`
     /// is tried again, in seconds. Empty means unset, and leaves the 60 in
     /// `harness::AUTH_RETRY`. Read when a Session is built, so a change lands
@@ -2135,6 +2154,7 @@ impl Default for Settings {
             director_wake_secs: String::new(),
             harness: String::new(),
             harness_command: String::new(),
+            harness_model: String::new(),
             harness_auth_retry_secs: String::new(),
             harness_turn_timeout_secs: String::new(),
             byo_harness: String::new(),
@@ -2401,6 +2421,7 @@ mod tests {
             director_wake_secs: "300".into(),
             harness: "custom".into(),
             harness_command: "opencode acp".into(),
+            harness_model: "some-model".into(),
             harness_auth_retry_secs: "5".into(),
             harness_turn_timeout_secs: "90".into(),
             byo_harness: "hermes".into(),
@@ -2816,6 +2837,7 @@ mod tests {
             director_wake_secs: String::new(),
             harness: String::new(),
             harness_command: String::new(),
+            harness_model: String::new(),
             harness_auth_retry_secs: String::new(),
             harness_turn_timeout_secs: String::new(),
             byo_harness: String::new(),
@@ -3190,6 +3212,21 @@ mod tests {
         fn delete(&self, account: &str) -> Result<(), String> {
             self.inner.delete(account)
         }
+    }
+
+    /// The HTTP model row is `director_model`. A harness model name beside
+    /// the attachment must not replace it, including while a Harness is the
+    /// Completer and this resolve is only what the Model API row still shows.
+    #[test]
+    fn a_harness_model_does_not_become_the_http_model() {
+        let settings = Settings {
+            harness_model: "some-model".into(),
+            ..endpoint_settings()
+        };
+        model::tests::with_env(None, None, None, || {
+            let http = resolve_director(&settings, &FailingStore, true).expect("resolve");
+            assert_eq!(http.model, "gpt-4o-mini");
+        });
     }
 
     /// The bug: a Harness launch prompted for a key it can never send. The

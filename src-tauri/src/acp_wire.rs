@@ -21,8 +21,9 @@ use agent_client_protocol::schema::v1::{
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigOption,
+    SessionConfigOptionCategory, SessionId, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -424,6 +425,7 @@ enum Msg {
         load: Option<String>,
         cwd: PathBuf,
         mcp: Option<McpChoice>,
+        model: String,
         reply: sync_mpsc::Sender<Result<String, OpenError>>,
     },
     Prompt {
@@ -545,12 +547,14 @@ impl Wire {
     }
 
     /// `session/load` when `load` names one, falling back to `session/new`.
+    /// `model` is the harness model name. Empty leaves the harness's pick.
     pub fn open(
         &self,
         load: Option<String>,
         cwd: &Path,
         mcp: Option<McpChoice>,
         timeout: Duration,
+        model: &str,
     ) -> Result<String, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
@@ -558,6 +562,7 @@ impl Wire {
                 load,
                 cwd: cwd.to_path_buf(),
                 mcp,
+                model: model.to_string(),
                 reply,
             })
             .map_err(|_| OpenError::Lost)?;
@@ -1142,9 +1147,10 @@ async fn serve(
                 load,
                 cwd,
                 mcp,
+                model,
                 reply,
             }) => {
-                let opened = open(cx, load, &cwd, mcp).await;
+                let opened = open(cx, load, &cwd, mcp, &model).await;
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
             Step::Command(Msg::Prompt {
@@ -1221,30 +1227,77 @@ async fn open(
     load: Option<String>,
     cwd: &Path,
     mcp: Option<McpChoice>,
+    model: &str,
 ) -> Result<SessionId, OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
-    if let Some(id) = load {
-        let loaded = cx
+    let loaded = if let Some(id) = load {
+        match cx
             .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
             .block_task()
-            .await;
-        if loaded.is_ok() {
-            return Ok(SessionId::new(id));
+            .await
+        {
+            Ok(response) => Some((SessionId::new(id), response.config_options)),
+            Err(_) => None,
         }
+    } else {
+        None
+    };
+    let (session_id, options) = match loaded {
+        Some(opened) => opened,
+        None => cx
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+            .block_task()
+            .await
+            .map(|response| (response.session_id, response.config_options))
+            .map_err(|error| {
+                if auth_refused(&error) {
+                    OpenError::AuthRequired
+                } else if cx.is_incoming_closed() {
+                    OpenError::Lost
+                } else {
+                    OpenError::Failed(error_text(error))
+                }
+            })?,
+    };
+    apply_harness_model(cx, &session_id, model, options.as_deref()).await?;
+    Ok(session_id)
+}
+
+/// Send `model` on the option whose category is `model`, after the session
+/// exists. Empty is not a request: the Harness already picked. An agent that
+/// advertises no model option is left on that pick too.
+async fn apply_harness_model(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    model: &str,
+    options: Option<&[SessionConfigOption]>,
+) -> Result<(), OpenError> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Ok(());
     }
-    cx.send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
-        .block_task()
-        .await
-        .map(|response| response.session_id)
-        .map_err(|error| {
-            if auth_refused(&error) {
-                OpenError::AuthRequired
-            } else if cx.is_incoming_closed() {
-                OpenError::Lost
-            } else {
-                OpenError::Failed(error_text(error))
-            }
-        })
+    let Some(option) = options
+        .unwrap_or(&[])
+        .iter()
+        .find(|option| option.category.as_ref() == Some(&SessionConfigOptionCategory::Model))
+    else {
+        return Ok(());
+    };
+    cx.send_request(SetSessionConfigOptionRequest::new(
+        session_id.clone(),
+        option.id.clone(),
+        model,
+    ))
+    .block_task()
+    .await
+    .map(|_| ())
+    .map_err(|error| {
+        if cx.is_incoming_closed() {
+            OpenError::Lost
+        } else {
+            OpenError::Failed(error_text(error))
+        }
+    })
 }
 
 /// One prompt turn. Chunks accumulate, other updates become `Event`s, and a

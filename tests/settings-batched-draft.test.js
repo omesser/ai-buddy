@@ -348,6 +348,7 @@ test("Apply sends every row the form marks batched, and only those", () => {
     harness: "Model API",
     pi_project_mcp: true,
     harness_command: "",
+    harness_model: "",
     byo_harness: "claude",
     director_base_url: "https://api.openai.com",
     director_model: "gpt-4o-mini",

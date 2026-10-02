@@ -485,6 +485,7 @@ pub const DIRECTOR_REASONING_EFFORT_PICK_ID: &str = "director_reasoning_effort_p
 pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
+pub const HARNESS_MODEL_ID: &str = "harness_model";
 pub const HARNESS_STATE_ID: &str = "harness_state";
 pub const PI_PROJECT_MCP_ID: &str = "pi_project_mcp";
 /// The registration box's rows. #577.
@@ -1077,6 +1078,17 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 batched: true,
                 help: None,
                 disclosure: Some("The command Fidget runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.".to_string()),
+                status: None,
+            },
+            FormRow::TextField {
+                id: HARNESS_MODEL_ID.to_string(),
+                label: Some("Harness model".to_string()),
+                placeholder: "Harness picks".to_string(),
+                writes: TextField::HarnessModel,
+                frozen: false,
+                batched: true,
+                help: Some("Empty leaves the model to the Harness.".to_string()),
+                disclosure: Some("Sent when a Harness session opens, on the option whose category is model. Model API does not send it. A name the Harness rejects shows in Chat; change this and Apply to attach again.".to_string()),
                 status: None,
             },
             FormRow::InspectBlock {

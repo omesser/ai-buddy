@@ -139,6 +139,7 @@ const AI_ROWS = [
   ["popup", "harness", "AI source"],
   ["checkbox", "pi_project_mcp", "Write .mcp.json in the working directory"],
   ["textfield", "harness_command", "Custom command line"],
+  ["textfield", "harness_model", "Harness model"],
   ["statictext", "harness_state", null],
   ["heading", null, "Point a Harness you run yourself at Fidget"],
   ["popup", "byo_harness", "Harness"],

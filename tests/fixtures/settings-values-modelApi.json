@@ -27,6 +27,7 @@
   "harness": "Model API",
   "harness_auth_retry_secs": "30",
   "harness_command": "",
+  "harness_model": "",
   "harness_cwd": "",
   "harness_state": "Not attached. The HTTP endpoint below is the AI brain.",
   "harness_turn_timeout_secs": "300",

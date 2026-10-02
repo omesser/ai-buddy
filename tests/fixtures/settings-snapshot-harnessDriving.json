@@ -295,6 +295,18 @@
               "status": null
             },
             {
+              "type": "TextField",
+              "id": "harness_model",
+              "label": "Harness model",
+              "placeholder": "Harness picks",
+              "writes": "HarnessModel",
+              "help": "Empty leaves the model to the Harness.",
+              "frozen": false,
+              "batched": true,
+              "disclosure": "Sent when a Harness session opens, on the option whose category is model. Model API does not send it. A name the Harness rejects shows in Chat; change this and Apply to attach again.",
+              "status": null
+            },
+            {
               "type": "InspectBlock",
               "id": "harness_state",
               "label": null,
