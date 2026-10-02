@@ -479,11 +479,7 @@ Apple Silicon macOS, without a Rust toolchain:
 brew install --cask omesser/fidget/fidget
 ```
 
-That command taps `omesser/homebrew-fidget`. Homebrew only reads a top-level `Casks/` directory, so the tap holds a copy of [`packaging/homebrew/Casks/fidget.rb`](../packaging/homebrew/Casks/fidget.rb) at `Casks/fidget.rb`. The copy in the tap is what `brew update` tracks. A raw URL install does not upgrade:
-
-```sh
-brew install --cask https://raw.githubusercontent.com/omesser/fidget/main/packaging/homebrew/Casks/fidget.rb
-```
+That command taps `omesser/homebrew-fidget`. Homebrew only reads a top-level `Casks/` directory, so the tap holds a copy of [`packaging/homebrew/Casks/fidget.rb`](../packaging/homebrew/Casks/fidget.rb) at `Casks/fidget.rb`. The copy in the tap is what `brew update` tracks.
 
 Publishing a GitHub Release builds the packages, then bumps this cask and pushes `Casks/fidget.rb` to the tap. The Release workflow checks out the default branch, runs `scripts/bump-homebrew-cask.sh` with the Release tag, runs `scripts/verify-homebrew-cask.sh`, and copies the cask into `omesser/homebrew-fidget`. A prerelease does not move the cask. `livecheck` uses `:github_latest`, which follows the marked Latest release and skips drafts and prereleases.
 
