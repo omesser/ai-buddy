@@ -12,9 +12,9 @@
 
 </div>
 
-# Fidget keeps you company while you work or study. It walks, talks, naps and can assist in whatever you are up to
+# Fidget is a desktop pet that keeps you company, and pitches in when you ask
 
-An embodied AI that lives on your desktop. Pick it up, throw it around, let it nap, talk to it, or ask it to do anything that an AI harness can do (which is a lot)! It's a virtual manifestation of your favorite AI model and harness, with all of its capabilities.
+An embodied AI that lives on your desktop. It walks, talks, naps and can assist in whatever you are up to. Pick it up, throw it around, let it nap, or talk to it. Attach the AI harness you already use, and it can do anything that an AI agent can.
 
 Each character has a personality and a life of its own.
 
@@ -27,10 +27,10 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 ## What It Does
 
 - **Keeps you company.** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
-- **Pick a character, or bring your own.** Eight built-in characters, each with its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
+- **Pick a built-in character, or build your own.** Each character has its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
 - **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
 - **Knows what you're up to.** It can see and react to your open windows - titles only, and only with consent, for context-aware chatter. It never reads screen pixels and [never takes screenshots](#computer-use); Reading titles and application names needs your explicit consent.
-- **Stays out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
+- **Gets out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
 
 ## Get It
 
