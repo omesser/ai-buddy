@@ -589,6 +589,9 @@ pub struct HarnessInspect {
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive, and authenticated, so nothing else here tells it apart.
     pub last_error: Option<String>,
+    /// The Harness's own words when it failed the last turn, as against an
+    /// error the Shell names. Chat boxes them under the Harness's name.
+    pub turn_failure: Option<String>,
     /// Why the launcher is present but unhealthy: nonzero exit, no output, or
     /// timeout on version check. The sentence Chat and Settings show.
     pub unhealthy: Option<String>,
@@ -1109,6 +1112,10 @@ impl Session {
             _ => (session_id, outcome),
         };
         let mut withdrawn = false;
+        let failure = match &outcome {
+            Err(TurnError::Failed(why)) => Some(why.clone()),
+            _ => None,
+        };
         let answer = match outcome {
             Ok(reply) => {
                 // A cap-ended turn is logged as what was shown and why there
@@ -1160,7 +1167,7 @@ impl Session {
             }
             Err(TurnError::Failed(why)) => {
                 action_log::append(self.data.as_path(), "turn", json!({"error": why}));
-                Err(format!("harness: {why}"))
+                Err(why)
             }
         };
         // Kept for the readers on the other side of the Completer, where
@@ -1170,6 +1177,7 @@ impl Session {
             inspect.last_error = (!withdrawn)
                 .then(|| answer.as_ref().err().cloned())
                 .flatten();
+            inspect.turn_failure = failure;
         });
         answer
     }
@@ -2662,6 +2670,11 @@ pub fn driving() -> bool {
 /// unparsable reply both reach the Shell as `Wake::Failed`. Read only on failure.
 pub fn last_error() -> Option<String> {
     attached().and_then(|session| session.inspect().last_error)
+}
+
+/// `HarnessInspect::turn_failure` of the attached Harness. Read only on failure.
+pub fn turn_failure() -> Option<String> {
+    attached().and_then(|session| session.inspect().turn_failure)
 }
 
 /// What `startup_lines` says about the attachment, if there is one.
@@ -5418,6 +5431,10 @@ mod tests {
         assert_eq!(
             session.complete(&asking("hi")),
             Err(BALANCE_EXHAUSTED.to_string())
+        );
+        assert_eq!(
+            session.inspect().turn_failure.as_deref(),
+            Some(BALANCE_EXHAUSTED)
         );
         session.shutdown();
     }

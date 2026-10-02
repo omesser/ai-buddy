@@ -2673,6 +2673,9 @@ struct ChatReply {
     /// is `None` because static weights took the turn, but "no answer" is
     /// wrong when one named a version this CLI will not serve (#514).
     error: Option<String>,
+    /// The Harness's own words when it failed the turn. Chat draws them as a
+    /// Harness error rather than a note, because they are the diagnosis.
+    failure: Option<String>,
     /// The Shell cancelled this caret because a newer wake started (ADR-0016),
     /// named in `happened_cell`'s word for that wake. `said` is `None`; this is
     /// not a turn that produced no Speech (#681). The surface says which wake
@@ -2694,6 +2697,7 @@ fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
         thought: false,
         at: None,
         error: None,
+        failure: None,
         superseded_by: Some(happened_cell(by)),
     })
 }
@@ -2776,6 +2780,7 @@ fn chat_ready(
                     you: turn.who == session_log::Who::You,
                     thought: turn.who == session_log::Who::Thinking,
                     error: None,
+                    failure: None,
                     superseded_by: None,
                     at: Some(
                         turn.at

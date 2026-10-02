@@ -1510,13 +1510,25 @@ body {
   max-width: none;
 }
 
-.empty .landing .kicker {
+.empty .landing .kicker,
+.harness-error .kicker {
   margin: 0 0 2px;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--chat-ink-3);
+}
+
+.harness-error h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--chat-ink);
+  overflow-wrap: anywhere;
+}
+
+.harness-error p {
+  margin: 0;
 }
 
 .failure-part {

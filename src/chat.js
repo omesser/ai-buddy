@@ -233,6 +233,27 @@ function note(text) {
   return add(row);
 }
 
+// The pieces of the launcher's Harness error landing (#1183), in the log: a
+// turn failure arrives mid-conversation, so it cannot take the whole surface.
+// The box takes textContent: what a Harness answered is never markup.
+function harnessError(said) {
+  const row = el("note harness-error");
+  const kicker = el("kicker", "p");
+  kicker.textContent = "Harness error";
+  const title = el("", "h2");
+  title.textContent = `${harnessDisplayName(lastOpening)} couldn't answer`;
+  const lede = el("", "p");
+  lede.textContent = "It sent back an error instead of a reply:";
+  const part = el("failure-part", "section");
+  const label = el("", "h3");
+  label.textContent = "Error output";
+  const box = el("failure-box error", "pre");
+  box.textContent = said;
+  part.append(label, box);
+  row.append(when(), kicker, title, lede, part);
+  return add(row);
+}
+
 // A link in a reply opens in the user's browser. One listener on the log, not
 // one per link: every reply redraws its row as chunks arrive. `open_link`
 // decides the accepted scheme in Rust; `data-href` is untrusted text.
@@ -791,6 +812,9 @@ async function start() {
       settled(turn.them);
       if (outcome.action === "speech") {
         arrived(turn.them, outcome.said);
+      } else if (outcome.action === "failure") {
+        turn.them.remove();
+        harnessError(outcome.said);
       } else if (outcome.action === "error") {
         // The Harness answered with an error. Static weights took the turn
         // either way, so the row looks like the one below; the error is the
