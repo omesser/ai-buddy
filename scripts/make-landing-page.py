@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Build the landing page from README.md and characters/.
 
-    python3 scripts/make-landing-page.py --out _site
+    python3 scripts/make-landing-page.py --out _site [--release release.json]
     python3 scripts/make-landing-page.py --self-check
 
 A Generated page under ADR-0038. The headline, the opening paragraph, the
 feature list, the Harness names, the install notes and the hero video are read
 from README.md; the cast, its count and every sprite are read from the Character
-Manifests. The hero video is optional, and the desk scene stands in without it.
+Manifests. Each download button links its asset in the release that
+`gh release view --json tagName,assets` wrote to the release file, or the Latest
+release page when there is no such file or no such asset. The hero video is optional, and the desk scene stands in without it.
 The page shell is docs/design/landing.html, with double-brace slots this script
 fills. A source it cannot find fails the build.
 
@@ -38,6 +40,10 @@ REPO = "https://github.com/omesser/fidget"
 HERO = "buddy-bot"
 # GitHub renders an attachment URL alone on its line as a video player.
 ATTACHMENT = re.compile(r"^(https://github\.com/user-attachments/assets/[0-9a-f-]+)[ \t]*$", re.M)
+LATEST = f"{REPO}/releases/latest"
+# The asset names carry the version, so a button matches its asset by suffix.
+DOWNLOADS = (("download_macos", "_aarch64.dmg"), ("download_windows", "-setup.exe"),
+             ("download_linux", ".AppImage"))
 COUNT = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
          "Nine", "Ten", "Eleven", "Twelve")
 
@@ -213,7 +219,14 @@ def sprite(loop_, alt, extra=""):
             f'data-frames="{frames}" data-fps="{loop_["fps"]}"{extra}>')
 
 
-def render(readme_text, characters_root, rust_source, shell):
+def downloads(release):
+    """Each button's slot and URL, the Latest release page where the release lacks its asset."""
+    assets = release.get("assets", []) if release else []
+    return {slot: next((a["url"] for a in assets if a["name"].endswith(suffix)), LATEST)
+            for slot, suffix in DOWNLOADS}
+
+
+def render(readme_text, characters_root, rust_source, shell, release=None):
     words = read_readme(readme_text)
     _, defaults = gallery.from_rust(rust_source)
     cast, hero = read_cast(characters_root, defaults["fps"])
@@ -234,6 +247,7 @@ def render(readme_text, characters_root, rust_source, shell):
         "count": (COUNT[len(cast)] if len(cast) < len(COUNT) else str(len(cast)))
         + (" character ships" if len(cast) == 1 else " characters ship"),
         "cast": figures,
+        **{slot: html.escape(url) for slot, url in downloads(release).items()},
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
                        ' id="hero-sprite" aria-describedby="hero-say"'),
@@ -309,6 +323,14 @@ def self_check():
         assert "One character ships with Fidget" in page, "the cast count is not the package count"
         assert "<figcaption>Solo</figcaption>" in page
 
+    release = {"assets": [{"name": n, "url": f"{REPO}/releases/download/v9/{n}"}
+                          for n in ("F_9_amd64.deb", "F_9_amd64.AppImage", "F_9_aarch64.dmg")]}
+    assert downloads(release) == {
+        "download_macos": f"{REPO}/releases/download/v9/F_9_aarch64.dmg",
+        "download_windows": LATEST,
+        "download_linux": f"{REPO}/releases/download/v9/F_9_amd64.AppImage",
+    }, "a button linked an asset that is not its own"
+
     print(f"self-check: {len(words['features'])} features, {len(words['harnesses'])} Harnesses, checks passed")
 
 
@@ -320,15 +342,23 @@ def main():
                         help="the README to read the page's words from")
     parser.add_argument("--self-check", action="store_true",
                         help="run the generator's own checks and exit")
+    parser.add_argument("--release", type=pathlib.Path,
+                        help="`gh release view --json tagName,assets` output; without it every "
+                        "download button links the Latest release page")
     arguments = parser.parse_args()
 
     if arguments.self_check:
         self_check()
         return
 
+    release = None
+    if arguments.release and arguments.release.is_file():
+        release = json.loads(arguments.release.read_text(encoding="utf-8"))
+    else:
+        print(f"no release file, so every download button links {LATEST}")
     try:
         page = render(arguments.readme.read_text(encoding="utf-8"), CHARACTERS,
-                      gallery.RUST.read_text(encoding="utf-8"), SHELL.read_text(encoding="utf-8"))
+                      gallery.RUST.read_text(encoding="utf-8"), SHELL.read_text(encoding="utf-8"), release)
     except Malformed as broken:
         sys.exit(f"landing page: {broken}")
     arguments.out.mkdir(parents=True, exist_ok=True)

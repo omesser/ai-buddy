@@ -9,14 +9,31 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Publishing a release changes where the download buttons point.
+  release:
+    types: [published]
 
 # `build` runs pull request code; only `deploy` gets the Pages token.
 permissions:
   contents: read
 
 jobs:
+  # A release run sits on the tag, which the `github-pages` environment
+  # refuses and whose tree may be older than `main`, so it rebuilds `main`.
+  # A dispatch is the one event a `github.token` call may start.
+  refresh:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml -R "$GITHUB_REPOSITORY" --ref main
+
   # Split out so a pull request catches a broken site before `main` does.
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,6 +42,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+
+      # With no Latest release, or no answer, the buttons link the Releases
+      # page rather than fail the build.
+      - name: Read the Latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view -R "$GITHUB_REPOSITORY" --json tagName,assets > release.json || rm -f release.json
 
       - name: Assemble the site
         # Flat, so a link is `/cues.html`; only generated art sits under
@@ -42,7 +66,7 @@ jobs:
           python3 scripts/make-expression-page.py --self-check
           python3 scripts/make-expression-page.py --out _site
           python3 scripts/make-landing-page.py --self-check
-          python3 scripts/make-landing-page.py --out _site
+          python3 scripts/make-landing-page.py --out _site --release release.json
           cp src-tauri/icons/icon.png _site/icon.png
 
       - name: Verify nothing but a page or its art reached _site

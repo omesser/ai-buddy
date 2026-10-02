@@ -14,12 +14,32 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "make-landing-page.py");
 const PAGE = "index.html";
 
-function assembleScript(site) {
+// The Assemble block reads the file the step before it fetched from GitHub;
+// here it reads a fixture shaped like `gh release view --json tagName,assets`.
+function assembleScript(site, release) {
   const workflow = readFileSync(join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
   const block = workflow.match(/- name: Assemble the site\n(?:\s+#.*\n)*\s+run: \|\n((?:\s{10}.*\n)+)/);
   assert.ok(block, "pages.yml has an Assemble the site step");
-  return block[1].replaceAll("_site", site);
+  assert.ok(block[1].includes("--release release.json"), "Assemble passes the release file to the landing page");
+  return block[1].replaceAll("_site", site).replaceAll("release.json", release);
 }
+
+const DOWNLOAD = "https://github.com/omesser/fidget/releases/download/v0.1.0";
+const LATEST = "https://github.com/omesser/fidget/releases/latest";
+const ASSETS = ["Fidget_0.1.0_aarch64.dmg", "Fidget_0.1.0_amd64.AppImage", "Fidget_0.1.0_amd64.deb",
+  "Fidget_0.1.0_x64-setup.exe"];
+
+function releaseFile(name, assets) {
+  const path = join(scratch, name);
+  writeFileSync(path, JSON.stringify({
+    tagName: "v0.1.0",
+    assets: assets.map((asset) => ({ name: asset, url: `${DOWNLOAD}/${asset}` })),
+  }));
+  return path;
+}
+
+const buttons = (page) =>
+  [...page.match(/<div class="get" id="get">([\s\S]*?)<\/div>/)[1].matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
 
 let scratch;
 let site;
@@ -27,7 +47,8 @@ let site;
 before(() => {
   scratch = mkdtempSync(join(tmpdir(), "landing-page-"));
   site = join(scratch, "_site");
-  execFileSync("bash", ["-ec", assembleScript(site)], { cwd: ROOT, stdio: "pipe" });
+  const release = releaseFile("release.json", ASSETS);
+  execFileSync("bash", ["-ec", assembleScript(site, release)], { cwd: ROOT, stdio: "pipe" });
 });
 
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -141,4 +162,30 @@ test("the root carries a description and an Open Graph image the site publishes"
   const image = root.match(/<meta property="og:image" content="https:\/\/omesser\.github\.io\/fidget\/([^"]+\.png)">/);
   assert.ok(image, "og:image is an absolute PNG URL on the site");
   assert.ok(existsSync(join(site, image[1])), `${image[1]} is published`);
+});
+
+// The asset names carry the version, so each button finds its asset by suffix
+// in the Latest release that pages.yml reads at build time.
+test("each download button links its asset in the release", () => {
+  assert.deepEqual(buttons(published(PAGE)), [
+    `${DOWNLOAD}/Fidget_0.1.0_aarch64.dmg`,
+    `${DOWNLOAD}/Fidget_0.1.0_x64-setup.exe`,
+    `${DOWNLOAD}/Fidget_0.1.0_amd64.AppImage`,
+  ]);
+});
+
+function pageWith(release) {
+  const out = join(scratch, "downloads");
+  execFileSync("python3", [SCRIPT, "--out", out, "--release", release], { cwd: ROOT, stdio: "pipe" });
+  return readFileSync(join(out, PAGE), "utf8");
+}
+
+test("a release without an asset sends only that button to the Latest release page", () => {
+  const release = releaseFile("no-windows.json", ASSETS.filter((asset) => !asset.endsWith(".exe")));
+  assert.deepEqual(buttons(pageWith(release)), [`${DOWNLOAD}/Fidget_0.1.0_aarch64.dmg`, LATEST,
+    `${DOWNLOAD}/Fidget_0.1.0_amd64.AppImage`]);
+});
+
+test("no release file sends every button to the Latest release page", () => {
+  assert.deepEqual(buttons(pageWith(join(scratch, "absent.json"))), [LATEST, LATEST, LATEST]);
 });
