@@ -1257,9 +1257,7 @@ async fn open(
 }
 
 /// Ask for the Development harness effort once the session id exists.
-///
-/// `thought_level` wins over `model_config`. No such select means the harness
-/// keeps its own default, and attach still succeeds.
+/// `thought_level` wins. No matching select leaves the harness alone.
 async fn apply_harness_reasoning_effort(
     cx: &ConnectionTo<Agent>,
     session_id: &SessionId,
