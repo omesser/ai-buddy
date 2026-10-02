@@ -1,27 +1,34 @@
 # Token is the product name. url, app, quit, zap, and the caveat name the
 # bundle in one Release disk image; scripts/bump-homebrew-cask.sh rewrites
-# them from that tag. No livecheck: the installable build is a prerelease.
+# them from that tag. livecheck follows GitHub's latest Release.
 cask "fidget" do
-  version "0.0.1-dev"
-  sha256 "7d514716900cdf2ccdcedf49982a2d63fb15d16096d8a38f0d51092ea42883c2"
+  version "0.1.0"
+  sha256 "9101273fcfc9c8d31b5805e9070d05b73b26f472c3c07cacbf9f6cfac173fd9c"
 
-  url "https://github.com/omesser/fidget/releases/download/v#{version}/ai-buddy_#{version}_aarch64.dmg"
+  url "https://github.com/omesser/fidget/releases/download/v#{version}/Fidget_#{version}_aarch64.dmg"
   name "Fidget"
-  name "ai-buddy"
   desc "Desktop companion that lives on your screen"
   homepage "https://github.com/omesser/fidget"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
 
   depends_on arch: :arm64
   depends_on :macos
 
-  app "ai-buddy.app"
+  app "Fidget.app"
 
-  uninstall quit: "dev.omesser.ai-buddy"
+  uninstall quit: "dev.omesser.fidget"
 
-  zap trash: "~/Library/Application Support/ai-buddy"
+  zap trash: [
+    "~/Library/Application Support/fidget",
+    "~/Library/Application Support/ai-buddy",
+  ]
 
   caveats <<~EOS
-    This build installs ai-buddy. It is not signed. Dismiss the Gatekeeper
+    This build installs Fidget. It is not signed. Dismiss the Gatekeeper
     dialog, then System Settings → Privacy & Security → Open Anyway.
   EOS
 end

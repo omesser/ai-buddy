@@ -2,7 +2,8 @@
 # frozen_string_literal: true
 
 # Check the Homebrew cask against its Release disk image, or rewrite the
-# stanzas that track that image.
+# stanzas that track that image: version, checksum, url, app, quit, zap,
+# caveat, and livecheck.
 #   scripts/homebrew-cask.rb verify | bump [--check] <tag>
 
 require "digest"
@@ -23,16 +24,44 @@ DATA_DIR_LEAF = {
   "dev.omesser.fidget" => "fidget",
 }.freeze
 
+# Pre-rename disk images wrote this leaf. Zap keeps it beside the current
+# one so uninstall still clears an old install.
+LEGACY_DATA_LEAF = "ai-buddy"
+
 Facts = Struct.new(
   :tag, :version, :sha256, :url, :asset_name, :prefix, :app,
   :bundle_id, :display_name, :data_leaf, :bytes,
   keyword_init: true
 )
 
+# livecheck is two stanzas. Recording them here keeps a wrong strategy from
+# loading as an unchecked block.
+class LivecheckCapture
+  def url(value = nil)
+    return @url if value.nil?
+
+    @url = value
+  end
+
+  def strategy(value = nil)
+    return @strategy if value.nil?
+
+    @strategy = value
+  end
+
+  def method_missing(name, *)
+    raise "unsupported livecheck stanza #{name}"
+  end
+
+  def respond_to_missing?(*)
+    false
+  end
+end
+
 # A Homebrew cask is Ruby. This records the stanzas the checker understands
 # and rejects the rest, so a new stanza cannot pass unexamined.
 class CaskCapture
-  attr_reader :token, :names, :quit, :depends
+  attr_reader :token, :names, :quit, :depends, :livecheck_url, :livecheck_strategy
 
   def initialize
     @names = []
@@ -76,6 +105,16 @@ class CaskCapture
     return @homepage if value.nil?
 
     @homepage = value
+  end
+
+  def livecheck(&block)
+    raise "livecheck already recorded" if @livecheck_url
+    raise "livecheck needs a block" unless block
+
+    inner = LivecheckCapture.new
+    inner.instance_eval(&block)
+    @livecheck_url = inner.url
+    @livecheck_strategy = inner.strategy
   end
 
   def depends_on(req = nil, arch: nil, macos: nil)
@@ -164,6 +203,18 @@ rescue JSON::ParserError
   die("GitHub release #{tag} was not JSON")
 end
 
+# Same endpoint Homebrew's :github_latest strategy reads. It is the marked
+# Latest release, so drafts and prereleases are already excluded.
+def latest_stable_tag
+  body = curl("https://api.github.com/repos/#{REPO}/releases/latest")
+  parsed = JSON.parse(body)
+  die("GitHub latest is a prerelease") if parsed["prerelease"]
+  die("GitHub latest is a draft") if parsed["draft"]
+  parsed.fetch("tag_name")
+rescue JSON::ParserError
+  die("GitHub latest release was not JSON")
+end
+
 def download(url)
   file = Tempfile.new(["fidget-", ".dmg"])
   file.close
@@ -232,7 +283,11 @@ def facts_for(tag)
       die("#{key} is #{found}, tag version is #{version}") unless found == version
     end
     die("CFBundleName is #{plist_string(xml, 'CFBundleName')}, asset prefix is #{prefix}") unless plist_string(xml, "CFBundleName") == prefix
-    die("CFBundleExecutable is #{plist_string(xml, 'CFBundleExecutable')}, asset prefix is #{prefix}") unless plist_string(xml, "CFBundleExecutable") == prefix
+    # Cargo names the bin in lowercase. The asset prefix is the product name.
+    executable = plist_string(xml, "CFBundleExecutable")
+    unless [prefix, prefix.downcase].uniq.include?(executable)
+      die("CFBundleExecutable is #{executable}, asset prefix is #{prefix}")
+    end
 
     Facts.new(
       tag: tag, version: version, sha256: sha, url: url, asset_name: name,
@@ -241,6 +296,38 @@ def facts_for(tag)
     )
   ensure
     file.unlink
+  end
+end
+
+def zap_paths(leaf)
+  current = "~/Library/Application Support/#{leaf}"
+  legacy = "~/Library/Application Support/#{LEGACY_DATA_LEAF}"
+  leaf == LEGACY_DATA_LEAF ? [current] : [current, legacy]
+end
+
+def zap_source(facts)
+  lines = zap_paths(facts.data_leaf).map { |path| %(    "#{path}",) }
+  "  zap trash: [\n#{lines.join("\n")}\n  ]"
+end
+
+def livecheck_source
+  <<~RUBY.gsub(/^/, "  ").chomp
+    livecheck do
+      url :url
+      strategy :github_latest
+    end
+  RUBY
+end
+
+def ensure_livecheck(text)
+  block = livecheck_source
+  pattern = /^  livecheck do\n(?:    .+\n)*  end\n/
+  if text.match?(pattern)
+    text.sub(pattern, "#{block}\n")
+  else
+    found = text.sub(/^(  homepage "[^"]+"\n)/, "\\1\n#{block}\n")
+    die("cask has no homepage line to place livecheck after") if found == text
+    found
   end
 end
 
@@ -254,6 +341,8 @@ def caveat_source(display)
 end
 
 def apply_facts(text, facts)
+  text = ensure_livecheck(text)
+  zap_pattern = %r{^  zap trash: (?:"~/Library/Application Support/[^"]+"|\[\n(?:    "~/Library/Application Support/[^"]+",\n)+  \])$}
   replacements = [
     [/^  version "[^"]*"$/, %(  version "#{facts.version}")],
     [/^  sha256 "[0-9a-f]{64}"$/, %(  sha256 "#{facts.sha256}")],
@@ -261,8 +350,7 @@ def apply_facts(text, facts)
      %(  url "https://github.com/omesser/fidget/releases/download/v\#{version}/#{facts.prefix}_\#{version}_aarch64.dmg")],
     [/^  app "[^"]+\.app"$/, %(  app "#{facts.app}")],
     [/^  uninstall quit: "[^"]+"$/, %(  uninstall quit: "#{facts.bundle_id}")],
-    [%r{^  zap trash: "~/Library/Application Support/[^"]+"$},
-     %(  zap trash: "~/Library/Application Support/#{facts.data_leaf}")],
+    [zap_pattern, zap_source(facts)],
     [/^  caveats <<~EOS\n(?:.*\n)*?  EOS$/, caveat_source(facts.display_name)],
   ]
   replacements.reduce(text) do |current, (regex, line)|
@@ -289,7 +377,9 @@ def check_shape(capture, facts)
   expect("url", capture.url, facts.url)
   expect("app", capture.app, facts.app)
   expect("uninstall quit", capture.quit, facts.bundle_id)
-  expect("zap", capture.zap, "~/Library/Application Support/#{facts.data_leaf}")
+  expect("zap", capture.zap, zap_paths(facts.data_leaf))
+  expect("livecheck url", capture.livecheck_url, :url)
+  expect("livecheck strategy", capture.livecheck_strategy, :github_latest)
   expect("first name", capture.names.first, "Fidget")
   die("cask names #{capture.names.inspect} omit #{facts.display_name}") unless capture.names.include?(facts.display_name)
   desc = capture.desc.to_s
@@ -325,7 +415,7 @@ def report(facts)
   puts "release #{facts.tag} asset #{facts.asset_name}"
   puts "sha256 #{facts.sha256} matches download (#{facts.bytes} bytes)"
   puts "app #{facts.app} bundle id #{facts.bundle_id}"
-  puts "zap ~/Library/Application Support/#{facts.data_leaf}"
+  puts "zap #{zap_paths(facts.data_leaf).join(', ')}"
 end
 
 def verify
@@ -335,8 +425,11 @@ def verify
 
   facts = facts_for("v#{capture.version}")
   check_shape(capture, facts)
+  latest = latest_stable_tag
+  die("livecheck latest is #{latest}, cask pins #{facts.tag}") unless latest == facts.tag
   require_unchanged(text, facts)
   report(facts)
+  puts "livecheck latest #{latest}"
   puts "cask matches #{facts.tag}"
 end
 

@@ -476,17 +476,23 @@ The ACP Harness child and its descendants (e.g. `npx` spawning Node) go in a Job
 Apple Silicon macOS, without a Rust toolchain:
 
 ```sh
+brew install --cask omesser/fidget/fidget
+```
+
+That command taps `omesser/homebrew-fidget`. Homebrew only reads a top-level `Casks/` directory, so the tap holds a copy of [`packaging/homebrew/Casks/fidget.rb`](../packaging/homebrew/Casks/fidget.rb) at `Casks/fidget.rb`. The copy in the tap is what `brew update` tracks. After a bump, copy the cask into that repo and push it. A raw URL install does not upgrade:
+
+```sh
 brew install --cask https://raw.githubusercontent.com/omesser/fidget/main/packaging/homebrew/Casks/fidget.rb
 ```
 
-The cask is [`packaging/homebrew/Casks/fidget.rb`](../packaging/homebrew/Casks/fidget.rb). It points at one GitHub Release disk image. `scripts/verify-homebrew-cask.sh` downloads that image and checks the checksum, the app bundle, the bundle id, and the data-directory path. After a Release, pass its tag:
+The cask points at one GitHub Release disk image. `scripts/verify-homebrew-cask.sh` downloads that image and checks the checksum, the app bundle, the bundle id, the zap paths, and that GitHub's latest Release is the pinned tag. After a Release, pass its tag:
 
 ```sh
-scripts/bump-homebrew-cask.sh v0.0.1-dev
+scripts/bump-homebrew-cask.sh v0.1.0
 scripts/verify-homebrew-cask.sh
 ```
 
-The bump reads that tag's Apple Silicon `.dmg`. The cask depends on arm64 because that is the disk image the Release ships.
+The bump reads that tag's Apple Silicon `.dmg`. The cask depends on arm64 because that is the only macOS disk image the Release ships. `livecheck` uses `:github_latest`, which follows the marked Latest release and skips drafts and prereleases.
 
 ## Further Reading
 
