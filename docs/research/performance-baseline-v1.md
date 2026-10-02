@@ -34,7 +34,7 @@ GPU compositing of the transparent overlay, the other suspect in #423, measured 
 | [#427](https://github.com/omesser/fidget/issues/427) WindowSource | Closed | Section below, [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). |
 | [#428](https://github.com/omesser/fidget/issues/428) mask rebuild | Open | Desktop numbers in the mask docs. This VM adds release per-call times. No `perf` flamegraph. |
 | [#424](https://github.com/omesser/fidget/issues/424) RSS | Open | macOS footprint in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md). This VM has one display. heaptrack was not installed. |
-| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS tables below. Linux release tables in the measurement section. Riding a window, and crossing a display seam, were not measured. |
+| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS tables below. Linux release tables in the measurement section. A Linux ride is in the riding capture. Crossing a display seam was not measured. Windows has `scripts/bench-frame-cadence-windows.ps1` and no numbers from a Windows machine. |
 
 ## How a frame gets on screen
 
@@ -127,11 +127,29 @@ The first `walking` and `load` windows played a walk animation at a single posit
 
 Mean fps counts only consecutive frames where the first asked for the second. Idle's 57 restarts in 58 frames means the loop did not stay armed. The engine still ticked at 62 Hz. On this VM a still Active tick and a moving tick both sit near 16 ms. The macOS capture further down measured a 16 ms sleep returning in about 20 ms, and still ticks near 53 Hz. That overshoot did not show up in these Linux tick gaps.
 
-Under load, 371 of the armed gaps exceeded 20 ms, and the engine stayed at 61.9 Hz. The present path dropped frames while the engine did not. This is one software-rendered VM with all four CPUs in `yes`. Riding and a display seam were not measured.
+Under load, 371 of the armed gaps exceeded 20 ms, and the engine stayed at 61.9 Hz. The present path dropped frames while the engine did not. This is one software-rendered VM with all four CPUs in `yes`. This matrix did not ride a window, and it did not cross a display seam. The ride is the next section. The seam is still unmeasured. This VM has one screen.
 
 Armed-stretch histogram for the moving walking window, display frames then engine ticks. 0 to 10 ms is 1 and 44. 10 to 14 is 5 and 63. 14 to 18 is 511 and 909. 18 to 20 is 126 and 141. 20 to 25 is 16 and 79. 25 to 34 is 0 and 9. 34 to 50 is 1 and 2. 50 and above is 0 and 0.
 
 Armed-stretch histogram for the load window. 0 to 10 ms is 2 and 152. 10 to 14 is 5 and 143. 14 to 18 is 27 and 571. 18 to 20 is 15 and 108. 20 to 25 is 84 and 162. 25 to 34 is 201 and 95. 34 to 50 is 94 and 8. 50 and above is 5 and 0.
+
+### Riding a window, #426
+
+Release binary built at `543dad19` on this VM. `x86_64`, Ubuntu 24.04.4 LTS, 4 cpus, `DISPLAY=:1`, one Xtigervnc screen at 1920x1200 and 60 Hz. Still BMO, the same weight rewrite the cadence script uses, `FIDGET_DIRECTOR=0`, `FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_CADENCE=1`, `FIDGET_INSTANCES=BMO`, `HOME` set to a scratch directory. An `xterm` titled `perch-prop`, 1100 by 180, was placed under the spawn so the sprite landed on its top edge. After a `Perched` frame, `xdotool windowmove` stepped that window 2 px about every 20 ms and reversed within 180 px of the start, for 20 s. That stays under the 1000 pt/s yank.
+
+The sample window held 392 `hold#` frames. Every one of them is at y=806, the frame top `xdotool` reported. x runs from 769 to 1177, in 262 distinct `pos()` values. `scripts/frame-cadence.mjs` reduced that window.
+
+| Scenario | Display frames | Mean fps of armed stretches | Drops over 20 ms | Restarts | Engine Hz, loop counter | Moving ticks | Still ticks | Lag p50, moving | Lag p95, moving |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Riding a gliding window | 546 | 62.2 | 1 | 146 | 62.1 | 393 at 17.5 ms, 57 Hz | 832 at 15.4 ms, 64.9 Hz | 17 ms, 1 sample | 114 ms, 1.07 samples |
+
+Armed-stretch histogram, display frames then engine ticks. 0 to 10 ms is 0 and 47. 10 to 14 is 0 and 68. 14 to 18 is 398 and 936. 18 to 20 is 0 and 88. 20 to 25 is 0 and 61. 25 to 34 is 1 and 24. 34 to 50 is 0 and 1. 50 and above is 0 and 0.
+
+One armed gap exceeded 20 ms. The engine counter stayed at 62.1 Hz. Lag p50 is one sample, 17 ms. Lag p95 is 114 ms at 1.07 samples. This is one glide on one software-rendered display. A display seam was not measured.
+
+### Windows harness, #426
+
+`scripts/bench-frame-cadence-windows.ps1` runs the same scenarios as `scripts/bench-frame-cadence-macos.sh`: `idle`, `idle-quiet`, `walking`, `load`, and `matrix`. It refuses to launch unless `FIDGET_BENCH_GREEN_LIGHT=1`, and it refuses to launch unless `OS` is `Windows_NT`. The report is `node scripts/frame-cadence.mjs` on the trace log. An operator builds `target\release\fidget.exe`, sets the green light, and runs `scripts\bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe` from the repo root. The tables the script prints are the measurement. No Windows machine ran it for this note, so there is no Windows histogram here.
 
 ## How to reproduce the Linux numbers
 
@@ -602,6 +620,6 @@ Each frame is matched to the Engine state traced at or before its latest arrival
 **Limits.**
 
 - One machine, 60 Hz panels. A ProMotion display would show 8.3 ms deltas.
-- Riding a moving window and crossing a display seam are not measured. Both need a person to drag a window or to steer where BMO walks.
+- This macOS capture did not ride a window, and it did not cross the seam between its two displays. The Linux ride is in the measurement section above. A seam is still unmeasured.
 - The trace records the first Instance only.
 - The analyzer pools every overlay's frames into one count. A sprite straddling a seam draws on two overlays, so a seam ride would be double-counted; none was measured.
