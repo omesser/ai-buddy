@@ -34,7 +34,7 @@ GPU compositing of the transparent overlay, the other suspect in #423, measured 
 | [#427](https://github.com/omesser/fidget/issues/427) WindowSource | Closed | Section below, [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). |
 | [#428](https://github.com/omesser/fidget/issues/428) mask rebuild | Open | Desktop numbers in the mask docs. This VM adds release per-call times. No `perf` flamegraph. |
 | [#424](https://github.com/omesser/fidget/issues/424) RSS | Open | macOS footprint in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md). This VM has one display. heaptrack was not installed. |
-| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS tables below. Linux release tables in the measurement section. A Linux ride is in the riding capture. Crossing a display seam was not measured. Windows has `scripts/bench-frame-cadence-windows.ps1` and no numbers from a Windows machine. |
+| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS tables below. Linux release tables in the measurement section. A Linux ride is in the riding capture. Crossing a display seam was not measured. Windows has `scripts/bench-frame-cadence-windows.ps1` and no numbers from a Windows machine. [#1263](https://github.com/omesser/fidget/pull/1263). |
 
 ## How a frame gets on screen
 
@@ -135,7 +135,7 @@ Armed-stretch histogram for the load window. 0 to 10 ms is 2 and 152. 10 to 14 i
 
 ### Riding a window, #426
 
-Release binary built at `543dad19` on this VM. `x86_64`, Ubuntu 24.04.4 LTS, 4 cpus, `DISPLAY=:1`, one Xtigervnc screen at 1920x1200 and 60 Hz. Still BMO, the same weight rewrite the cadence script uses, `FIDGET_DIRECTOR=0`, `FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_CADENCE=1`, `FIDGET_INSTANCES=BMO`, `HOME` set to a scratch directory. An `xterm` titled `perch-prop`, 1100 by 180, was placed under the spawn so the sprite landed on its top edge. After a `Perched` frame, `xdotool windowmove` stepped that window 2 px about every 20 ms and reversed within 180 px of the start, for 20 s. That stays under the 1000 pt/s yank.
+Release binary built at `543dad19` on this VM, recorded in [#1263](https://github.com/omesser/fidget/pull/1263). `x86_64`, Ubuntu 24.04.4 LTS, 4 cpus, `DISPLAY=:1`, one Xtigervnc screen at 1920x1200 and 60 Hz. Still BMO, the same weight rewrite the cadence script uses, `FIDGET_DIRECTOR=0`, `FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_CADENCE=1`, `FIDGET_INSTANCES=BMO`, `HOME` set to a scratch directory. An `xterm` titled `perch-prop`, 1100 by 180, was placed under the spawn so the sprite landed on its top edge. After a `Perched` frame, `xdotool windowmove` stepped that window 2 px about every 20 ms and reversed within 180 px of the start, for 20 s. That stays under the 1000 pt/s yank.
 
 The sample window held 392 `hold#` frames. Every one of them is at y=806, the frame top `xdotool` reported. x runs from 769 to 1177, in 262 distinct `pos()` values. `scripts/frame-cadence.mjs` reduced that window.
 
