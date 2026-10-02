@@ -199,8 +199,8 @@ impl Pending {
 
 struct PendingAsks(Mutex<Pending>);
 
-/// Chats the user minimized, by label. Each Chat's window events keep it, so
-/// the frame loop never asks a window whether it is minimized.
+/// Chats the user minimized, by label. Each Chat's window events and, on macOS,
+/// its miniaturize notifications keep it, so the frame loop never asks a window.
 #[derive(Default)]
 struct MinimizedChats(Mutex<HashSet<String>>);
 
@@ -225,8 +225,7 @@ impl MinimizedChats {
         floats
     }
 
-    /// Record whether `label` is minimized. `platform::observe_minimize`
-    /// calls this from AppKit's miniaturize notifications.
+    /// Record whether `label` is minimized.
     fn set(&self, label: &str, minimized: bool) {
         if let Ok(mut hidden) = self.0.lock() {
             if minimized && hidden.insert(label.to_string()) {
@@ -1970,10 +1969,10 @@ fn build_chat(
     })
     .inspect_err(|why| eprintln!("chat: {label} minimize: {why}"))
     .ok();
-    let observer = Mutex::new(observer);
+    let observer = std::cell::Cell::new(observer);
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
-            drop(observer.lock().map(|mut observer| observer.take()));
+            observer.take();
         }
         let Some(chats) = handle.try_state::<MinimizedChats>() else {
             return;

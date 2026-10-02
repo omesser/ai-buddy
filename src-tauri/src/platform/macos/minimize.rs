@@ -5,7 +5,7 @@
 //! when an Accessibility client minimizes Chat behind another app.
 
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -16,8 +16,8 @@ use objc2_foundation::{NSNotification, NSNotificationCenter, NSNotificationName}
 /// One window's miniaturize and deminiaturize observers. Dropping it removes both.
 pub struct MinimizeObserver([Retained<ProtocolObject<dyn NSObjectProtocol>>; 2]);
 
-// SAFETY: `observe_minimize` builds it and the window's event handler drops
-// it, both on the main thread, where AppKit delivers window events.
+// SAFETY: the tokens only go to `removeObserver`, which is thread-safe, and
+// the callback their blocks hold is `Send + Sync`.
 unsafe impl Send for MinimizeObserver {}
 
 impl Drop for MinimizeObserver {
@@ -31,10 +31,10 @@ impl Drop for MinimizeObserver {
 }
 
 /// Call `minimized(true)` when AppKit minimizes `window`, and
-/// `minimized(false)` when it comes back. Main thread only.
+/// `minimized(false)` when it comes back.
 pub fn observe_minimize(
     window: &tauri::WebviewWindow,
-    minimized: impl Fn(bool) + 'static,
+    minimized: impl Fn(bool) + Send + Sync + 'static,
 ) -> Result<MinimizeObserver, String> {
     let ptr = window
         .ns_window()
@@ -43,14 +43,17 @@ pub fn observe_minimize(
     Ok(observe(unsafe { &*ptr }, minimized))
 }
 
-fn observe(object: &AnyObject, minimized: impl Fn(bool) + 'static) -> MinimizeObserver {
+fn observe(
+    object: &AnyObject,
+    minimized: impl Fn(bool) + Send + Sync + 'static,
+) -> MinimizeObserver {
     let center = NSNotificationCenter::defaultCenter();
-    let minimized = Rc::new(minimized);
+    let minimized = Arc::new(minimized);
     let on = |name: &NSNotificationName, state: bool| {
-        let minimized = Rc::clone(&minimized);
+        let minimized = Arc::clone(&minimized);
         let block = RcBlock::new(move |_: NonNull<NSNotification>| minimized(state));
         // SAFETY: with no queue the block runs on the posting thread, and
-        // AppKit posts window notifications on the main thread.
+        // everything it captures is `Send + Sync`.
         unsafe {
             center.addObserverForName_object_queue_usingBlock(
                 Some(name),
@@ -60,19 +63,24 @@ fn observe(object: &AnyObject, minimized: impl Fn(bool) + 'static) -> MinimizeOb
             )
         }
     };
+    let (gone, back) = names();
+    MinimizeObserver([on(gone, true), on(back, false)])
+}
+
+/// The miniaturize and deminiaturize notification names.
+fn names() -> (&'static NSNotificationName, &'static NSNotificationName) {
     // SAFETY: AppKit defines both names for the life of the process.
-    let (gone, back) = unsafe {
+    unsafe {
         (
             NSWindowDidMiniaturizeNotification,
             NSWindowDidDeminiaturizeNotification,
         )
-    };
-    MinimizeObserver([on(gone, true), on(back, false)])
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::sync::Mutex;
 
     use objc2::runtime::NSObject;
 
@@ -87,18 +95,12 @@ mod tests {
     #[test]
     fn only_the_observed_window_reports_and_only_until_dropped() {
         let (window, other) = (NSObject::new(), NSObject::new());
-        let seen = Rc::new(RefCell::new(Vec::new()));
+        let seen = Arc::new(Mutex::new(Vec::new()));
         let observer = observe(&window, {
-            let seen = Rc::clone(&seen);
-            move |minimized| seen.borrow_mut().push(minimized)
+            let seen = Arc::clone(&seen);
+            move |minimized| seen.lock().unwrap().push(minimized)
         });
-        // SAFETY: AppKit defines both names for the life of the process.
-        let (gone, back) = unsafe {
-            (
-                NSWindowDidMiniaturizeNotification,
-                NSWindowDidDeminiaturizeNotification,
-            )
-        };
+        let (gone, back) = names();
 
         post(gone, &window);
         post(gone, &other);
@@ -106,6 +108,6 @@ mod tests {
         drop(observer);
         post(gone, &window);
 
-        assert_eq!(*seen.borrow(), vec![true, false]);
+        assert_eq!(*seen.lock().unwrap(), vec![true, false]);
     }
 }

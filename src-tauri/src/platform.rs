@@ -417,11 +417,11 @@ pub use macos::MinimizeObserver;
 pub struct MinimizeObserver;
 
 /// Call `minimized` when `window` is minimized (`true`) or restored (`false`),
-/// focused or not. Dropping the result stops it. Main thread only.
+/// focused or not. Dropping the result stops it.
 #[cfg(target_os = "macos")]
 pub fn observe_minimize(
     window: &tauri::WebviewWindow,
-    minimized: impl Fn(bool) + 'static,
+    minimized: impl Fn(bool) + Send + Sync + 'static,
 ) -> Result<MinimizeObserver, String> {
     macos::observe_minimize(window, minimized)
 }
@@ -430,7 +430,7 @@ pub fn observe_minimize(
 #[cfg(not(target_os = "macos"))]
 pub fn observe_minimize(
     _window: &tauri::WebviewWindow,
-    _minimized: impl Fn(bool) + 'static,
+    _minimized: impl Fn(bool) + Send + Sync + 'static,
 ) -> Result<MinimizeObserver, String> {
     Ok(MinimizeObserver)
 }
