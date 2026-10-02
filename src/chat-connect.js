@@ -148,24 +148,14 @@ export function landingCopy(opening) {
     };
   }
 
-  if (harness?.unhealthy) {
-    return {
-      title: `${name} is unhealthy`,
-      lede: `${harness.unhealthy} Then pick ${name} again, or pick a different Harness below.`,
-      command: null,
-      signInLabel: null,
-      hint: null,
-      signIn: [],
-    };
-  }
-
-  // The launcher ran and died before it answered. The Shell hands over its
-  // parts: the command, why, what it printed, and for `npx` the Node.js check.
-  // Only the reason is prose; the rest is raw text for the boxes. A custom
-  // line's name is its whole path, which the Command box already shows.
-  if (harness?.failed) {
+  // The launcher died before it answered, or preflight refused it. Either way
+  // the Shell hands over the command, why, what it printed, and for `npx` the
+  // Node.js check. Only the reason is prose; the rest is raw text for the boxes.
+  // A custom line's name is its whole path, which the Command box already shows.
+  const failed = harness?.failed ?? harness?.unhealthy;
+  if (failed) {
     const preset = Object.hasOwn(DISPLAY_NAMES, opening.harness_name ?? "");
-    const { command, reason, output, node_check: nodeCheck } = harness.failed;
+    const { command, reason, output, node_check: nodeCheck } = failed;
     const why = String(reason ?? "").replace(/\.$/, "");
     let lede;
     if (!command) {

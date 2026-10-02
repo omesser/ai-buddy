@@ -107,6 +107,28 @@ test("a named Harness that has not come up stays on the landing", () => {
   assert.match(copy.lede, /Static weights/);
 });
 
+test("a launcher that failed preflight gets the Harness error landing with the probe it ran", () => {
+  const opening = {
+    name: "bmo",
+    configured: true,
+    enabled: true,
+    harness_name: "claude",
+    harness: {
+      name: "claude",
+      session: null,
+      alive: false,
+      login: null,
+      unhealthy: { command: "npx --version", reason: "timed out after 3.0s", output: "", node_check: "node --version" },
+    },
+  };
+  assert.equal(canAnswer(opening), false);
+  const copy = landingCopy(opening);
+  assert.equal(copy.kicker, "Harness error");
+  assert.equal(copy.title, "Claude Code couldn't start");
+  assert.equal(copy.lede, "It timed out after 3.0s, and printed nothing.");
+  assert.deepEqual(copy.failure, { command: "npx --version", output: null, nodeCheck: "node --version" });
+});
+
 function diedOpening(failed) {
   return {
     name: "bmo",

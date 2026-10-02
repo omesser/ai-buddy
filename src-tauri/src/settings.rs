@@ -393,7 +393,11 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
                 None if attached.unhealthy.is_some() => format!(
                     "{} is unhealthy: {} The fidget runs on static weights until it is fixed.",
                     attached.name,
-                    attached.unhealthy.as_deref().unwrap_or_default()
+                    attached
+                        .unhealthy
+                        .as_ref()
+                        .map(crate::harness::LaunchFailure::sentence)
+                        .unwrap_or_default()
                 ),
                 None if attached.failed.is_some() => format!(
                     "{} failed to start: {} The fidget runs on static weights until it answers.",
@@ -5115,12 +5119,19 @@ mod tests {
     fn an_unhealthy_launcher_says_why_without_endpoint_jargon() {
         let sick = crate::harness::HarnessInspect {
             name: "codex".to_string(),
-            unhealthy: Some("version probe timed out".to_string()),
+            unhealthy: Some(crate::harness::LaunchFailure {
+                command: Some("npx --version".to_string()),
+                reason: "timed out after 3.0s".to_string(),
+                output: String::new(),
+                node_check: Some("node --version".to_string()),
+            }),
             ..Default::default()
         };
         assert_eq!(
             harness_state(Some(&sick)),
-            "codex is unhealthy: version probe timed out The fidget runs on static weights until it is fixed."
+            "codex is unhealthy: `npx --version` timed out after 3.0s. `npx` runs on Node.js: run \
+             `node --version` in a terminal to check that it starts. The fidget runs on static \
+             weights until it is fixed."
         );
     }
 
