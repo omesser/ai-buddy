@@ -36,7 +36,6 @@ PAGE = "index.html"
 REPO = "https://github.com/omesser/fidget"
 # The README names Buddy Bot as the default Character; the hero is that one.
 HERO = "buddy-bot"
-VIDEO_LABEL = "Fidget perched on a window, talking in speech bubbles, then replying in Chat"
 # GitHub renders an attachment URL alone on its line as a video player.
 ATTACHMENT = re.compile(r"^(https://github\.com/user-attachments/assets/[0-9a-f-]+)[ \t]*$", re.M)
 COUNT = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
@@ -242,7 +241,7 @@ def render(readme_text, characters_root, rust_source, shell):
         # shows again when a video that fails to load removes itself.
         "video": (
             f'<video class="clip" src="{words["video"]}" autoplay muted loop playsinline '
-            f'preload="metadata" aria-label="{VIDEO_LABEL}" onerror="this.remove()">'
+            f'preload="metadata" aria-label="Fidget demo video" onerror="this.remove()">'
             f'<a href="{words["video"]}">Watch the demo video</a></video>'
         ) if words["video"] else "",
     }

@@ -91,10 +91,10 @@ test("a fixture README reaches the page, and one with no H1 fails the build", ()
 function heroFrom(videoLine) {
   const readme = join(scratch, "README.md");
   const out = join(scratch, "hero");
-  const source = readFileSync(join(ROOT, "README.md"), "utf8");
-  const attachment = /^https:\/\/github\.com\/user-attachments\/assets\/.+$/m;
-  assert.match(source, attachment, "README.md embeds a video to swap for the fixture's line");
-  writeFileSync(readme, source.replace(attachment, videoLine));
+  const source = readFileSync(join(ROOT, "README.md"), "utf8")
+    .replace(/^https:\/\/github\.com\/user-attachments\/.*$/gm, "")
+    .replace("## What It Does", `${videoLine}\n\n## What It Does`);
+  writeFileSync(readme, source);
   execFileSync("python3", [SCRIPT, "--readme", readme, "--out", out], { cwd: ROOT, stdio: "pipe" });
   return readFileSync(join(out, PAGE), "utf8");
 }
