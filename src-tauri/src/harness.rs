@@ -13,7 +13,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fidget_core::director::{Completer, Reply, Wake, WakeRequest};
-use semver::{BuildMetadata, Op, Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -399,19 +398,8 @@ fn probe_launcher(launch: &Launch) -> ProbeOutcome {
 /// `probe_launcher` with the timeout as a parameter, so a test need not wait out
 /// the production one.
 fn probe_launcher_within(launch: &Launch, timeout: Duration) -> ProbeOutcome {
-    probe_launcher_with_path(launch, timeout, None)
-}
-
-/// `path` replaces `PATH` for the probe commands. Production passes `None`
-/// and the child inherits the process path. Tests pass a directory of stand-ins
-/// so they do not race other tests by editing the process path.
-fn probe_launcher_with_path(
-    launch: &Launch,
-    timeout: Duration,
-    path: Option<&Path>,
-) -> ProbeOutcome {
     let flag = launch.version_flag();
-    let output = match timed_command(&launch.argv[0], &[flag], timeout, path, Stdio::piped()) {
+    let output = match timed_command(&launch.argv[0], &[flag], timeout) {
         Ok(output) => output,
         Err(TimedCommandError::NotFound) => return ProbeOutcome::NotFound,
         Err(TimedCommandError::Spawn(error)) => {
@@ -462,12 +450,6 @@ fn probe_launcher_with_path(
         ));
     }
 
-    // `npx --version` is npm's version, so it passes on a Node the
-    // adapter refuses. Read `engines.node` because `@latest` moves
-    // the floor. A missed read stays Healthy.
-    if let Some(why) = npx_node_rejection(launch, timeout, path) {
-        return ProbeOutcome::Unhealthy(why);
-    }
     ProbeOutcome::Healthy
 }
 
@@ -478,41 +460,17 @@ enum TimedCommandError {
     TimedOut,
 }
 
-/// The wait both probes share. A timeout kills the child. Callers decide
-/// what a miss means, so a second command does not grow a second wait.
-/// Build a probe PATH that isolates the fixture directory but keeps System32
-/// on Windows so nested .cmd/.bat calls can find cmd.exe and system utilities.
-#[cfg(windows)]
-fn build_probe_path(dir: &Path) -> std::ffi::OsString {
-    let mut paths = vec![dir.to_path_buf()];
-    if let Some(system_root) = std::env::var_os("SystemRoot") {
-        let system32 = PathBuf::from(system_root).join("System32");
-        paths.push(system32);
-    }
-    std::env::join_paths(paths).unwrap_or_else(|_| dir.as_os_str().to_owned())
-}
-
-#[cfg(not(windows))]
-fn build_probe_path(dir: &Path) -> &std::ffi::OsStr {
-    dir.as_os_str()
-}
-
 fn timed_command(
     program: &str,
     args: &[&str],
     timeout: Duration,
-    path: Option<&Path>,
-    stderr: Stdio,
 ) -> Result<std::process::Output, TimedCommandError> {
-    let mut command = Command::new(resolved_program(program, path));
+    let mut command = Command::new(resolved_program(program, None));
     command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(stderr);
-    if let Some(path) = path {
-        command.env("PATH", build_probe_path(path));
-    }
+        .stderr(Stdio::piped());
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -579,93 +537,6 @@ fn windows_candidates(dir: &Path, program: &str) -> Vec<PathBuf> {
 #[cfg(not(windows))]
 fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsString> {
     None
-}
-
-/// `None` is not a failed launcher. The version probe already decided the
-/// binary is there.
-fn probe_stdout(
-    program: &str,
-    args: &[&str],
-    timeout: Duration,
-    path: Option<&Path>,
-) -> Option<String> {
-    let output = timed_command(program, args, timeout, path, Stdio::null()).ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_string)
-}
-
-fn npm_package_spec(argv: &[String]) -> Option<&str> {
-    argv.iter()
-        .skip(1)
-        .find(|arg| !arg.starts_with('-'))
-        .map(String::as_str)
-}
-
-fn npx_node_rejection(launch: &Launch, timeout: Duration, path: Option<&Path>) -> Option<String> {
-    if launch.argv.first().map(String::as_str) != Some("npx") {
-        return None;
-    }
-    let spec = npm_package_spec(&launch.argv)?;
-    let current = probe_stdout("node", &["--version"], timeout, path)?;
-    let requirement = probe_stdout("npm", &["view", spec, "engines.node"], timeout, path)?;
-    node_engine_rejection(&launch.name, &current, &requirement)
-}
-
-fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option<String> {
-    let current = current.trim();
-    let requirement = requirement
-        .trim()
-        .trim_matches(|character| character == '"' || character == '\'');
-    // `||` and a space-separated npm range do not parse. That stays unread.
-    let version = Version::parse(current.trim_start_matches(['v', 'V'])).ok()?;
-    if node_meets(&version, &VersionReq::parse(requirement).ok()?) {
-        return None;
-    }
-    let needed = match requirement.strip_prefix(">=").map(str::trim) {
-        Some(floor) if !floor.contains([',', '<', '>', '=', '^', '~', '|']) => {
-            format!("Node {floor} or newer")
-        }
-        _ => format!("Node {requirement}"),
-    };
-    Some(format!(
-        "{name} needs {needed}; `node` on PATH is {current}"
-    ))
-}
-
-/// `matches` rejects a prerelease unless the range names that same prerelease.
-/// A lone `>=` uses version order. `*` has no comparators.
-fn node_meets(version: &Version, requirement: &VersionReq) -> bool {
-    match requirement.comparators.as_slice() {
-        [] => true,
-        [comparator] if comparator.op == Op::GreaterEq => {
-            version
-                >= &Version {
-                    major: comparator.major,
-                    minor: comparator.minor.unwrap_or(0),
-                    patch: comparator.patch.unwrap_or(0),
-                    pre: comparator.pre.clone(),
-                    build: BuildMetadata::EMPTY,
-                }
-        }
-        _ => requirement.matches(version),
-    }
-}
-
-/// The sentence Chat shows for an unhealthy probe. An engine rejection names
-/// `node`, so the terminal check is `node --version` rather than `npx --version`.
-fn unhealthy_sentence(launch: &Launch, why: &str) -> String {
-    let check = if why.contains("`node` on PATH") {
-        "node --version".to_string()
-    } else {
-        format!("{} {}", launch.argv[0], launch.version_flag())
-    };
-    format!("{why}. Run `{check}` in a terminal to check what is wrong")
 }
 
 #[cfg(windows)]
@@ -1105,7 +976,11 @@ impl Session {
                     return;
                 }
                 ProbeOutcome::Unhealthy(why) => {
-                    let sentence = unhealthy_sentence(&session.launch, &why);
+                    let sentence = format!(
+                        "{why}. Run `{} {}` in a terminal to check what is wrong",
+                        session.launch.argv[0],
+                        session.launch.version_flag()
+                    );
                     session.update_inspect(|inspect| {
                         inspect.alive = false;
                         inspect.initializing = false;
@@ -7118,130 +6993,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `npx --version` prints npm's version and exits 0 when Node is too old
-    /// for the adapter. Preflight has to fail before attach hangs on that.
-    #[test]
-    fn an_npx_preset_fails_preflight_when_node_is_older_than_the_adapter_engine() {
-        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
-        write_npx_engine_fixture(&dir, "v20.19.2", ">=22\n", true);
-        let launch = claude_npx_launch();
-        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
-            ProbeOutcome::Unhealthy(why) => {
-                assert_eq!(
-                    why,
-                    "claude needs Node 22 or newer; `node` on PATH is v20.19.2"
-                );
-            }
-            other => panic!("expected Unhealthy, got {other:?}"),
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn an_npx_preset_passes_preflight_when_node_meets_the_adapter_engine() {
-        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
-        write_npx_engine_fixture(&dir, "v20.19.2", ">=20\n", true);
-        let launch = claude_npx_launch();
-        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
-            ProbeOutcome::Healthy => {}
-            other => panic!("expected Healthy, got {other:?}"),
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn an_npx_preset_passes_preflight_when_the_adapter_engine_cannot_be_read() {
-        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
-        write_npx_engine_fixture(&dir, "v20.19.2", "", false);
-        let launch = claude_npx_launch();
-        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
-            ProbeOutcome::Healthy => {}
-            other => panic!("expected Healthy when engines.node cannot be read, got {other:?}"),
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn an_npx_preset_passes_preflight_when_the_adapter_declares_no_engine() {
-        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
-        write_npx_engine_fixture(&dir, "v20.19.2", "", true);
-        let launch = claude_npx_launch();
-        match probe_launcher_with_path(&launch, Duration::from_secs(3), Some(&dir)) {
-            ProbeOutcome::Healthy => {}
-            other => panic!("expected Healthy when engines.node is empty, got {other:?}"),
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn node_engine_rejection_names_an_old_node_and_accepts_a_new_enough_one() {
-        assert_eq!(
-            node_engine_rejection("claude", "v20.19.2", ">=22"),
-            Some("claude needs Node 22 or newer; `node` on PATH is v20.19.2".to_string())
-        );
-        assert_eq!(node_engine_rejection("claude", "v22.0.0", ">=22"), None);
-        assert_eq!(node_engine_rejection("pi", "v20.19.2", ">=20"), None);
-        assert_eq!(
-            node_engine_rejection("claude", "v22.4.9", ">=22.5.0"),
-            Some("claude needs Node 22.5.0 or newer; `node` on PATH is v22.4.9".to_string())
-        );
-        assert_eq!(node_engine_rejection("claude", "v22.5.0", ">=22.5.0"), None);
-        assert_eq!(
-            node_engine_rejection("claude", "v20.19.2", "not-a-range"),
-            None
-        );
-    }
-
-    #[test]
-    fn node_engine_rejection_orders_a_prerelease_and_leaves_an_npm_or_unread() {
-        assert_eq!(
-            node_engine_rejection("claude", "v20.19.2-nightly", ">=20.19.2"),
-            Some(
-                "claude needs Node 20.19.2 or newer; `node` on PATH is v20.19.2-nightly"
-                    .to_string()
-            )
-        );
-        assert_eq!(
-            node_engine_rejection("claude", "v25.0.0-nightly", ">=20"),
-            None
-        );
-        assert_eq!(
-            node_engine_rejection("claude", "v20.19.2-nightly", "*"),
-            None
-        );
-        assert_eq!(
-            node_engine_rejection("claude", "v20.19.2", "^22.0.0"),
-            Some("claude needs Node ^22.0.0; `node` on PATH is v20.19.2".to_string())
-        );
-        assert_eq!(node_engine_rejection("claude", "v22.0.0", "^22.0.0"), None);
-        assert_eq!(
-            node_engine_rejection("claude", "v22.5.0", ">=22, <23"),
-            None
-        );
-        assert_eq!(
-            node_engine_rejection("claude", "v26.0.0", ">=22, <23"),
-            Some("claude needs Node >=22, <23; `node` on PATH is v26.0.0".to_string())
-        );
-        assert_eq!(
-            node_engine_rejection("claude", "v22.0.0", ">=20.19.0 || >=22.12.0"),
-            None
-        );
-    }
-
-    #[test]
-    fn an_old_node_tells_the_user_to_run_node_version() {
-        let launch = launch(Some("claude")).unwrap();
-        let why = "claude needs Node 22 or newer; `node` on PATH is v20.19.2";
-        assert_eq!(
-            unhealthy_sentence(&launch, why),
-            "claude needs Node 22 or newer; `node` on PATH is v20.19.2. Run `node --version` in a terminal to check what is wrong"
-        );
-        assert_eq!(
-            unhealthy_sentence(&launch, "`npx --version` timed out after 3.0s"),
-            "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong"
-        );
-    }
-
     /// A wake after a refused probe must not start the adapter. That spawn is
     /// the hang the probe is there to stop.
     #[test]
@@ -7283,7 +7034,7 @@ mod tests {
             SessionDataDir::at(dir.clone()),
             silent(),
         );
-        let why = "claude needs Node 22 or newer; `node` on PATH is v20.19.2. Run `node --version` in a terminal to check what is wrong";
+        let why = "`npx --version` timed out after 3.0s. Run `npx --version` in a terminal to check what is wrong";
         session.update_inspect(|inspect| inspect.unhealthy = Some(why.to_string()));
         let err = session.complete(&asking("hi")).unwrap_err();
         assert_eq!(err, why);
@@ -7294,61 +7045,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    fn claude_npx_launch() -> Launch {
-        Launch {
-            name: "claude".into(),
-            argv: vec![
-                "npx".into(),
-                "-y".into(),
-                "@agentclientprotocol/claude-agent-acp@latest".into(),
-            ],
-        }
-    }
-
-    fn write_npx_engine_fixture(dir: &Path, node_version: &str, engines_node: &str, npm_ok: bool) {
-        std::fs::create_dir_all(dir).unwrap();
-        // The probe replaces PATH, so the stand-ins cannot call `cat` or
-        // `dirname`. The engine string is in the script itself.
-        let engines = engines_node.trim();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let write = |name: &str, body: &str| {
-                let path = dir.join(name);
-                std::fs::write(&path, body).unwrap();
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            };
-            write("npx", "#!/bin/sh\necho 11.16.0\n");
-            write("node", &format!("#!/bin/sh\necho {node_version}\n"));
-            let npm = if npm_ok {
-                format!("#!/bin/sh\nprintf '%s\\n' '{engines}'\n")
-            } else {
-                "#!/bin/sh\nexit 1\n".to_string()
-            };
-            write("npm", &npm);
-        }
-        #[cfg(windows)]
-        {
-            std::fs::write(dir.join("npx.cmd"), "@echo off\r\necho 11.16.0\r\n").unwrap();
-            std::fs::write(
-                dir.join("node.cmd"),
-                format!("@echo off\r\necho {node_version}\r\n"),
-            )
-            .unwrap();
-            let npm = if !npm_ok {
-                "@echo off\r\nexit /b 1\r\n".to_string()
-            } else if engines.is_empty() {
-                "@echo off\r\nexit /b 0\r\n".to_string()
-            } else {
-                format!("@echo off\r\necho {}\r\n", engines.replace('>', "^>"))
-            };
-            std::fs::write(dir.join("npm.cmd"), npm).unwrap();
-        }
-    }
-
-    /// `Command` looks for `npx.exe`. The stand-in is `npx.cmd`, which is what
-    /// npm installs, so the probe has to name that file or every Windows run
-    /// is `NotFound` before the engine check.
+    /// `Command` looks for `npx.exe`. npm installs `npx.cmd`, so the launcher
+    /// has to name that file or every Windows run is `NotFound`.
     #[cfg(windows)]
     #[test]
     fn a_cmd_stand_in_is_the_program_when_path_is_only_the_fixture() {
