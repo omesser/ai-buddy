@@ -3141,6 +3141,29 @@ mod tests {
                             stop(&id, "end_turn");
                             record(count, "replied");
                         }
+                        "scenario-asking" if prompts == 1 => {
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": &session,
+                                    "toolCall": {
+                                        "toolCallId": "t1",
+                                        "title": "May I proceed?",
+                                        "kind": "other",
+                                        "content": [{"type": "content", "content": {"type": "text", "text": "The question that waits on the user."}}],
+                                    },
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                    ],
+                                }}),
+                            );
+                            record(count, "asked");
+                        }
+                        "scenario-asking" => {
+                            chunk(&session, "fidget\nYou answered the question.");
+                            stop(&id, "end_turn");
+                            record(count, "replied");
+                        }
                         "mcp-link-turn" if prompts == 1 => {
                             mcp_link(&session, None);
                             chunk(&session, "Hello");
