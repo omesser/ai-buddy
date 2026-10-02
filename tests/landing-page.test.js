@@ -86,6 +86,36 @@ test("a fixture README reaches the page, and one with no H1 fails the build", ()
   );
 });
 
+// The hero video is the first attachment URL alone on its line, which is how
+// GitHub embeds a video in the README. Without one the hero is the desk scene.
+function heroFrom(videoLine) {
+  const readme = join(scratch, "README.md");
+  const out = join(scratch, "hero");
+  const source = readFileSync(join(ROOT, "README.md"), "utf8");
+  const attachment = /^https:\/\/github\.com\/user-attachments\/assets\/.+$/m;
+  assert.match(source, attachment, "README.md embeds a video to swap for the fixture's line");
+  writeFileSync(readme, source.replace(attachment, videoLine));
+  execFileSync("python3", [SCRIPT, "--readme", readme, "--out", out], { cwd: ROOT, stdio: "pipe" });
+  return readFileSync(join(out, PAGE), "utf8");
+}
+
+test("an attachment line in the README becomes the hero video", () => {
+  const page = heroFrom("https://github.com/user-attachments/assets/0a1b2c3d-4e5f-6789-abcd-ef0123456789");
+  const videos = [...page.matchAll(/<video [^>]*src="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(videos, ["https://github.com/user-attachments/assets/0a1b2c3d-4e5f-6789-abcd-ef0123456789"]);
+});
+
+test("a README with no attachment line keeps the sprite hero", () => {
+  const page = heroFrom("");
+  assert.ok(!page.includes("<video"), "no video without an attachment line");
+  assert.ok(page.includes('id="hero-sprite"'), "the desk scene holds the hero sprite");
+});
+
+test("a bare URL that is not an attachment is not a video", () => {
+  const page = heroFrom("https://github.com/omesser/fidget/releases/download/v0.0.1-dev/demo.mp4");
+  assert.ok(!page.includes("<video"), "only a user-attachments URL embeds as a video");
+});
+
 // The URL plan in #1210: the root is the landing page, the directory moves to
 // /design.html, and every design page it lists stays published.
 test("the root is the landing page and every design page stays reachable", () => {

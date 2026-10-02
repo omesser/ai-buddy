@@ -102,6 +102,9 @@
   .desk { position: relative; aspect-ratio: 4 / 3; border-radius: 14px;
     background: linear-gradient(135deg, var(--desk-a), var(--desk-b));
     border: 1px solid var(--line); overflow: hidden; }
+  .clip { display: block; width: 100%; aspect-ratio: 2 / 1; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--paper-2); }
+  .clip + .desk { display: none; }
   .window { position: absolute; left: 12%; right: 10%; top: 56%; bottom: -4%;
     background: var(--win); border-radius: 10px; border: 1px solid var(--line);
     box-shadow: 0 18px 40px rgb(0 0 0 / .18); }
@@ -180,13 +183,16 @@
       <p class="note">{{notes}} <a href="https://github.com/omesser/fidget#get-it">Install steps</a></p>
     </div>
 
-    <div class="desk">
-      <div class="say" id="hero-say">Perched on your editor. Nice view. Want me to run the tests?</div>
-      <div class="window">
-        <div class="bar"><i></i><i></i><i></i></div>
-        <div class="lines"><div style="width:72%"></div><div style="width:54%"></div><div style="width:81%"></div><div style="width:38%"></div><div style="width:66%"></div></div>
+    <div class="stage">
+      {{video}}
+      <div class="desk">
+        <div class="say" id="hero-say">Perched on your editor. Nice view. Want me to run the tests?</div>
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="lines"><div style="width:72%"></div><div style="width:54%"></div><div style="width:81%"></div><div style="width:38%"></div><div style="width:66%"></div></div>
+        </div>
+        <div class="perched">{{hero}}</div>
       </div>
-      <div class="perched">{{hero}}</div>
     </div>
   </div>
 </div>
@@ -264,6 +270,14 @@
   }
   document.addEventListener("visibilitychange", run);
   run();
+
+  // Reduced motion hands the hero video to the visitor, paused, with controls.
+  const clip = document.querySelector("video.clip");
+  if (clip && still) {
+    clip.removeAttribute("autoplay");
+    clip.pause();
+    clip.controls = true;
+  }
 </script>
 </body>
 </html>
