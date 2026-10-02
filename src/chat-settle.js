@@ -62,6 +62,10 @@ export function createChatTurns() {
         }
         return { action: "speech", turn, said: payload.said };
       }
+      // The Harness's own words: the diagnosis, drawn under its name.
+      if (payload.failure) {
+        return { action: "failure", turn, said: payload.failure };
+      }
       // The Shell's line already names the Harness (`harness: ...`, `harness
       // not authenticated: ...`); a prefix here stacked a fourth (#991).
       if (payload.error) {

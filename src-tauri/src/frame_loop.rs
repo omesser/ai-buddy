@@ -854,6 +854,7 @@ pub(crate) fn run_frame_loop(
                             thought: false,
                             at: None,
                             error: None,
+                            failure: None,
                             superseded_by: None,
                         },
                     );
@@ -880,6 +881,7 @@ pub(crate) fn run_frame_loop(
                             thought: false,
                             at: None,
                             error: None,
+                            failure: None,
                             superseded_by: None,
                         },
                     );
@@ -901,6 +903,7 @@ pub(crate) fn run_frame_loop(
                             thought: false,
                             at: None,
                             error: None,
+                            failure: None,
                             superseded_by: None,
                         },
                     );
@@ -926,6 +929,7 @@ pub(crate) fn run_frame_loop(
                             thought: false,
                             at: Some(at_ms),
                             error: None,
+                            failure: None,
                             superseded_by: None,
                         },
                     );
@@ -1438,6 +1442,9 @@ pub(crate) fn run_frame_loop(
                 // and the Chat surface said it was (#514). Read here because
                 // `note_parsed` already logged the same words.
                 let error = (applied && !responded).then(harness::last_error).flatten();
+                let failure = (applied && !responded)
+                    .then(harness::turn_failure)
+                    .flatten();
                 if answering_chat || unasked {
                     let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
                     // The mark goes into the remembered line once, here:
@@ -1465,6 +1472,7 @@ pub(crate) fn run_frame_loop(
                             thought: false,
                             at: None,
                             error,
+                            failure,
                             superseded_by: None,
                         },
                     );

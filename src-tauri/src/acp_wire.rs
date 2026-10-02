@@ -380,6 +380,21 @@ fn auth_refused(error: &Error) -> bool {
             == Some("authentication_failed")
 }
 
+/// An ACP error as one line: its message, then the detail in `data`. grok
+/// sends "Internal error" as the message and the reason only in `data.message`.
+fn error_text(error: Error) -> String {
+    use serde_json::Value;
+    let detail = match error.data {
+        None | Some(Value::Null) => return error.message,
+        Some(Value::String(text)) => text,
+        Some(data) => match data.get("message").and_then(Value::as_str) {
+            Some(text) => text.to_string(),
+            None => data.to_string(),
+        },
+    };
+    format!("{}: {detail}", error.message)
+}
+
 /// Why no wire came back from a spawn.
 /// `Missing` is `ErrorKind::NotFound`. Never the locale text of os error 2.
 /// No respawn mends a PATH that has no such file.
@@ -792,7 +807,7 @@ fn run(
                             }
                             serve(&cx, rx, incoming_rx, &on_event).await;
                         }
-                        Err(why) => refused = Some(why.message),
+                        Err(why) => refused = Some(error_text(why)),
                     }
                     Ok(())
                 },
@@ -806,7 +821,7 @@ fn run(
         // that is gone says how it went, which is the one clue to a launcher
         // that died at startup, such as `node` failing to load.
         if let Some(ready) = ready.take() {
-            let refused = refused.or(outcome.err().map(|why| why.message));
+            let refused = refused.or(outcome.err().map(error_text));
             let status = exit_status(&mut child);
             let output = tail.text(Duration::from_millis(250));
             let _ = ready.send(Err(match (status, refused) {
@@ -1117,7 +1132,7 @@ async fn serve(
                             .await
                         {
                             Ok(_) => Ok(()),
-                            Err(error) => Err(error.message),
+                            Err(error) => Err(error_text(error)),
                         }
                     }),
                     reply,
@@ -1157,7 +1172,7 @@ async fn serve(
                     .await;
                 let _ = reply.send(match outcome {
                     Ok(_) => Ok(()),
-                    Err(error) => Err(error.message),
+                    Err(error) => Err(error_text(error)),
                 });
             }
             // No turn is running, so there is no ask to answer and nothing to
@@ -1227,7 +1242,7 @@ async fn open(
             } else if cx.is_incoming_closed() {
                 OpenError::Lost
             } else {
-                OpenError::Failed(error.message)
+                OpenError::Failed(error_text(error))
             }
         })
 }
@@ -1309,7 +1324,7 @@ async fn turn(
                     Ok(response) => outcome(response.stop_reason, said),
                     Err(error) if auth_refused(&error) => Err(TurnError::AuthRequired),
                     Err(_) if cx.is_incoming_closed() => Err(TurnError::Lost),
-                    Err(error) => Err(TurnError::Failed(error.message)),
+                    Err(error) => Err(TurnError::Failed(error_text(error))),
                 };
             }
             command = rx.recv() => match command {
