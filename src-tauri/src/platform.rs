@@ -260,6 +260,9 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
     true
 }
 
+#[cfg(any(test, target_os = "macos"))]
+mod thread_policy;
+
 #[cfg(target_os = "macos")]
 mod macos;
 
@@ -792,6 +795,9 @@ pub fn spawn_xi2_listener() -> Option<std::sync::mpsc::Receiver<x11::InputEvent>
 
 #[cfg(target_os = "macos")]
 pub use macos::EventTap;
+
+#[cfg(target_os = "macos")]
+pub(crate) use macos::{set_thread_standard_policy, set_thread_time_constraint_policy};
 
 /// Spawn the macOS mouse event tap. `None` until the Input Monitoring row is
 /// checked and macOS has granted it. The frame loop asks again on later idle
