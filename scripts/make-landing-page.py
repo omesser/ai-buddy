@@ -5,8 +5,9 @@
     python3 scripts/make-landing-page.py --self-check
 
 A Generated page under ADR-0038. The headline, the opening paragraph, the
-feature list, the Harness names and the install notes are read from README.md;
-the cast, its count and every sprite are read from the Character Manifests.
+feature list, the Harness names, the install notes and the hero video are read
+from README.md; the cast, its count and every sprite are read from the Character
+Manifests. The hero video is optional, and the desk scene stands in without it.
 The page shell is docs/design/landing.html, with double-brace slots this script
 fills. A source it cannot find fails the build.
 
@@ -35,6 +36,8 @@ PAGE = "index.html"
 REPO = "https://github.com/omesser/fidget"
 # The README names Buddy Bot as the default Character; the hero is that one.
 HERO = "buddy-bot"
+# GitHub renders an attachment URL alone on its line as a video player.
+ATTACHMENT = re.compile(r"^(https://github\.com/user-attachments/assets/[0-9a-f-]+)[ \t]*$", re.M)
 COUNT = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
          "Nine", "Ten", "Eleven", "Twelve")
 
@@ -138,7 +141,9 @@ def read_readme(text):
         raise Malformed("README.md Harness Support names no Harness")
 
     get_it = section(found, "Get It")
+    video = ATTACHMENT.search(text)
     return {
+        "video": video and video.group(1),
         "headline": found["#title"],
         "lede": lede[0],
         "features": features,
@@ -232,6 +237,13 @@ def render(readme_text, characters_root, rust_source, shell):
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
                        ' id="hero-sprite" aria-describedby="hero-say"'),
+        # The desk stays in the page. CSS hides it behind the video, and it
+        # shows again when a video that fails to load removes itself.
+        "video": (
+            f'<video class="clip" src="{words["video"]}" autoplay muted loop playsinline '
+            f'preload="metadata" aria-label="Fidget demo video" onerror="this.remove()">'
+            f'<a href="{words["video"]}">Watch the demo video</a></video>'
+        ) if words["video"] else "",
     }
     page = shell
     for name, value in slots.items():
