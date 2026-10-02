@@ -34,3 +34,10 @@ test("a Harness that is set but not running is not something that can answer", (
     "Nothing can answer yet",
   );
 });
+
+// DROPPED (#1268): "the composer markup does not ship Say something as the live placeholder"
+// asserts the html placeholder attribute is not that string.
+// DROPPED (#1268): "unanswerable empty-state copy is unchanged"
+// matches Nothing to answer with in chat.html.
+// DROPPED (#1268): "chat.js asks the helper for the composer placeholder"
+// counts composerPlaceholder( occurrences in chat.js.

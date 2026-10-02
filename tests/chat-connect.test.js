@@ -421,3 +421,6 @@ test("markup and other schemes stay text", () => {
   ]);
   assert.deepEqual(inlineSegments(null), []);
 });
+
+// DROPPED (#1268): "chat.js paints the landing from the helper, and does not celebrate a pick"
+// matches import names and landingCopy( in chat.js.

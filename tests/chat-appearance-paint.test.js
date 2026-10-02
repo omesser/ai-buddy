@@ -203,3 +203,8 @@ test("dark forces the dark panel when the browser is not in force-dark-mode", br
     assert.equal(report.colorScheme, "light", `${design} light scheme`);
   }
 });
+
+// DROPPED (#1268): "chat-ui.css has no prefers-color-scheme"
+// asserts the stylesheet text lacks prefers-color-scheme.
+// DROPPED (#1268): "each design has a light palette block, and glass covers of and what"
+// matches palette blocks in chat-ui.css.

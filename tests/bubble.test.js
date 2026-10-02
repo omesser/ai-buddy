@@ -530,3 +530,10 @@ test("a truncated reply is spoken without the mark visible", () => {
     "the next whole line is not marked with the last one's mark",
   );
 });
+
+// DROPPED (#1268): "the Shell carries a line for exactly as long as the bubble can show one"
+// reads CARRY_WINDOW out of shell source and compares the number. The bubble is not called.
+// DROPPED (#1268): "inverted Speech bubble tail CSS points up at the Character"
+// matches tail border rules in CSS.
+// DROPPED (#1268): "the capability the renderer asks for is a command the Shell registers"
+// matches the invoke string overlay_hit_tests_hotspots in renderer and shell source.

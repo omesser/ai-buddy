@@ -32,3 +32,10 @@ test("a title picks its tab, and an unknown title picks the first", () => {
   }
   assert.equal(selectTab(form, "Completer"), 0, "a renamed tab opens the first one, never an empty panel");
 });
+
+// DROPPED (#1268): "the tab bar is a tablist of buttons over one panel"
+// matches role=tablist in settings.html. selectTab is still called.
+// DROPPED (#1268): "every tab names the panel it opens"
+// matches aria-controls=set-panel in settings.html.
+// DROPPED (#1268): "the page loads its module as a module and inlines no script"
+// matches the script tag and stylesheet order in settings.html.

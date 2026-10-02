@@ -120,3 +120,16 @@ test("Name-only is insufficient: the Windows Settings app is not a match", () =>
   assert.equal(matches(tauriSettings, webviewUnconditional), true);
   assert.equal(matches(otherTauri, webviewUnconditional), false);
 });
+
+// DROPPED (#1268): "webview AndCondition requires ClassName..." compares parsed property names. The Name-only match stays.
+// DROPPED (#1268): "optional ProcessId is AND-ed..." greps for $ProcessId and pidCond. It does not run the finder.
+// DROPPED (#1268): "FromHandle helper is the multi-monitor UIA entry" greps for FromHandle and the absence of RootElement.
+// DROPPED (#1268): "phase2 relies on the webview default" asserts the script does not mention the settings env flags.
+// DROPPED (#1268): "phase2 smoke never assigns $PID" greps for $targetProcessId and forbids $pid =.
+// DROPPED (#1268): "phase2 UIA is FromHandle-only" greps for EnumDisplayMonitors and the absence of SetCursorPos.
+// DROPPED (#1268): "phase2 CHECK2 tries LegacyIAccessible before PostMessage" asserts that source order.
+// DROPPED (#1268): "phase2 CHECK2 waits for TabItem names" greps the waiter for TimeoutMs 8000 and condition names.
+// DROPPED (#1268): "phase2 reports the four #715 checks" greps for the check id strings and CopyFromScreen.
+// DROPPED (#1268): "phase2 check 4 is PASS/FAIL from GetWindow stacking" greps GetTopWindow. The walk is not executed.
+// DROPPED (#1268): "stacking fixtures" asserts a JS copy of the walk, then greps for Test-HwndAbove.
+// DROPPED (#1268): "overlay finder fixtures" asserts a JS copy of isOverlay, then greps width constants.

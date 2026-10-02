@@ -123,6 +123,12 @@ mod tests {
         assert_eq!(store.get(DIRECTOR_API_KEY).unwrap(), None);
     }
 
+    #[test]
+    fn deleting_a_missing_item_is_ok() {
+        let store = MemoryStore::new();
+        store.delete(DIRECTOR_API_KEY).unwrap();
+    }
+
     #[cfg(windows)]
     mod windows_credential_manager {
         use super::*;

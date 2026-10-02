@@ -2501,4 +2501,18 @@ mod windows_job {
             CloseHandle(job);
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_terminate_job_missing_pid_is_noop() {
+            terminate_job(0xFFFF_FFFE);
+        }
+
+        // Job assignment failure paths must resume the suspended child
+        // before returning Ok. A child left suspended hangs later tests
+        // waiting for stdio.
+    }
 }

@@ -602,3 +602,20 @@ test("without a clickable link the pill still names the fix as text", () => {
   assert.equal(gate.field.disabled, true);
   assert.equal(gate.send.hidden, false, "with no link to stand in, Send keeps its place");
 });
+
+// DROPPED (#1268): "speech hide/show repositions the quick-message without waiting for a later frame"
+// matches reposition calls in overlay source.
+// DROPPED (#1268): "the composer fades in and out quickly on opacity, without a scale pop"
+// matches opacity rules and forbids scale( in CSS.
+// DROPPED (#1268): "the empty composer says talk to me and Send is a triangle, not a link"
+// matches placeholder text and an SVG path in source.
+// DROPPED (#1268): "the overlay freezes the pill from chat's opening, including while it is already up"
+// matches applyQuickMessageGate and chat_opening in source.
+// DROPPED (#1268): "a frozen send control does not keep the accent disc"
+// matches disabled-field CSS and forbids the accent disc rule.
+// DROPPED (#1268): "overlay Send uses chat_send and does not poke the pet"
+// matches chat_send and quickMachine.press in overlay source.
+// DROPPED (#1268): "the overlay autofocuses, dismisses on the locked gestures, and reports typing"
+// matches focus, overlay_composing, and gesture calls in source.
+// DROPPED (#1268): "the overlay reports QM pill visibility to freeze movement"
+// matches the visibility invoke in overlay source.

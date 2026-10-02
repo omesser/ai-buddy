@@ -4520,6 +4520,14 @@ mod tests {
         );
     }
 
+    /// No child yet. Both calls return, and the second does not panic.
+    #[test]
+    fn shutdown_before_a_child_exists_is_repeatable() {
+        let (_fx, session) = Fixture::new("happy");
+        session.shutdown();
+        session.shutdown();
+    }
+
     /// Off may race `spawn_preflight`. A spawn that lands after `shutdown`
     /// must not store a live child the HTTP Completer then cannot see.
     #[test]

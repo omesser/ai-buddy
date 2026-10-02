@@ -38,3 +38,6 @@ test("every wake the Rust side can name has a clause of its own", () => {
     );
   }
 });
+
+// DROPPED (#1268): "the transcript draws a preempted turn instead of dropping the row"
+// matches turn.them.remove and note( in the preempted branch. The wake-clause pin stays.
