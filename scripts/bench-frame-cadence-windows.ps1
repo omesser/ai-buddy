@@ -1,13 +1,7 @@
-# Windows operator script for display-frame cadence, matching
-# scripts/bench-frame-cadence-macos.sh. It launches fidget on the live
-# desktop, samples one window per scenario, and prints the report from
-# scripts/frame-cadence.mjs. Scenarios are idle, idle-quiet, walking, and
-# load. matrix runs those four in that order and stops on the first failure.
-#
-# 1. Build a binary (cargo build --release --bin fidget from src-tauri, or debug).
-# 2. Set FIDGET_BENCH_GREEN_LIGHT=1 only after the operator agrees the run will put fidget on the live desktop.
-# 3. From the repo root: scripts\bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe
-# 4. The tables this script prints are the measurement. Do not type numbers into the repo that this script did not print.
+# Build with: cd src-tauri; cargo build --release --bin fidget
+# Set FIDGET_BENCH_GREEN_LIGHT=1 only after agreeing this run puts fidget on the live desktop.
+# From the repo root: scripts\bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe
+# The tables this script prints are the measurement. Do not type numbers into the repo that this script did not print.
 
 param(
     [Parameter(Mandatory = $true, Position = 0)]
@@ -27,8 +21,7 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
 
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-# $IsWindows is absent on Windows PowerShell 5.1. The OS check follows the
-# green light so pwsh on Linux can prove the gate without launching.
+# $IsWindows is absent on Windows PowerShell 5.1.
 if ($env:FIDGET_BENCH_GREEN_LIGHT -ne '1') {
     [Console]::Error.WriteLine("$Scenario launches fidget on the live desktop. Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed.")
     exit 2
@@ -156,8 +149,6 @@ function Stop-Burners {
 }
 
 function Start-Burners {
-    # Windows has no `yes`. A hidden powershell tight loop, one per core,
-    # stands in for that load.
     $script:Burners = @()
     $count = [Environment]::ProcessorCount
     for ($i = 0; $i -lt $count; $i++) {
@@ -230,26 +221,15 @@ function New-StillCharacters {
 }
 
 function Start-LineReader($Reader, $Writer) {
-    # AddArgument($null) throws on Windows PowerShell 5.1, so the drain path
-    # is a separate script block with no writer.
     $hostPs = [powershell]::Create()
-    if ($null -ne $Writer) {
-        $null = $hostPs.AddScript({
-            param($reader, $writer)
-            try {
-                while ($null -ne ($line = $reader.ReadLine())) {
-                    $writer.WriteLine($line)
-                }
-            } catch {}
-        }).AddArgument($Reader).AddArgument($Writer)
-    } else {
-        $null = $hostPs.AddScript({
-            param($reader)
-            try {
-                while ($null -ne ($line = $reader.ReadLine())) {}
-            } catch {}
-        }).AddArgument($Reader)
-    }
+    $null = $hostPs.AddScript({
+        param($reader, $writer)
+        try {
+            while ($null -ne ($line = $reader.ReadLine())) {
+                if ($null -ne $writer) { $writer.WriteLine($line) }
+            }
+        } catch {}
+    }).AddArgument($Reader).AddArgument($Writer)
     return @{ Host = $hostPs; Async = $hostPs.BeginInvoke() }
 }
 
@@ -269,9 +249,6 @@ function Start-Fidget([string]$Log, [string]$TraceFrames, [string]$Characters) {
     $instances = $env:FIDGET_INSTANCES
     if (-not $instances) { $instances = "BMO" }
 
-    # The three trace lines are eprintln. One reader copies stderr in order into
-    # a UTF-8 LF log. Start-Process redirect on Windows PowerShell 5.1 writes
-    # UTF-16, and a CR on a field makes the analyzer's Number() return NaN.
     $utf8 = New-Object System.Text.UTF8Encoding $false
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $script:BinPath
@@ -379,7 +356,6 @@ function Invoke-Scenario([string]$Name) {
     }
     if ($Name -eq "idle-quiet") {
         Start-Fidget $log "0" $characters
-        # No frame: lines to wait on, so the fall gets a fixed 5 seconds.
         Start-Sleep -Seconds 5
     } else {
         Start-Fidget $log "1" $characters
@@ -402,7 +378,6 @@ function Invoke-Scenario([string]$Name) {
     $from = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     Start-Sleep -Seconds $Seconds
     $to = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-    # The overlay sends cadence once a second, so the last batch is still in flight.
     Start-Sleep -Milliseconds 1500
     Stop-App
     Stop-Burners
