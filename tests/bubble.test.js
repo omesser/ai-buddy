@@ -1,7 +1,10 @@
 // Run with `node --test tests/`.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   bubbleDuration,
@@ -24,6 +27,23 @@ test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
 
   const long = "a".repeat(200);
   assert.equal(bubbleDuration(long), 8000, "max clamp");
+});
+
+// One Speech duration. `bubbleDuration` clamps how long the bubble may show a
+// line; the Shell's `CARRY_WINDOW` is how long it may re-say one to a new bubble
+// owner. A longer carry resurrects a line nobody could still be reading, and a
+// shorter one drops one still on screen (#178).
+test("the Shell carries a line for exactly as long as the bubble can show one", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
+
+  const carry = shell.match(/const CARRY_WINDOW: Duration = Duration::from_secs\((\d+)\)/);
+  assert.ok(carry, "the Shell names a carry window");
+  assert.equal(
+    Number(carry[1]) * 1000,
+    bubbleDuration("a".repeat(1000)),
+    "the carry window is bubbleDuration's max clamp",
+  );
 });
 
 test("wrap text at max width", () => {
@@ -528,5 +548,22 @@ test("a truncated reply is spoken without the mark visible", () => {
     calls,
     ["showSpeech:Mine now, and the desk is", "showSpeech:all mine"],
     "the next whole line is not marked with the last one's mark",
+  );
+});
+
+// The control draws only where the Shell says a reported rectangle wins the
+// click, asked by name across a language boundary. A typo on either side is
+// silent: `invoke` rejects, the flag stays false, and the control never appears.
+test("the capability the renderer asks for is a command the Shell registers", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
+  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
+
+  const asked = renderer.match(/invoke\(\s*"(overlay_hit_tests_hotspots)"/);
+  assert.ok(asked, "the renderer asks the Shell whether it hit-tests hotspots");
+  assert.match(
+    shell,
+    new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
+    `${asked[1]} is registered in generate_handler!`,
   );
 });

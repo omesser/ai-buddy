@@ -10,6 +10,7 @@ import { test } from "node:test";
 import { preemptedNote } from "../src/chat-settle.js";
 
 const director = readFileSync(new URL("../crates/core/src/director.rs", import.meta.url), "utf8");
+const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
 
 // The arms of `happened_cell`, which is the one function that names a wake for
 // a surface to draw.
@@ -37,4 +38,23 @@ test("every wake the Rust side can name has a clause of its own", () => {
       `"${word}" falls back to the generic clause instead of naming itself`,
     );
   }
+});
+
+test("the transcript draws a preempted turn instead of dropping the row", () => {
+  const after = js.split('outcome.action === "preempted")')[1];
+  assert.ok(after, "chat.js handles no preempted outcome");
+
+  // Only as far as the next arm, so a `note` call further down cannot pass for
+  // this one.
+  const branch = after.split("} else")[0];
+  assert.match(
+    branch,
+    /turn\.them\.remove\(\)/,
+    "the waiting caret has to go, or the row keeps blinking under the note",
+  );
+  assert.match(
+    branch,
+    /note\(outcome\.note\)/,
+    "the note must land where the answer would have been",
+  );
 });

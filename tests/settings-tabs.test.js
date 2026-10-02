@@ -17,11 +17,41 @@ function snapshot(name) {
 }
 
 const TABS = ["Presence", "Character", "AI", "Chat", "Privacy", "Development"];
+const html = readFileSync(new URL("../src/settings.html", import.meta.url), "utf8");
 
 test("the snapshot carries the tabs, in order", () => {
   for (const name of ["modelApi", "harnessDriving"]) {
     assert.deepEqual(tabTitles(snapshot(name).form), TABS, name);
   }
+});
+
+test("the tab bar is a tablist of buttons over one panel", () => {
+  assert.match(html, /<nav[^>]*\brole="tablist"/, "the bar is a nav with the tablist role");
+  assert.match(html, /<main[^>]*\brole="tabpanel"/, "the form is the panel the tabs own");
+
+  const tabs = [...html.matchAll(/<button[^>]*\brole="tab"[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]);
+  assert.deepEqual(tabs, TABS, "the bar and the form describe different tabs");
+
+  const selected = [...html.matchAll(/\baria-selected="true"/g)];
+  assert.equal(selected.length, 1, "exactly one tab opens selected");
+});
+
+test("every tab names the panel it opens", () => {
+  const controls = [...html.matchAll(/<button[^>]*\brole="tab"[^>]*\baria-controls="([^"]*)"/g)].map(
+    (match) => match[1],
+  );
+
+  assert.deepEqual(controls, TABS.map(() => "set-panel"));
+  assert.match(html, /<main[^>]*\bid="set-panel"/, "the panel the tabs name has to exist");
+});
+
+test("the page loads its module as a module and inlines no script", () => {
+  assert.match(html, /<script type="module" src="settings\.js"><\/script>/, "the CSP has no unsafe-inline");
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)/, "an inline script would be blocked, silently");
+  assert.match(html, /<html lang="en" class="chat-ui-minimal">/, "the design class picks the token set");
+
+  const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(sheets, ["chat-ui.css", "settings.css"], "settings.css reads tokens, so it comes second");
 });
 
 test("a title picks its tab, and an unknown title picks the first", () => {

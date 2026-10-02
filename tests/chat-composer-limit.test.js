@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
+const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8").replace(/\s+/g, " ");
 const director = readFileSync(new URL("../crates/core/src/director.rs", import.meta.url), "utf8");
 
 test("the composer field is bounded at CHAT_LIMIT", () => {
@@ -24,4 +25,13 @@ test("the composer field is bounded at CHAT_LIMIT", () => {
     limit,
     "a field that holds more than chat_send takes puts unsent text in the log",
   );
+});
+
+// What the maxlength is worth only holds while the row and the payload are
+// one string. Matched against whitespace-flattened source so reformatting the
+// submit path cannot fail this.
+test("the log row and what is sent are the same string", () => {
+  assert.match(js, /const text = line\.value\.trim\(\);/, "one read of the field");
+  assert.match(js, /said\("You", text, "you"\)/, "the row is built from it");
+  assert.match(js, /invoke\("chat_send", \{ instance, text \}\)/, "and so is the send");
 });
