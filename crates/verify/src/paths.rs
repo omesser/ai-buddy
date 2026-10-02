@@ -1,8 +1,8 @@
 //! Run root / evidence / scratch resolution and repo-root discovery.
 //!
 //! Default layout:
-//!   `$TMPDIR/fidget-verify-$RUN_ID/{evidence,scratch}`
-//!   (falls back to `/tmp/...` when `TMPDIR` is unset)
+//!   `<temp-dir>/fidget-verify-$RUN_ID/{evidence,scratch}`
+//!   (uses `std::env::temp_dir()` — TMPDIR on Unix, GetTempPath on Windows)
 //!
 //! `--evidence-dir PATH` overrides only the evidence directory. Scratch is
 //! always the sibling `scratch` next to that evidence path's parent:
@@ -51,9 +51,7 @@ impl RunPaths {
                 scratch,
             }
         } else {
-            let tmp = env::var_os("TMPDIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("/tmp"));
+            let tmp = env::temp_dir();
             let root = tmp.join(format!("fidget-verify-{run_id}"));
             let evidence = root.join("evidence");
             let scratch = root.join("scratch");
