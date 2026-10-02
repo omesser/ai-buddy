@@ -3,6 +3,7 @@
 //! (ADR-0008, ADR-0018). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -12,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fidget_core::director::{Completer, Reply, Wake, WakeRequest};
+use semver::{BuildMetadata, Op, Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -205,7 +207,7 @@ impl Launch {
     /// variables instead of the values. Own process group once `own_interrupt`
     /// has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
     fn command(&self, cwd: &AttachCwd) -> Command {
-        let mut command = Command::new(&self.argv[0]);
+        let mut command = Command::new(resolved_program(&self.argv[0], None));
         command.args(&self.argv[1..]).current_dir(cwd.as_path());
         if self.name == "pi" {
             if let Some(endpoint) = crate::mcp_http::endpoint() {
@@ -478,6 +480,23 @@ enum TimedCommandError {
 
 /// The wait both probes share. A timeout kills the child. Callers decide
 /// what a miss means, so a second command does not grow a second wait.
+/// Build a probe PATH that isolates the fixture directory but keeps System32
+/// on Windows so nested .cmd/.bat calls can find cmd.exe and system utilities.
+#[cfg(windows)]
+fn build_probe_path(dir: &Path) -> std::ffi::OsString {
+    let mut paths = vec![dir.to_path_buf()];
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        let system32 = PathBuf::from(system_root).join("System32");
+        paths.push(system32);
+    }
+    std::env::join_paths(paths).unwrap_or_else(|_| dir.as_os_str().to_owned())
+}
+
+#[cfg(not(windows))]
+fn build_probe_path(dir: &Path) -> &std::ffi::OsStr {
+    dir.as_os_str()
+}
+
 fn timed_command(
     program: &str,
     args: &[&str],
@@ -485,14 +504,14 @@ fn timed_command(
     path: Option<&Path>,
     stderr: Stdio,
 ) -> Result<std::process::Output, TimedCommandError> {
-    let mut command = Command::new(program);
+    let mut command = Command::new(resolved_program(program, path));
     command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr);
     if let Some(path) = path {
-        command.env("PATH", path);
+        command.env("PATH", build_probe_path(path));
     }
     let child = match command.spawn() {
         Ok(child) => child,
@@ -514,6 +533,52 @@ fn timed_command(
             Err(TimedCommandError::TimedOut)
         }
     }
+}
+
+/// On Windows, resolves stand-in executables (.cmd, .bat, .exe) to absolute
+/// paths because CreateProcess with a bare name + PATH override does not
+/// reliably find them the way the shell does. Rust's Command wraps .cmd/.bat
+/// via ComSpec/cmd.exe automatically when given an absolute path.
+fn resolved_program(program: &str, path_override: Option<&Path>) -> OsString {
+    windows_program(program, path_override).unwrap_or_else(|| OsString::from(program))
+}
+
+#[cfg(windows)]
+fn windows_program(program: &str, path_override: Option<&Path>) -> Option<OsString> {
+    if program.contains(['/', '\\']) {
+        return None;
+    }
+    let dirs: Vec<PathBuf> = match path_override {
+        Some(dir) => vec![dir.to_path_buf()],
+        None => std::env::var_os("PATH")
+            .map(|path| std::env::split_paths(&path).collect())
+            .unwrap_or_default(),
+    };
+    for dir in dirs {
+        for candidate in windows_candidates(&dir, program) {
+            if candidate.is_file() {
+                return Some(candidate.into_os_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn windows_candidates(dir: &Path, program: &str) -> Vec<PathBuf> {
+    let base = dir.join(program);
+    if Path::new(program).extension().is_some() {
+        return vec![base];
+    }
+    ["exe", "cmd", "bat"]
+        .into_iter()
+        .map(|extension| base.with_extension(extension))
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsString> {
+    None
 }
 
 /// `None` is not a failed launcher. The version probe already decided the
@@ -552,53 +617,44 @@ fn npx_node_rejection(launch: &Launch, timeout: Duration, path: Option<&Path>) -
     node_engine_rejection(&launch.name, &current, &requirement)
 }
 
-fn parse_node_version(raw: &str) -> Option<(u64, u64, u64)> {
-    let raw = raw.trim().trim_start_matches(['v', 'V']);
-    let raw = raw.split(['-', '+']).next()?.trim();
-    if raw.is_empty() || !raw.chars().next()?.is_ascii_digit() {
-        return None;
-    }
-    let mut parts = raw.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = match parts.next() {
-        Some(text) => text.parse().ok()?,
-        None => 0,
-    };
-    let patch = match parts.next() {
-        Some(text) => text.parse().ok()?,
-        None => 0,
-    };
-    if parts.next().is_some() {
-        return None;
-    }
-    Some((major, minor, patch))
-}
-
-/// `>=` only. The adapters publish that form. Any other range is unread on
-/// purpose, so a floor we cannot parse does not fail a Node that might be fine.
-fn node_satisfies(current: (u64, u64, u64), requirement: &str) -> Option<bool> {
-    let requirement = requirement.trim();
-    if requirement.is_empty() || requirement == "*" {
-        return Some(true);
-    }
-    let rest = requirement.strip_prefix(">=")?;
-    let required = parse_node_version(rest)?;
-    Some(current >= required)
-}
-
 fn node_engine_rejection(name: &str, current: &str, requirement: &str) -> Option<String> {
     let current = current.trim();
     let requirement = requirement
         .trim()
         .trim_matches(|character| character == '"' || character == '\'');
-    let version = parse_node_version(current)?;
-    if node_satisfies(version, requirement) != Some(false) {
+    // `||` and a space-separated npm range do not parse. That stays unread.
+    let version = Version::parse(current.trim_start_matches(['v', 'V'])).ok()?;
+    if node_meets(&version, &VersionReq::parse(requirement).ok()?) {
         return None;
     }
-    let floor = requirement.strip_prefix(">=")?.trim();
+    let needed = match requirement.strip_prefix(">=").map(str::trim) {
+        Some(floor) if !floor.contains([',', '<', '>', '=', '^', '~', '|']) => {
+            format!("Node {floor} or newer")
+        }
+        _ => format!("Node {requirement}"),
+    };
     Some(format!(
-        "{name} needs Node {floor} or newer; `node` on PATH is {current}"
+        "{name} needs {needed}; `node` on PATH is {current}"
     ))
+}
+
+/// `matches` rejects a prerelease unless the range names that same prerelease.
+/// A lone `>=` uses version order. `*` has no comparators.
+fn node_meets(version: &Version, requirement: &VersionReq) -> bool {
+    match requirement.comparators.as_slice() {
+        [] => true,
+        [comparator] if comparator.op == Op::GreaterEq => {
+            version
+                >= &Version {
+                    major: comparator.major,
+                    minor: comparator.minor.unwrap_or(0),
+                    patch: comparator.patch.unwrap_or(0),
+                    pre: comparator.pre.clone(),
+                    build: BuildMetadata::EMPTY,
+                }
+        }
+        _ => requirement.matches(version),
+    }
 }
 
 /// The sentence Chat shows for an unhealthy probe. An engine rejection names
@@ -7137,6 +7193,42 @@ mod tests {
     }
 
     #[test]
+    fn node_engine_rejection_orders_a_prerelease_and_leaves_an_npm_or_unread() {
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2-nightly", ">=20.19.2"),
+            Some(
+                "claude needs Node 20.19.2 or newer; `node` on PATH is v20.19.2-nightly"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v25.0.0-nightly", ">=20"),
+            None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2-nightly", "*"),
+            None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v20.19.2", "^22.0.0"),
+            Some("claude needs Node ^22.0.0; `node` on PATH is v20.19.2".to_string())
+        );
+        assert_eq!(node_engine_rejection("claude", "v22.0.0", "^22.0.0"), None);
+        assert_eq!(
+            node_engine_rejection("claude", "v22.5.0", ">=22, <23"),
+            None
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v26.0.0", ">=22, <23"),
+            Some("claude needs Node >=22, <23; `node` on PATH is v26.0.0".to_string())
+        );
+        assert_eq!(
+            node_engine_rejection("claude", "v22.0.0", ">=20.19.0 || >=22.12.0"),
+            None
+        );
+    }
+
+    #[test]
     fn an_old_node_tells_the_user_to_run_node_version() {
         let launch = launch(Some("claude")).unwrap();
         let why = "claude needs Node 22 or newer; `node` on PATH is v20.19.2";
@@ -7252,5 +7344,27 @@ mod tests {
             };
             std::fs::write(dir.join("npm.cmd"), npm).unwrap();
         }
+    }
+
+    /// `Command` looks for `npx.exe`. The stand-in is `npx.cmd`, which is what
+    /// npm installs, so the probe has to name that file or every Windows run
+    /// is `NotFound` before the engine check.
+    #[cfg(windows)]
+    #[test]
+    fn a_cmd_stand_in_is_the_program_when_path_is_only_the_fixture() {
+        let dir = std::env::temp_dir().join(format!("fidget-cmd-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("npx.cmd"), "@echo off\r\n").unwrap();
+        std::fs::write(dir.join("npx.exe"), "").unwrap();
+        assert_eq!(
+            windows_program("npx", Some(&dir)).as_deref(),
+            Some(dir.join("npx.exe").as_os_str())
+        );
+        std::fs::remove_file(dir.join("npx.exe")).unwrap();
+        assert_eq!(
+            windows_program("npx", Some(&dir)).as_deref(),
+            Some(dir.join("npx.cmd").as_os_str())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

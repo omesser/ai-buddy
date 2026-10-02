@@ -1258,6 +1258,7 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "raw-window-handle",
+ "semver",
  "serde",
  "serde_json",
  "tauri",
