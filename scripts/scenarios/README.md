@@ -31,6 +31,10 @@ The exit code is the verdict: 0 passed, 1 failed, 2 printed the header.
 360 and 320 points and checks that the header keeps one row and never scrolls
 sideways.
 
+`chat-level.sh` takes the same two binaries. It checks that Chat floats at
+layer 25 only while focused, and that minimizing Chat, focused or not, logs the
+change that lets the quick-message pill back.
+
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
 the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness

@@ -24,13 +24,13 @@ use super::chat_surface::{CHAT_APPEARANCE_EVENT, CHAT_EVENT, CHAT_STATUS_EVENT, 
 use super::session_log;
 use super::settings::{ChatAppearance, SettingsOp};
 use super::{
-    apply_menu_action, cancelled_caret, chat_label, close_chat, completer, describe_menu,
-    dev_flags, harness, mcp_http, mcp_resources, menu, model, note_happened, open_chat,
-    overlay_label, paced, place_overlays, platform, publish_instances, push_chat_opening,
-    push_chat_openings, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
-    ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
-    MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK,
-    FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    apply_menu_action, cancelled_caret, chat_is_up, chat_label, close_chat, completer,
+    describe_menu, dev_flags, harness, mcp_http, mcp_resources, menu, model, note_happened,
+    open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
+    push_chat_opening, push_chat_openings, remember_instances, spawn_live, switch_instance, tray,
+    ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState,
+    MenuChannel, MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle,
+    ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// How long an overlay may go without being told anything.
@@ -1854,7 +1854,7 @@ pub(crate) fn run_frame_loop(
                     dialogue,
                     thinking,
                     asking,
-                    chatting: app.get_webview_window(&chat_label(&live.id)).is_some(),
+                    chatting: chat_is_up(&app, &live.id),
                     cue: frame.cue,
                     owner,
                     mask: drawn.mask.clone(),

@@ -18,6 +18,6 @@ pub(super) use console::{restore_ctrl_c, suppress_ctrl_c_for_children};
 pub use overlay::{configure_overlay, update_input_region};
 pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::WindowsActivitySource;
-pub(super) use settings_raise::raise_above_overlay;
+pub(super) use settings_raise::{lower_to_normal_level, raise_above_overlay};
 
 pub(super) use window_source::{visible_window_titles, WindowsWindowSource};

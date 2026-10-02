@@ -5,22 +5,26 @@
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, SetForegroundWindow, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE,
+    BringWindowToTop, SetForegroundWindow, SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
 };
 
 /// Move-size freeze only. Must not include `SWP_NOZORDER` or the insert is a no-op.
 pub(crate) const SETTINGS_RAISE_POS_FLAGS: u32 = SWP_NOMOVE | SWP_NOSIZE;
 
-/// Put `window` in the topmost band and order it front inside that band.
-pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+fn hwnd(window: &tauri::WebviewWindow) -> Result<HWND, String> {
     let raw_window_handle = window
         .window_handle()
         .map_err(|e| format!("window has no native handle: {e}"))?;
+    match raw_window_handle.as_raw() {
+        RawWindowHandle::Win32(win32_window) => Ok(win32_window.hwnd.get() as HWND),
+        _ => Err("Not a Windows window handle".to_string()),
+    }
+}
 
-    let hwnd = match raw_window_handle.as_raw() {
-        RawWindowHandle::Win32(win32_window) => win32_window.hwnd.get() as HWND,
-        _ => return Err("Not a Windows window handle".to_string()),
-    };
+/// Put `window` in the topmost band and order it front inside that band.
+pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let hwnd = hwnd(window)?;
 
     // SAFETY: hwnd is the live HWND from Tauri. HWND_TOPMOST and
     // these flags are the documented z-order insert; BringWindowToTop and
@@ -31,6 +35,17 @@ pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> 
         }
         BringWindowToTop(hwnd);
         SetForegroundWindow(hwnd);
+    }
+    Ok(())
+}
+
+/// Take `window` out of the topmost band, without activating it.
+pub fn lower_to_normal_level(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let hwnd = hwnd(window)?;
+    let flags = SETTINGS_RAISE_POS_FLAGS | SWP_NOACTIVATE;
+    // SAFETY: hwnd is the live HWND from Tauri; HWND_NOTOPMOST is the documented insert.
+    if unsafe { SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags) } == 0 {
+        return Err("Failed to take the window out of the topmost band".to_string());
     }
     Ok(())
 }

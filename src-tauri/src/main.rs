@@ -51,7 +51,7 @@ use chat_surface::{
 };
 use frame_loop::run_frame_loop;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -106,6 +106,15 @@ fn overlay_label(index: usize) -> String {
 /// Chat surface sharing that prefix would vanish when a display goes away.
 fn chat_label(id: &str) -> String {
     format!("chat-{id}")
+}
+
+/// Whether `id` has a Chat window the user has not minimized.
+fn chat_is_up(app: &tauri::AppHandle, id: &str) -> bool {
+    let label = chat_label(id);
+    app.get_webview_window(&label).is_some()
+        && !app
+            .try_state::<MinimizedChats>()
+            .is_some_and(|chats| chats.hides(&label))
 }
 
 /// Deliver `chat-opening` to Chat and to each open overlay, in index order.
@@ -189,6 +198,42 @@ impl Pending {
 }
 
 struct PendingAsks(Mutex<Pending>);
+
+/// Chats the user minimized, by label. Each Chat's window events keep it, so
+/// the frame loop never asks a window whether it is minimized.
+#[derive(Default)]
+struct MinimizedChats(Mutex<HashSet<String>>);
+
+impl MinimizedChats {
+    /// Fold one Chat window event in. `Some(true)` floats Chat above the
+    /// overlay, `Some(false)` drops it to a normal level. No event says
+    /// "minimized", so focus and resize events re-read it from the window.
+    fn note(
+        &self,
+        label: &str,
+        event: &tauri::WindowEvent,
+        minimized: impl FnOnce() -> bool,
+    ) -> Option<bool> {
+        let (floats, minimized) = match event {
+            tauri::WindowEvent::Focused(focused) => (Some(*focused), minimized()),
+            tauri::WindowEvent::Resized(_) => (None, minimized()),
+            tauri::WindowEvent::Destroyed => (None, false),
+            _ => return None,
+        };
+        if let Ok(mut hidden) = self.0.lock() {
+            if minimized && hidden.insert(label.to_string()) {
+                eprintln!("chat: {label} is minimized");
+            } else if !minimized && hidden.remove(label) {
+                eprintln!("chat: {label} is not minimized");
+            }
+        }
+        floats
+    }
+
+    fn hides(&self, label: &str) -> bool {
+        self.0.lock().is_ok_and(|hidden| hidden.contains(label))
+    }
+}
 
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
@@ -380,10 +425,8 @@ struct SpritePlacement<'a> {
     /// On this tick only: a touch was dropped because a question waits on the
     /// user (ADR-0016), so the bubble points at Chat. False off the bubble owner.
     asking: bool,
-    /// Whether this Instance has a Chat window. Sent to every overlay, because
-    /// the pill that must stay down can open on any of them.
-    /// ponytail: a minimized Chat still counts. Asking `is_minimized` each tick
-    /// is a main-thread hop on macOS; track the window's events if that matters.
+    /// Whether this Instance has a Chat window that is not minimized. Sent to
+    /// every overlay, because the pill that must stay down can open on any of them.
     chatting: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were
@@ -1891,8 +1934,8 @@ fn build_overlay(
 }
 
 /// Build one Instance's Chat surface. None of `build_overlay`'s flags:
-/// click-through would swallow the caret click; always-on-top and overlay
-/// window level would follow the user out of the app. Absent, not set false.
+/// click-through would swallow the caret click; always-on-top would follow the
+/// user out of the app. Chat floats over the bubble only while it has focus.
 fn build_chat(
     app: &tauri::AppHandle,
     label: &str,
@@ -1908,7 +1951,31 @@ fn build_chat(
     if let Some((x, y)) = at {
         builder = builder.position(x, y);
     }
-    builder.build()
+    let window = builder.build()?;
+    let (handle, label) = (app.clone(), label.to_string());
+    window.on_window_event(move |event| {
+        let Some(chats) = handle.try_state::<MinimizedChats>() else {
+            return;
+        };
+        let window = handle.get_webview_window(&label);
+        let minimized = || {
+            window
+                .as_ref()
+                .is_some_and(|window| window.is_minimized().unwrap_or(false))
+        };
+        let (Some(floats), Some(window)) = (chats.note(&label, event, minimized), &window) else {
+            return;
+        };
+        let level = if floats {
+            platform::raise_above_overlay(window)
+        } else {
+            platform::lower_to_normal_level(window)
+        };
+        if let Err(why) = level {
+            eprintln!("chat: {label} level: {why}");
+        }
+    });
+    Ok(window)
 }
 
 /// A new Chat window's inner size, in points.
@@ -4196,6 +4263,7 @@ fn main() {
             // whether a Harness is attached. Resolving the key first is what
             // made a Harness launch prompt for one it would never send (#290).
             app.manage(PendingAsks(Mutex::new(Pending::default())));
+            app.manage(MinimizedChats::default());
             app.manage(Mutex::new(session_log::Log::new()));
             // Before `attach`, because `open_session` reads the endpoint to
             // decide what to put in `session/new`'s `mcpServers` and the
@@ -4452,6 +4520,41 @@ mod tests {
             url: Some("https://example.test/oauth".to_string()),
             waits,
         }
+    }
+
+    /// Chat floats over the bubble while it has focus and drops to a normal
+    /// level when it loses it. Minimizing also takes focus, so it drops too.
+    #[test]
+    fn chat_floats_only_while_focused() {
+        let chats = MinimizedChats::default();
+        let focused = |on| tauri::WindowEvent::Focused(on);
+        assert_eq!(chats.note("chat-a", &focused(true), || false), Some(true));
+        assert_eq!(chats.note("chat-a", &focused(false), || false), Some(false));
+        assert_eq!(chats.note("chat-a", &focused(false), || true), Some(false));
+        let resized = tauri::WindowEvent::Resized(tauri::PhysicalSize::new(420, 560));
+        assert_eq!(
+            chats.note("chat-a", &resized, || false),
+            None,
+            "a resize leaves the level"
+        );
+    }
+
+    /// A minimized Chat lets the pill back. No event says "minimized": blur
+    /// carries it on macOS, a resize to nothing on Windows.
+    #[test]
+    fn a_minimized_chat_stops_hiding_the_pill_until_it_comes_back() {
+        let chats = MinimizedChats::default();
+        chats.note("chat-a", &tauri::WindowEvent::Focused(false), || true);
+        assert!(chats.hides("chat-a"));
+        assert!(!chats.hides("chat-b"), "only the minimized Chat");
+        chats.note("chat-a", &tauri::WindowEvent::Focused(true), || false);
+        assert!(!chats.hides("chat-a"), "unminimized");
+
+        let gone = tauri::WindowEvent::Resized(tauri::PhysicalSize::new(0, 0));
+        chats.note("chat-a", &gone, || true);
+        assert!(chats.hides("chat-a"));
+        chats.note("chat-a", &tauri::WindowEvent::Destroyed, || true);
+        assert!(!chats.hides("chat-a"), "a reopened Chat starts open");
     }
 
     /// A link nobody asked for opens nothing, and the next Chat's replay,
