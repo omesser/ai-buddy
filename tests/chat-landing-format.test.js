@@ -216,6 +216,25 @@ test("an npx launcher that failed shows the Node.js check in its own box", { ski
   assert.match(report.selected, /It exited before initialize, and printed nothing\./);
 });
 
+test("a launcher that failed preflight boxes the probe it ran and what it printed", { skip, timeout: 60000 }, () => {
+  const unhealthy = {
+    command: "npx --version",
+    reason: "exited with exit status: 1",
+    output: "npm ERR! code ENOENT",
+    node_check: "node --version",
+  };
+  const report = paint(opening({ unhealthy }), 320);
+  assert.equal(report.kicker, "Harness error");
+  assert.equal(report.title, "Codex couldn't start");
+  assert.deepEqual(report.boxes, {
+    output: { label: "Error output", text: "npm ERR! code ENOENT" },
+    command: { label: "Command", text: "npx --version" },
+    check: { label: "Check that Node.js starts", text: "node --version" },
+  });
+  assert.match(report.selected, /It exited with exit status: 1\. This is what it printed:/);
+  assert.equal(report.sideways, 0, "the landing scrolls sideways");
+});
+
 test("a missing launcher links its install page to the browser", { skip, timeout: 60000 }, () => {
   const report = paint(opening({ missing: "npx", install: "https://nodejs.org/" }));
   assert.equal(report.title, "Codex needs npx");
