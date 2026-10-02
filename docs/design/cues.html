@@ -123,6 +123,35 @@
   }
   .sprite.held { cursor: grabbing; }
   .sprite img { display: block; width: 126px; height: 128px; pointer-events: none; }
+  #sill {
+    position: absolute;
+    pointer-events: none;
+    box-sizing: border-box;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    border-radius: 8px 8px 3px 3px;
+    background: rgba(247, 248, 250, 0.96);
+    color: #1d2027;
+    border: 1px solid rgba(255, 255, 255, 0.96);
+    border-top: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(29, 32, 39, 0.7), 0 10px 16px rgba(16, 18, 24, 0.16);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    user-select: none;
+  }
+  .sill-dots { display: inline-flex; gap: 4px; }
+  .sill-dots span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d5d9e2;
+    box-shadow: inset 0 0 0 1px rgba(29, 32, 39, 0.35);
+  }
 
   /* ---- cues: this block ports to src/main.css ---- */
   .cue { position: absolute; pointer-events: none; }
@@ -372,7 +401,7 @@
 
   <section class="desk-wrap">
     <div class="desk-bar">
-      <span class="hint">Try each gesture on BMO. Hover and stay 1.5s for the quick-message pill. The wallpaper changes to check that the cues read on any desktop.</span>
+      <span class="hint">Try each gesture on BMO. Hover and stay 1.5s for the quick-message pill. The wallpaper changes to check that the cues read on any desktop. A throw or a drop can perch on the window.</span>
       <div class="seg" role="group" aria-label="Wallpaper">
         <button data-wall="light" aria-pressed="true">Light</button>
         <button data-wall="dark" aria-pressed="false">Dark</button>
@@ -381,6 +410,7 @@
     </div>
     <div class="desk" id="desk" data-wall="light">
       <div class="floor"></div>
+      <div id="sill" aria-hidden="true"><span class="sill-dots"><span></span><span></span><span></span></span><span class="sill-title">Window</span></div>
       <div class="quick-message" id="quick-message" aria-hidden="true">
         <div class="quick-message-row">
           <div class="quick-message-mirror" id="quick-mirror" aria-hidden="true">&#8203;</div>
@@ -447,7 +477,7 @@
     <div class="row">
       <button class="play" data-cue="drop" aria-label="Play the Drop cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
       <div><span class="name">Drop</span><span class="gesture">Drag ends, still</span></div>
-      <div class="spec"><b>Puff, sideways.</b> A flat ellipse at the feet spreads to 92 px wide and fades. Dust on landing. <code>280 ms</code>.</div>
+      <div class="spec"><b>Puff, sideways.</b> A flat ellipse at the feet spreads to 92 px wide and fades. Dust at the feet, where the hand opens. <code>280 ms</code>.</div>
       <div class="spec"><b>Thud.</b> Sine <code>160→55 Hz</code> over 120 ms, 160 ms decay. Down, and heavier than anything else in the set.</div>
     </div>
     <div class="row hard">
@@ -577,21 +607,192 @@ function play(name, stage, anchor) {
   toast(name);
 }
 
-// ---- Demo plumbing: the desk, the sprite, and the gesture decoder. ----
-// Mirrors input.rs: 4px or 180ms turns a press into a Grab; a second release
-// within 400ms is Summon; faster than 80px/s is a Throw. The same 4px
-// dismisses the quick-message pill — a shorter move stays a Poke.
+const GRAVITY = 3600;
+const WALK_SPEED = 120;
+const THROW_MIN_SPEED = 80;
+const VELOCITY_BUCKET_MS = 30;
+const SILL = { id: "sill", y: 164, x0: 96, x1: 236 };
+
+function faceToward(facing, vx) {
+  if (vx < 0) return -1;
+  if (vx > 0) return 1;
+  return facing;
+}
+
+function apply(pose, world, event) {
+  if (event.type === "sample" && pose.mode === "grabbing") return frame(withSample(pose, event), world, null);
+  if (event.type === "release") {
+    if (pose.mode !== "grabbing") return frame(pose, world, null);
+    const next = event.sample ? withSample(pose, event.sample) : pose;
+    const v = bucketVelocity(next);
+    const thrown = Math.hypot(v.x, v.y) >= THROW_MIN_SPEED;
+    const vx = thrown ? v.x : 0;
+    const vy = thrown ? v.y : 0;
+    return frame({
+      mode: "falling",
+      x: next.x,
+      y: next.y,
+      vx,
+      vy,
+      facing: faceToward(next.facing, vx),
+    }, world, thrown ? "throw" : "drop");
+  }
+  if (event.type === "grab") {
+    const feet = feetOf(pose, world);
+    return frame({
+      mode: "grabbing",
+      x: feet.x,
+      y: feet.y,
+      facing: pose.facing,
+      cursor: { x: 0, y: 0 },
+      travel: { x: 0, y: 0 },
+      travelMs: 0,
+      prior: { x: 0, y: 0 },
+      priorMs: 0,
+    }, world, null);
+  }
+  if (event.type === "drag") {
+    if (pose.mode !== "grabbing") return frame(pose, world, null);
+    return frame({ ...pose, x: event.x, y: event.y }, world, null);
+  }
+  if (event.type === "clamp") return frame({ ...pose, x: clampX(pose.x, world) }, world, null);
+  if (event.type === "tick" && pose.mode === "resting" && event.walk) {
+    const vx = pose.facing * WALK_SPEED;
+    const x = pose.x + vx * event.dt;
+    const ledge = world.ledges.find((item) => item.id === pose.on);
+    if (x < ledge.x0 || x > ledge.x1) {
+      return frame({ mode: "falling", x, y: ledge.y, vx, vy: 0, facing: pose.facing }, world, null);
+    }
+    const clamped = clampX(x, world);
+    const facing = clamped === x ? pose.facing : -pose.facing;
+    return frame({ mode: "resting", x: clamped, on: pose.on, facing }, world, null);
+  }
+  if (event.type !== "tick" || pose.mode !== "falling") return frame(pose, world, null);
+  const dt = Math.min(Math.max(event.dt, 0), 0.05);
+  const vy = pose.vy + GRAVITY * dt;
+  const x = clampX(pose.x + pose.vx * dt, world);
+  const facing = faceToward(pose.facing, pose.vx);
+  if (vy < 0) {
+    const stopAt = Math.min(pose.y, world.sprite.h);
+    if (pose.y + vy * dt < stopAt) {
+      return frame({ mode: "falling", x, y: stopAt, vx: pose.vx, vy: 0, facing }, world, null);
+    }
+  }
+  const nextY = pose.y + vy * dt;
+  const support = supportBelow(world, x, pose.y);
+  if (support && nextY >= support.y) {
+    return frame({ mode: "resting", x, on: support.id, facing }, world, null);
+  }
+  return frame({ mode: "falling", x, y: nextY, vx: pose.vx, vy, facing }, world, null);
+}
+
+function withSample(pose, sample) {
+  let travel = { x: pose.travel.x, y: pose.travel.y };
+  let travelMs = pose.travelMs;
+  let prior = { x: pose.prior.x, y: pose.prior.y };
+  let priorMs = pose.priorMs;
+  if (travelMs >= VELOCITY_BUCKET_MS) {
+    prior = travel;
+    priorMs = travelMs;
+    travel = { x: 0, y: 0 };
+    travelMs = 0;
+  }
+  return {
+    ...pose,
+    travel: { x: travel.x + sample.dx, y: travel.y + sample.dy },
+    travelMs: travelMs + sample.elapsedMs,
+    prior,
+    priorMs,
+  };
+}
+
+function bucketVelocity(pose) {
+  const millis = pose.travelMs + pose.priorMs;
+  if (millis === 0) return { x: 0, y: 0 };
+  const seconds = millis / 1000;
+  return {
+    x: (pose.travel.x + pose.prior.x) / seconds,
+    y: (pose.travel.y + pose.prior.y) / seconds,
+  };
+}
+
+function clampX(x, world) {
+  const half = world.sprite.w / 2;
+  return Math.min(world.width - half, Math.max(half, x));
+}
+
+function supportBelow(world, x, oldY) {
+  let best = null;
+  for (const ledge of world.ledges) {
+    if (ledge.y >= oldY && x >= ledge.x0 && x <= ledge.x1 && (!best || ledge.y < best.y)) best = ledge;
+  }
+  return best;
+}
+
+function feetOf(pose, world) {
+  if (pose.mode === "resting") {
+    const ledge = world.ledges.find((item) => item.id === pose.on);
+    return { x: pose.x, y: ledge.y };
+  }
+  return { x: pose.x, y: pose.y };
+}
+
+function frame(pose, world, cue) {
+  const feet = feetOf(pose, world);
+  const { w, h } = world.sprite;
+  return {
+    pose,
+    feet: { x: feet.x, y: feet.y },
+    box: { x: feet.x - w / 2, y: feet.y - h },
+    anchor: { x: feet.x, y: feet.y - h / 2, feetX: feet.x, feetY: feet.y },
+    cue,
+    holding: pose.mode === "grabbing",
+  };
+}
+const flight = { apply, SILL };
+
 const DRAG_DISMISS_PX = 4;
 const desk = document.getElementById("desk");
 const sprite = document.getElementById("sprite");
 const toastEl = document.getElementById("toast");
 const W = 126, H = 128;
 let pos = { x: 0, y: 0 };
-function place() { sprite.style.transform = `translate(${pos.x}px, ${pos.y}px)`; }
-function floorY() { return desk.clientHeight - H; }
-function ground() { pos.y = floorY(); place(); }
-pos.x = Math.round(desk.clientWidth / 2 - W / 2); ground();
-window.addEventListener("resize", () => { pos.x = Math.min(pos.x, desk.clientWidth - W); if (!held) ground(); });
+let pose = { mode: "resting", x: 0, on: "floor", facing: 1 };
+let holding = false;
+let cursor = { x: 0, y: 0 };
+let sampleCursor = { x: 0, y: 0 };
+let sampleAt = 0;
+
+function world() {
+  return {
+    width: desk.clientWidth,
+    sprite: { w: W, h: H },
+    ledges: [SILL, { id: "floor", y: desk.clientHeight, x0: -Infinity, x1: Infinity }],
+  };
+}
+function paint(frame) {
+  pose = frame.pose;
+  holding = frame.holding;
+  pos.x = frame.box.x;
+  pos.y = frame.box.y;
+  const turn = frame.pose.facing < 0 ? " scaleX(-1)" : "";
+  sprite.style.transform = `translate(${pos.x}px, ${pos.y}px)${turn}`;
+  sprite.classList.toggle("held", frame.holding);
+}
+function placeSill() {
+  const sill = document.getElementById("sill");
+  sill.style.left = SILL.x0 + "px";
+  sill.style.top = SILL.y + "px";
+  sill.style.width = (SILL.x1 - SILL.x0) + "px";
+}
+pose.x = Math.round(desk.clientWidth / 2 - W / 2) + W / 2;
+paint(apply(pose, world(), { type: "tick", dt: 0, walk: false }));
+placeSill();
+window.addEventListener("resize", () => {
+  paint(apply(pose, world(), { type: "clamp" }));
+  placeSill();
+  if (pillUp) placeQuick();
+});
 
 function anchor() { return { x: pos.x + W / 2, y: pos.y + H / 2, feetX: pos.x + W / 2, feetY: pos.y + H }; }
 function toast(name) {
@@ -599,45 +800,68 @@ function toast(name) {
   toastEl.textContent = said[name];
 }
 
-let held = false, phase = "idle", pressAt = null, pressT = 0, lastClickT = -Infinity, summoned = false;
-let samples = [];
+let phase = "idle", pressAt = null, lastClickT = -Infinity, summoned = false;
 sprite.addEventListener("contextmenu", e => e.preventDefault());
 desk.addEventListener("contextmenu", e => e.preventDefault());
 sprite.addEventListener("pointerdown", e => {
   if (e.button === 2) { play("menu", desk, anchor()); return; }
   if (e.button !== 0) return;
   sprite.setPointerCapture(e.pointerId);
-  phase = "pressed"; pressAt = { x: e.clientX, y: e.clientY, sx: pos.x, sy: pos.y }; pressT = performance.now(); samples = [];
+  phase = "pressed";
+  cursor = { x: e.clientX, y: e.clientY };
+  pressAt = { x: e.clientX, y: e.clientY, sx: pos.x, sy: pos.y };
   holdTimer = setTimeout(() => { if (phase === "pressed") grab(); }, 180);
 });
 let holdTimer = null;
-function grab() { phase = "grabbing"; held = true; sprite.classList.add("held"); play("pickup", desk, anchor()); }
+function dragFeet(clientX, clientY) {
+  const boxX = Math.max(0, Math.min(desk.clientWidth - W, pressAt.sx + clientX - pressAt.x));
+  const boxY = Math.max(0, Math.min(desk.clientHeight - H, pressAt.sy + clientY - pressAt.y));
+  return { x: boxX + W / 2, y: boxY + H };
+}
+function grab() {
+  if (phase !== "pressed") return;
+  phase = "idle";
+  paint(apply(pose, world(), { type: "grab" }));
+  pressAt.x = cursor.x;
+  pressAt.y = cursor.y;
+  pressAt.sx = pos.x;
+  pressAt.sy = pos.y;
+  sampleCursor = { x: cursor.x, y: cursor.y };
+  sampleAt = performance.now();
+  play("pickup", desk, anchor());
+}
+function takeSample(now) {
+  const sample = { dx: cursor.x - sampleCursor.x, dy: cursor.y - sampleCursor.y, elapsedMs: now - sampleAt };
+  sampleCursor = { x: cursor.x, y: cursor.y };
+  sampleAt = now;
+  return sample;
+}
 sprite.addEventListener("pointermove", e => {
-  if ((phase === "pressed" || phase === "grabbing") && pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) >= DRAG_DISMISS_PX) dismissQuick("drag");
+  cursor = { x: e.clientX, y: e.clientY };
+  if ((phase === "pressed" || holding) && pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) >= DRAG_DISMISS_PX) dismissQuick("drag");
   if (phase === "pressed" && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) >= 4) { clearTimeout(holdTimer); grab(); }
-  if (phase !== "grabbing") return;
-  pos.x = Math.max(0, Math.min(desk.clientWidth - W, pressAt.sx + e.clientX - pressAt.x));
-  pos.y = Math.max(0, Math.min(floorY(), pressAt.sy + e.clientY - pressAt.y));
-  place();
-  const now = performance.now(); samples.push({ t: now, x: e.clientX, y: e.clientY }); samples = samples.filter(s => now - s.t <= 60);
+  if (!holding) return;
+  const feet = dragFeet(e.clientX, e.clientY);
+  paint(apply(pose, world(), { type: "drag", x: feet.x, y: feet.y }));
 });
 sprite.addEventListener("pointerup", e => {
   if (e.button !== 0) return;
   clearTimeout(holdTimer);
-  if (phase === "pressed") {
+  if (holding) {
+    const feet = dragFeet(e.clientX, e.clientY);
+    paint(apply(pose, world(), { type: "drag", x: feet.x, y: feet.y }));
+    cursor = { x: e.clientX, y: e.clientY };
+    const frame = apply(pose, world(), { type: "release", sample: takeSample(performance.now()) });
+    paint(frame);
+    if (frame.cue) play(frame.cue, desk, frame.anchor);
+    lastClickT = -Infinity;
+  } else if (phase === "pressed") {
     const now = performance.now();
     const paired = now - lastClickT <= 400;
     lastClickT = now;
     if (!paired) summoned = false;
     if (paired && !summoned) { summoned = true; play("summon", desk, anchor()); dismissQuick("summon"); }
     else play("poke", desk, anchor());
-  } else if (phase === "grabbing") {
-    lastClickT = -Infinity;
-    let speed = 0;
-    if (samples.length >= 2) { const a = samples[0], b = samples[samples.length - 1]; const dt = (b.t - a.t) / 1000; if (dt > 0) speed = Math.hypot(b.x - a.x, b.y - a.y) / dt; }
-    held = false; sprite.classList.remove("held");
-    ground();
-    play(speed >= 80 ? "throw" : "drop", desk, anchor());
   }
   phase = "idle";
 });
@@ -657,7 +881,6 @@ document.getElementById("sequence").addEventListener("click", () => {
 // The quick-message gesture locked on #1076. The desk already decodes poke,
 // drag and Summon; this only decides when the pill is up.
 const HOVER_DELAY_MS = 1500;
-const WALK_PX_PER_S = 48;
 const quick = document.getElementById("quick-message");
 const field = document.getElementById("quick-field");
 const mirror = document.getElementById("quick-mirror");
@@ -669,7 +892,6 @@ let composing = false;
 let overSprite = false;
 let hoverTimer = null;
 let hoverStart = 0;
-let walkDir = 1;
 let strollOn = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 strollBtn.setAttribute("aria-pressed", String(strollOn));
 strollBtn.textContent = strollOn ? "Stroll on" : "Stroll off";
@@ -819,15 +1041,15 @@ let lastTick = performance.now();
 function tick(now) {
   const dt = Math.min(0.05, (now - lastTick) / 1000);
   lastTick = now;
-  // A still cursor would lose a pet that keeps walking, and the dwell
-  // would cancel. Pause while the pointer is on the sprite.
-  const walking = strollOn && phase === "idle" && !held && !composing && !overSprite;
-  if (walking) {
-    const max = Math.max(0, desk.clientWidth - W);
-    pos.x += walkDir * WALK_PX_PER_S * dt;
-    if (pos.x <= 0) { pos.x = 0; walkDir = 1; }
-    if (pos.x >= max) { pos.x = max; walkDir = -1; }
-    place();
+  if (holding) {
+    const sample = takeSample(now);
+    const frame = apply(pose, world(), { type: "sample", dx: sample.dx, dy: sample.dy, elapsedMs: sample.elapsedMs });
+    pose = frame.pose;
+    holding = frame.holding;
+  } else {
+    const pointerBlocksStroll = overSprite;
+    const walk = strollOn && phase === "idle" && !composing && !pointerBlocksStroll;
+    paint(apply(pose, world(), { type: "tick", dt, walk }));
   }
   if (pillUp) placeQuick();
   if (hoverTimer !== null) {
