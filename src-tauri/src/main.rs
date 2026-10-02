@@ -1906,7 +1906,7 @@ fn build_overlay(
     // None until realize. The frame loop sets ignore-cursor on the first
     // frame. On macOS, NSWindow exists while hidden, so the call is safe here.
     #[cfg(not(all(unix, not(target_os = "macos"))))]
-    window.set_ignore_cursor_events(true)?;
+    platform::set_overlay_click_through(&window, true)?;
 
     cover_display(&window, display)?;
     // Show the window first so GTK realizes it and creates the native handle.

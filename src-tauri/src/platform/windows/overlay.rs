@@ -7,6 +7,7 @@
 //! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
 //! when the capturable setting, on by default (ADR-0024), is turned off.
 
+use std::sync::Mutex;
 use std::time::Instant;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -14,8 +15,8 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
-    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE,
-    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
@@ -39,8 +40,32 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     set_window_styles(hwnd)?;
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
+    note_overlay(hwnd as u64);
 
     Ok(())
+}
+
+/// Overlay hwnds. The window-list poll runs off this thread and has no other
+/// handle for the windows built here.
+static OVERLAY_HWNDS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+pub(super) fn overlay_hwnds() -> Vec<u64> {
+    OVERLAY_HWNDS
+        .lock()
+        .map(|hwnds| hwnds.clone())
+        .unwrap_or_default()
+}
+
+fn note_overlay(hwnd: u64) {
+    if hwnd == 0 {
+        return;
+    }
+    let Ok(mut hwnds) = OVERLAY_HWNDS.lock() else {
+        return;
+    };
+    if !hwnds.contains(&hwnd) {
+        hwnds.push(hwnd);
+    }
 }
 
 /// SetWindowRgn carves the click-through region from the sprite's alpha mask.
@@ -91,31 +116,58 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
     // error or when the previous value was 0; disambiguate by checking equality.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        let new_style = current_style
-            | (WS_EX_NOACTIVATE as i32)
-            | (WS_EX_TOPMOST as i32)
-            | (WS_EX_TOOLWINDOW as i32)
-            | (WS_EX_TRANSPARENT as i32)
-            | (WS_EX_LAYERED as i32);
-
-        if SetWindowLongW(hwnd, GWL_EXSTYLE, new_style) == 0 && current_style != new_style {
-            return Err("Failed to set extended window styles".to_string());
-        }
-
-        if SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
-        ) == 0
-        {
-            return Err("Failed to apply topmost flag".to_string());
-        }
+        let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style)
+            | (WS_EX_TRANSPARENT as i32);
+        apply_exstyle(hwnd, current_style, new_style)?;
     }
+    Ok(())
+}
 
+/// Put the tool-window bits back after a click-through rewrite replaced them.
+pub fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let hwnd = overlay_hwnd(window)?;
+    // SAFETY: hwnd comes from the window's raw handle, valid for this call.
+    unsafe {
+        let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
+        apply_exstyle(hwnd, current_style, new_style)?;
+    }
+    note_overlay(hwnd as u64);
+    Ok(())
+}
+
+fn overlay_hwnd(window: &tauri::WebviewWindow) -> Result<HWND, String> {
+    let raw_window_handle = window
+        .window_handle()
+        .map_err(|e| format!("Window handle not available yet: {e}"))?;
+    match raw_window_handle.as_raw() {
+        RawWindowHandle::Win32(win32_window) => Ok(win32_window.hwnd.get() as HWND),
+        _ => Err("Not a Windows window handle".to_string()),
+    }
+}
+
+/// SAFETY: caller holds a live HWND. SetWindowLongW returns 0 both on error
+/// and when the previous value was 0.
+unsafe fn apply_exstyle(hwnd: HWND, current_style: i32, new_style: i32) -> Result<(), String> {
+    if new_style == current_style {
+        return Ok(());
+    }
+    if SetWindowLongW(hwnd, GWL_EXSTYLE, new_style) == 0 && current_style != 0 {
+        return Err("Failed to set extended window styles".to_string());
+    }
+    // FRAMECHANGED is what makes the extended-style write take effect.
+    if SetWindowPos(
+        hwnd,
+        HWND_TOPMOST,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+    ) == 0
+    {
+        return Err("Failed to apply overlay extended styles".to_string());
+    }
     Ok(())
 }
 

@@ -1,14 +1,15 @@
 const WS_VISIBLE: i32 = 0x1000_0000;
 const WS_EX_TOOLWINDOW: i32 = 0x0000_0080;
+const WS_EX_TOPMOST: i32 = 0x0000_0008;
+const WS_EX_LAYERED: i32 = 0x0008_0000;
+const WS_EX_NOACTIVATE: i32 = 0x0800_0000;
 
 pub(super) fn perch_candidate(is_window_visible: bool, style: i32, ex_style: i32) -> bool {
     is_window_visible && (style & WS_VISIBLE) != 0 && (ex_style & WS_EX_TOOLWINDOW) == 0
 }
 
-/// Whether the window list should report this window.
-///
-/// `overlays` are our display-sized overlay hwnds. A style rewrite can drop
-/// the tool-window bit, and that window then covers its display.
+/// Drop our overlay hwnds. A style rewrite can clear the tool-window bit,
+/// and that window then covers the display it was built on.
 pub(super) fn counts_for_desktop(
     is_window_visible: bool,
     style: i32,
@@ -16,13 +17,13 @@ pub(super) fn counts_for_desktop(
     hwnd: u64,
     overlays: &[u64],
 ) -> bool {
-    let _ = (hwnd, overlays);
-    perch_candidate(is_window_visible, style, ex_style)
+    perch_candidate(is_window_visible, style, ex_style) && !overlays.contains(&hwnd)
 }
 
-/// Extended style after another owner replaced it.
+/// Put back the tool-window bits a style rewrite drops.
+/// `WS_EX_TRANSPARENT` stays as the caller left it.
 pub(super) fn restore_overlay_exstyle(ex_style: i32) -> i32 {
-    ex_style
+    ex_style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_LAYERED
 }
 
 #[cfg(test)]

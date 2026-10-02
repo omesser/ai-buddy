@@ -554,6 +554,21 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     windows::configure_overlay(window)
 }
 
+/// Click-through for one overlay.
+/// On Windows, tao replaces the extended style and drops the tool-window bit,
+/// so the bits that keep the overlay out of the window list are put back.
+pub fn set_overlay_click_through(
+    window: &tauri::WebviewWindow,
+    ignore: bool,
+) -> Result<(), String> {
+    window
+        .set_ignore_cursor_events(ignore)
+        .map_err(|e| e.to_string())?;
+    #[cfg(not(unix))]
+    windows::reinforce_overlay(window)?;
+    Ok(())
+}
+
 /// Update the input region for the overlay window based on the sprite's alpha mask.
 /// X11 and Windows then union hotspot rects so a control drawn outside the
 /// art still receives clicks. macOS uses `set_ignore_cursor_events`.
