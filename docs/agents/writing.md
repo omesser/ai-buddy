@@ -103,40 +103,33 @@ next to the icon it previews, not by being in a pull request description.
 
 ## An agent signs what it writes on GitHub
 
-End every issue comment, pull request description, review and inline reply an
-agent writes with one line of its own. There are two kinds of signer. The first
-words of the line say which, so a Grok Build session and a Grok bot named Coder
-cannot be mistaken for each other.
+An agent that writes on GitHub through a person's account ends every issue,
+pull request description, review, comment, and gist with one line. The handle
+in the line is the account owner.
 
-**A Harness agent** names the Harness that launched the session, then `agent`:
-
-```
-_— Grok Build agent, on [@omesser](https://github.com/omesser)'s behalf._
-```
-
-The Harness is the product, written as the README Harness Support table already
-names it for humans: `Cursor`, `Claude Code`, `Grok Build`, `Codex`,
-`OpenCode`, `Hermes`, `Pi`. An unnamed attach uses that command (`copilot`,
-not a made-up brand). Do not add a parenthetical after `agent`. `Coder` and
-`Architect` are Grok bot instance names. `_— Cursor agent (Coder)_` and
-`_— Grok Build agent (Coder)_` both read as that bot.
-
-**A Grok bot** (a named bot in Grok, not a Harness attach) names the bot:
+A named bot writes its product, then its name in parentheses:
 
 ```
 _— Grok bot (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-`<Name>` is the bot's configured name. Only this line may use those names.
+A subagent writes its product, then `subagent of` and its parent in
+parentheses. Use the parent's bot name. If the parent has no bot name, use its
+Harness name. Take the parent from the launch message. Bare `Cursor agent` is
+wrong for a subagent.
 
-This applies to every issue, PR body, review, comment, and gist on any GitHub
-repository when writing through Oded's account.
+```
+_— Cursor agent (subagent of Coder), on [@omesser](https://github.com/omesser)'s behalf._
+_— Cursor agent (subagent of Grok Build), on [@omesser](https://github.com/omesser)'s behalf._
+```
 
-When an agent writes through an owner's account, the author name never says
-who wrote a comment. A reader following a back-and-forth needs that: which line
-to argue with, and which is a decision already taken. `Co-authored-by` records
-authorship on commits only, and GitHub has no author field an agent can set.
+Harness names are `Cursor`, `Claude Code`, `Grok Build`, `Codex`, `OpenCode`,
+`Hermes`, and `Pi`. An attach not on this list uses its command name.
 
-Sign once per body, at the end. What the owner writes stays unsigned, so the
-missing line carries meaning too. If an agent revises a body the owner wrote,
-leave that text unsigned and say what changed in a comment of its own.
+GitHub shows the owner as the author of everything an agent posts. The line
+tells a reader which text an agent wrote and which text is the owner's.
+`Co-authored-by` covers commits only.
+
+Sign once, at the end of the body. Owner text stays unsigned. If an agent edits
+a body the owner wrote, leave it unsigned and explain the edit in a signed
+comment.
