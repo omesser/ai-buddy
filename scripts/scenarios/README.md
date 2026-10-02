@@ -40,6 +40,17 @@ once. The landing's copy and the capture are unit-tested, not checked here.
 The menu bar icon takes one real click; Chat… and Codex go through AXPress,
 with a click at the control's centre only if AXPress is refused.
 
+`hero-gif.sh` takes the same two binaries and records the display for 45 s
+while you throw, poke, double-click and chat with the Character for the README
+hero. Its `--crop` pass re-encodes the saved recording to an MP4 beside it,
+or an animated WebP with `--webp`, and launches nothing. The README embeds the
+MP4 as a `user-attachments` video. `--harness claude` runs the real
+Claude Code adapter: the private `HOME` links your `~/.claude`,
+`~/.claude.json`, `~/.npm` and `~/Library/Keychains`; Fidget's settings and
+memory still land under the private `HOME`. Keep Chat open from the
+double-click on: the first-run gesture tour bubble fires 25 s after launch
+unless Chat is open.
+
 ## codex-sign-in-link
 
 `codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,
@@ -89,7 +100,8 @@ The comment block at the top of each scenario, one field per line:
 - Isolated `HOME` under the evidence directory, so a run never reads or writes
   the owner's settings.
 - A fixture Harness from `src-tauri/src/harness.rs`, never a real one and never
-  a stub agent script. The two sign-in scenarios above are the exceptions.
+  a stub agent script. The two sign-in scenarios above and `hero-gif.sh
+  --harness claude` are the exceptions.
 - Kill what the run started on exit, and nothing else.
 - Assert and exit non-zero. A count printed for someone to read is not a check.
 
