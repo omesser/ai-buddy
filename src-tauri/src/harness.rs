@@ -2079,7 +2079,7 @@ fn probe(session: &Session) -> i32 {
 /// against an empty desktop and no Instances. `speak` reports that it
 /// reached nobody rather than a success nothing shows (ADR-0026).
 fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
-    use fidget_core::dispatch::{dispatch, DenyList, DispatchContext};
+    use fidget_core::dispatch::{dispatch, DenyList, DispatchContext, PlacementQuery};
     let memory_path = fidget_core::memory::shared_path();
     while let Ok(call) = calls.recv() {
         println!("  mcp call     {}", call.tool);
@@ -2092,6 +2092,7 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
             },
             roster: &[],
             expression: None,
+            placement: PlacementQuery::empty(),
         };
         let _ = call
             .reply

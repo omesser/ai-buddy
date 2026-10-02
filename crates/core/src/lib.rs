@@ -5,6 +5,7 @@
 pub mod character;
 pub mod director;
 pub mod dispatch;
+pub mod display;
 pub mod engine;
 pub mod input;
 pub mod memory;

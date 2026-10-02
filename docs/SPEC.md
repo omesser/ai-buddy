@@ -317,6 +317,18 @@ two of them on only one, so a union-sized overlay is invisible on every display 
 one it belongs to. The set follows the desktop, so a display attached or removed while
 the app runs gains or loses its overlay without a restart.
 
+An Instance reports which display it is on as the index of that display in the
+current arrangement, and its placement as its feet in that display's full frame.
+The origin is the frame's top-left. Y grows downward. The units are logical
+points. The index lasts for one arrangement. Index 0 is whichever monitor
+the platform listed first. macOS does not keep CGDirectDisplayID, Windows does
+not keep HMONITOR, and Linux does not keep the GDK monitor. A display attached
+or removed is in the next successful read. Wayland with no X server does not
+refresh the list. The `whereabouts` MCP tool returns that report: every
+connected display, with its name when the platform has one, its origin, and
+its size; and for each Instance, which display it is on, the other connected
+displays, and its feet in that display. A caller does not convert coordinates.
+
 Every overlay is told where the sprite is, in its own coordinates, and each draws the
 part that falls inside it. A Character straddling a seam is therefore whole: the two
 halves are clipped by the two overlays and meet at the seam. The Engine is unaffected —
@@ -445,6 +457,7 @@ Fidget exposes an MCP server. Tool surface, by responsibility:
   [ADR-0031](./adr/0031-drop-capture-tiers.md)).
 - **Memory** — recall; remember.
 - **Identity** — list Character Instances and their names.
+- **Placement** — report connected displays and where each Instance sits on them.
 
 There is no tool that posts mouse or keyboard events. Fidget ships no Executor. See
 [ADR-0003](./adr/0003-no-executor-harness-owns-desktop-control.md).

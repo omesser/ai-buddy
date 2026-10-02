@@ -101,5 +101,5 @@ directory the user already controls is the worse trade.
 What remains is real and is not engineered around: while a session is attached
 to a user-set Working directory, a live token sits in that project's
 `.cursor/mcp.json`. It is the length of one session, it is owner-only, and it
-authorises the seven tools and nothing else. The shim and the two environment
+authorises the eight tools and nothing else. The shim and the two environment
 variables are untouched; `cursor-agent` no longer uses either.

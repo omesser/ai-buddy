@@ -5,7 +5,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fidget_core::director::{self, Context, Happened, Wake};
-use fidget_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
+use fidget_core::dispatch::{
+    dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
+};
 use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
@@ -940,7 +942,7 @@ pub(crate) fn run_frame_loop(
                     .lock()
                     .map(|settings| settings.excluded_applications.clone())
                     .unwrap_or_default();
-                answer_tool_call(call, &mut roster, assembler.source(), excluded);
+                answer_tool_call(call, &mut roster, assembler.source(), excluded, &displays);
             }
 
             {
@@ -1524,95 +1526,106 @@ pub(crate) fn run_frame_loop(
                 // the trace at the end of this Instance's turn reads it.
                 let happened = live.happened.clone();
                 let mut asking = false;
-                let reactive_wake =
-                    if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
-                        if director::session_due(
-                            live.addressed,
-                            live.since_proactive,
-                            &live.pace,
-                            activity.displays_asleep,
-                            instance.do_not_disturb(),
-                            config.proactive_allowed,
-                        ) && config.enabled
-                        {
-                            let context = Context {
-                                activity: activity.clone(),
-                                recent: live.recent.clone(),
-                                // The two authored layers, the package's and
-                                // this Instance's own (ADR-0012). Read off the
-                                // roster, which is where a save lands.
-                                personality: live.character.personality.clone(),
-                                instance_prompt: instance.prompt().to_string(),
-                                state: frame.state,
-                                happened: live.happened.clone(),
-                                standing: assembler.standing_on(frame.position),
-                            };
-                            let was_addressed = live.addressed;
-                            if live.addressed {
-                                live.pace.after_reactive();
-                            } else {
-                                live.pace.after_ambient();
-                            }
-                            live.addressed = false;
-                            live.happened = Happened::Proactive;
-                            live.since_proactive = Duration::ZERO;
-                            let payload = model.prompt(&context);
-                            // Read before the `Context` is handed to the slot,
-                            // and applied only if the slot took the call.
-                            let caret = cancelled_caret(live.chat_turn, &context.happened);
-                            let chat_turn = matches!(context.happened, Happened::Chat(_));
-                            let touched =
-                                director::claim(&context.happened) == director::Claim::Interaction;
-                            let cell = director::happened_cell(&context.happened);
-                            match slots.wake(&live.id, Arc::clone(model), context) {
-                                // The call on the wire is the truer one
-                                // (ADR-0016). This wake is dropped, not queued:
-                                // the bookkeeping above has already spent it.
-                                completer::Woke::Dropped => false,
-                                // A touch the character cannot answer yet points at
-                                // the question. A Summon already opens Chat, a
-                                // typed line is already in it, and a tick is nobody's.
-                                completer::Woke::AwaitingUser => {
-                                    asking = touched;
-                                    false
-                                }
-                                completer::Woke::Started => {
-                                    // One panel for however many Instances are running,
-                                    // so the newest call is what it shows. #18 owns the
-                                    // panel; until then, last payload sent is the honest answer.
-                                    if let Ok(mut inspect) = inspect.lock() {
-                                        inspect.last_payload = Some(payload);
-                                        inspect.wake_secs = live.pace.wait().as_secs();
-                                    }
-                                    // Starting a call cancels the one before it
-                                    // (ADR-0016). Tell a typed line on the wire its
-                                    // caret is cancelled, not that nothing came back (#681),
-                                    // and name the wake that cancelled it (#890).
-                                    if let Some(note) = caret {
-                                        let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
-                                    }
-                                    live.chat_turn = chat_turn;
-                                    live.happened_last = Some(cell);
-                                    // The first successful wake after first connection proves
-                                    // the completer works. Emit the deferred "something can
-                                    // answer now" message now that we know it's true.
-                                    if pending_first_connection_message {
-                                        session_log::new_session(
-                                            &app,
-                                            &live.id,
-                                            "something can answer now",
-                                        );
-                                        pending_first_connection_message = false;
-                                    }
-                                    was_addressed
-                                }
-                            }
+                let reactive_wake = if let (Some(model), Some(activity)) =
+                    (&live.model, last_activity.as_ref())
+                {
+                    if director::session_due(
+                        live.addressed,
+                        live.since_proactive,
+                        &live.pace,
+                        activity.displays_asleep,
+                        instance.do_not_disturb(),
+                        config.proactive_allowed,
+                    ) && config.enabled
+                    {
+                        let context = Context {
+                            activity: activity.clone(),
+                            recent: live.recent.clone(),
+                            // The two authored layers, the package's and
+                            // this Instance's own (ADR-0012). Read off the
+                            // roster, which is where a save lands.
+                            personality: live.character.personality.clone(),
+                            instance_prompt: instance.prompt().to_string(),
+                            state: frame.state,
+                            happened: live.happened.clone(),
+                            standing: assembler.standing_on(frame.position),
+                        };
+                        let was_addressed = live.addressed;
+                        if live.addressed {
+                            live.pace.after_reactive();
                         } else {
-                            false
+                            live.pace.after_ambient();
+                        }
+                        live.addressed = false;
+                        live.happened = Happened::Proactive;
+                        live.since_proactive = Duration::ZERO;
+                        let line = instance
+                            .whereabouts(&displays.frames, &displays.usable_frames)
+                            .prompt_line();
+                        // The panel shows this copy. The worker appends `line`
+                        // after `request`, so an in-flight reply can still open
+                        // the session before this wake is sent.
+                        let mut payload = model.prompt(&context);
+                        if !payload.ends_with('\n') {
+                            payload.push('\n');
+                        }
+                        payload.push_str(&line);
+                        // Read before the `Context` is handed to the slot,
+                        // and applied only if the slot took the call.
+                        let caret = cancelled_caret(live.chat_turn, &context.happened);
+                        let chat_turn = matches!(context.happened, Happened::Chat(_));
+                        let touched =
+                            director::claim(&context.happened) == director::Claim::Interaction;
+                        let cell = director::happened_cell(&context.happened);
+                        match slots.wake_with_prompt(&live.id, Arc::clone(model), context, line) {
+                            // The call on the wire is the truer one
+                            // (ADR-0016). This wake is dropped, not queued:
+                            // the bookkeeping above has already spent it.
+                            completer::Woke::Dropped => false,
+                            // A touch the character cannot answer yet points at
+                            // the question. A Summon already opens Chat, a
+                            // typed line is already in it, and a tick is nobody's.
+                            completer::Woke::AwaitingUser => {
+                                asking = touched;
+                                false
+                            }
+                            completer::Woke::Started => {
+                                // One panel for however many Instances are running,
+                                // so the newest call is what it shows. #18 owns the
+                                // panel; until then, last payload sent is the honest answer.
+                                if let Ok(mut inspect) = inspect.lock() {
+                                    inspect.last_payload = Some(payload);
+                                    inspect.wake_secs = live.pace.wait().as_secs();
+                                }
+                                // Starting a call cancels the one before it
+                                // (ADR-0016). Tell a typed line on the wire its
+                                // caret is cancelled, not that nothing came back (#681),
+                                // and name the wake that cancelled it (#890).
+                                if let Some(note) = caret {
+                                    let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
+                                }
+                                live.chat_turn = chat_turn;
+                                live.happened_last = Some(cell);
+                                // The first successful wake after first connection proves
+                                // the completer works. Emit the deferred "something can
+                                // answer now" message now that we know it's true.
+                                if pending_first_connection_message {
+                                    session_log::new_session(
+                                        &app,
+                                        &live.id,
+                                        "something can answer now",
+                                    );
+                                    pending_first_connection_message = false;
+                                }
+                                was_addressed
+                            }
                         }
                     } else {
                         false
-                    };
+                    }
+                } else {
+                    false
+                };
 
                 if tracing_clicks && (frame.addressed || reactive_wake || !world.verbs.is_empty()) {
                     let skip = if reactive_wake {
@@ -2255,12 +2268,24 @@ fn answer_tool_call(
     roster: &mut Roster,
     source: &dyn WindowSource,
     excluded_applications: Vec<String>,
+    displays: &platform::Displays,
 ) {
     let watched = crate::names_hint::live().watching(source);
     let live: Vec<InstanceInfo> = roster
         .list()
         .into_iter()
         .map(|(id, name)| InstanceInfo { id, name })
+        .collect();
+    let spots: Vec<FeetAt> = live
+        .iter()
+        .filter_map(|info| {
+            let at = roster.get(&info.id)?.feet();
+            Some(FeetAt {
+                id: info.id.clone(),
+                name: info.name.clone(),
+                at,
+            })
+        })
         .collect();
     let mut context = DispatchContext {
         window_source: &watched,
@@ -2271,6 +2296,12 @@ fn answer_tool_call(
         },
         roster: &live,
         expression: Some(roster),
+        placement: PlacementQuery {
+            frames: &displays.frames,
+            usable: &displays.usable_frames,
+            names: &displays.names,
+            instances: &spots,
+        },
     };
     let _ = call
         .reply
@@ -2439,6 +2470,7 @@ mod tests {
             &mut roster,
             &EmptyDesktop,
             Vec::new(),
+            &platform::Displays::default(),
         );
         let result = answers
             .recv()
@@ -2455,6 +2487,69 @@ mod tests {
             "the Speech bubble draws Frame::dialogue"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The Harness reads placement from the live Instances and the displays
+    /// the frame loop already holds.
+    #[test]
+    fn a_whereabouts_call_reports_the_live_instance_on_its_display() {
+        let mut roster = Roster::new();
+        let id = roster.spawn(
+            &character(),
+            "Pip".to_string(),
+            Point {
+                x: 2000.0,
+                y: 100.0,
+            },
+        );
+        let frame = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let second = Rect {
+            x: 1920.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let displays = platform::Displays {
+            frames: vec![frame, second],
+            usable_frames: vec![frame, second],
+            names: vec![Some("Left".to_string()), None],
+            ..platform::Displays::default()
+        };
+
+        let (reply, answers) = mpsc::channel();
+        answer_tool_call(
+            mcp_http::Call {
+                tool: "whereabouts".to_string(),
+                arguments: json!({}),
+                reply,
+            },
+            &mut roster,
+            &EmptyDesktop,
+            Vec::new(),
+            &displays,
+        );
+        let result = answers
+            .recv()
+            .expect("the call is answered")
+            .expect("dispatch succeeds");
+
+        assert_eq!(result["unit"], json!("points"));
+        assert_eq!(result["displays"][0]["name"], json!("Left"));
+        assert_eq!(result["displays"][1]["name"], json!(null));
+        assert_eq!(result["displays"][1]["origin_x"], json!(1920.0));
+        assert_eq!(result["displays"][1]["width"], json!(1920.0));
+        assert_eq!(result["displays"][1]["height"], json!(1080.0));
+        assert_eq!(result["instances"][0]["id"], json!(id));
+        assert_eq!(result["instances"][0]["name"], json!("Pip"));
+        assert_eq!(result["instances"][0]["on_display"], json!(1));
+        assert_eq!(result["instances"][0]["other_displays"], json!([0]));
+        assert_eq!(result["instances"][0]["x"], json!(80.0));
+        assert_eq!(result["instances"][0]["y"], json!(100.0));
     }
 
     /// What the Director hears from a run of left-button states, one a tick.
