@@ -74,15 +74,13 @@ impl Endpoint {
     }
 
     fn new(url: &str, token: &str) -> Result<Self, String> {
-        let rest = url
-            .strip_prefix("http://")
-            .ok_or_else(|| format!("{URL_VAR} is not an http:// URL"))?;
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-        // `[::1]:8080` splits at the last colon, which is the port's.
-        let host = authority
-            .rsplit_once(':')
-            .map_or(authority, |(host, _)| host);
-        if !LOOPBACK.contains(&host) {
+        let parsed: ureq::http::Uri = url
+            .parse()
+            .map_err(|_| format!("{URL_VAR} is not an http:// URL"))?;
+        if parsed.scheme_str() != Some("http") {
+            return Err(format!("{URL_VAR} is not an http:// URL"));
+        }
+        if !parsed.host().is_some_and(|host| LOOPBACK.contains(&host)) {
             return Err(format!("{URL_VAR} does not name this machine"));
         }
         Ok(Self {
