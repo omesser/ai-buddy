@@ -96,7 +96,7 @@ echo "ok: waiting line appears after button press"
 
 wait_for 40 grep -qx 'elicit-url:accept' "$marks" || fail "sign-in form never answered; see $log"
 wait_for 15 grep -qx new "$marks" || fail "session did not open after sign-in; see $log"
-[ "$(grep -c new "$marks")" -ge 2 ] || fail "session opened only once (expected >= 2); see $log"
+[ "$(grep -c new "$marks")" -ge 2 ] || fail "session did not open after sign-in; see $log"
 sleep 1.5
 
 dump signed-in
