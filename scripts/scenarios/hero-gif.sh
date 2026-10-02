@@ -178,6 +178,8 @@ beat() { # <trigger> <next cue>
 }
 
 cue "recording. Throw it at the window's top edge, then wait for it to speak."
+# A missed beat has already said so; `|| true` only keeps `set -e` from ending the take.
+# shellcheck disable=SC2015
 beat Perch "it spoke. Poke it once, move the mouse off, and wait." &&
   beat Poke "it spoke. Double-click it. Chat opens; leave it open and wait." &&
   beat Summon "it spoke. Type in Chat: What's in the news today?  Then press Enter." &&
