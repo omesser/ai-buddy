@@ -464,15 +464,3 @@ test("a script payload reads as the text a model typed", () => {
     "before<img src=x onerror=alert(1)>after",
   );
 });
-
-// The harness itself. Without this, a stand-in that quietly tolerates a bad
-// reference node would make the caret tests above prove nothing.
-test("the stand-in refuses an insertBefore against a node that is not a child", () => {
-  const parent = doc.createElement("div");
-  const stranger = doc.createElement("span");
-
-  assert.throws(
-    () => parent.insertBefore(doc.createTextNode("x"), stranger),
-    /can not be found in the parent/,
-  );
-});

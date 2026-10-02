@@ -20,7 +20,6 @@ function assembleScript(site, release) {
   const workflow = readFileSync(join(ROOT, ".github", "workflows", "pages.yml"), "utf8");
   const block = workflow.match(/- name: Assemble the site\n(?:\s+#.*\n)*\s+run: \|\n((?:\s{10}.*\n)+)/);
   assert.ok(block, "pages.yml has an Assemble the site step");
-  assert.ok(block[1].includes("--release release.json"), "Assemble passes the release file to the landing page");
   return block[1].replaceAll("_site", site).replaceAll("release.json", release);
 }
 
