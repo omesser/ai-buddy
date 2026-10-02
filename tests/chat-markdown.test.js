@@ -4,6 +4,8 @@
 // refuses an `insertBefore` against a non-child on purpose, as a browser does.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { appendReply, drawReply } from "../src/markdown.js";
@@ -462,5 +464,35 @@ test("a script payload reads as the text a model typed", () => {
   assert.equal(
     draw("before\n\n<img src=x onerror=alert(1)>\n\nafter").textContent,
     "before<img src=x onerror=alert(1)>after",
+  );
+});
+
+// The property the whole design rests on, asserted on the source rather than
+// on one payload: there is no sink in the webview for a reply to reach. A new
+// one somewhere else in src/ would make every test above beside the point.
+test("nothing in the webview writes HTML", () => {
+  const sinks = /innerHTML|outerHTML|insertAdjacentHTML|document\.write|new Function|\beval\(/;
+  const offenders = ["../src/", "../src/vendor/"].flatMap((dir) => {
+    const at = new URL(dir, import.meta.url);
+    return readdirSync(at)
+      .filter((name) => name.endsWith(".js"))
+      .filter((name) => sinks.test(readFileSync(new URL(name, at), "utf8")))
+      .map((name) => dir + name);
+  });
+
+  // The vendored parser is swept too: it has no sink today, and a re-vendor
+  // that brought one in would put model output one call away from markup.
+  assert.deepEqual(offenders, []);
+});
+
+test("the vendored parser is the file src/vendor/README.md documents", () => {
+  // A hook that reformatted it, or an edit made in place, would leave the
+  // registry hash in that file claiming something it cannot check.
+  const marked = readFileSync(new URL("../src/vendor/marked.esm.js", import.meta.url));
+
+  assert.equal(
+    createHash("sha256").update(marked).digest("hex"),
+    "2e70fea3ee49f98ab67ee395e5af51cc6bee4fafed15910da9ccb7f650df8014",
+    "marked@18.0.13 lib/marked.esm.js; see src/vendor/README.md to re-vendor",
   );
 });
