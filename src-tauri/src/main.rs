@@ -208,6 +208,7 @@ impl MinimizedChats {
     /// Fold one Chat window event in. `Some(true)` floats Chat above the
     /// overlay, `Some(false)` drops it to a normal level. No event says
     /// "minimized", so focus and resize events re-read it from the window.
+    /// On macOS an unfocused window's minimize sends neither: see `set`.
     fn note(
         &self,
         label: &str,
@@ -220,6 +221,13 @@ impl MinimizedChats {
             tauri::WindowEvent::Destroyed => (None, false),
             _ => return None,
         };
+        self.set(label, minimized);
+        floats
+    }
+
+    /// Record whether `label` is minimized. `platform::observe_minimize`
+    /// calls this from AppKit's miniaturize notifications.
+    fn set(&self, label: &str, minimized: bool) {
         if let Ok(mut hidden) = self.0.lock() {
             if minimized && hidden.insert(label.to_string()) {
                 eprintln!("chat: {label} is minimized");
@@ -227,7 +235,6 @@ impl MinimizedChats {
                 eprintln!("chat: {label} is not minimized");
             }
         }
-        floats
     }
 
     fn hides(&self, label: &str) -> bool {
@@ -1953,7 +1960,21 @@ fn build_chat(
     }
     let window = builder.build()?;
     let (handle, label) = (app.clone(), label.to_string());
+    let observer = platform::observe_minimize(&window, {
+        let (handle, label) = (handle.clone(), label.clone());
+        move |minimized| {
+            if let Some(chats) = handle.try_state::<MinimizedChats>() {
+                chats.set(&label, minimized);
+            }
+        }
+    })
+    .inspect_err(|why| eprintln!("chat: {label} minimize: {why}"))
+    .ok();
+    let observer = Mutex::new(observer);
     window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            drop(observer.lock().map(|mut observer| observer.take()));
+        }
         let Some(chats) = handle.try_state::<MinimizedChats>() else {
             return;
         };
@@ -4555,6 +4576,17 @@ mod tests {
         assert!(chats.hides("chat-a"));
         chats.note("chat-a", &tauri::WindowEvent::Destroyed, || true);
         assert!(!chats.hides("chat-a"), "a reopened Chat starts open");
+    }
+
+    /// A Chat minimized behind another app gets no window event. AppKit's
+    /// miniaturize notification sets it directly.
+    #[test]
+    fn a_chat_minimized_without_focus_lets_the_pill_back() {
+        let chats = MinimizedChats::default();
+        chats.set("chat-a", true);
+        assert!(chats.hides("chat-a"));
+        chats.set("chat-a", false);
+        assert!(!chats.hides("chat-a"), "deminiaturized");
     }
 
     /// A link nobody asked for opens nothing, and the next Chat's replay,

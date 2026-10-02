@@ -408,6 +408,33 @@ pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> 
     windows::raise_above_overlay(window)
 }
 
+#[cfg(target_os = "macos")]
+pub use macos::MinimizeObserver;
+
+/// Nothing to remove. Windows and Linux see minimize through Tauri's focus and
+/// resize events: Windows sends a resize to 0x0 whether or not it has focus.
+#[cfg(not(target_os = "macos"))]
+pub struct MinimizeObserver;
+
+/// Call `minimized` when `window` is minimized (`true`) or restored (`false`),
+/// focused or not. Dropping the result stops it. Main thread only.
+#[cfg(target_os = "macos")]
+pub fn observe_minimize(
+    window: &tauri::WebviewWindow,
+    minimized: impl Fn(bool) + 'static,
+) -> Result<MinimizeObserver, String> {
+    macos::observe_minimize(window, minimized)
+}
+
+/// Call `minimized` when `window` is minimized (`true`) or restored (`false`).
+#[cfg(not(target_os = "macos"))]
+pub fn observe_minimize(
+    _window: &tauri::WebviewWindow,
+    _minimized: impl Fn(bool) + 'static,
+) -> Result<MinimizeObserver, String> {
+    Ok(MinimizeObserver)
+}
+
 /// Undo `raise_above_overlay`'s level, so `window` stacks with other apps' windows.
 /// macOS and Linux go through tao, whose normal level is the one to return to.
 #[cfg(unix)]
