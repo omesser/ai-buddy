@@ -7,7 +7,9 @@ Title: <type>[optional scope]: <description>
 only line that reaches `git log`. Write the summary a reader should find a year
 from now. Append `!` after the type for a breaking change: `feat(engine)!: ...`
 
-See docs/agents/writing.md.
+See docs/agents/writing.md. A Cursor cloud agent launched from a Grok bot
+signs the description with that bot's name in parentheses. Bare `Cursor agent`
+is the wrong line for that launch.
 -->
 
 ## Why
