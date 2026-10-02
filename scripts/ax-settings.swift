@@ -446,6 +446,18 @@ case "size":
     }
     printRect(rect)
 
+case "minimize":
+    guard args.count >= 4, let on = Bool(args[3]) else {
+        die("usage: ax-settings minimize <pid> <window title> <true|false>")
+    }
+    guard let window = window(titled: args[2]) else { die("\(args[2]) is not open") }
+    guard
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, on as CFBoolean)
+            == .success
+    else {
+        die("could not set \(args[2]) minimized to \(on)")
+    }
+
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
     guard let window = settingsWindow(), let rect = frame(window) else {

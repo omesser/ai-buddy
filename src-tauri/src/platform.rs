@@ -408,6 +408,20 @@ pub fn raise_above_overlay(window: &tauri::WebviewWindow) -> Result<(), String> 
     windows::raise_above_overlay(window)
 }
 
+/// Undo `raise_above_overlay`'s level, so `window` stacks with other apps' windows.
+/// macOS and Linux go through tao, whose normal level is the one to return to.
+#[cfg(unix)]
+pub fn lower_to_normal_level(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window.set_always_on_top(false).map_err(|e| e.to_string())
+}
+
+/// Undo `raise_above_overlay`'s level, so `window` stacks with other apps' windows.
+/// Not tao's `set_always_on_top(false)`: tao never saw the topmost insert, so it skips the change.
+#[cfg(not(unix))]
+pub fn lower_to_normal_level(window: &tauri::WebviewWindow) -> Result<(), String> {
+    windows::lower_to_normal_level(window)
+}
+
 /// Push a fresh snapshot to the Settings webview. Main thread only.
 pub fn refresh_settings(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
