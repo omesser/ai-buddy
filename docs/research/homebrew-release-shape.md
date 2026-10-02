@@ -32,18 +32,10 @@ distribution
 ([Acceptable Casks](https://docs.brew.sh/Acceptable-Casks), "Appropriate
 package type"). Fidget publishes a disk image. The `app` stanza is what
 moves that bundle into `/Applications`
-([Cask Cookbook](https://docs.brew.sh/Cask-Cookbook), `app`).
-
-DVC is the formula case. Its README says `brew install dvc` and badges
-`https://formulae.brew.sh/formula/dvc`
-([`README.rst`](https://github.com/treeverse/dvc/blob/56e59829512ff134aa269099a2099587b810b4dd/README.rst)
-at `56e59829`). The package in `homebrew/core` is `class Dvc < Formula`,
-built from a PyPI sdist, with bottles for Apple Silicon and for Linux
-([`Formula/d/dvc.rb`](https://github.com/Homebrew/homebrew-core/blob/a6fad76ef3bdf165b5de8b0941783f58749caf5d/Formula/d/dvc.rb)
-at core `a6fad76e`). `Casks/d/dvc.rb` on homebrew-cask returns 404, and
-`Formula/dvc.rb` in the DVC repository at `56e59829` returns 404. A formula
-installs into the Cellar and links executables. That is the package for a
-command, and the wrong package for `Fidget.app`.
+([Cask Cookbook](https://docs.brew.sh/Cask-Cookbook), `app`). A formula
+installs into the Cellar and links executables. Fidget ships `Fidget.app`
+from a disk image, so the package is a cask in a third-party tap, not a
+formula in `homebrew/core`.
 
 ## Why the tap is `omesser/homebrew-fidget`
 
