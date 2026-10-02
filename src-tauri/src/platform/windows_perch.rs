@@ -30,11 +30,8 @@ pub(super) fn restore_overlay_exstyle(ex_style: i32) -> i32 {
 mod tests {
     use super::*;
 
-    const WS_EX_TOPMOST: i32 = 0x0000_0008;
     const WS_EX_TRANSPARENT: i32 = 0x0000_0020;
     const WS_EX_APPWINDOW: i32 = 0x0004_0000;
-    const WS_EX_LAYERED: i32 = 0x0008_0000;
-    const WS_EX_NOACTIVATE: i32 = 0x0800_0000;
 
     #[test]
     fn a_chat_window_is_a_perch() {

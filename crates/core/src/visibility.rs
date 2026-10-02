@@ -580,9 +580,8 @@ mod tests {
         }
     }
 
-    /// 3440×1440 at the origin and a 1200×1920 panel at (-1200, -209). The
-    /// overlays are those rectangles. In the window list they cover both
-    /// displays, so the Character fades and Come back cannot bring it back.
+    /// In the window list these cover both displays, so the Character fades
+    /// and Come back cannot bring it back while that rule stays true.
     #[test]
     fn display_sized_overlays_hide_the_character_until_they_leave_the_list() {
         let displays = [

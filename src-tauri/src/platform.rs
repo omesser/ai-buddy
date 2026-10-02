@@ -555,18 +555,22 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 /// Click-through for one overlay.
-/// On Windows, tao replaces the extended style and drops the tool-window bit,
-/// so the bits that keep the overlay out of the window list are put back.
+/// On Windows the tool-window bits are put back after tao's style rewrite,
+/// on the event-loop thread, or that rewrite lands last and clears them.
 pub fn set_overlay_click_through(
     window: &tauri::WebviewWindow,
     ignore: bool,
 ) -> Result<(), String> {
-    window
-        .set_ignore_cursor_events(ignore)
-        .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        window
+            .set_ignore_cursor_events(ignore)
+            .map_err(|e| e.to_string())
+    }
     #[cfg(not(unix))]
-    windows::reinforce_overlay(window)?;
-    Ok(())
+    {
+        windows::set_click_through(window, ignore)
+    }
 }
 
 /// Update the input region for the overlay window based on the sprite's alpha mask.
