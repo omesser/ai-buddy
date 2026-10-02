@@ -129,7 +129,8 @@ kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
 if [ "$harness_kind" != fixture ]; then
   echo ">>> warming up: waiting for $harness_kind's first reply before recording (60 s at most)"
   for _ in $(seq 60); do
-    grep -q '^director: .* playing ' "$log" && break
+    grep -q 'Static fallback' "$log" && fail "the Harness failed its first turn; see $log"
+    grep -q '^harness: reply ' "$log" && break
     kill -0 "$pid" 2> /dev/null || fail "Fidget exited; see $log"
     sleep 1
   done
@@ -145,12 +146,17 @@ cue() { # <text>
   echo ">>> $(now)s  $1"
 }
 # Every action makes the sprite think and then talk, and a newer action cancels
-# the reply in flight. So each cue waits for the action's trigger, the next
-# bubble after it, and a beat to read it. Log lines are matched past `heard`.
+# the reply in flight. So each cue waits for the action's trigger, the Harness
+# reply after it, and a beat to read it. Log lines are matched past `heard`.
 heard=$(wc -l < "$log")
 wait_for() { # <ERE>: true once a log line past `heard` matches; moves `heard` to it
   local n
   while [ "$(now)" -lt $((record - 3)) ]; do
+    # StaticDirector's bubbles look like replies; a take on them is no take.
+    if tail -n +"$((heard + 1))" "$log" | grep -q 'Static fallback'; then
+      kill -INT "$ffpid" 2> /dev/null || true
+      fail "the Harness failed a turn and StaticDirector spoke instead; see $log"
+    fi
     n=$(tail -n +"$((heard + 1))" "$log" | grep -n -m1 -E "$1" | cut -d: -f1)
     if [ -n "$n" ]; then
       heard=$((heard + n))
@@ -162,7 +168,7 @@ wait_for() { # <ERE>: true once a log line past `heard` matches; moves `heard` t
   return 1
 }
 beat() { # <trigger> <next cue>
-  if wait_for "happened=$1" && wait_for '^director: .* playing '; then
+  if wait_for "happened=$1" && wait_for '^harness: reply '; then
     sleep 2
     cue "$2"
   else
