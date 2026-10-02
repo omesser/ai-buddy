@@ -205,10 +205,9 @@ struct PendingAsks(Mutex<Pending>);
 struct MinimizedChats(Mutex<HashSet<String>>);
 
 impl MinimizedChats {
-    /// Fold one Chat window event in. `Some(true)` floats Chat above the
-    /// overlay, `Some(false)` drops it to a normal level. No event says
-    /// "minimized", so focus and resize events re-read it from the window.
-    /// On macOS an unfocused window's minimize sends neither: see `set`.
+    /// `Some(true)` floats Chat above the overlay, `Some(false)` drops it to a
+    /// normal level. No event says "minimized", so focus and resize re-read it.
+    /// See `set` for macOS.
     fn note(
         &self,
         label: &str,
@@ -225,7 +224,8 @@ impl MinimizedChats {
         floats
     }
 
-    /// Record whether `label` is minimized.
+    /// macOS sends no focus or resize for an unfocused minimize, so the
+    /// `observe_minimize` callback calls this.
     fn set(&self, label: &str, minimized: bool) {
         if let Ok(mut hidden) = self.0.lock() {
             if minimized && hidden.insert(label.to_string()) {
