@@ -9,6 +9,7 @@ Hovering the sprite for about 1.5 seconds opens a composer pill above the Charac
 - `qm-auto-hide` after ~3s continuous away from both sprite and pill, an empty pill hides; re-entering either resets the timer.
 - `qm-connect` when no AI can answer yet, the pill shows a connect prompt and an **Open chat** control that opens Chat (not a Summon verb).
 - `qm-freeze` while the pill is visible (or the caret is in it), resting stroll / chase locomotion freezes for that Instance.
+- `qm-chat-suppress` while Chat is open for that Instance, hover does not open the pill; after Chat closes, leave the sprite and hover again to open it.
 
 ## How to get to it (user POV)
 
@@ -32,6 +33,7 @@ Preconditions:
 
 - A glance shorter than `HOVER_DELAY_MS` (1500) must not open the pill; do not click (that is Poke) or double-click (Summon).
 - After a Summon (or any path that calls the pill's `summon` dismiss), the pill stays down while the pointer remains on the sprite; only `leaveSprite` clears that latch so a fresh hover can open it again (#1237).
+- While Chat is open for that Instance (`sprite.chatting` / `setChatOpen(true)`), hover does not open the pill even after the Summon latch is cleared; close Chat, leave the sprite, then hover again (#1243).
 - Auto-hide is 3000ms away from **both** sprite and pill; text in the field blocks auto-hide.
 - Opening Chat from the connect control is `overlay_open_chat`, not `verbs:.*Summon` — do not mark Summon verified from this path.
 - Live X11 under headless boxes often lacks a screenshot tool; say so and rely on units rather than inventing a parallel harness.

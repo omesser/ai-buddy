@@ -35,3 +35,4 @@ Preconditions:
 - On X11, each click of the double-click must be held across a couple of ~16ms polls (~120ms); short `click --repeat 2 --delay 50` usually yields a single Poke with no Summon.
 - Chat needs the Shell's windowing path; a crashed WebKit / missing display shows the verb without a usable Chat surface — report both observations.
 - On this project's Linux CI-style boxes, Summon UI may be unprovable while the verb remains provable under Xvfb+WM; say which half you proved.
+- A minimized Chat counts as closed for that Instance (no longer "chatting"); the window can still be on the taskbar — unminimize or Summon again to reopen (#1255).
