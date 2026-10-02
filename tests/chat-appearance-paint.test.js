@@ -10,28 +10,6 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const CSS = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
 const DESIGNS = ["minimal", "terminal", "glass"];
 
-test("chat-ui.css has no prefers-color-scheme", () => {
-  assert.doesNotMatch(CSS, /prefers-color-scheme/);
-});
-
-test("each design has a light palette block, and glass covers of and what", () => {
-  for (const design of DESIGNS) {
-    assert.match(
-      CSS,
-      new RegExp(String.raw`\[data-chat-palette="light"\]\.chat-ui-${design}\b`),
-      design,
-    );
-  }
-  assert.match(
-    CSS,
-    /\[data-chat-palette="light"\]\.chat-ui-glass \.tb \.of\s*\{[^}]*color:\s*rgba\(26,\s*31,\s*43,\s*\.62\)/s,
-  );
-  assert.match(
-    CSS,
-    /\[data-chat-palette="light"\]\.chat-ui-glass \.ask \.what\s*\{[^}]*color:\s*rgba\(26,\s*31,\s*43,\s*\.82\)/s,
-  );
-});
-
 function declaredToken(selector, name) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const block = CSS.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));

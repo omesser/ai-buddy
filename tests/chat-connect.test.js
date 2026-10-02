@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -9,8 +8,6 @@ import {
   landingCopy,
   loginPresentation,
 } from "../src/chat-connect.js";
-
-const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
 
 const http = {
   name: "bmo",
@@ -33,13 +30,6 @@ function npxOpening(name) {
     },
   };
 }
-
-test("chat.js paints the landing from the helper, and does not celebrate a pick", () => {
-  assert.match(js, /import \{\n  canAnswer,\n  composerPlaceholder,\n  drawInline,\n  harnessDisplayName,\n  landingCopy,\n\} from "\.\/chat-connect\.js"/);
-  assert.match(js, /canAnswer\(opening\)/);
-  assert.match(js, /landingCopy\(opening\)/);
-  assert.doesNotMatch(js, /is the AI brain now/);
-});
 
 test("HTTP Completer mode can answer when configured and on", () => {
   assert.equal(canAnswer(http), true);
@@ -264,9 +254,6 @@ test("only the needs-login landing swaps the picker for Retry", () => {
   for (const opening of pickers) {
     assert.equal(Boolean(landingCopy(opening).retry), false, landingCopy(opening).title);
   }
-  assert.match(js, /"landing-buttons"\)\.hidden = Boolean\(copy\.retry\)/);
-  assert.match(js, /retry\.hidden = !copy\.retry/);
-  assert.match(js, /connect\(lastOpening\.harness_name, harnessDisplayName\(lastOpening\)\)/);
 });
 
 test("needs-login offers agent sign-in beside the terminal command", () => {

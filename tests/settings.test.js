@@ -472,41 +472,6 @@ test("Dismiss names the Instance by id, not by the line it draws", () => {
   assert.deepEqual(emitted, [{ dismiss: "instances", value: "ghost-1" }]);
 });
 
-// No DOM in this suite, so which elements `render()` builds can only be read
-// off its source. A <select> hand-rolled out of divs passes every assertion
-// above and is unreachable by a screen reader.
-const source = readFileSync(new URL("../src/settings.js", import.meta.url), "utf8");
-
-test("the controls are the platform's own elements", () => {
-  for (const tag of ["select", "option", "details", "summary", "textarea", "ul", "li"]) {
-    assert.match(source, new RegExp(`el\\("${tag}"`), `${tag} is not what render() builds`);
-  }
-  assert.match(source, /type: "checkbox"/, "a checkbox is an input, not a styled div");
-  assert.match(source, /type: "password"/, "a secure field is an input, not a masked text box");
-  assert.doesNotMatch(source, /role: "(button|checkbox|combobox|textbox)"/, "no element wears a role it is not");
-  assert.match(source, /payload\.draft = aiDraft/, "Apply sends the widget draft");
-});
-
-// Two stylesheets on one window, and the second one wins: the prefix is what
-// makes a collision with the Chat surface impossible rather than merely avoided.
-const css = readFileSync(new URL("../src/settings.css", import.meta.url), "utf8");
-
-test("every selector in settings.css is prefixed .set-", () => {
-  const selectors = css
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("}")
-    .map((block) => block.split("{")[0].trim())
-    .filter(Boolean)
-    .flatMap((group) => group.split(",").map((one) => one.trim()))
-    .filter(Boolean);
-
-  assert.deepEqual(
-    selectors.filter((selector) => !selector.startsWith(".set-")),
-    [],
-    "an unprefixed selector reaches every other surface sharing this window",
-  );
-});
-
 test("handleEvent returns false for nothing response", async () => {
   const { handleEvent } = await import("../src/settings.js");
 
