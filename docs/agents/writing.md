@@ -104,9 +104,9 @@ next to the icon it previews, not by being in a pull request description.
 ## An agent signs what it writes on GitHub
 
 End every issue comment, pull request description, review and inline reply an
-agent writes with one line of its own. The first words say who wrote. A reader
-can tell a Cursor cloud agent launched by a Grok bot from the bot itself, and
-from any other Harness session.
+agent writes with one line of its own. Who wrote is the opening of the line,
+including any parentheses. A reader can tell a Cursor cloud agent launched
+from a Grok bot from the bot itself, and from any other Harness agent.
 
 **A Cursor cloud agent launched from a Grok bot** names Cursor, then that bot:
 
@@ -117,13 +117,13 @@ _— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
 The name in parentheses is the bot named in the message that launched the
 agent. `Coder` is the example. Substitute that name. If the launch message
 names no Grok bot, use the Harness line below. The bare line is wrong when a
-Grok bot launched the session:
+Grok bot launched the agent:
 
 ```
 _— Cursor agent, on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-**Any other Harness session** names the Harness, then `agent`, with no
+**Any other Harness agent** names the Harness, then `agent`, with no
 parentheses:
 
 ```
@@ -137,7 +137,8 @@ not a made-up brand). Do not add a parenthetical on this line.
 `_— Grok Build agent (Coder)_` is not one of these lines.
 
 A Cursor cloud agent uses this line only when the launch message names no
-Grok bot. When a Grok bot launched that agent, use the Cursor line above.
+Grok bot. When a Grok bot launched that agent, use the Cursor cloud-agent line
+above.
 
 **A Grok bot** writing as itself, not through a Harness it launched, names the
 bot:
