@@ -7,11 +7,13 @@
 A Generated page under ADR-0038. The headline, the opening paragraph, the
 feature list, the Harness names, the install notes and the hero video are read
 from README.md; the cast, its count and every sprite are read from the Character
-Manifests. Each download button links its asset in the release that
-`gh release view --json tagName,assets` wrote to the release file, or the Latest
-release page when there is no such file or no such asset. The hero video is optional, and the desk scene stands in without it.
-The page shell is docs/design/landing.html, with double-brace slots this script
-fills. A source it cannot find fails the build.
+Manifests. The page shell is docs/design/landing.html, with double-brace slots
+this script fills. A source it cannot find fails the build.
+
+Two sources are optional. Without the hero video the desk scene stands in.
+Each download button links its asset in the release file that
+`gh release view --json tagName,assets` wrote, or the Latest release page when
+there is no such file or no such asset.
 
 The page names frames by the paths make-character-gallery.py publishes under
 `<out>/characters/`, and copies nothing itself, so the gallery's checks are the
