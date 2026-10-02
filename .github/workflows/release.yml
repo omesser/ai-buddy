@@ -3,10 +3,7 @@ name: Release
 on:
   release:
     types: [published]
-  # Dispatching takes write access already. `version-override` is the only
-  # input that reaches a shell, through `env:`, and must match semver first.
-  # No input names a ref, an action, a secret or an upload target.
-  # checkov:skip=CKV_GHA_7:reviewed in #384, see above
+  # checkov:skip=CKV_GHA_7:string dispatch inputs reach the shell through env and must match semver before use
   workflow_dispatch:
     inputs:
       version-override:
@@ -29,6 +26,11 @@ on:
         type: boolean
         required: false
         default: true
+      sync-tap-tag:
+        description: 'Sync tap tag. Recovery only. A published Release tag such as v1.2.3. Leave empty for a package build that does not touch Homebrew.'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -42,6 +44,7 @@ jobs:
   # creates one. Platforms are picked in a job because a job-level `if:`
   # cannot name the matrix.
   plan:
+    if: github.event_name != 'workflow_dispatch' || inputs['sync-tap-tag'] == ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -68,6 +71,7 @@ jobs:
 
   package:
     needs: plan
+    if: github.event_name != 'workflow_dispatch' || inputs['sync-tap-tag'] == ''
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -155,3 +159,117 @@ jobs:
           tagName: ${{ github.event.release.tag_name }}
           uploadWorkflowArtifacts: true
           args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
+
+  homebrew:
+    needs: package
+    if: |
+      always() &&
+      !cancelled() &&
+      (
+        (
+          github.event_name == 'release' &&
+          github.event.release.prerelease == false &&
+          needs.package.result == 'success'
+        ) ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs['sync-tap-tag'] != '' &&
+          needs.package.result == 'skipped'
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs['sync-tap-tag'] }}
+      BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Require the tap deploy key
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_DEPLOY_KEY" ]; then
+            echo "::error::HOMEBREW_TAP_DEPLOY_KEY is empty. The Release cannot push omesser/homebrew-fidget."
+            exit 1
+          fi
+
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      - name: Install ruby and 7z
+        run: sudo apt-get update && sudo apt-get install -y ruby p7zip-full
+
+      - name: Bump and verify the cask
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          version="${TAG#v}"
+          if [[ ! $version =~ $semver ]]; then
+            echo "::error::tag '$TAG' is not a release tag"
+            exit 1
+          fi
+          scripts/bump-homebrew-cask.sh "$TAG"
+          scripts/verify-homebrew-cask.sh
+
+      - name: Check out the tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: omesser/homebrew-fidget
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: homebrew-tap
+          fetch-depth: 1
+
+      - name: Push the cask and the tap
+        id: canonical
+        run: |
+          set -euo pipefail
+          bash scripts/publish-homebrew-cask.sh --tag "$TAG" --tap homebrew-tap --branch "$BRANCH" --tap-branch main \
+            | tee /tmp/homebrew-publish.txt
+          if grep -q '^canonical_status=pull-request$' /tmp/homebrew-publish.txt; then
+            echo "pull_request=true" >> "$GITHUB_OUTPUT"
+            sed -n 's/^canonical_branch=/branch=/p' /tmp/homebrew-publish.txt >> "$GITHUB_OUTPUT"
+          else
+            echo "pull_request=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo '### Homebrew'
+            echo
+            cat /tmp/homebrew-publish.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the cask pull request
+        if: always() && !cancelled() && steps.canonical.outputs.pull_request == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BRANCH: ${{ steps.canonical.outputs.branch }}
+        run: |
+          case "$PR_BRANCH" in
+            ''|*[!A-Za-z0-9._/-]*)
+              echo "::error::refusing to open a pull request for '$PR_BRANCH'"
+              exit 1
+              ;;
+          esac
+          title="build: Bump the Homebrew cask to ${TAG}"
+          {
+            echo '## Why'
+            echo
+            echo "The ${TAG} Release bumped packaging/homebrew/Casks/fidget.rb. The default branch requires a pull request, so this branch carries the cask."
+            echo
+            echo 'The tap omesser/homebrew-fidget is pushed from the same job and does not wait on this pull request.'
+            echo
+            echo '## How to verify'
+            echo
+            echo 'The Release job ran scripts/verify-homebrew-cask.sh before this commit.'
+          } > /tmp/homebrew-pr.md
+          if gh pr view "$PR_BRANCH" --json number --jq .number > /dev/null 2>&1; then
+            gh pr edit "$PR_BRANCH" --title "$title" --body-file /tmp/homebrew-pr.md
+          else
+            gh pr create --base "$BRANCH" --head "$PR_BRANCH" \
+              --title "$title" --body-file /tmp/homebrew-pr.md
+          fi

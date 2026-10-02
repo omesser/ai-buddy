@@ -471,6 +471,24 @@ The NSIS installer ships. The README platform table lists the degraded cells.
 
 The ACP Harness child and its descendants (e.g. `npx` spawning Node) go in a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. The child is spawned suspended, assigned to the job, then resumed, so no grandchild outlives a quit or detach. It also gets its own process group (`CREATE_NEW_PROCESS_GROUP`), so Ctrl+C into `cargo run` does not reach it.
 
+## Homebrew
+
+Apple Silicon macOS, without a Rust toolchain:
+
+```sh
+brew install --cask omesser/fidget/fidget
+```
+
+That command taps `omesser/homebrew-fidget`. Homebrew only reads a top-level `Casks/` directory, so the tap holds a copy of [`packaging/homebrew/Casks/fidget.rb`](../packaging/homebrew/Casks/fidget.rb) at `Casks/fidget.rb`. The copy in the tap is what `brew update` tracks.
+
+Publishing a GitHub Release builds the packages, then bumps this cask and pushes `Casks/fidget.rb` to the tap. The Release workflow checks out the default branch, runs `scripts/bump-homebrew-cask.sh` with the Release tag, runs `scripts/verify-homebrew-cask.sh`, and copies the cask into `omesser/homebrew-fidget`. A prerelease does not move the cask. `livecheck` uses `:github_latest`, which follows the marked Latest release and skips drafts and prereleases.
+
+The default branch requires a pull request. The job pushes the cask commit when it can, and otherwise opens or updates the `homebrew-cask-bump` pull request. The tap push does not wait for that pull request.
+
+A `workflow_dispatch` package build leaves the tap alone. To reconcile a tag that is already published, dispatch the Release workflow and set the sync tap tag input to that tag, for example `v0.1.0`. That run skips the package build. The tag has to be the latest stable Release, because verify refuses any other pin. Re-running the homebrew job on a Release run reconciles the same way.
+
+`scripts/bump-homebrew-cask.sh` and a hand copy into the tap are for when that job cannot run. The bump reads that tag's Apple Silicon `.dmg`. The cask depends on arm64 because that is the only macOS disk image the Release ships.
+
 ## Further Reading
 
 - [README](../README.md): what it does, how to run, platform support
