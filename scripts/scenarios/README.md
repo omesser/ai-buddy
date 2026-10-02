@@ -42,8 +42,9 @@ with a click at the control's centre only if AXPress is refused.
 
 `hero-gif.sh` takes the same two binaries and records the display for 45 s
 while you throw, poke, double-click and chat with the Character for the README
-hero GIF. Its `--crop` pass re-encodes the saved recording to
-`docs/readme/hero.gif` and launches nothing. `--harness claude` runs the real
+hero. Its `--crop` pass re-encodes the saved recording to an MP4 beside it,
+or an animated WebP with `--webp`, and launches nothing. The README embeds the
+MP4 as a `user-attachments` video. `--harness claude` runs the real
 Claude Code adapter: the private `HOME` links your `~/.claude`,
 `~/.claude.json`, `~/.npm` and `~/Library/Keychains`; Fidget's settings and
 memory still land under the private `HOME`. Keep Chat open from the

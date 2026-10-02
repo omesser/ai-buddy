@@ -12,12 +12,12 @@
 #   from the contact sheet and the full-frame GIF in the evidence directory.
 #
 # Usage: hero-gif.sh --go [--harness fixture|claude|grok] [--character <id>] <fidget binary> <fidget test binary>
-#        hero-gif.sh --crop x:y:w:h <recording.mp4> [<from s> [<length s>]]
+#        hero-gif.sh --crop x:y:w:h [--webp] <recording.mp4> [<from s> [<length s>]]
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # --harness claude links ~/.claude, ~/.claude.json, ~/.npm and ~/Library/Keychains
 #   into the private HOME: sign-in and warm npx carry over, Fidget's data stays isolated.
-# --crop re-encodes a saved recording to docs/readme/hero.gif, launching
-#   nothing; x:y:w:h is in recording pixels, so 2x on a Retina display.
+# --crop re-encodes a saved recording to <recording>-hero.mp4, launching nothing;
+#   --webp writes a 960 px looping <recording>-hero.webp. x:y:w:h is in recording pixels.
 set -euo pipefail
 
 ffmpeg=/opt/homebrew/bin/ffmpeg
@@ -36,15 +36,45 @@ to_gif() { # <in> <out> <crop filter or empty> <from s> <length s>
   "$ffmpeg" -y -v error -ss "$4" -t "$5" -i "$1" \
     -vf "$vf,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
     -loop 0 "$2"
-  echo "$2: $(du -h "$2" | cut -f1)"
+  sized "$2"
+}
+
+# du rounds by allocated blocks and misread a fresh file, so print bytes.
+sized() { echo "$1: $(($(stat -f %z "$1") / 1024)) KB"; }
+
+to_mp4() { # <in> <out> <crop filter> <from s> <length s>
+  "$ffmpeg" -y -v error -ss "$4" -t "$5" -i "$1" \
+    -vf "fps=30,${3}scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1" \
+    -c:v libx264 -crf 23 -preset slow -pix_fmt yuv420p -movflags +faststart "$2"
+  sized "$2"
+}
+
+# Homebrew ffmpeg has no WebP encoder, so go through a 256-colour GIF and gif2webp.
+# A full-detail GIF of a window with live graphs runs near 10 MB; 960 px at 10 fps
+# as WebP is about 3 MB for 40 s.
+to_webp() { # <in> <out> <crop filter> <from s> <length s>
+  local gif="${2%.webp}.gif"
+  "$ffmpeg" -y -v error -ss "$4" -t "$5" -i "$1" \
+    -vf "fps=10,${3}scale=960:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
+    -loop 0 "$gif"
+  /opt/homebrew/bin/gif2webp -q 75 -m 6 -mixed "$gif" -o "$2" > /dev/null 2>&1
+  rm -f "$gif"
+  sized "$2"
 }
 
 case "${1:-}" in
   --crop)
-    crop=${2:?usage: hero-gif.sh --crop x:y:w:h <recording.mp4> [<from s> [<length s>]]}
-    rec=${3:?usage: hero-gif.sh --crop x:y:w:h <recording.mp4> [<from s> [<length s>]]}
+    crop_usage="usage: hero-gif.sh --crop x:y:w:h [--webp] <recording.mp4> [<from s> [<length s>]]"
+    crop=${2:?$crop_usage}
+    shift 2
+    encode=to_mp4 ext=mp4
+    if [ "${1:-}" = --webp ]; then
+      encode=to_webp ext=webp
+      shift
+    fi
+    rec=${1:?$crop_usage}
     IFS=: read -r x y w h <<< "$crop"
-    to_gif "$rec" "$root/docs/readme/hero.gif" "crop=$w:$h:$x:$y," "${4:-0}" "${5:-15}"
+    "$encode" "$rec" "${rec%.*}-hero.$ext" "crop=$w:$h:$x:$y," "${2:-0}" "${3:-15}"
     exit 0
     ;;
   --go) ;;
