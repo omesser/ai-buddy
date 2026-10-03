@@ -6735,9 +6735,17 @@ mod tests {
         let session = Arc::new(session);
         let id = WOKEN.to_string();
         let mut slots = crate::completer::Slots::new();
-        slots.wake(&id, harness_director(&session), woken(Happened::Chat("hi".into())));
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
         let ask = fx.ask();
-        assert_eq!(fx.count("asked"), 1, "scenario-asking recorded the ask mark");
+        assert_eq!(
+            fx.count("asked"),
+            1,
+            "scenario-asking recorded the ask mark"
+        );
         assert_eq!(ask.title.as_deref(), Some("May I proceed?"));
         session.answer_permission(&ask.request, "allow");
         let answered = polled(&mut slots).expect("the first turn's answer");
