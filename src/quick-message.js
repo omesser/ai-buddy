@@ -50,6 +50,10 @@ export const HOVER_DELAY_MS = 1500;
 // Auto-hide: 3s continuous away from both sprite and pill. Re-entering resets.
 export const AUTO_HIDE_DELAY_MS = 3000;
 
+// While Speech or thinking is up the Character has the floor, so an empty pill
+// the pointer left gives way. This is only long enough to cross onto the pill.
+export const BUBBLE_YIELD_MS = 1000;
+
 // A click that stays put is a poke. Past this, the same press is a drag.
 export const DRAG_DISMISS_PX = 4;
 
@@ -72,6 +76,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let yielded = false;
   // Chat is the composer while it is up. A level, told by every frame.
   let chatOpen = false;
+  let bubbleUp = false;
   let ready = available;
 
   function changed() {
@@ -101,7 +106,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       autoHideTimer = null;
       if (disposed || !visible || hasText() || overSprite || overPill) return;
       hide();
-    }, AUTO_HIDE_DELAY_MS);
+    }, bubbleUp ? BUBBLE_YIELD_MS : AUTO_HIDE_DELAY_MS);
   }
 
   function hide() {
@@ -192,6 +197,13 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     setChatOpen(open) {
       chatOpen = Boolean(open);
       if (chatOpen) cancelHover();
+    },
+    setBubble(up) {
+      if (up === bubbleUp) return;
+      bubbleUp = up;
+      if (!up) return;
+      cancelAutoHide();
+      startAutoHideIfNeeded();
     },
     setAvailable(next) {
       if (disposed || next === ready) return;

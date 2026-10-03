@@ -138,6 +138,7 @@ function createView(id) {
   function show(mode) {
     bubble.dataset.mode = mode;
     bubble.classList.add("visible");
+    view.quickMachine?.setBubble(true);
     positionBubble(view, spriteRect(), currentDisplayBounds());
     // Place now: idle overlays may not paint after arm(), and a departed
     // bubble must not leave the quick-message at a stale top.
@@ -147,6 +148,7 @@ function createView(id) {
 
   function hide() {
     bubble.classList.remove("visible");
+    view.quickMachine?.setBubble(false);
     view.hotspot = null;
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
