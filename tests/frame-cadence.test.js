@@ -140,11 +140,12 @@ test("the reducer writes JSON that its compare command reads back", () => {
   assert.match(run.stdout.toString(), /\| Engine ticks, still \(Hz\) \| 45 \(50, 40\) \| 62\.5 \(62\.5\) \| 17\.5 \|/);
 });
 
-test("the bench refuses a third binary, and rounds without a second, before it launches anything", () => {
+test("the bench refuses a third binary, and rounds without a second or of zero, before it launches anything", () => {
   const bench = (...args) => spawnSync("bash", ["scripts/bench-frame-cadence-macos.sh", ...args], { env: { ...process.env, FIDGET_BENCH_GREEN_LIGHT: "" } });
   for (const args of [
     ["idle", "--bin", "a", "--bin", "b", "--bin", "c"],
     ["idle", "--bin", "a", "--rounds", "2"],
+    ["idle", "--bin", "a", "--bin", "b", "--rounds", "0"],
   ]) {
     const run = bench(...args);
     assert.equal(run.status, 2);

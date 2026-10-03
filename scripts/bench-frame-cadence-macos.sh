@@ -81,6 +81,7 @@ if [ "${#bins[@]}" -eq 1 ]; then
   [ -z "$rounds" ] || usage
 else
   rounds="${rounds:-3}"
+  case "$rounds" in '' | 0 | *[!0-9]*) usage ;; esac
 fi
 if [ "${FIDGET_BENCH_GREEN_LIGHT:-}" != 1 ]; then
   echo "$scenario launches fidget on the live desktop. Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
@@ -263,10 +264,10 @@ cpus=$(cpu_count)
 EOF
 if [ "${#bins[@]}" -eq 1 ]; then
   echo "bin=$bin"
+  echo "git_rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)"
 else
   printf 'bin_a=%s\nbin_b=%s\nrounds=%s\n' "${bins[0]}" "${bins[1]}" "$rounds"
 fi
-echo "git_rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)"
 echo "seconds=$seconds"
 echo
 
@@ -284,7 +285,8 @@ else
     for name in "${scenarios[@]}"; do
       for side in "${order[@]}"; do
         if [ "$side" = a ]; then bin=${bins[0]}; else bin=${bins[1]}; fi
-        run "$name" "$name.$side$round"
+        # A failed run drops out of the comparison instead of ending the other rounds.
+        run "$name" "$name.$side$round" || rm -f "$out/$name.$side$round.json"
       done
     done
   done
@@ -292,11 +294,15 @@ else
     a=()
     b=()
     for round in $(seq 1 "$rounds"); do
-      a+=("$out/$name.a$round.json")
-      b+=("$out/$name.b$round.json")
+      [ ! -f "$out/$name.a$round.json" ] || a+=("$out/$name.a$round.json")
+      [ ! -f "$out/$name.b$round.json" ] || b+=("$out/$name.b$round.json")
     done
+    if [ "${#a[@]}" -eq 0 ] || [ "${#b[@]}" -eq 0 ]; then
+      echo "$name: no completed run on one side; see $out" >&2
+      continue
+    fi
     {
-      echo "## $name, A/B over $rounds rounds"
+      echo "## $name, A/B: ${#a[@]} A and ${#b[@]} B runs of $rounds rounds"
       echo
       echo "A=${bins[0]} B=${bins[1]}"
       echo

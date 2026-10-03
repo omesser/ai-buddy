@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Reduce a fidget log run under FIDGET_TRACE_FRAMES and FIDGET_TRACE_CADENCE
 // to the numbers #426 asks for. scripts/bench-frame-cadence-macos.sh writes the
-// log and calls this with its sample window. `--json` also saves the reduction,
-// and `compare` sets saved runs of two binaries side by side.
+// log and calls this with its sample window.
 //
 // Usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS] [--json OUT]
 //        node scripts/frame-cadence.mjs compare --a JSON... --b JSON...
@@ -204,11 +203,13 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (path === "compare") {
     const sides = { "--a": [], "--b": [] };
     let files;
+    let stray = false;
     for (const arg of args) {
       if (arg in sides) files = sides[arg];
-      else files?.push(JSON.parse(readFileSync(arg, "utf8")));
+      else if (files) files.push(JSON.parse(readFileSync(arg, "utf8")));
+      else stray = true;
     }
-    if (!sides["--a"].length || !sides["--b"].length) {
+    if (stray || !sides["--a"].length || !sides["--b"].length) {
       console.error("usage: node scripts/frame-cadence.mjs compare --a JSON... --b JSON...");
       process.exit(2);
     }
