@@ -12,12 +12,15 @@ use fidget_verify::overlay;
 use fidget_verify::paths::{self, RunPaths};
 use fidget_verify::poke;
 use fidget_verify::proof;
+use fidget_verify::scenario;
 use fidget_verify::summon;
 use fidget_verify::units;
 
 #[derive(Debug, Parser)]
 #[command(name = "fidget-verify")]
-#[command(about = "Agent/CI verify entry (doctor / units / overlay / poke / summon / cleanup)")]
+#[command(
+    about = "Agent/CI verify entry (doctor / units / overlay / poke / summon / scenario / cleanup)"
+)]
 #[command(version)]
 struct Cli {
     /// Override evidence directory. Scratch is the sibling `scratch` under the
@@ -50,6 +53,18 @@ enum Commands {
     Poke,
     /// Double-click the sprite for real; assert `verbs:.*Summon`.
     Summon,
+    /// Run one `scripts/scenarios/<name>.sh`. Without `--go`, print its
+    /// takeover header and skip.
+    Scenario {
+        /// The script's file name without `.sh`.
+        name: String,
+        /// The owner said go for this run: build the binaries and take over the GUI.
+        #[arg(long)]
+        go: bool,
+        /// Passed to the script after the binaries.
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
     /// Kill recorded PIDs; remove scratch; keep evidence.
     Cleanup,
 }
@@ -62,6 +77,7 @@ impl Commands {
             Commands::Overlay => "overlay",
             Commands::Poke => "poke",
             Commands::Summon => "summon",
+            Commands::Scenario { .. } => "scenario",
             Commands::Cleanup => "cleanup",
         }
     }
@@ -99,6 +115,9 @@ fn main() -> ExitCode {
                 Commands::Overlay => overlay::run(&repo_root, &mut report),
                 Commands::Poke => poke::run(&repo_root, &mut report),
                 Commands::Summon => summon::run(&repo_root, &mut report),
+                Commands::Scenario { name, go, args } => {
+                    scenario::run(&repo_root, name, *go, args, &mut report)
+                }
                 Commands::Cleanup => cleanup::run(&mut report),
             },
             // Doctor's product is the layout report, so it still runs and

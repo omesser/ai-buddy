@@ -130,3 +130,32 @@ fn every_run_appends_its_own_proof_section() {
         "proof was:\n{text}"
     );
 }
+
+#[test]
+fn a_scenario_without_go_prints_its_takeover_header_and_skips() {
+    let dir = TempDir::new().unwrap();
+    let evidence = evidence_in(&dir);
+    let out = verify(&evidence, &["--json", "scenario", "thinking-row"]);
+
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Scenario: thinking-row (macOS)"),
+        "stderr was:\n{stderr}"
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["command"], "scenario");
+    assert_eq!(json["outcome"], "skip");
+}
+
+#[test]
+fn an_unknown_scenario_is_a_tool_error_that_names_the_known_ones() {
+    let dir = TempDir::new().unwrap();
+    let evidence = evidence_in(&dir);
+    let out = verify(&evidence, &["scenario", "../hero-gif"]);
+
+    assert_eq!(out.status.code(), Some(3));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("thinking-row"), "stdout was:\n{stdout}");
+    assert!(!stdout.contains("fixture-harness"), "stdout was:\n{stdout}");
+}

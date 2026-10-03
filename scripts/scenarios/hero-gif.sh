@@ -11,7 +11,7 @@
 # Asserts: the recording exists and ffprobe reads it. The look is yours to judge
 #   from the contact sheet and the full-frame GIF in the evidence directory.
 #
-# Usage: hero-gif.sh --go [--harness fixture|claude|grok] [--character <id>] <fidget binary> <fidget test binary>
+# Usage: hero-gif.sh --go <fidget binary> <fidget test binary> [--harness fixture|claude|grok] [--character <id>]
 #        hero-gif.sh --crop x:y:w:h [--webp] <recording.mp4> [<from s> [<length s>]]
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # --harness claude links ~/.claude, ~/.claude.json, ~/.npm and ~/Library/Keychains
@@ -85,18 +85,19 @@ case "${1:-}" in
 esac
 shift
 
-usage="usage: hero-gif.sh --go [--harness fixture|claude|grok] [--character <id>] <fidget binary> <fidget test binary>"
+usage="usage: hero-gif.sh --go <fidget binary> <fidget test binary> [--harness fixture|claude|grok] [--character <id>]"
 harness_kind=fixture character=buddy-bot
-while [ $# -gt 2 ]; do
+bin=${1:?$usage}
+test_bin=${2:?$usage}
+shift 2
+while [ $# -gt 0 ]; do
   case "$1" in
-    --harness) harness_kind=$2 ;;
-    --character) character=$2 ;;
+    --harness) harness_kind=${2:?$usage} ;;
+    --character) character=${2:?$usage} ;;
     *) fail "$usage" ;;
   esac
   shift 2
 done
-bin=${1:?$usage}
-test_bin=${2:?$usage}
 # Buddy Bot draws 90 px square and Trump 108 px at 1x, so a crop tuned for
 # one is loose or tight on the other.
 [ -d "$root/characters/$character" ] || fail "no such character: $root/characters/$character"
