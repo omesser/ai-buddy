@@ -1725,29 +1725,59 @@ impl Answer {
         let mut rest = std::mem::take(&mut self.held) + chunk;
         let mut thought = String::new();
         loop {
-            let tags = if self.thinking { CLOSE } else { OPEN };
-            let side = if self.thinking {
-                &mut thought
-            } else {
-                &mut self.said
-            };
-            let found = tags
+            let found_open = OPEN
                 .iter()
-                .filter_map(|tag| rest.find(tag).map(|at| (at, tag.len())))
+                .filter_map(|tag| rest.find(tag).map(|at| (at, tag.len(), true)))
                 .min();
-            let Some((at, len)) = found else {
-                let keep = tags
+            let found_close = CLOSE
+                .iter()
+                .filter_map(|tag| rest.find(tag).map(|at| (at, tag.len(), false)))
+                .min();
+            let found = match (found_open, found_close) {
+                (Some((at_o, len_o, _)), Some((at_c, _, _))) if at_o < at_c => {
+                    Some((at_o, len_o, true))
+                }
+                (Some(_), Some((at_c, len_c, _))) => Some((at_c, len_c, false)),
+                (Some(o), None) => Some(o),
+                (None, Some(c)) => Some(c),
+                (None, None) => None,
+            };
+
+            let Some((at, len, is_open)) = found else {
+                let keep = OPEN
                     .iter()
+                    .chain(CLOSE.iter())
                     .flat_map(|tag| (1..tag.len()).filter(|&k| rest.ends_with(&tag[..k])))
                     .max()
                     .unwrap_or(0);
                 self.held = rest.split_off(rest.len() - keep);
-                side.push_str(&rest);
+                if self.thinking {
+                    thought.push_str(&rest);
+                } else {
+                    self.said.push_str(&rest);
+                }
                 return thought;
             };
-            side.push_str(&rest[..at]);
-            rest.drain(..at + len);
-            self.thinking = !self.thinking;
+
+            if is_open {
+                if self.thinking {
+                    thought.push_str(&rest[..at]);
+                } else {
+                    self.said.push_str(&rest[..at]);
+                }
+                rest.drain(..at + len);
+                self.thinking = true;
+            } else {
+                if self.thinking {
+                    thought.push_str(&rest[..at]);
+                    rest.drain(..at + len);
+                    self.thinking = false;
+                } else {
+                    thought.push_str(&std::mem::take(&mut self.said));
+                    thought.push_str(&rest[..at]);
+                    rest.drain(..at + len);
+                }
+            }
         }
     }
 
@@ -2171,6 +2201,37 @@ mod tests {
         ]);
         assert_eq!(said, "They want <three> titles.mutter <think");
         assert!(events.is_empty());
+    }
+
+    /// Some templates open the reasoning block in the prompt, so model output
+    /// starts inside it. A lone closing tag with no opening tag treats the
+    /// text before it as reasoning and keeps only what follows.
+    #[test]
+    fn a_stray_closing_tag_treats_text_before_it_as_reasoning() {
+        let (said, events) = drive(vec![
+            message("They want the titles. I'll look again."),
+            message("</think>mutter\nFidget's in front."),
+        ]);
+        assert_eq!(said, "mutter\nFidget's in front.");
+        assert_eq!(
+            thoughts(&events),
+            ["They want the titles. I'll look again."]
+        );
+    }
+
+    /// A stray closing tag split across chunks is held and completed, so the
+    /// reasoning boundary is still honored when the tag arrives in fragments.
+    #[test]
+    fn a_stray_closing_tag_split_across_chunks_is_held() {
+        let (said, events) = drive(vec![
+            message("They want the titles. I'll look again.</thin"),
+            message("k>mutter\nFidget's in front."),
+        ]);
+        assert_eq!(said, "mutter\nFidget's in front.");
+        assert_eq!(
+            thoughts(&events),
+            ["They want the titles. I'll look again."]
+        );
     }
 
     #[test]
