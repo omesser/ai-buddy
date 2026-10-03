@@ -11,6 +11,11 @@
 # load: walking with one `yes` per core running from launch.
 # idle-quiet: idle with FIDGET_TRACE_FRAMES off, so the loop's own tick
 #   counter says whether the per-tick `frame:` print slows the Engine.
+#
+# A/B: pass --bin twice. One binary's still-tick rate drifts by several Hz over
+# minutes, so each round runs every scenario on both, B first on even rounds,
+# and prints each side's mean over --rounds (default 3) and B minus A.
+#
 # Every scenario launches fidget on the live desktop, so it refuses to run
 # unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to it.
 
@@ -20,13 +25,16 @@ cd "$(dirname "$0")/.."
 seconds=20
 walk_timeout=180
 out=""
-bin="${FIDGET_VERIFY_BIN:-target/debug/fidget}"
+bins=()
+rounds=""
 scenario=""
 
 usage() {
   cat >&2 << EOF
 Usage: $0 <idle|idle-quiet|walking|load|matrix> [--seconds N] [--walk-timeout N] [--bin PATH] [--out DIR]
+       $0 <scenario> --bin A --bin B [--rounds N] [...]
 
+A second --bin runs A/B: both binaries per scenario, alternating, for N rounds.
 Every scenario launches fidget and needs FIDGET_BENCH_GREEN_LIGHT=1.
 EOF
   exit 2
@@ -43,7 +51,11 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --bin)
-      bin="$2"
+      bins+=("$2")
+      shift 2
+      ;;
+    --rounds)
+      rounds="$2"
       shift 2
       ;;
     --out)
@@ -63,14 +75,24 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$scenario" ] || usage
+[ "${#bins[@]}" -gt 0 ] || bins=("${FIDGET_VERIFY_BIN:-target/debug/fidget}")
+[ "${#bins[@]}" -le 2 ] || usage
+if [ "${#bins[@]}" -eq 1 ]; then
+  [ -z "$rounds" ] || usage
+else
+  rounds="${rounds:-3}"
+fi
 if [ "${FIDGET_BENCH_GREEN_LIGHT:-}" != 1 ]; then
   echo "$scenario launches fidget on the live desktop. Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed." >&2
   exit 2
 fi
-[ -x "$bin" ] || {
-  echo "no $bin; run: (cd src-tauri && cargo build --bin fidget)" >&2
-  exit 2
-}
+for bin in "${bins[@]}"; do
+  [ -x "$bin" ] || {
+    echo "no $bin; run: (cd src-tauri && cargo build --bin fidget)" >&2
+    exit 2
+  }
+done
+bin=${bins[0]}
 
 out="${out:-$(mktemp -d /tmp/fidget-cadence-bench-XXXXXX)}"
 mkdir -p "$out"
@@ -163,8 +185,10 @@ wait_walk() {
   return 1
 }
 
+# The second argument names the run's files, so A/B rounds do not overwrite each other.
 run() {
-  local name=$1 log="$out/$1.log"
+  local name=$1 tag=${2:-$1}
+  local log="$out/$tag.log"
   if [ "$name" = load ]; then
     for _ in $(seq 1 "$(cpu_count)"); do
       yes > /dev/null &
@@ -208,13 +232,13 @@ run() {
   walks=untraced
   [ "$name" = idle-quiet ] || walks=$(awk -v f="$from" -v t="$to" '/^frame: / && $2 >= f && $2 <= t && / (walk|ballwalk)#/ { n++ } END { print n + 0 }' "$log")
   {
-    echo "## $name"
+    echo "## $tag"
     echo
     echo "window: $from..$to ms, walk frames: $walks"
     echo
-    node scripts/frame-cadence.mjs "$log" --from "$from" --to "$to"
-  } > "$out/$name.md"
-  cat "$out/$name.md"
+    node scripts/frame-cadence.mjs "$log" --from "$from" --to "$to" --json "$out/$tag.json"
+  } > "$out/$tag.md"
+  cat "$out/$tag.md"
   echo
   if [ "$name" = idle ] && [ "$walks" -gt 0 ]; then
     echo "$name: BMO walked $walks frames in the window, so this is not an idle sample; see $log" >&2
@@ -236,20 +260,50 @@ machine=$machine
 os=$os
 refresh_hz=$refresh_hz
 cpus=$(cpu_count)
-bin=$bin
-git_rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)
-seconds=$seconds
 EOF
+if [ "${#bins[@]}" -eq 1 ]; then
+  echo "bin=$bin"
+else
+  printf 'bin_a=%s\nbin_b=%s\nrounds=%s\n' "${bins[0]}" "${bins[1]}" "$rounds"
+fi
+echo "git_rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)"
+echo "seconds=$seconds"
 echo
 
-case "$scenario" in
-  matrix)
-    run idle
-    run idle-quiet
-    run walking
-    run load
-    ;;
-  *) run "$scenario" ;;
-esac
+scenarios=("$scenario")
+[ "$scenario" != matrix ] || scenarios=(idle idle-quiet walking load)
+
+if [ "${#bins[@]}" -eq 1 ]; then
+  for name in "${scenarios[@]}"; do
+    run "$name"
+  done
+else
+  for round in $(seq 1 "$rounds"); do
+    order=(a b)
+    [ $((round % 2)) -eq 1 ] || order=(b a)
+    for name in "${scenarios[@]}"; do
+      for side in "${order[@]}"; do
+        if [ "$side" = a ]; then bin=${bins[0]}; else bin=${bins[1]}; fi
+        run "$name" "$name.$side$round"
+      done
+    done
+  done
+  for name in "${scenarios[@]}"; do
+    a=()
+    b=()
+    for round in $(seq 1 "$rounds"); do
+      a+=("$out/$name.a$round.json")
+      b+=("$out/$name.b$round.json")
+    done
+    {
+      echo "## $name, A/B over $rounds rounds"
+      echo
+      echo "A=${bins[0]} B=${bins[1]}"
+      echo
+      node scripts/frame-cadence.mjs compare --a "${a[@]}" --b "${b[@]}"
+    } | tee "$out/$name.ab.md"
+    echo
+  done
+fi
 
 echo "out=$out"

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Reduce a fidget log run under FIDGET_TRACE_FRAMES and FIDGET_TRACE_CADENCE
 // to the numbers #426 asks for. scripts/bench-frame-cadence-macos.sh writes the
-// log and calls this with its sample window.
+// log and calls this with its sample window. `--json` also saves the reduction,
+// and `compare` sets saved runs of two binaries side by side.
 //
-// Usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS]
+// Usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS] [--json OUT]
+//        node scripts/frame-cadence.mjs compare --a JSON... --b JSON...
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { interpolate } from "../src/interpolate.js";
 
@@ -164,16 +166,65 @@ export function report(result) {
   ].join("\n");
 }
 
+const COMPARED = [
+  ["Mean fps", (r) => r.fps],
+  [`Dropped (>${DROP_MS} ms)`, (r) => r.drops],
+  ["Engine ticks/s, loop counter", (r) => r.countedHz],
+  ["Engine ticks, still (Hz)", (r) => r.still.hz],
+  ["Engine ticks, still (ms)", (r) => r.still.gapMs],
+  ["Engine ticks, moving (Hz)", (r) => r.moving.hz],
+  ["Engine ticks, moving (ms)", (r) => r.moving.gapMs],
+  ["Interpolation lag p95, moving (ms)", (r) => r.lag?.p95Ms ?? null],
+  ["Moving frames held at the latest placement", (r) => r.lag?.held ?? null],
+];
+
+/**
+ * Each side's mean over its rounds, the rounds themselves, and B minus A.
+ * @param {ReturnType<typeof analyze>[]} a
+ * @param {ReturnType<typeof analyze>[]} b
+ */
+export function compare(a, b) {
+  const na = (value) => (value === null ? "N/A" : `${value}`);
+  const side = (results, metric) => {
+    const values = results.map(metric);
+    const measured = values.filter((v) => v !== null);
+    return { mean: measured.length ? round(mean(measured), 1) : null, values };
+  };
+  const rows = COMPARED.map(([name, metric]) => {
+    const [left, right] = [side(a, metric), side(b, metric)];
+    const diff = left.mean === null || right.mean === null ? null : round(right.mean - left.mean, 1);
+    const cell = ({ mean, values }) => `${na(mean)} (${values.map(na).join(", ")})`;
+    return `| ${name} | ${cell(left)} | ${cell(right)} | ${na(diff)} |`;
+  });
+  return ["| Metric | A | B | B - A |", "|---|---|---|---|", ...rows].join("\n");
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [path, ...args] = process.argv.slice(2);
+  if (path === "compare") {
+    const sides = { "--a": [], "--b": [] };
+    let files;
+    for (const arg of args) {
+      if (arg in sides) files = sides[arg];
+      else files?.push(JSON.parse(readFileSync(arg, "utf8")));
+    }
+    if (!sides["--a"].length || !sides["--b"].length) {
+      console.error("usage: node scripts/frame-cadence.mjs compare --a JSON... --b JSON...");
+      process.exit(2);
+    }
+    console.log(compare(sides["--a"], sides["--b"]));
+    process.exit(0);
+  }
   if (!path) {
-    console.error("usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS]");
+    console.error("usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS] [--json OUT]");
     process.exit(2);
   }
   const flag = (name) => {
     const i = args.indexOf(name);
-    return i === -1 ? undefined : Number(args[i + 1]);
+    return i === -1 ? undefined : args[i + 1];
   };
-  const result = analyze(readFileSync(path, "utf8"), { from: flag("--from"), to: flag("--to") });
+  const ms = (name) => (flag(name) === undefined ? undefined : Number(flag(name)));
+  const result = analyze(readFileSync(path, "utf8"), { from: ms("--from"), to: ms("--to") });
+  if (flag("--json")) writeFileSync(flag("--json"), JSON.stringify(result));
   console.log(report(result));
 }
