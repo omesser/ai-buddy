@@ -1,5 +1,11 @@
 // A flex item's computed display is flex wherever it sits, so the parent
 // element and the boxes are what prove the row.
+//
+// Collapsed, the plain sentence and Advanced share one line. The sameTop check
+// allows ±1px tolerance because fractional line-heights (terminal uses 10.5px
+// font-size * 1.45 line-height = 15.225px) can cause subpixel rounding
+// differences across Chrome versions and rendering engines when calculating
+// baseline alignment of <span> vs <details><summary> elements.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -176,7 +182,7 @@ function measure() {
     const row = Math.max(p.bottom, s.bottom) - Math.min(p.top, s.top);
     const display = getComputedStyle(ladder).display;
     return {
-      sameTop: Math.round(p.top) === Math.round(s.top),
+      sameTop: Math.abs(Math.round(p.top) - Math.round(s.top)) <= 1,
       plainTop: Math.round(p.top),
       summaryTop: Math.round(s.top),
       noBox: display === "none" || (l.width === 0 && l.height === 0),
