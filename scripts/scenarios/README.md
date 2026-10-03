@@ -35,6 +35,12 @@ sideways.
 layer 25 only while focused, and that minimizing Chat, focused or not, logs the
 change that lets the quick-message pill back.
 
+`question-bubble.sh` takes the same two binaries. Its fixture asks a permission
+question on the first turn, then the scenario pokes the sprite at the position
+the frame trace logs. It checks that no question cue shows before the Poke, and
+that after it the bubble reads "Question for you in the" with a `chat` link
+button.
+
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
 the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness

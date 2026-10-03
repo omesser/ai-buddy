@@ -3141,6 +3141,25 @@ mod tests {
                             stop(&id, "end_turn");
                             record(count, "replied");
                         }
+                        "scenario-asking" if prompts == 1 => {
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": &session,
+                                    "toolCall": {
+                                        "toolCallId": "t1",
+                                        "title": "May I proceed?",
+                                        "kind": "other",
+                                        "content": [{"type": "content", "content": {"type": "text", "text": "The question that waits on the user."}}],
+                                    },
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                    ],
+                                }}),
+                            );
+                            record(count, "asked");
+                            pending_prompt = Some(id);
+                        }
                         "mcp-link-turn" if prompts == 1 => {
                             mcp_link(&session, None);
                             chunk(&session, "Hello");
@@ -3195,11 +3214,16 @@ mod tests {
                         if script == "permission-after-work" {
                             thread::sleep(ASK_WORK);
                         }
-                        let option = message
-                            .pointer("/result/outcome/optionId")
-                            .and_then(Value::as_str)
-                            .unwrap_or("");
-                        chunk(&session, &format!("ok:{option}"));
+                        if script == "scenario-asking" {
+                            chunk(&session, "fidget\nYou answered the question.");
+                            record(count, "replied");
+                        } else {
+                            let option = message
+                                .pointer("/result/outcome/optionId")
+                                .and_then(Value::as_str)
+                                .unwrap_or("");
+                            chunk(&session, &format!("ok:{option}"));
+                        }
                         if let Some(id) = pending_prompt.take() {
                             stop(&id, "end_turn");
                         }
@@ -6701,6 +6725,34 @@ mod tests {
             );
             assert_eq!(hint, login_command(name, &Handshake::default()));
         }
+    }
+
+    /// `scripts/scenarios/question-bubble.sh` fixture. The first turn asks for
+    /// permission and the Harness waits on the answer, putting the Instance in
+    /// the awaiting-user state. The mark proves the ask is sent.
+    #[test]
+    fn scenario_asking_fixture_asks_for_permission() {
+        let (fx, session) = Fixture::new("scenario-asking");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(
+            &id,
+            harness_director(&session),
+            woken(Happened::Chat("hi".into())),
+        );
+        let ask = fx.ask();
+        assert_eq!(
+            fx.count("asked"),
+            1,
+            "scenario-asking recorded the ask mark"
+        );
+        assert_eq!(ask.title.as_deref(), Some("May I proceed?"));
+        session.answer_permission(&ask.request, "allow");
+        let answered = polled(&mut slots).expect("the first turn's answer");
+        assert_eq!(said(&answered), Some("fidget\nYou answered the question."));
+        assert_eq!(fx.count("replied"), 1);
+        session.shutdown();
     }
 
     fn mcp_tmp(label: &str) -> PathBuf {

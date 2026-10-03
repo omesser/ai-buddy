@@ -1,5 +1,6 @@
-// Prints the CGWindowID of <pid>'s on-screen layer-0 window titled <title>, for
-// `screencapture -l`. Reads the window server only, so it needs no grant.
+// Prints the CGWindowID of <pid>'s on-screen window titled <title>, for
+// `screencapture -l`. Any layer: a focused Chat floats at layer 25 (#1255).
+// Reads the window server only, so it needs no grant.
 import CoreGraphics
 import Foundation
 
@@ -11,7 +12,6 @@ guard args.count == 3, let pid = Int(args[1]) else {
 let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
 for window in windows
 where (window[kCGWindowOwnerPID as String] as? Int) == pid
-    && (window[kCGWindowLayer as String] as? Int) == 0
     && (window[kCGWindowName as String] as? String) == args[2]
 {
     print(window[kCGWindowNumber as String] as! Int)

@@ -554,7 +554,7 @@ case "dump":
     let wanted = args.count >= 3 ? args[2] : "Settings"
     // `frames` appends each element's x,y,w,h, for a layout assertion.
     let withFrames = args.count >= 4 && args[3] == "frames"
-    guard let window = settledWindow(titled: wanted) else { die("\(wanted) is not open") }
+    guard settledWindow(titled: wanted) != nil else { die("\(wanted) is not open") }
     func walk(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }
         let role = string(element, kAXRoleAttribute) ?? "?"
@@ -589,7 +589,12 @@ case "dump":
                 + (withFrames ? "|" + (frame(element).map(rectText) ?? "") : ""))
         for child in children(element) { walk(child, depth: depth + 1) }
     }
-    walk(window, depth: 0)
+    // Every window with the title: each display's overlay and the quick-message
+    // pill are all titled Fidget.
+    for window in attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    where string(window, kAXTitleAttribute) == wanted {
+        walk(window, depth: 0)
+    }
 
 default:
     die("unknown command \(args[0])")
