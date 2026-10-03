@@ -4038,11 +4038,11 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         hIconSm: icon,
     };
     if unsafe { RegisterClassExW(&class) } == 0 {
-        return Err(format!(
-            "anchor: register class: {}",
-            std::io::Error::last_os_error()
-        )
-        .into());
+        let err = std::io::Error::last_os_error();
+        const ERROR_CLASS_ALREADY_EXISTS: i32 = 1410;
+        if err.raw_os_error() != Some(ERROR_CLASS_ALREADY_EXISTS) {
+            return Err(format!("anchor: register class: {}", err).into());
+        }
     }
 
     let (x, y) = anchor_origin((0, 0), false);
