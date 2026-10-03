@@ -793,6 +793,15 @@ pub fn spawn_xi2_listener() -> Option<std::sync::mpsc::Receiver<x11::InputEvent>
 #[cfg(target_os = "macos")]
 pub use macos::EventTap;
 
+#[cfg(target_os = "macos")]
+pub(crate) use macos::sleep_precisely;
+
+/// Sleep for a moving tick. Only macOS coalesces `thread::sleep` enough to need more.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn sleep_precisely(duration: std::time::Duration) {
+    std::thread::sleep(duration);
+}
+
 /// Spawn the macOS mouse event tap. `None` until the Input Monitoring row is
 /// checked and macOS has granted it. The frame loop asks again on later idle
 /// waits, so a grant that lands mid-run is picked up. Dropping the value stops

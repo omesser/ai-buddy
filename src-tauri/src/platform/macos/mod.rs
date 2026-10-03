@@ -11,6 +11,7 @@ mod input_events;
 mod minimize;
 mod overlay_panel;
 mod pointer;
+mod precise_sleep;
 mod sensing;
 mod tray;
 mod window_source;
@@ -23,6 +24,7 @@ pub use pointer::{
     control_click, double_click_interval_ms, primary_button_down, primary_press_began,
     secondary_button_down,
 };
+pub(crate) use precise_sleep::sleep_precisely;
 pub use sensing::MacosActivitySource;
 pub use tray::{seed_status_item_position, tune_tray_icon};
 pub(super) use window_source::visible_window_titles;

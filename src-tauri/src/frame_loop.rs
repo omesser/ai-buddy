@@ -288,7 +288,13 @@ pub(crate) fn run_frame_loop(
                                 now,
                                 moving,
                             );
-                            thread::sleep(tick_deadline - now);
+                            // Still ticks keep the coalesced sleep, the slower
+                            // rate #183 relies on.
+                            if moving {
+                                platform::sleep_precisely(tick_deadline - now);
+                            } else {
+                                thread::sleep(tick_deadline - now);
+                            }
                         }
                         (scheduler::ScheduleMode::Idle, false) => {
                             // Hidden idle: uncapped deep sleep. Only non-input
