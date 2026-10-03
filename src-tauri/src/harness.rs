@@ -6738,7 +6738,7 @@ mod tests {
         slots.wake(&id, harness_director(&session), woken(Happened::Chat("hi".into())));
         let ask = fx.ask();
         assert_eq!(fx.count("asked"), 1, "scenario-asking recorded the ask mark");
-        assert_eq!(ask.request.title, "May I proceed?");
+        assert_eq!(ask.title.as_deref(), Some("May I proceed?"));
         session.answer_permission(&ask.request, "allow");
         let answered = polled(&mut slots).expect("the first turn's answer");
         assert_eq!(said(&answered), Some("fidget\nYou answered the question."));
