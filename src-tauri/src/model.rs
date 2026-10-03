@@ -2106,6 +2106,38 @@ pub(crate) mod tests {
         assert_eq!(content_from_body(body).unwrap(), "stroll\nhey");
     }
 
+    /// xAI puts a `reasoning` item ahead of the `message`. Its text is
+    /// thinking, and the message is the answer.
+    #[test]
+    fn a_responses_body_skips_the_reasoning_item() {
+        let body = r#"{
+            "output": [
+                {
+                    "type": "reasoning",
+                    "content": [{"type": "reasoning_text", "text": "They want the titles."}]
+                },
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "mutter\nFidget's in front."}]
+                }
+            ]
+        }"#;
+        assert_eq!(
+            content_from_body(body).unwrap(),
+            "mutter\nFidget's in front."
+        );
+    }
+
+    #[test]
+    fn a_chat_completion_body_drops_a_think_block() {
+        let body = r#"{"choices":[{"message":{"content":
+            "<think>They want the titles.</think>\nmutter\nFidget's in front."}}]}"#;
+        assert_eq!(
+            content_from_body(body).unwrap(),
+            "\nmutter\nFidget's in front."
+        );
+    }
+
     #[test]
     fn a_body_without_content_is_an_error() {
         assert!(content_from_body("{}").is_err());
@@ -2580,6 +2612,11 @@ pub(crate) mod tests {
             read(r#"{"type":"response.reasoning_summary_text.delta","delta":"hmm"}"#),
             (Some("hmm".to_string()), None)
         );
+        // xAI and gpt-oss stream the raw reasoning rather than a summary.
+        assert_eq!(
+            read(r#"{"type":"response.reasoning_text.delta","delta":"hmm"}"#),
+            (Some("hmm".to_string()), None)
+        );
         // Anthropic types it apart one key along from its `text_delta`.
         assert_eq!(
             read(
@@ -2640,6 +2677,30 @@ pub(crate) mod tests {
                 ]
                 .map(str::to_string)
                 .to_vec()
+            )
+        );
+    }
+
+    /// A server that never typed its reasoning apart leaves `<think>` tags in
+    /// `content`, split wherever the chunks fall. The inside is drawn as a
+    /// thought and the reply is what follows the closing tag.
+    #[test]
+    fn a_think_tag_in_streamed_content_is_drawn_and_never_joins_the_reply() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"<th\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ink>They want\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\" the titles.</th\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ink>mutter\\nhey\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed_with_thoughts(sse),
+            (
+                Streamed::Complete("mutter\nhey".to_string()),
+                ["They want", "They want the titles.", ""]
+                    .map(str::to_string)
+                    .to_vec()
             )
         );
     }

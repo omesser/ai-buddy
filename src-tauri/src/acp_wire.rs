@@ -1967,6 +1967,46 @@ mod tests {
     /// Chunks arrive as fragments. The open line is the tail of the thought
     /// so far, blank lines included: half a sentence on its own reads as
     /// nonsense, and a paragraph break is something the harness wrote.
+    fn message(text: &str) -> SessionUpdate {
+        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+            text,
+        ))))
+    }
+
+    /// A Harness that never opened `agent_thought_chunk` marks its reasoning
+    /// with `<think>` tags in the answer instead. The tag can split across
+    /// chunks, and the inside is a thought, never a line the character says.
+    #[test]
+    fn a_think_tag_in_the_answer_is_a_thought() {
+        let (said, events) = drive(vec![
+            message("<thin"),
+            message("king>They want the titles."),
+            message(" I'll look again.</think"),
+            message("ing>mutter\nFidget's in front."),
+        ]);
+        assert_eq!(said, "mutter\nFidget's in front.");
+        assert_eq!(
+            thoughts(&events),
+            [
+                "They want the titles.",
+                "They want the titles. I'll look again."
+            ]
+        );
+    }
+
+    /// Text that only looks like the start of a tag is the answer once the
+    /// next chunk shows it is not one. Untagged reasoning stays the answer.
+    #[test]
+    fn a_partial_tag_that_never_completes_stays_the_answer() {
+        let (said, events) = drive(vec![
+            message("They want <th"),
+            message("ree> titles.mutter"),
+            message(" <think"),
+        ]);
+        assert_eq!(said, "They want <three> titles.mutter <think");
+        assert!(events.is_empty());
+    }
+
     #[test]
     fn a_thought_shows_the_line_being_written() {
         let (_, events) = drive(vec![
