@@ -3284,6 +3284,51 @@ mod tests {
         }
     }
 
+    /// One launcher script for every Fixture in this test process. macOS vets
+    /// the first exec of each new executable file, one file at a time, so a
+    /// script per Fixture queued parallel tests past the probe's 3 s.
+    fn fake_agent_wrapper() -> &'static Path {
+        static WRAPPER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        WRAPPER.get_or_init(|| {
+            let exe = std::env::current_exe().unwrap();
+            let test = module_path!()
+                .split_once("::")
+                .map_or("", |(_, rest)| rest)
+                .to_string()
+                + "::fake_acp_agent";
+            let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).unwrap();
+
+            #[cfg(unix)]
+            let path = {
+                use std::os::unix::fs::PermissionsExt;
+                let path = dir.join("launcher-wrapper.sh");
+                let contents = format!(
+                    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"fake-acp-agent 1.0.0\"\n  exit 0\nfi\nexec '{}' {} --exact --nocapture --test-threads=1 \"$@\"\n",
+                    exe.display(),
+                    test,
+                );
+                std::fs::write(&path, contents).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+                path
+            };
+
+            #[cfg(windows)]
+            let path = {
+                let path = dir.join("launcher-wrapper.bat");
+                let contents = format!(
+                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 %*\n",
+                    exe.display(),
+                    test,
+                );
+                std::fs::write(&path, contents).unwrap();
+                path
+            };
+
+            path
+        })
+    }
+
     struct Fixture {
         dir: PathBuf,
         cwd: PathBuf,
@@ -3312,46 +3357,13 @@ mod tests {
                 dir.clone()
             };
             let count = dir.join("count.txt");
-            let exe = std::env::current_exe().unwrap();
-            let test = module_path!()
-                .split_once("::")
-                .map_or("", |(_, rest)| rest)
-                .to_string()
-                + "::fake_acp_agent";
-
-            #[cfg(unix)]
-            let wrapper = {
-                use std::os::unix::fs::PermissionsExt;
-                let path = dir.join("launcher-wrapper.sh");
-                let contents = format!(
-                    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"fake-acp-agent 1.0.0\"\n  exit 0\nfi\nexec '{}' {} --exact --nocapture --test-threads=1 'script={}' 'count={}' \"$@\"\n",
-                    exe.display(),
-                    test,
-                    script,
-                    count.display()
-                );
-                std::fs::write(&path, contents).unwrap();
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-                path
-            };
-
-            #[cfg(windows)]
-            let wrapper = {
-                let path = dir.join("launcher-wrapper.bat");
-                let contents = format!(
-                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 script={} count={} %*\n",
-                    exe.display(),
-                    test,
-                    script,
-                    count.display()
-                );
-                std::fs::write(&path, contents).unwrap();
-                path
-            };
-
             let launch = Launch {
                 name: "fake".into(),
-                argv: vec![wrapper.to_string_lossy().to_string()],
+                argv: vec![
+                    fake_agent_wrapper().to_string_lossy().to_string(),
+                    format!("script={script}"),
+                    format!("count={}", count.display()),
+                ],
             };
             let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
