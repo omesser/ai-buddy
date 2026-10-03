@@ -960,7 +960,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorModel,
                     frozen: model_frozen,
                     batched: true,
-                    help: None,
+                    help: Some("Blank is gpt-4o-mini on the Model API. A Harness sends nothing and keeps its own model.".to_string()),
                     disclosure: None,
                     status: model_status,
                 },
@@ -1579,7 +1579,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to send nothing: the Model API omits the field, and a Harness does not call session/set_config_option. low, medium, and high are what every documented host takes, and anything else typed there is sent verbatim. A Harness applies a value to the option advertised as thought_level, or as model_config when that is the one it has.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,
@@ -1630,7 +1630,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorReasoningEffort,
                     frozen: effort_frozen,
                     batched: false,
-                    help: Some("HTTP endpoint only. Sent verbatim.".to_string()),
+                    help: Some("Blank sends nothing. A value is sent verbatim to the active Completer.".to_string()),
                     disclosure: None,
                     status: effort_status,
                 },
@@ -3244,10 +3244,9 @@ pub(crate) mod tests {
                 .find(|row| row_id(row) == Some(DIRECTOR_REASONING_EFFORT_ID))
                 .expect("the reasoning-effort row exists");
             match row {
-                FormRow::TextField { placeholder, .. } => assert_eq!(
-                    placeholder, "low",
-                    "blank has to read as the default that is in force"
-                ),
+                FormRow::TextField { placeholder, .. } => {
+                    assert_eq!(placeholder, "", "blank is unset, not a level")
+                }
                 _ => panic!("the reasoning effort is a text field"),
             }
         });
