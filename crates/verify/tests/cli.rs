@@ -139,8 +139,13 @@ fn a_scenario_without_go_prints_its_takeover_header_and_skips() {
 
     assert_eq!(out.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&out.stderr);
+    let platform = match std::env::consts::OS {
+        "linux" => "X11",
+        "windows" => "Windows",
+        _ => "macOS",
+    };
     assert!(
-        stderr.contains("Scenario: thinking-row (macOS)"),
+        stderr.contains(&format!("Scenario: thinking-row ({platform})")),
         "stderr was:\n{stderr}"
     );
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
