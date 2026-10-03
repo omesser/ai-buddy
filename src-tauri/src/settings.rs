@@ -2022,9 +2022,8 @@ pub struct Settings {
     pub director_timeout_secs: String,
     /// Turn ceiling, in tokens. Empty means unset, as on the two above.
     pub director_max_tokens: String,
-    /// How hard to ask the model to think, sent verbatim on both inference
-    /// paths. Empty means unset, and unset sends `low` — not nothing, which
-    /// would give back the lost wakes #617 measured away (#638).
+    /// How hard to ask the Completer to think. Empty means unset: the Model
+    /// API omits the field, and a Harness does not call `session/set_config_option`.
     pub director_reasoning_effort: String,
     /// First ambient wait, in seconds. Empty means unset, and leaves
     /// `Pace::FIRST`. The Character's `model_base` and `model_power` grow the

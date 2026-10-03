@@ -21,8 +21,9 @@ use agent_client_protocol::schema::v1::{
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
+    SessionConfigOption, SessionConfigOptionCategory, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -349,6 +350,8 @@ pub enum OpenError {
     /// The child is gone.
     Lost,
     Failed(String),
+    /// The session exists. The harness refused the reasoning effort.
+    EffortRejected(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -424,6 +427,10 @@ enum Msg {
         load: Option<String>,
         cwd: PathBuf,
         mcp: Option<McpChoice>,
+        /// Empty sends no model option.
+        model: String,
+        /// `None` sends no effort option.
+        effort: Option<String>,
         reply: sync_mpsc::Sender<Result<String, OpenError>>,
     },
     Prompt {
@@ -545,12 +552,15 @@ impl Wire {
     }
 
     /// `session/load` when `load` names one, falling back to `session/new`.
+    /// An empty `model` or effort is not sent.
     pub fn open(
         &self,
         load: Option<String>,
         cwd: &Path,
         mcp: Option<McpChoice>,
         timeout: Duration,
+        model: &str,
+        effort: Option<&str>,
     ) -> Result<String, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
@@ -558,6 +568,8 @@ impl Wire {
                 load,
                 cwd: cwd.to_path_buf(),
                 mcp,
+                model: model.to_string(),
+                effort: effort.map(str::to_string),
                 reply,
             })
             .map_err(|_| OpenError::Lost)?;
@@ -1142,9 +1154,11 @@ async fn serve(
                 load,
                 cwd,
                 mcp,
+                model,
+                effort,
                 reply,
             }) => {
-                let opened = open(cx, load, &cwd, mcp).await;
+                let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
             Step::Command(Msg::Prompt {
@@ -1221,30 +1235,120 @@ async fn open(
     load: Option<String>,
     cwd: &Path,
     mcp: Option<McpChoice>,
+    model: &str,
+    effort: Option<&str>,
 ) -> Result<SessionId, OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
-    if let Some(id) = load {
-        let loaded = cx
+    let loaded = if let Some(id) = load {
+        match cx
             .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
             .block_task()
-            .await;
-        if loaded.is_ok() {
-            return Ok(SessionId::new(id));
+            .await
+        {
+            Ok(response) => Some((SessionId::new(id), response.config_options)),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    // A loaded id is already on disk. A new one is closed if the Completer
+    // config is rejected, so a refusal does not leave the session open.
+    let created = loaded.is_none();
+    let (session_id, options) = match loaded {
+        Some(opened) => opened,
+        None => cx
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+            .block_task()
+            .await
+            .map(|response| (response.session_id, response.config_options))
+            .map_err(|error| {
+                if auth_refused(&error) {
+                    OpenError::AuthRequired
+                } else if cx.is_incoming_closed() {
+                    OpenError::Lost
+                } else {
+                    OpenError::Failed(error_text(error))
+                }
+            })?,
+    };
+    if let Err(error) = apply_completer(cx, &session_id, model, effort, options).await {
+        if created && !matches!(error, OpenError::Lost) {
+            let _ = cx
+                .send_request(CloseSessionRequest::new(session_id))
+                .block_task()
+                .await;
+        }
+        return Err(error);
+    }
+    Ok(session_id)
+}
+
+/// Model first, then effort. A model change can replace the effort options,
+/// so effort is read from the options the model call returned.
+async fn apply_completer(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    model: &str,
+    effort: Option<&str>,
+    options: Option<Vec<SessionConfigOption>>,
+) -> Result<(), OpenError> {
+    let mut options = options.unwrap_or_default();
+    let model = model.trim();
+    if !model.is_empty() {
+        if let Some(config_id) = model_config_id(&options) {
+            options = set_config(cx, session_id, config_id, model, false).await?;
         }
     }
-    cx.send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+    if let Some(effort) = effort.map(str::trim).filter(|effort| !effort.is_empty()) {
+        if let Some(config_id) = effort_config_id(&options) {
+            let _ = set_config(cx, session_id, config_id, effort, true).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn set_config(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    config_id: SessionConfigId,
+    value: &str,
+    effort: bool,
+) -> Result<Vec<SessionConfigOption>, OpenError> {
+    match cx
+        .send_request(SetSessionConfigOptionRequest::new(
+            session_id.clone(),
+            config_id,
+            value,
+        ))
         .block_task()
         .await
-        .map(|response| response.session_id)
-        .map_err(|error| {
-            if auth_refused(&error) {
-                OpenError::AuthRequired
-            } else if cx.is_incoming_closed() {
-                OpenError::Lost
-            } else {
-                OpenError::Failed(error_text(error))
-            }
+    {
+        Ok(response) => Ok(response.config_options),
+        Err(_) if cx.is_incoming_closed() => Err(OpenError::Lost),
+        Err(error) if effort => Err(OpenError::EffortRejected(error_text(error))),
+        Err(error) => Err(OpenError::Failed(error_text(error))),
+    }
+}
+
+/// First option whose category is `model`.
+fn model_config_id(options: &[SessionConfigOption]) -> Option<SessionConfigId> {
+    options
+        .iter()
+        .find(|option| option.category.as_ref() == Some(&SessionConfigOptionCategory::Model))
+        .map(|option| option.id.clone())
+}
+
+/// `thought_level` wins over `model_config`. A non-select is not a level.
+fn effort_config_id(options: &[SessionConfigOption]) -> Option<SessionConfigId> {
+    let select = |category: SessionConfigOptionCategory| {
+        options.iter().find(|option| {
+            option.category.as_ref() == Some(&category)
+                && matches!(option.kind, SessionConfigKind::Select(_))
         })
+    };
+    select(SessionConfigOptionCategory::ThoughtLevel)
+        .or_else(|| select(SessionConfigOptionCategory::ModelConfig))
+        .map(|option| option.id.clone())
 }
 
 /// One prompt turn. Chunks accumulate, other updates become `Event`s, and a
@@ -1264,7 +1368,7 @@ async fn turn(
         vec![ContentBlock::Text(TextContent::new(text.to_string()))],
     ));
     let mut finished = std::pin::pin!(sent.block_task());
-    let mut said = String::new();
+    let mut said = Answer::default();
     // Beside `said` and never inside it. The thought is kept only so a chunk
     // that arrives mid-sentence can be shown as the sentence it belongs to.
     // It dies with the turn.
@@ -1321,7 +1425,7 @@ async fn turn(
             response = &mut finished => {
                 end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 return match response {
-                    Ok(response) => outcome(response.stop_reason, said),
+                    Ok(response) => outcome(response.stop_reason, said.finish()),
                     Err(error) if auth_refused(&error) => Err(TurnError::AuthRequired),
                     Err(_) if cx.is_incoming_closed() => Err(TurnError::Lost),
                     Err(error) => Err(TurnError::Failed(error_text(error))),
@@ -1525,14 +1629,26 @@ fn elicitation_response(
 fn note_update(
     update: SessionUpdate,
     session: &SessionId,
-    said: &mut String,
+    said: &mut Answer,
     thought: &mut String,
     on_event: &OnEvent,
 ) {
+    let mut think = |text: &str| {
+        if text.is_empty() {
+            return;
+        }
+        thought.push_str(text);
+        if let Some(shown) = thought_to_show(thought) {
+            on_event(Event::Thought {
+                session: session.0.to_string(),
+                text: shown.to_string(),
+            });
+        }
+    };
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
-                said.push_str(&text.text);
+                think(&said.push(&text.text));
             }
         }
         // `fields.content` and `fields.locations` are dropped on both arms.
@@ -1569,13 +1685,7 @@ fn note_update(
         // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
-                thought.push_str(&text.text);
-                if let Some(shown) = thought_to_show(thought) {
-                    on_event(Event::Thought {
-                        session: session.0.to_string(),
-                        text: shown.to_string(),
-                    });
-                }
+                think(&text.text);
             }
         }
         _ => {}
@@ -1592,6 +1702,62 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
         None
     } else {
         Some(thought)
+    }
+}
+
+/// Answer text with its `<think>` and `<thinking>` blocks peeled off as it
+/// streams. The tags are how a server marks reasoning when it never opened a
+/// thought channel. Untagged text is the answer: nothing else marks a split.
+#[derive(Default)]
+pub(crate) struct Answer {
+    said: String,
+    /// A tail that may be the start of a tag, held until the next chunk says.
+    held: String,
+    thinking: bool,
+}
+
+const OPEN: [&str; 2] = ["<think>", "<thinking>"];
+const CLOSE: [&str; 2] = ["</think>", "</thinking>"];
+
+impl Answer {
+    /// Adds a chunk to the answer and returns the part that sat inside tags.
+    pub(crate) fn push(&mut self, chunk: &str) -> String {
+        let mut rest = std::mem::take(&mut self.held) + chunk;
+        let mut thought = String::new();
+        loop {
+            let tags = if self.thinking { CLOSE } else { OPEN };
+            let side = if self.thinking {
+                &mut thought
+            } else {
+                &mut self.said
+            };
+            let found = tags
+                .iter()
+                .filter_map(|tag| rest.find(tag).map(|at| (at, tag.len())))
+                .min();
+            let Some((at, len)) = found else {
+                let keep = tags
+                    .iter()
+                    .flat_map(|tag| (1..tag.len()).filter(|&k| rest.ends_with(&tag[..k])))
+                    .max()
+                    .unwrap_or(0);
+                self.held = rest.split_off(rest.len() - keep);
+                side.push_str(&rest);
+                return thought;
+            };
+            side.push_str(&rest[..at]);
+            rest.drain(..at + len);
+            self.thinking = !self.thinking;
+        }
+    }
+
+    /// The whole answer. A held tail that never became a tag is answer text,
+    /// unless it sits in a block that never closed.
+    pub(crate) fn finish(mut self) -> String {
+        if !self.thinking {
+            self.said.push_str(&self.held);
+        }
+        self.said
     }
 }
 
@@ -1774,7 +1940,7 @@ mod tests {
 
     fn drive(updates: Vec<SessionUpdate>) -> (String, Vec<Event>) {
         let (seen, on_event) = collector();
-        let mut said = String::new();
+        let mut said = Answer::default();
         let mut thought = String::new();
         for update in updates {
             note_update(
@@ -1786,7 +1952,7 @@ mod tests {
             );
         }
         let events = seen.lock().unwrap().clone();
-        (said, events)
+        (said.finish(), events)
     }
 
     fn thoughts(events: &[Event]) -> Vec<&str> {
@@ -1967,6 +2133,46 @@ mod tests {
     /// Chunks arrive as fragments. The open line is the tail of the thought
     /// so far, blank lines included: half a sentence on its own reads as
     /// nonsense, and a paragraph break is something the harness wrote.
+    fn message(text: &str) -> SessionUpdate {
+        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+            text,
+        ))))
+    }
+
+    /// A Harness that never opened `agent_thought_chunk` marks its reasoning
+    /// with `<think>` tags in the answer instead. The tag can split across
+    /// chunks, and the inside is a thought, never a line the character says.
+    #[test]
+    fn a_think_tag_in_the_answer_is_a_thought() {
+        let (said, events) = drive(vec![
+            message("<thin"),
+            message("king>They want the titles."),
+            message(" I'll look again.</think"),
+            message("ing>mutter\nFidget's in front."),
+        ]);
+        assert_eq!(said, "mutter\nFidget's in front.");
+        assert_eq!(
+            thoughts(&events),
+            [
+                "They want the titles.",
+                "They want the titles. I'll look again."
+            ]
+        );
+    }
+
+    /// Text that only looks like the start of a tag is the answer once the
+    /// next chunk shows it is not one. Untagged reasoning stays the answer.
+    #[test]
+    fn a_partial_tag_that_never_completes_stays_the_answer() {
+        let (said, events) = drive(vec![
+            message("They want <th"),
+            message("ree> titles.mutter"),
+            message(" <think"),
+        ]);
+        assert_eq!(said, "They want <three> titles.mutter <think");
+        assert!(events.is_empty());
+    }
+
     #[test]
     fn a_thought_shows_the_line_being_written() {
         let (_, events) = drive(vec![

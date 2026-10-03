@@ -108,6 +108,7 @@ scripts/verify-anchor-taskbar-win.ps1               # Windows: no auto-open Sett
 scripts/bench-rss-macos.sh                          # macOS: resident set over a run, per process
 scripts/bench-rss-linux.sh                          # Linux: RSS baseline (needs a working display)
 scripts/bench-rss-windows.ps1                       # Windows: RSS baseline
+scripts/bench-frame-cadence-macos.sh                # macOS and Linux: display-frame cadence and Engine tick rate
 ```
 
 CI does not run the Settings sittings. `verify-settings-keyboard-webview.sh` drives Tab, Space, Enter, and Escape, compares each tab's focus sequence with the AX dump, requires a focused still per tab and a committed `<select>` value, and writes a pass/fail table and stills under `.verify/`. Its pure checks run on fixtures in `scripts/test_verify_settings_keyboard.sh`. The AX / UIA / AT-SPI helpers are `scripts/ax-settings.swift`, `scripts/ax-settings-win.ps1`, and `scripts/ax-settings-linux.py`.
@@ -125,6 +126,12 @@ The scripts use `target/debug/fidget`. `FIDGET_VERIFY_BIN` names another binary.
 On macOS, grant Accessibility to the terminal or IDE that runs a sitting (System Settings > Privacy & Security > Accessibility). Without it the helper exits before it dumps the window. UI Automation on Windows needs no grant.
 
 The bench-rss scripts measure rather than check. They sample the app and its webview helpers and print RSS and peak memory. The default is brief (settle ~3s, sample ~10s). `--research` (bash) or `-Research` (PowerShell) runs the long soak (settle 300s, sample 300s). Results are in [docs/research/memory-rss-and-multi-monitor.md](research/memory-rss-and-multi-monitor.md).
+
+The frame-cadence bench needs `FIDGET_BENCH_GREEN_LIGHT=1` because every scenario launches fidget. On macOS the still-tick rate of one binary drifts by several Hz over a few minutes, so two separate runs do not compare. Pass `--bin` twice to A/B two builds in one run. Each round runs every scenario on both, alternating which goes first, and the report gives each side's mean over `--rounds` (default 3), each round, and B minus A:
+
+```sh
+FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh idle --bin /tmp/fidget-main --bin /tmp/fidget-branch --rounds 3
+```
 
 ### Manual Verification Checklist
 

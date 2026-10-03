@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { analyze, report } from "../scripts/frame-cadence.mjs";
+import { analyze, compare, report } from "../scripts/frame-cadence.mjs";
 
 // Five Engine ticks of a walk, one 40 ms late, and the display frames an overlay
 // drew across them: a quiet loop restarts on the late arrival, then misses a
@@ -95,4 +99,59 @@ test("the report is a Markdown table a baseline doc can paste", () => {
   assert.match(text, /\| Engine ticks\/s, loop counter \| 57\.5 \|/);
   assert.match(text, /\| Engine ticks, moving \| 4 \(22\.5 ms, 44\.4 Hz\) \|/);
   assert.match(text, /\| Engine ticks, still \| 1 \(250 ms, 4 Hz\) \|/);
+});
+
+const standing = (gapMs) =>
+  Array.from({ length: 5 }, (_, i) => `frame: ${i * gapMs} Grounded pos(1,2) sprite(3,4) idle#0 BMO`).join("\n");
+
+test("an A/B comparison reports each side's mean and rounds, and B minus A", () => {
+  const a = [analyze(standing(20), {}), analyze(standing(25), {})];
+  const b = [analyze(log, { from: 1000, to: 1400 })];
+  assert.equal(
+    compare(a, b),
+    [
+      "| Metric | A | B | B - A |",
+      "|---|---|---|---|",
+      "| Mean fps | N/A (N/A, N/A) | 48 (48) | N/A |",
+      "| Dropped (>20 ms) | 0 (0, 0) | 1 (1) | 1 |",
+      "| Engine ticks/s, loop counter | N/A (N/A, N/A) | 57.5 (57.5) | N/A |",
+      "| Engine ticks, still (Hz) | 45 (50, 40) | 4 (4) | -41 |",
+      "| Engine ticks, still (ms) | 22.5 (20, 25) | 250 (250) | 227.5 |",
+      "| Engine ticks, moving (Hz) | N/A (N/A, N/A) | 44.4 (44.4) | N/A |",
+      "| Engine ticks, moving (ms) | N/A (N/A, N/A) | 22.5 (22.5) | N/A |",
+      "| Interpolation lag p95, moving (ms) | N/A (N/A, N/A) | 59.8 (59.8) | N/A |",
+      "| Moving frames held at the latest placement | N/A (N/A, N/A) | 1 (1) | N/A |",
+    ].join("\n"),
+  );
+});
+
+test("the reducer writes JSON that its compare command reads back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "frame-cadence-"));
+  const reduce = (name, text) => {
+    writeFileSync(join(dir, `${name}.log`), text);
+    const run = spawnSync("node", ["scripts/frame-cadence.mjs", join(dir, `${name}.log`), "--json", join(dir, `${name}.json`)]);
+    assert.equal(run.status, 0, run.stderr.toString());
+    return join(dir, `${name}.json`);
+  };
+  const a = [reduce("a1", standing(20)), reduce("a2", standing(25))];
+  const b = [reduce("b1", standing(16))];
+  const run = spawnSync("node", ["scripts/frame-cadence.mjs", "compare", "--a", ...a, "--b", ...b]);
+  assert.equal(run.status, 0, run.stderr.toString());
+  assert.match(run.stdout.toString(), /\| Engine ticks, still \(Hz\) \| 45 \(50, 40\) \| 62\.5 \(62\.5\) \| 17\.5 \|/);
+});
+
+test("the bench refuses a third binary, and rounds without a second or of zero, before it launches anything", () => {
+  const bench = (...args) => spawnSync("bash", ["scripts/bench-frame-cadence-macos.sh", ...args], { env: { ...process.env, FIDGET_BENCH_GREEN_LIGHT: "" } });
+  for (const args of [
+    ["idle", "--bin", "a", "--bin", "b", "--bin", "c"],
+    ["idle", "--bin", "a", "--rounds", "2"],
+    ["idle", "--bin", "a", "--bin", "b", "--rounds", "0"],
+  ]) {
+    const run = bench(...args);
+    assert.equal(run.status, 2);
+    assert.match(run.stderr.toString(), /^Usage: /m);
+  }
+  const ab = bench("idle", "--bin", "a", "--bin", "b", "--rounds", "2");
+  assert.equal(ab.status, 2);
+  assert.match(ab.stderr.toString(), /FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed/);
 });

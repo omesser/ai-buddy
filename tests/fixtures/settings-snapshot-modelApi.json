@@ -435,9 +435,9 @@
               "type": "TextField",
               "id": "director_model",
               "label": "Model",
-              "placeholder": "gpt-4o-mini",
+              "placeholder": "",
               "writes": "DirectorModel",
-              "help": null,
+              "help": "Leave blank to leave the model unset on HTTP and on a Harness. A typed name is sent as the model.",
               "frozen": false,
               "batched": true,
               "disclosure": null,
@@ -784,9 +784,9 @@
               "type": "TextField",
               "id": "director_reasoning_effort",
               "label": "Reasoning effort",
-              "placeholder": "low",
+              "placeholder": "",
               "writes": "DirectorReasoningEffort",
-              "help": "HTTP endpoint only. Sent verbatim.",
+              "help": "Leave blank to omit effort. A typed value is sent as written to the Completer in use.",
               "frozen": false,
               "batched": false,
               "disclosure": null,
@@ -794,7 +794,7 @@
             }
           ],
           "comment": "Also for development and testing. Leave empty for the default.",
-          "disclosure": "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for 30 seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+          "disclosure": "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for 30 seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to leave effort unset: HTTP omits the field, and a Harness does not call session/set_config_option. The picker lists low, medium, and high. Other typed values are sent as written. On a Harness the value is set on thought_level, or on model_config if that is what the Harness lists.",
           "status": null
         },
         {

@@ -80,6 +80,10 @@ const HANDOVER_POLL: Duration = Duration::from_millis(20);
 /// What every caller is told when the child is gone.
 pub(crate) const LOST: &str = "harness exited";
 
+/// Prefix on an attach error that is a rejected reasoning effort. The agent's
+/// own words follow it, and Chat shows the whole line.
+const EFFORT_REJECTED: &str = "reasoning effort: ";
+
 /// How long a withdrawal waits for the `parsed` line that belongs to it. The
 /// Shell writes that line frames after the turn ended, so this only has to
 /// outlast one frame. Being wrong mislabels one wake and does not leak.
@@ -1170,9 +1174,16 @@ impl Session {
     /// `turn` so the load retry pays the same bookkeeping the first attempt
     /// did. `Err` is a wake that never reached the wire, already refused.
     fn attempt(&self, request: &WakeRequest) -> Result<(String, Result<Reply, TurnError>), String> {
-        let (wire, session_id) = self
-            .attach(Some(&SessionKey::from_request(request)))
-            .map_err(|why| self.refused(request, &why))?;
+        let (wire, session_id) = match self.attach(Some(&SessionKey::from_request(request))) {
+            Ok(pair) => pair,
+            // A rejected effort is the harness answering, so Chat reads it on
+            // the same path as a failed turn. Other attach refusals never
+            // reached `session/prompt`.
+            Err(why) if why.starts_with(EFFORT_REJECTED) => {
+                return Ok((String::new(), Err(TurnError::Failed(why))));
+            }
+            Err(why) => return Err(self.refused(request, &why)),
+        };
         // The Instance and the wake kind come through the seam rather than
         // from anything here. One child serves every character, so the process is
         // not whose wake this is.
@@ -1603,6 +1614,14 @@ impl Session {
         Ok(wire)
     }
 
+    /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Blank stays
+    /// blank. `apply_completer` omits it, the same way HTTP omits `model`.
+    fn completer_model(&self) -> String {
+        let settings =
+            crate::settings::Settings::load(&crate::settings::settings_path(self.data.as_path()));
+        crate::model::env_or_file(crate::model::MODEL, &settings.director_model)
+    }
+
     /// `session/load` when the Harness can and the file names this Harness,
     /// else `session/new`. Either way the file ends up naming what is open.
     fn open_session(
@@ -1631,7 +1650,16 @@ impl Session {
             .as_ref()
             .map_err(|error| error.to_string())?
             .as_path();
-        let id = match wire.open(saved.clone(), cwd, mcp.clone(), self.attach_timeout()) {
+        let model = self.completer_model();
+        let effort = crate::dev_flags::director_reasoning_effort();
+        let id = match wire.open(
+            saved.clone(),
+            cwd,
+            mcp.clone(),
+            self.attach_timeout(),
+            &model,
+            effort.as_deref(),
+        ) {
             Ok(id) => id,
             Err(OpenError::Lost) => {
                 let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
@@ -1642,7 +1670,14 @@ impl Session {
                 let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
                 return Err(self.refuse_login(&mut state));
             }
-            Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
+            Err(OpenError::EffortRejected(why)) => return Err(format!("{EFFORT_REJECTED}{why}")),
+            Err(OpenError::Failed(why)) => {
+                self.update_inspect(|inspect| {
+                    inspect.last_error = Some(why.clone());
+                    inspect.turn_failure = Some(why.clone());
+                });
+                return Err(format!("session/new: {why}"));
+            }
         };
         let replaced = {
             let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
@@ -2866,6 +2901,62 @@ mod tests {
         say(json!({"jsonrpc": "2.0", "id": id, "result": {"stopReason": reason}}));
     }
 
+    fn effort_option(category: &str, id: &str) -> Value {
+        json!({
+            "id": id,
+            "name": "Reasoning",
+            "category": category,
+            "type": "select",
+            "currentValue": "low",
+            "options": [
+                {"value": "low", "name": "Low"},
+                {"value": "medium", "name": "Medium"},
+                {"value": "high", "name": "High"}
+            ]
+        })
+    }
+
+    fn model_option() -> Value {
+        json!({
+            "id": "llm",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "default-model",
+            "options": [
+                {"value": "default-model", "name": "Default"},
+                {"value": "some-model", "name": "Some"}
+            ]
+        })
+    }
+
+    /// Options the fake advertises. `thought_level` is listed after
+    /// `model_config` so a client that takes the first select picks wrong.
+    fn completer_config_options(script: &str) -> Option<Value> {
+        match script {
+            "completer-effort" | "completer-effort-reject" | "load-completer-effort" => {
+                Some(json!([
+                    effort_option("model_config", "knob"),
+                    effort_option("thought_level", "reasoning"),
+                ]))
+            }
+            "completer-effort-mc" => Some(json!([
+                model_option(),
+                effort_option("model_config", "knob"),
+            ])),
+            "completer-model" | "load-completer-model" => Some(json!([
+                effort_option("thought_level", "thought"),
+                model_option(),
+            ])),
+            "completer-thought" => Some(json!([effort_option("thought_level", "thought")])),
+            "completer-both" => Some(json!([
+                model_option(),
+                effort_option("thought_level", "reasoning"),
+            ])),
+            _ => None,
+        }
+    }
+
     fn fake_main(script: &str, count: Option<&Path>) {
         // libtest writes `test <name> ... ` with no newline before the test
         // runs; end that line so the first reply is a line of its own.
@@ -2950,7 +3041,11 @@ mod tests {
                         } else {
                             format!("fresh-id-{n}")
                         };
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
+                        let mut result = json!({"sessionId": session});
+                        if let Some(options) = completer_config_options(script) {
+                            result["configOptions"] = options;
+                        }
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
                         if script == "mcp-link" || script == "mcp-link-complete-turn" {
                             mcp_link(&session, None);
                         }
@@ -3009,7 +3104,43 @@ mod tests {
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "no such session"}}),
                         );
                     } else {
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+                        let mut result = json!({});
+                        if let Some(options) = completer_config_options(script) {
+                            result["configOptions"] = options;
+                        }
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
+                    }
+                }
+                Some("session/set_config_option") => {
+                    let config_id = message
+                        .pointer("/params/configId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let value = message
+                        .pointer("/params/value")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    record(count, &format!("config={config_id}={value}"));
+                    if value == "nope" {
+                        say(json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {"code": -32602, "message": "unknown model"}
+                        }));
+                    } else if script == "completer-effort-reject" {
+                        say(json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {"code": -32602, "message": "not a level this agent takes"}
+                        }));
+                    } else if script == "completer-both" && config_id == "llm" {
+                        say(json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {"configOptions": [effort_option("thought_level", "after-model")]}
+                        }));
+                    } else {
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": []}}));
                     }
                 }
                 Some("session/prompt") => {
@@ -3284,6 +3415,51 @@ mod tests {
         }
     }
 
+    /// One launcher script for every Fixture in this test process. macOS vets
+    /// the first exec of each new executable file, one file at a time, so a
+    /// script per Fixture queues parallel tests past the probe's 3 s.
+    fn fake_agent_wrapper() -> &'static Path {
+        static WRAPPER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        WRAPPER.get_or_init(|| {
+            let exe = std::env::current_exe().unwrap();
+            let test = module_path!()
+                .split_once("::")
+                .map_or("", |(_, rest)| rest)
+                .to_string()
+                + "::fake_acp_agent";
+            let dir = std::env::temp_dir().join(format!("fidget-harness-launcher-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+
+            #[cfg(unix)]
+            let path = {
+                use std::os::unix::fs::PermissionsExt;
+                let path = dir.join("launcher-wrapper.sh");
+                let contents = format!(
+                    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"fake-acp-agent 1.0.0\"\n  exit 0\nfi\nexec '{}' {} --exact --nocapture --test-threads=1 \"$@\"\n",
+                    exe.display(),
+                    test,
+                );
+                std::fs::write(&path, contents).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+                path
+            };
+
+            #[cfg(windows)]
+            let path = {
+                let path = dir.join("launcher-wrapper.bat");
+                let contents = format!(
+                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 %*\n",
+                    exe.display(),
+                    test,
+                );
+                std::fs::write(&path, contents).unwrap();
+                path
+            };
+
+            path
+        })
+    }
+
     struct Fixture {
         dir: PathBuf,
         cwd: PathBuf,
@@ -3312,46 +3488,13 @@ mod tests {
                 dir.clone()
             };
             let count = dir.join("count.txt");
-            let exe = std::env::current_exe().unwrap();
-            let test = module_path!()
-                .split_once("::")
-                .map_or("", |(_, rest)| rest)
-                .to_string()
-                + "::fake_acp_agent";
-
-            #[cfg(unix)]
-            let wrapper = {
-                use std::os::unix::fs::PermissionsExt;
-                let path = dir.join("launcher-wrapper.sh");
-                let contents = format!(
-                    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"fake-acp-agent 1.0.0\"\n  exit 0\nfi\nexec '{}' {} --exact --nocapture --test-threads=1 'script={}' 'count={}' \"$@\"\n",
-                    exe.display(),
-                    test,
-                    script,
-                    count.display()
-                );
-                std::fs::write(&path, contents).unwrap();
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-                path
-            };
-
-            #[cfg(windows)]
-            let wrapper = {
-                let path = dir.join("launcher-wrapper.bat");
-                let contents = format!(
-                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 script={} count={} %*\n",
-                    exe.display(),
-                    test,
-                    script,
-                    count.display()
-                );
-                std::fs::write(&path, contents).unwrap();
-                path
-            };
-
             let launch = Launch {
                 name: "fake".into(),
-                argv: vec![wrapper.to_string_lossy().to_string()],
+                argv: vec![
+                    fake_agent_wrapper().to_string_lossy().to_string(),
+                    format!("script={script}"),
+                    format!("count={}", count.display()),
+                ],
             };
             let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
@@ -4692,6 +4835,229 @@ mod tests {
                 .is_some_and(|why| why.contains("refusal")),
             "{:?}",
             session.inspect().last_error
+        );
+        session.shutdown();
+    }
+
+    fn write_completer_model(dir: &std::path::Path, model: &str) {
+        let settings = crate::settings::Settings {
+            director_model: model.to_string(),
+            ..crate::settings::Settings::default()
+        };
+        settings
+            .save(&crate::settings::settings_path(dir))
+            .expect("settings");
+    }
+
+    fn config_lines(fx: &Fixture) -> Vec<String> {
+        std::fs::read_to_string(&fx.count)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| line.starts_with("config="))
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Blank effort sends no `session/set_config_option`. low, medium, and
+    /// high are the value on `thought_level`, not on `model_config`.
+    #[test]
+    fn blank_effort_is_omitted_and_each_level_uses_thought_level() {
+        let (fx, session) = Fixture::new("completer-effort");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        });
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(fx.count("prompt"), 1);
+        assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
+        session.shutdown();
+
+        for level in ["low", "medium", "high"] {
+            let (fx, session) = Fixture::new("completer-effort");
+            crate::model::tests::with_env(None, None, None, || {
+                crate::dev_flags::seed(&crate::settings::Settings {
+                    director_reasoning_effort: level.to_string(),
+                    ..crate::settings::Settings::default()
+                });
+                assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+                crate::dev_flags::seed(&crate::settings::Settings::default());
+            });
+            assert_eq!(config_lines(&fx), vec![format!("config=reasoning={level}")]);
+            session.shutdown();
+        }
+    }
+
+    /// No `thought_level` falls through to `model_config`, and not to `model`.
+    #[test]
+    fn effort_uses_model_config_when_thought_level_is_absent() {
+        let (fx, session) = Fixture::new("completer-effort-mc");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_reasoning_effort: "medium".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+        assert_eq!(config_lines(&fx), vec!["config=knob=medium".to_string()]);
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_loaded_session_is_asked_for_the_same_effort() {
+        let (fx, session) = Fixture::new("load-completer-effort");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_reasoning_effort: "low".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("new"), 0);
+        assert_eq!(config_lines(&fx), vec!["config=reasoning=low".to_string()]);
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_rejected_effort_shows_on_the_turn_and_attach_is_not_stuck() {
+        let (fx, session) = Fixture::new("completer-effort-reject");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_reasoning_effort: "high".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            let first = session.complete(&asking("hi"));
+            assert!(
+                first
+                    .as_ref()
+                    .is_err_and(|why| why.contains("not a level this agent takes")),
+                "{first:?}"
+            );
+            let inspect = session.inspect();
+            assert!(
+                inspect
+                    .turn_failure
+                    .as_deref()
+                    .is_some_and(|why| why.contains("not a level this agent takes")),
+                "{:?}",
+                inspect.turn_failure
+            );
+            assert_eq!(fx.count("prompt"), 0, "the rejection is not a prompt");
+            assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+            assert!(inspect.alive, "the child is still attached");
+            let second = session.complete(&asking("again"));
+            assert!(second.is_err(), "a second wake returns: {second:?}");
+            assert!(session.inspect().alive);
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+        session.shutdown();
+    }
+
+    /// `some-model` is set on the model option. Blank leaves the model unset.
+    #[test]
+    fn a_named_model_is_sent_and_a_blank_one_is_not() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            write_completer_model(&fx.dir, "some-model");
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(fx.count("new"), 1);
+            assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
+            session.shutdown();
+
+            let (fx, session) = Fixture::new("completer-model");
+            write_completer_model(&fx.dir, "   ");
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
+            session.shutdown();
+
+            let (fx, session) = Fixture::new("load-completer-model");
+            std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+            write_completer_model(&fx.dir, "some-model");
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(fx.count("load"), 1);
+            assert_eq!(fx.count("new"), 0);
+            assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
+            session.shutdown();
+        });
+    }
+
+    #[test]
+    fn a_named_model_is_not_sent_when_no_model_option_is_advertised() {
+        let (fx, session) = Fixture::new("completer-thought");
+        write_completer_model(&fx.dir, "some-model");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        });
+        assert_eq!(fx.count("prompt"), 1);
+        assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
+        session.shutdown();
+    }
+
+    #[test]
+    fn a_rejected_model_is_the_last_error_and_a_later_value_attaches() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            write_completer_model(&fx.dir, "nope");
+            let reply = session.complete(&asking("hi"));
+            assert!(
+                reply
+                    .as_ref()
+                    .is_err_and(|why| why.contains("unknown model")),
+                "{reply:?}"
+            );
+            assert_eq!(
+                session.inspect().turn_failure.as_deref(),
+                session.inspect().last_error.as_deref()
+            );
+            assert!(session.inspect().alive);
+            assert_eq!(fx.count("prompt"), 0);
+            assert_eq!(fx.count("close"), 1);
+
+            write_completer_model(&fx.dir, "some-model");
+            assert_eq!(
+                session.complete(&asking("again")),
+                Ok(Reply::whole("Hello"))
+            );
+            assert_eq!(fx.count("config=llm=some-model"), 1);
+            assert_eq!(session.inspect().last_error, None);
+            assert_eq!(session.inspect().turn_failure, None);
+            session.shutdown();
+        });
+    }
+
+    /// Model is applied before effort, against the options the model call returns.
+    #[test]
+    fn model_is_applied_before_effort_on_the_refreshed_option() {
+        let (fx, session) = Fixture::new("completer-both");
+        write_completer_model(&fx.dir, "some-model");
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_reasoning_effort: "high".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+        assert_eq!(
+            config_lines(&fx),
+            vec![
+                "config=llm=some-model".to_string(),
+                "config=after-model=high".to_string(),
+            ]
         );
         session.shutdown();
     }
@@ -7062,7 +7428,9 @@ mod tests {
             name: "no-output".into(),
             argv: vec![script.to_string_lossy().to_string()],
         };
-        match probe_launcher(&launch) {
+        // Its own new script queues at the same first-exec gate, so the budget
+        // is generous. A timeout here is not what this test asserts.
+        match probe_launcher_within(&launch, Duration::from_secs(30)) {
             ProbeOutcome::Unhealthy(failure) => {
                 assert_eq!(failure.reason, "produced no output");
                 assert_eq!(failure.output, "");

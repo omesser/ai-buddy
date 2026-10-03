@@ -237,13 +237,22 @@ What works today on each OS.
 | Click-through off the sprite | yes | yes | yes |
 | Grab, Throw and Poke | yes | yes | yes |
 | Perch on window edges | yes | yes | yes |
-| Dock or panel as a Perch | yes | degraded | degraded |
-| Fade out for a fullscreen app | yes | yes | degraded |
-| Capturable; opt-out in settings | yes | degraded | yes |
+| Dock or panel as a Perch | yes | degraded¹ | degraded² |
+| Fade out for a fullscreen app | yes | yes | degraded³ |
+| Capturable; opt-out in settings | yes | degraded⁴ | yes |
 | Settings window | yes | yes | yes |
 
 - `yes` - implemented.
 - `degraded` - runs in reduced form. A supported mode, not an error.
+
+**Degraded cell notes:**
+
+1. **Linux Dock/panel:** Bottom panels work as Perches; side and top panels stay as reserved strips. Fixable; tracked in [#1300](https://github.com/omesser/fidget/issues/1300).
+2. **Windows Dock/panel:** Taskbar from work area (full-width strip) rather than exact island bounds. Taskbar spans the edge by design; no Windows API equivalent to macOS's `CoreDockGetRect`.
+3. **Windows fullscreen:** Fades for true fullscreen and properly-sized borderless windowed modes. Apps using non-standard fullscreen or leaving gaps may not trigger fade.
+4. **Linux Capturable:** Always capturable. Linux has no platform API to exclude windows from capture tools ([ADR-0024](./docs/adr/0024-capturable-by-default.md)).
+
+Detailed investigation: [`docs/research/platform-support-degraded-cells.md`](./docs/research/platform-support-degraded-cells.md).
 
 Linux support is full on normal desktops (X11 or XWayland under GNOME/KDE). Rare pure Wayland sessions without an X server fall back to screen edges only - no window Perches, Grab, Throw, or fullscreen fade. See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 

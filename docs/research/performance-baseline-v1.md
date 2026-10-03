@@ -533,7 +533,7 @@ Linux release numbers from this VM are in the measurement section above. The tab
 
 ### macOS
 
-Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh matrix --seconds 20 --bin target/release/fidget`. It launches fidget once per scenario on the live desktop and sends no input. Measured at `0eb84a3f`, this branch rebased onto `main` at `94b23feb`. That includes `aa02d774` (an Active tick sleeps only the rest of its 16 ms). The analyzer counts lag only on moving frames.
+Re-run with `FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh matrix --seconds 20 --bin target/release/fidget`. It launches fidget once per scenario on the live desktop and sends no input. To compare two builds, pass `--bin` twice: one run alternates them per scenario and reports B minus A. Measured at `0eb84a3f`, this branch rebased onto `main` at `94b23feb`. That includes `aa02d774` (an Active tick sleeps only the rest of its 16 ms). The analyzer counts lag only on moving frames.
 
 **Tools:**
 
