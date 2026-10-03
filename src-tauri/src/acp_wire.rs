@@ -21,8 +21,9 @@ use agent_client_protocol::schema::v1::{
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
+    SessionConfigOption, SessionConfigOptionCategory, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -349,6 +350,8 @@ pub enum OpenError {
     /// The child is gone.
     Lost,
     Failed(String),
+    /// The session exists. The harness refused the reasoning effort.
+    EffortRejected(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -424,6 +427,10 @@ enum Msg {
         load: Option<String>,
         cwd: PathBuf,
         mcp: Option<McpChoice>,
+        /// Empty sends no model option.
+        model: String,
+        /// `None` sends no effort option.
+        effort: Option<String>,
         reply: sync_mpsc::Sender<Result<String, OpenError>>,
     },
     Prompt {
@@ -545,12 +552,15 @@ impl Wire {
     }
 
     /// `session/load` when `load` names one, falling back to `session/new`.
+    /// An empty `model` or effort is not sent.
     pub fn open(
         &self,
         load: Option<String>,
         cwd: &Path,
         mcp: Option<McpChoice>,
         timeout: Duration,
+        model: &str,
+        effort: Option<&str>,
     ) -> Result<String, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
@@ -558,6 +568,8 @@ impl Wire {
                 load,
                 cwd: cwd.to_path_buf(),
                 mcp,
+                model: model.to_string(),
+                effort: effort.map(str::to_string),
                 reply,
             })
             .map_err(|_| OpenError::Lost)?;
@@ -1142,9 +1154,11 @@ async fn serve(
                 load,
                 cwd,
                 mcp,
+                model,
+                effort,
                 reply,
             }) => {
-                let opened = open(cx, load, &cwd, mcp).await;
+                let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
             Step::Command(Msg::Prompt {
@@ -1221,30 +1235,120 @@ async fn open(
     load: Option<String>,
     cwd: &Path,
     mcp: Option<McpChoice>,
+    model: &str,
+    effort: Option<&str>,
 ) -> Result<SessionId, OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
-    if let Some(id) = load {
-        let loaded = cx
+    let loaded = if let Some(id) = load {
+        match cx
             .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
             .block_task()
-            .await;
-        if loaded.is_ok() {
-            return Ok(SessionId::new(id));
+            .await
+        {
+            Ok(response) => Some((SessionId::new(id), response.config_options)),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    // A loaded id is already on disk. A new one is closed if the Completer
+    // config is rejected, so a refusal does not leave the session open.
+    let created = loaded.is_none();
+    let (session_id, options) = match loaded {
+        Some(opened) => opened,
+        None => cx
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+            .block_task()
+            .await
+            .map(|response| (response.session_id, response.config_options))
+            .map_err(|error| {
+                if auth_refused(&error) {
+                    OpenError::AuthRequired
+                } else if cx.is_incoming_closed() {
+                    OpenError::Lost
+                } else {
+                    OpenError::Failed(error_text(error))
+                }
+            })?,
+    };
+    if let Err(error) = apply_completer(cx, &session_id, model, effort, options).await {
+        if created && !matches!(error, OpenError::Lost) {
+            let _ = cx
+                .send_request(CloseSessionRequest::new(session_id))
+                .block_task()
+                .await;
+        }
+        return Err(error);
+    }
+    Ok(session_id)
+}
+
+/// Model first, then effort. A model change can replace the effort options,
+/// so effort is read from the options the model call returned.
+async fn apply_completer(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    model: &str,
+    effort: Option<&str>,
+    options: Option<Vec<SessionConfigOption>>,
+) -> Result<(), OpenError> {
+    let mut options = options.unwrap_or_default();
+    let model = model.trim();
+    if !model.is_empty() {
+        if let Some(config_id) = model_config_id(&options) {
+            options = set_config(cx, session_id, config_id, model, false).await?;
         }
     }
-    cx.send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+    if let Some(effort) = effort.map(str::trim).filter(|effort| !effort.is_empty()) {
+        if let Some(config_id) = effort_config_id(&options) {
+            let _ = set_config(cx, session_id, config_id, effort, true).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn set_config(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    config_id: SessionConfigId,
+    value: &str,
+    effort: bool,
+) -> Result<Vec<SessionConfigOption>, OpenError> {
+    match cx
+        .send_request(SetSessionConfigOptionRequest::new(
+            session_id.clone(),
+            config_id,
+            value,
+        ))
         .block_task()
         .await
-        .map(|response| response.session_id)
-        .map_err(|error| {
-            if auth_refused(&error) {
-                OpenError::AuthRequired
-            } else if cx.is_incoming_closed() {
-                OpenError::Lost
-            } else {
-                OpenError::Failed(error_text(error))
-            }
+    {
+        Ok(response) => Ok(response.config_options),
+        Err(_) if cx.is_incoming_closed() => Err(OpenError::Lost),
+        Err(error) if effort => Err(OpenError::EffortRejected(error_text(error))),
+        Err(error) => Err(OpenError::Failed(error_text(error))),
+    }
+}
+
+/// First option whose category is `model`.
+fn model_config_id(options: &[SessionConfigOption]) -> Option<SessionConfigId> {
+    options
+        .iter()
+        .find(|option| option.category.as_ref() == Some(&SessionConfigOptionCategory::Model))
+        .map(|option| option.id.clone())
+}
+
+/// `thought_level` wins over `model_config`. A non-select is not a level.
+fn effort_config_id(options: &[SessionConfigOption]) -> Option<SessionConfigId> {
+    let select = |category: SessionConfigOptionCategory| {
+        options.iter().find(|option| {
+            option.category.as_ref() == Some(&category)
+                && matches!(option.kind, SessionConfigKind::Select(_))
         })
+    };
+    select(SessionConfigOptionCategory::ThoughtLevel)
+        .or_else(|| select(SessionConfigOptionCategory::ModelConfig))
+        .map(|option| option.id.clone())
 }
 
 /// One prompt turn. Chunks accumulate, other updates become `Event`s, and a
