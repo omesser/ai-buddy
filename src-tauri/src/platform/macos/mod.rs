@@ -25,7 +25,7 @@ pub use pointer::{
     secondary_button_down,
 };
 pub use sensing::MacosActivitySource;
-pub(super) use thread_policy::{set_thread_standard_policy, set_thread_time_constraint_policy};
+pub(crate) use thread_policy::{set_thread_standard_policy, set_thread_time_constraint_policy};
 pub use tray::{seed_status_item_position, tune_tray_icon};
 pub(super) use window_source::visible_window_titles;
 pub use window_source::MacosWindowSource;
