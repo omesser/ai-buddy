@@ -57,7 +57,7 @@ const TIME_CONSTRAINT_COUNT: c_uint = {
 
 /// Put this thread on the realtime clock. `0` is success.
 #[must_use]
-pub(super) fn set_thread_time_constraint_policy() -> i32 {
+pub(crate) fn set_thread_time_constraint_policy() -> i32 {
     let mut timebase = MachTimebase {
         numerator: 0,
         denominator: 0,
@@ -89,7 +89,7 @@ pub(super) fn set_thread_time_constraint_policy() -> i32 {
 
 /// Return this thread to the fair scheduler. `0` is success.
 #[must_use]
-pub(super) fn set_thread_standard_policy() -> i32 {
+pub(crate) fn set_thread_standard_policy() -> i32 {
     // SAFETY: flavor 1 with a count of zero is `THREAD_STANDARD_POLICY`.
     // The kernel does not read the pointer, and the port needs no release.
     unsafe {
