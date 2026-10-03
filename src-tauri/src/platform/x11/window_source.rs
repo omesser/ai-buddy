@@ -379,8 +379,8 @@ fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
 }
 
 /// Read `_NET_WM_STRUT_PARTIAL` from dock/panel windows for panel bounds.
-/// 12 CARDINALs; for a bottom panel, `strut[3]` is height and
-/// `strut[10]`/`strut[11]` are the horizontal span.
+/// 12 CARDINALs per EWMH: left, right, top, bottom, then start/end coords.
+/// Checks all four edges; returns the first panel found in priority order.
 fn strut_panel_bounds() -> Option<Rect> {
     let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
@@ -394,19 +394,54 @@ fn strut_panel_bounds() -> Option<Rect> {
         }
 
         let strut = read_strut_partial(conn, window)?;
+        let screen_width = f64::from(screen.width_in_pixels);
+        let screen_height = f64::from(screen.height_in_pixels);
 
         if strut[3] > 0 {
-            let _screen_width = f64::from(screen.width_in_pixels);
-            let screen_height = f64::from(screen.height_in_pixels);
             let bottom_height = strut[3] as f64;
             let start_x = strut[10] as f64;
             let end_x = strut[11] as f64;
-
             return Some(Rect {
                 x: start_x,
                 y: screen_height - bottom_height,
                 width: end_x - start_x,
                 height: bottom_height,
+            });
+        }
+
+        if strut[2] > 0 {
+            let top_height = strut[2] as f64;
+            let start_x = strut[8] as f64;
+            let end_x = strut[9] as f64;
+            return Some(Rect {
+                x: start_x,
+                y: 0.0,
+                width: end_x - start_x,
+                height: top_height,
+            });
+        }
+
+        if strut[0] > 0 {
+            let left_width = strut[0] as f64;
+            let start_y = strut[4] as f64;
+            let end_y = strut[5] as f64;
+            return Some(Rect {
+                x: 0.0,
+                y: start_y,
+                width: left_width,
+                height: end_y - start_y,
+            });
+        }
+
+        if strut[1] > 0 {
+            let right_width = strut[1] as f64;
+            let start_y = strut[6] as f64;
+            let end_y = strut[7] as f64;
+            return Some(Rect {
+                x: screen_width - right_width,
+                y: start_y,
+                width: right_width,
+                height: end_y - start_y,
             });
         }
     }
