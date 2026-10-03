@@ -1725,7 +1725,6 @@ impl Answer {
         let mut rest = std::mem::take(&mut self.held) + chunk;
         let mut thought = String::new();
         loop {
-            let tags = if self.thinking { CLOSE } else { OPEN };
             let found_open = OPEN
                 .iter()
                 .filter_map(|tag| rest.find(tag).map(|at| (at, tag.len(), true)))
@@ -1745,8 +1744,9 @@ impl Answer {
             };
 
             let Some((at, len, is_open)) = found else {
-                let keep = tags
+                let keep = OPEN
                     .iter()
+                    .chain(CLOSE.iter())
                     .flat_map(|tag| (1..tag.len()).filter(|&k| rest.ends_with(&tag[..k])))
                     .max()
                     .unwrap_or(0);
@@ -2211,6 +2211,21 @@ mod tests {
         let (said, events) = drive(vec![
             message("They want the titles. I'll look again."),
             message("</think>mutter\nFidget's in front."),
+        ]);
+        assert_eq!(said, "mutter\nFidget's in front.");
+        assert_eq!(
+            thoughts(&events),
+            ["They want the titles. I'll look again."]
+        );
+    }
+
+    /// A stray closing tag split across chunks is held and completed, so the
+    /// reasoning boundary is still honored when the tag arrives in fragments.
+    #[test]
+    fn a_stray_closing_tag_split_across_chunks_is_held() {
+        let (said, events) = drive(vec![
+            message("They want the titles. I'll look again.</thin"),
+            message("k>mutter\nFidget's in front."),
         ]);
         assert_eq!(said, "mutter\nFidget's in front.");
         assert_eq!(
