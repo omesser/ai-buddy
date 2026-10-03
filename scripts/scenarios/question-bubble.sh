@@ -8,8 +8,8 @@
 # Input: one real click on the sprite (the Poke).
 # Duration: about 20 s, 1 min at most.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
-# Asserts: the bubble shows "Question for you in the chat" after the Poke
-#   lands while the question waits.
+# Asserts: no "Question for you" bubble before the Poke, and after it lands
+#   while the question waits, the bubble's text and its "chat" link button.
 #
 # Usage: question-bubble.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
@@ -37,7 +37,7 @@ fail() {
 }
 
 [ -x "$tools/click-cursor" ] || swiftc -O "$root/scripts/click-cursor.swift" -o "$tools/click-cursor"
-[ -x "$tools/ax" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
+[ "$tools/ax" -nt "$root/scripts/ax-settings.swift" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
 # FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
 harness="$root/scripts/scenarios/fixture-harness.sh $test_bin script=scenario-asking count=$marks"
@@ -73,6 +73,8 @@ read -r sw sh < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | hea
 read -r sx sy < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
 rect="$((sx - sw)),$((sy - 2 * sh)),$((3 * sw)),$((3 * sh))"
 screencapture -x -R "$rect" "$out/before-poke.png"
+"$tools/ax" dump "$pid" Fidget > "$out/before-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/before-poke.ax.txt"
+! grep -qF "Question for you" "$out/before-poke.ax.txt" || fail "the question cue showed before the Poke; see $out/before-poke.ax.txt"
 
 # Send a Poke: one click on the sprite's center.
 "$tools/click-cursor" "$((sx + sw / 2))" "$((sy + sh / 2))" 1 > "$out/poke.txt" 2>&1 || fail "could not click the sprite; see $out/poke.txt"
@@ -82,12 +84,10 @@ screencapture -x -R "$rect" "$out/after-poke.png"
 
 # Check the bubble content via the Accessibility API.
 "$tools/ax" dump "$pid" Fidget > "$out/after-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/after-poke.ax.txt"
-if grep -qF "Question for you in the chat" "$out/after-poke.ax.txt"; then
-  echo "ok: bubble shows 'Question for you in the chat'"
-elif grep -qF "Question for you in the " "$out/after-poke.ax.txt"; then
-  echo "ok: bubble shows 'Question for you in the ' with link"
-else
-  fail "bubble does not show the question cue; see $out/after-poke.ax.txt"
+if ! grep -qF "AXStaticText||Question for you in the |" "$out/after-poke.ax.txt" ||
+  ! grep -qF "AXButton|chat|" "$out/after-poke.ax.txt"; then
+  fail "bubble does not show the question cue and its chat link; see $out/after-poke.ax.txt"
 fi
+echo "ok: bubble shows 'Question for you in the' and a 'chat' link button"
 
 echo "PASS: evidence in $out"
