@@ -2,6 +2,8 @@
 
 Investigation of the four "degraded" cells in the README Platform Support table, per issue #1195.
 
+sha: `ab6bd57b`
+
 ## Summary
 
 | Cell | Current Behavior | Root Constraint | V1 Disposition |

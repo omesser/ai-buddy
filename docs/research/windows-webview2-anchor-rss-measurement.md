@@ -26,7 +26,7 @@ These commands run on Windows PowerShell 5.1 or newer on DESKTOP-UQIE144.
 ### Baseline (anchor present)
 
 ```powershell
-cd C:\path\to\fidget
+cd E:\workspace\fidget
 cd src-tauri
 cargo build --release --bin fidget
 cd ..
