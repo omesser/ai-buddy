@@ -90,8 +90,9 @@ $marks = Join-Path $out "harness.log"
 $log = Join-Path $out "app.log"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
-$harness = "$root/scripts/scenarios/fixture-harness.sh $TestBin script=scenario-thinking count=$marks"
-if (($harness -split '\s+').Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
+$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=scenario-thinking count=$marks"
+$paths = @($harness -split '\s+' | Select-Object -Skip 1)
+if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 
 $env:HOME = Join-Path $out "home"
 $env:USERPROFILE = $env:HOME
