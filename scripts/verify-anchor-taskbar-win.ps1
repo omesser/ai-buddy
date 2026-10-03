@@ -104,7 +104,7 @@ if ($settingsHwnd -ne [IntPtr]::Zero) {
 }
 Pass "Q1 PASS: No Settings window auto-opened on startup"
 
-Info "Searching for anchor HWND (small window title=Fidget, same process)..."
+Info "Searching for anchor HWND (class=FidgetAnchor, title=Fidget)..."
 $anchorHwnd = [IntPtr]::Zero
 $windows = [AnchorVerify]::FindWindowsByPid($appPid)
 foreach ($hwnd in $windows) {
@@ -114,21 +114,24 @@ foreach ($hwnd in $windows) {
   [AnchorVerify]::GetWindowText($hwnd, $txt, 256) | Out-Null
   $className = $cls.ToString()
   $title = $txt.ToString()
-  if ($title -ne "Fidget" -or $className -ne "Tauri Window") { continue }
+  if ($title -ne "Fidget" -or $className -ne "FidgetAnchor") { continue }
   $rect = New-Object AnchorVerify+RECT
-  if ([AnchorVerify]::GetWindowRect($hwnd, [ref]$rect)) {
-    $w = $rect.Right - $rect.Left
-    $h = $rect.Bottom - $rect.Top
-    if ($w -ge 50 -and $w -le 200 -and $h -ge 20 -and $h -le 80) {
-      Info "Found anchor: hwnd=$hwnd, class=$className, title=$title, size=${w}x${h}"
-      $anchorHwnd = $hwnd
-      break
-    }
+  if (-not [AnchorVerify]::GetWindowRect($hwnd, [ref]$rect)) { continue }
+  $w = $rect.Right - $rect.Left
+  $h = $rect.Bottom - $rect.Top
+  Info "Found anchor: hwnd=$hwnd, class=$className, title=$title, size=${w}x${h}, at=$($rect.Left),$($rect.Top)"
+  if ($w -ne 1 -or $h -ne 1) {
+    Fail "Q2 FAIL: anchor size ${w}x${h}, expected 1x1"
   }
+  if ($rect.Left -ne -32000 -or $rect.Top -ne -32000) {
+    Fail "Q2 FAIL: anchor at $($rect.Left),$($rect.Top), expected -32000,-32000"
+  }
+  $anchorHwnd = $hwnd
+  break
 }
 
 if ($anchorHwnd -eq [IntPtr]::Zero) {
-  Fail "Q2 FAIL: No anchor HWND found (expected title=Fidget, class=Tauri Window, size 50-200w x 20-80h)"
+  Fail "Q2 FAIL: No anchor HWND found (expected title=Fidget, class=FidgetAnchor, 1x1 at -32000,-32000)"
 }
 Pass "Found anchor HWND: $anchorHwnd"
 

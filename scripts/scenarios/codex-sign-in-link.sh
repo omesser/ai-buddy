@@ -18,7 +18,7 @@
 set -euo pipefail
 
 if [ "${1:-}" != --go ]; then
-  sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0"
+  sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0" || true
   exit 2
 fi
 bin=${2:?usage: codex-sign-in-link.sh --go <fidget binary>}
