@@ -24,24 +24,37 @@ pub fn run(repo_root: &Path, name: &str, go: bool, extra: &[String], report: &mu
         return;
     };
 
+    if !go {
+        let header = parse_scenario_header(text);
+        report.say(&header);
+        report.check(
+            Outcome::Skip,
+            name,
+            "printed the takeover header; post it, and rerun with --go once the owner says go",
+        );
+        return;
+    }
+
+    if std::env::consts::OS != "macos" {
+        report.check(
+            Outcome::Skip,
+            "scenario",
+            &format!("scenarios are macOS only, not {}", std::env::consts::OS),
+        );
+        return;
+    }
+
+    let Some(binaries) = binaries(repo_root, text.contains(TEST_BINARY), report) else {
+        return;
+    };
+
     let mut script = Command::new("bash");
     script
         .arg(dir.join(format!("{name}.sh")))
+        .arg("--go")
+        .args(binaries)
+        .args(extra)
         .current_dir(repo_root);
-    if go {
-        if std::env::consts::OS != "macos" {
-            report.check(
-                Outcome::Skip,
-                "scenario",
-                &format!("scenarios are macOS only, not {}", std::env::consts::OS),
-            );
-            return;
-        }
-        let Some(binaries) = binaries(repo_root, text.contains(TEST_BINARY), report) else {
-            return;
-        };
-        script.arg("--go").args(binaries).args(extra);
-    }
 
     let (outcome, detail) = match report.exec(&mut script, None) {
         Some(0) => (Outcome::Pass, "passed".to_string()),
@@ -49,16 +62,29 @@ pub fn run(repo_root: &Path, name: &str, go: bool, extra: &[String], report: &mu
             Outcome::Fail,
             "failed; the script names its evidence".to_string(),
         ),
-        Some(2) if !go => (
-            Outcome::Skip,
-            "printed the takeover header; post it, and rerun with --go once the owner says go"
-                .to_string(),
-        ),
         Some(2) => (Outcome::Skip, "the script skipped".to_string()),
         Some(c) => (Outcome::Error, format!("exited {c}")),
         None => (Outcome::Error, "could not run bash".to_string()),
     };
     report.check(outcome, name, &detail);
+}
+
+/// Parse the scenario header from script text. Extracts consecutive comment
+/// lines after the shebang, stripping leading `#` and optional space.
+fn parse_scenario_header(text: &str) -> String {
+    let lines = text.lines().skip(1);
+    let mut header = Vec::new();
+    for line in lines {
+        if line.starts_with('#') {
+            let content = line
+                .strip_prefix("# ")
+                .unwrap_or_else(|| line.strip_prefix('#').unwrap_or(line));
+            header.push(content);
+        } else if !line.trim().is_empty() {
+            break;
+        }
+    }
+    header.join("\n")
 }
 
 /// Every `<name>.sh` in `dir` that carries a `# Scenario:` header, with its
