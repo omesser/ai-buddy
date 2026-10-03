@@ -1515,6 +1515,7 @@ fn read_frames(
     let mut framed = false;
     let mut finished = false;
     let mut truncated = false;
+    let mut started = false;
     let ended = |content: crate::acp_wire::Answer, truncated: bool, thought: &str| {
         let content = content.finish();
         if truncated {
@@ -1556,10 +1557,13 @@ fn read_frames(
         truncated |= event.truncated;
         let mut chunk = event.thought.unwrap_or_default();
         if let Some(delta) = event.delta {
-            if content.as_str().is_empty() && !delta.is_empty() && tracing() {
+            if !started && !delta.is_empty() {
+                started = true;
                 // A Behavior name is one to three tokens, so the first token
                 // is roughly when the sprite could start moving.
-                eprintln!("director: first token");
+                if tracing() {
+                    eprintln!("director: first token");
+                }
             }
             chunk.push_str(&content.push(&delta));
         }

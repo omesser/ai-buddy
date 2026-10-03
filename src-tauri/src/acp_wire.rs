@@ -1647,11 +1647,6 @@ impl Answer {
         }
     }
 
-    /// The answer so far, without a tail still held back.
-    pub(crate) fn as_str(&self) -> &str {
-        &self.said
-    }
-
     /// The whole answer. A held tail that never became a tag is answer text,
     /// unless it sits in a block that never closed.
     pub(crate) fn finish(mut self) -> String {
