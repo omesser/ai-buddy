@@ -2864,6 +2864,21 @@ mod tests {
         ])
     }
 
+    /// Thinking only. The script name must not contain `model`, because that
+    /// substring is what makes this peer advertise a model option.
+    fn thought_only_options() -> Value {
+        json!([
+            {
+                "id": "thought",
+                "name": "Thinking",
+                "category": "thought_level",
+                "type": "select",
+                "currentValue": "medium",
+                "options": [{"value": "medium", "name": "Medium"}]
+            }
+        ])
+    }
+
     fn say(value: Value) {
         // Authenticate can answer from another thread while this loop writes
         // the next reply. One line at a time, or the two JSON objects join.
@@ -2999,6 +3014,8 @@ mod tests {
                         let mut result = json!({"sessionId": session});
                         if script.contains("model") {
                             result["configOptions"] = harness_model_options();
+                        } else if script == "thought" {
+                            result["configOptions"] = thought_only_options();
                         }
                         say(json!({"jsonrpc": "2.0", "id": id, "result": result}));
                         if script == "mcp-link" || script == "mcp-link-complete-turn" {
@@ -4784,6 +4801,23 @@ mod tests {
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 0, "a saved id was not opened as new");
         assert_eq!(fx.count("config=llm=some-model"), 1);
+        session.shutdown();
+    }
+
+    /// A non-empty name is not a request when the only option is thinking.
+    /// The turn still completes.
+    #[test]
+    fn a_named_harness_model_is_not_sent_when_no_model_option_is_advertised() {
+        let (fx, session) = Fixture::new("thought");
+        write_harness_model(&fx.dir, "some-model");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(fx.count("prompt"), 1);
+        assert_eq!(
+            fx.count("set-config"),
+            0,
+            "an unadvertised model is not a request"
+        );
         session.shutdown();
     }
 
