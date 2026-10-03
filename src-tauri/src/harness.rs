@@ -3448,7 +3448,7 @@ mod tests {
             let path = {
                 let path = dir.join("launcher-wrapper.bat");
                 let contents = format!(
-                    "@echo off\nif \"%1\" == \"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 %*\n",
+                    "@echo off\nif \"%~1\"==\"--version\" (\n  echo fake-acp-agent 1.0.0\n  exit /b 0\n)\n\"{}\" {} --exact --nocapture --test-threads=1 %*\n",
                     exe.display(),
                     test,
                 );
