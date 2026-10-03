@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Scenario: sign-in-button (macOS)
 # On screen: launches Fidget as BMO with a fixture Harness that advertises
-#   agent sign-in. The needs-login landing opens Chat. One button press.
+#   agent sign-in. The menu bar icon's Chat… row opens Chat on the needs-login
+#   landing, and Chat takes focus. Two button presses. Open goes to a
+#   recording `open`, so no browser opens.
 #   Three screenshots of the Chat window. Fidget quits when it ends.
-# Input: one button press via AXPress (no real click).
+# Input: one real click on the menu bar icon; AXPress on Chat… and on the
+#   sign-in button and on Open.
 # Duration: about 30 s, 2 min at most.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
 # Asserts: the sign-in button shows on the needs-login landing; pressing it
@@ -25,7 +28,7 @@ test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
 root=$(cd "$(dirname "$0")/../.." && pwd)
 out="${TMPDIR:-/tmp}/fidget-scenario-sign-in-button-$(date +%Y%m%d-%H%M%S)"
 tools="${TMPDIR:-/tmp}/fidget-scenario-tools"
-mkdir -p "$out/home" "$tools"
+mkdir -p "$out/home" "$out/bin" "$tools"
 log="$out/app.log" marks="$out/harness.log"
 : > "$marks"
 
@@ -36,13 +39,21 @@ fail() {
 }
 
 [ -x "$tools/window-id" ] || swiftc -O "$root/scripts/scenarios/window-id.swift" -o "$tools/window-id"
-[ -x "$tools/ax" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
+[ "$tools/ax" -nt "$root/scripts/ax-settings.swift" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
 # FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
-harness="$root/scripts/scenarios/fixture-harness.sh $test_bin script=auth-sign-in-link count=$marks"
+# Chat names the Harness by its launcher.
+launcher="$root/scripts/scenarios/fixture-harness.sh"
+harness="$launcher $test_bin script=auth-sign-in-link count=$marks"
 [ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
-env HOME="$out/home" \
+# platform::open_url spawns `open` by name, so this one on PATH takes Open's URL.
+opened="$out/opened.txt"
+: > "$opened"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %q\n' "$opened" > "$out/bin/open"
+chmod +x "$out/bin/open"
+
+env HOME="$out/home" PATH="$out/bin:$PATH" \
   FIDGET_HARNESS="$harness" \
   FIDGET_DIRECTOR_WAKE_SECS=600 \
   FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 \
@@ -72,13 +83,17 @@ shot() { # <name>
 }
 
 wait_for 30 grep -qx spawn "$marks" || fail "Harness never spawned; see $log"
+# Needs-login does not open Chat by itself; only a link Fidget's own sign-in
+# raises does (docs/harness.md).
+wait_for 15 grep -qx new "$marks" || fail "the Harness never asked for a session; see $marks"
+"$tools/ax" open "$pid" Chat BMO > "$out/open.txt" 2>&1 || fail "the menu's Chat row did not open Chat; see $out/open.txt"
 wait_for 15 "$tools/window-id" "$pid" BMO || fail "Chat did not open for needs-login"
 
 dump needs-login
 shot needs-login
 grep -qE '^AXButton\|Fake login\|' "$out/needs-login.ax.txt" ||
   fail "no Fake login button on needs-login; see $out/needs-login.ax.txt"
-grep -qE '^AXStaticText\|.*Run this in a terminal:' "$out/needs-login.ax.txt" ||
+grep -qF 'Or run this in a terminal:' "$out/needs-login.ax.txt" ||
   fail "no terminal command hint on needs-login; see $out/needs-login.ax.txt"
 echo "ok: needs-login shows Fake login button"
 
@@ -90,18 +105,23 @@ dump waiting
 shot waiting
 grep -qE '^AXStaticText\|.*Finish signing in in your browser' "$out/waiting.ax.txt" ||
   fail "no waiting line after button press; see $out/waiting.ax.txt"
-grep -qE '^AXStaticText\|.*came from fake-agent' "$out/waiting.ax.txt" ||
+grep -qF "came from $launcher, so" "$out/waiting.ax.txt" ||
   fail "waiting line does not name the Harness; see $out/waiting.ax.txt"
 echo "ok: waiting line appears after button press"
 
-wait_for 40 grep -qx 'elicit-url:accept' "$marks" || fail "sign-in form never answered; see $log"
+"$tools/ax" press-button "$pid" Open 1 BMO > "$out/press-open.txt" 2>&1 ||
+  fail "could not press Open on the sign-in link; see $out/press-open.txt"
+wait_for 10 grep -qx 'elicit-url:accept' "$marks" || fail "sign-in form never answered; see $log"
+handed() { [ "$(cat "$opened")" = "https://example.test/device?code=ABCD-1234" ]; }
+wait_for 5 handed || fail "Open handed '$(cat "$opened")' to open"
+echo "ok: Open accepted the link and handed it to open"
 wait_for 15 grep -qx new "$marks" || fail "session did not open after sign-in; see $log"
 [ "$(grep -c new "$marks")" -ge 2 ] || fail "session did not open after sign-in; see $log"
 sleep 1.5
 
 dump signed-in
 shot signed-in
-grep -qE '^AXStaticText\|.*fake-agent · session ' "$out/signed-in.ax.txt" ||
+grep -qF "|$launcher · session " "$out/signed-in.ax.txt" ||
   fail "mind line does not name the session; see $out/signed-in.ax.txt"
 if grep -qE 'Finish signing in in your browser' "$out/signed-in.ax.txt"; then
   fail "waiting line still present after sign-in; see $out/signed-in.ax.txt"
