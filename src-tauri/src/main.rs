@@ -3996,102 +3996,200 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
-/// The taskbar anchor on Windows. WebView2 is the window; the subclass keeps
-/// it parked and opens Settings on a taskbar click.
+/// Taskbar button that opens Settings. Main thread only. A webview here
+/// would be a second WebView2 process beside the overlay, and it draws nothing.
 #[cfg(target_os = "windows")]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, GetWindowRect, LoadCursorW, RegisterClassExW, SendMessageW, SetWindowPos,
+        ShowWindow, ICON_BIG, ICON_SMALL, IDC_ARROW, SWP_NOACTIVATE, SWP_NOZORDER, SW_SHOWNA,
+        WM_SETICON, WNDCLASSEXW, WS_EX_APPWINDOW, WS_POPUP,
+    };
+
     if std::env::var("FIDGET_NO_ANCHOR").is_ok() {
         eprintln!("anchor: skipped (FIDGET_NO_ANCHOR is set)");
         return Ok(());
     }
 
-    let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
-    let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
-        .title("Fidget")
-        .inner_size(1.0, 1.0)
-        .resizable(false)
-        .decorations(false)
-        // Tauri's default shadow on an undecorated window is a 1px white
-        // frame, and on Windows 11 the DWM rounds it.
-        .shadow(false)
-        .transparent(true)
-        .focused(false)
-        .visible(false)
-        .build()?;
+    // Set before CreateWindowExW. The class procedure can run before that call returns.
+    ANCHOR_APP.set(app.clone()).ok();
 
-    {
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        let app_handle = app.clone();
-        if let Ok(handle) = window.window_handle() {
-            if let RawWindowHandle::Win32(win32_handle) = handle.as_ref() {
-                install_windows_anchor_wndproc(win32_handle.hwnd.get() as _, app_handle);
-            }
+    let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
+    if instance.is_null() {
+        return Err(format!("anchor: module: {}", std::io::Error::last_os_error()).into());
+    }
+
+    let icon = anchor_icon().unwrap_or(std::ptr::null_mut());
+    let class_name = windows_sys::w!("FidgetAnchor");
+    let class = WNDCLASSEXW {
+        cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+        style: 0,
+        lpfnWndProc: Some(anchor_wndproc),
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        hInstance: instance,
+        hIcon: icon,
+        hCursor: unsafe { LoadCursorW(std::ptr::null_mut(), IDC_ARROW) },
+        hbrBackground: std::ptr::null_mut(),
+        lpszMenuName: std::ptr::null(),
+        lpszClassName: class_name,
+        hIconSm: icon,
+    };
+    if unsafe { RegisterClassExW(&class) } == 0 {
+        return Err(format!(
+            "anchor: register class: {}",
+            std::io::Error::last_os_error()
+        )
+        .into());
+    }
+
+    let (x, y) = anchor_origin((0, 0), false);
+    // The shell omits a popup from the taskbar. WS_EX_APPWINDOW puts it there.
+    // WS_EX_TOOLWINDOW and an owner window would take it off again.
+    let hwnd = unsafe {
+        CreateWindowExW(
+            WS_EX_APPWINDOW,
+            class_name,
+            windows_sys::w!("Fidget"),
+            WS_POPUP,
+            x,
+            y,
+            1,
+            1,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            instance,
+            std::ptr::null(),
+        )
+    };
+    if hwnd.is_null() {
+        return Err(format!("anchor: create window: {}", std::io::Error::last_os_error()).into());
+    }
+
+    if !icon.is_null() {
+        unsafe {
+            SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon as isize);
         }
     }
 
-    window.show()?;
-    let (x, y) = anchor_origin((0, 0), false);
-    window.set_position(tauri::PhysicalPosition::new(x, y))?;
+    // SW_SHOW would take focus at launch. The button has to appear without that.
+    unsafe {
+        ShowWindow(hwnd, SW_SHOWNA);
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            x,
+            y,
+            1,
+            1,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+    }
+
+    let mut rect = RECT {
+        left: x,
+        top: y,
+        right: x + 1,
+        bottom: y + 1,
+    };
+    if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
+        rect.left = x;
+        rect.top = y;
+    }
+    eprintln!("anchor: 1x1 at ({},{})", rect.left, rect.top);
+    // Win32 does not destroy a window when this handle goes out of scope.
+    // DestroyWindow would remove the taskbar button.
     Ok(())
 }
 
+/// Low word of `WM_ACTIVATE`. A click is `WA_CLICKACTIVE`. A show is `WA_ACTIVE`,
+/// and a launch must not open Settings.
 #[cfg(target_os = "windows")]
-fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
-    use std::sync::atomic::{AtomicPtr, Ordering};
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+const fn anchor_click_opens_settings(active: u16) -> bool {
+    active == windows_sys::Win32::UI::WindowsAndMessaging::WA_CLICKACTIVE as u16
+}
+
+#[cfg(target_os = "windows")]
+static ANCHOR_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn anchor_wndproc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, SWP_NOMOVE, WINDOWPOS, WM_ACTIVATE,
-        WM_WINDOWPOSCHANGING,
+        DefWindowProcW, SWP_NOMOVE, SWP_NOSIZE, WINDOWPOS, WM_ACTIVATE, WM_WINDOWPOSCHANGING,
     };
 
-    static OLD_WNDPROC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
-    static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
-
-    unsafe extern "system" fn anchor_wndproc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        if msg == WM_WINDOWPOSCHANGING {
-            let pos = lparam as *mut WINDOWPOS;
-            if !pos.is_null() {
-                let nomove = anchor_position_locked(unsafe { (*pos).flags }, SWP_NOMOVE);
-                let requested = unsafe { ((*pos).x, (*pos).y) };
-                let (x, y) = anchor_origin(requested, nomove);
-                unsafe {
-                    (*pos).x = x;
-                    (*pos).y = y;
-                }
+    if msg == WM_WINDOWPOSCHANGING {
+        let pos = lparam as *mut WINDOWPOS;
+        if !pos.is_null() {
+            let flags = (*pos).flags;
+            let nomove = anchor_position_locked(flags, SWP_NOMOVE);
+            let requested = ((*pos).x, (*pos).y);
+            let (x, y) = anchor_origin(requested, nomove);
+            (*pos).x = x;
+            (*pos).y = y;
+            // A taskbar restore can grow the window onto the desktop.
+            if !anchor_position_locked(flags, SWP_NOSIZE) {
+                (*pos).cx = 1;
+                (*pos).cy = 1;
             }
-        }
-        if msg == WM_ACTIVATE {
-            let f_active = (wparam & 0xFFFF) as u16;
-            const WA_CLICKACTIVE: u16 = 2;
-            if f_active == WA_CLICKACTIVE {
-                if let Some(app) = APP_HANDLE.get() {
-                    present_settings(app.clone());
-                }
-            }
-        }
-        let old_proc = OLD_WNDPROC.load(Ordering::Relaxed);
-        if old_proc.is_null() {
-            windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
-        } else {
-            #[allow(clippy::missing_transmute_annotations)]
-            CallWindowProcW(std::mem::transmute(old_proc), hwnd, msg, wparam, lparam)
         }
     }
+    if msg == WM_ACTIVATE && anchor_click_opens_settings((wparam & 0xFFFF) as u16) {
+        if let Some(app) = ANCHOR_APP.get() {
+            present_settings(app.clone());
+        }
+    }
+    DefWindowProcW(hwnd, msg, wparam, lparam)
+}
 
-    APP_HANDLE.set(app).ok();
+/// Taskbar icon from the same PNG the bundle uses. The class stores the handle
+/// until process exit, and `DestroyIcon` would blank the button.
+#[cfg(target_os = "windows")]
+fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::CreateIcon;
 
-    unsafe {
-        let old = SetWindowLongPtrW(
-            hwnd as HWND,
-            GWLP_WNDPROC,
-            anchor_wndproc as *const () as isize,
-        );
-        OLD_WNDPROC.store(old as *mut (), Ordering::Relaxed);
+    let decoded = match image::load_from_memory(include_bytes!("../icons/icon.png")) {
+        Ok(decoded) => decoded,
+        Err(why) => {
+            eprintln!("anchor: icon: {why}");
+            return None;
+        }
+    };
+    // The PNG is 512. The shell's jumbo slot is 256, and a larger icon is only memory.
+    let rgba = decoded.thumbnail(256, 256).to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let mut pixels = rgba.into_raw();
+    let mut mask = Vec::with_capacity(pixels.len() / 4);
+    // CreateIcon's color plane is BGRA. The mask byte is inverted alpha so a
+    // transparent pixel stays transparent on the taskbar.
+    for chunk in pixels.as_chunks_mut::<4>().0 {
+        mask.push(chunk[3].wrapping_sub(u8::MAX));
+        chunk.swap(0, 2);
+    }
+    let icon = unsafe {
+        CreateIcon(
+            std::ptr::null_mut(),
+            width as i32,
+            height as i32,
+            1,
+            32,
+            mask.as_ptr(),
+            pixels.as_ptr(),
+        )
+    };
+    if icon.is_null() {
+        eprintln!("anchor: icon: {}", std::io::Error::last_os_error());
+        None
+    } else {
+        Some(icon)
     }
 }
 
@@ -4198,7 +4296,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
-            // On Windows and Linux, create a hidden anchor window that appears
+            // On Windows and Linux, create an off-screen anchor window that appears
             // in the taskbar/panel, matching the macOS Dock presence.
             // Clicking it opens Settings. Overlays stay off the taskbar.
             // Held until the quit handler is installed, so a Ctrl+C in the
@@ -4801,8 +4899,7 @@ mod tests {
         }
 
         fn windows_activate_opens_settings(f_active: u16) -> bool {
-            const WA_CLICKACTIVE: u16 = 2;
-            f_active == WA_CLICKACTIVE
+            crate::anchor_click_opens_settings(f_active)
         }
     }
 
