@@ -52,7 +52,7 @@ export const AUTO_HIDE_DELAY_MS = 3000;
 
 // While Speech or thinking is up the Character has the floor, so an empty pill
 // the pointer left gives way. This is only long enough to cross onto the pill.
-export const BUBBLE_YIELD_MS = 500;
+export const BUBBLE_YIELD_MS = 1000;
 
 // A click that stays put is a poke. Past this, the same press is a drag.
 export const DRAG_DISMISS_PX = 4;
