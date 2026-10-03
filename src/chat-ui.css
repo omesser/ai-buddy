@@ -1910,10 +1910,12 @@ body {
 }
 
 /* The status bar: plain-language by default, with technical details behind a
-   disclosure. Instrument panel, not conversation. One line whatever it draws. */
+   disclosure. Instrument panel, not conversation. Collapsed, one line. Open,
+   the ladder is the bar's own row, two lines at most. */
 .bar {
   flex: 0 0 auto;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 8px;
   padding: 7px 16px 9px;
@@ -1926,19 +1928,17 @@ body {
   overflow: hidden;
 }
 
-/* Plain-language status: what the fidget is doing, without Primitive/State
-   vocabulary. The default reading for first-time users. */
 .bar .plain {
-  flex: 1 1 auto;
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Advanced disclosure: the technical ladder demoted but not removed. Authors
-   can still see the full telemetry without hunting another window. */
 .bar .advanced {
-  flex: 0 0 auto;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .bar .advanced summary {
@@ -1968,11 +1968,30 @@ body {
   color: var(--chat-ink-2);
 }
 
-/* The ladder: Behavior › Primitive › Animation · State · facing · director ·
-   happened. Drawn only when the disclosure is open. */
+/* Outside <details>: inside it, the disclosure sizes to one unwrapped line
+   and the footer clips the rest. Two lines, then the log has given enough. */
 .bar .ladder {
-  display: inline-flex;
+  display: none;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 4px;
-  margin-left: 4px;
+  line-height: 1.45;
+  max-height: calc(2 * 1.45em + 4px);
+  overflow: hidden;
+}
+
+.bar .advanced[open] ~ .ladder {
+  display: flex;
+}
+
+.bar .ladder > span {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
