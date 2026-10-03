@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  AUTO_HIDE_DELAY_MS,
+  BUBBLE_YIELD_MS,
   HOVER_DELAY_MS,
   DRAG_DISMISS_PX,
   applyQuickMessageGate,
@@ -388,6 +390,54 @@ test("Chat opening keeps a draft in an open pill", () => {
   advance(10_000);
   assert.equal(qm.visible, true, "typing in progress is not thrown away");
   assert.equal(qm.text, "half a thought");
+});
+
+test("a bubble takes an idle pill the pointer has left", () => {
+  const { qm, advance } = shown();
+  qm.leaveSprite();
+  assert.equal(qm.visible, true, "auto-hide has not run yet");
+
+  qm.setBubble(true);
+  advance(BUBBLE_YIELD_MS);
+  assert.equal(qm.visible, false, "the Character is talking, so the pill waits");
+  assert.ok(BUBBLE_YIELD_MS < AUTO_HIDE_DELAY_MS);
+});
+
+test("a bubble waits for the pointer to leave the sprite and the pill", () => {
+  const { qm, advance } = shown();
+  qm.setBubble(true);
+  advance(10_000);
+  assert.equal(qm.visible, true, "a hovered pill stays over the bubble");
+
+  qm.leaveSprite();
+  advance(BUBBLE_YIELD_MS - 1);
+  qm.enterPill();
+  advance(10_000);
+  assert.equal(qm.visible, true, "the pointer crossed onto the pill in time");
+
+  qm.leavePill();
+  advance(BUBBLE_YIELD_MS);
+  assert.equal(qm.visible, false);
+});
+
+test("a bubble keeps a pill that holds a draft", () => {
+  const { qm, advance } = shown();
+  qm.setText("half a thought");
+  qm.leaveSprite();
+
+  qm.setBubble(true);
+  advance(10_000);
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "half a thought");
+});
+
+test("a hover still opens the pill while a bubble is up", () => {
+  const { qm, advance } = harness();
+  qm.setBubble(true);
+
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "hovering is how the user talks over the Character");
 });
 
 test("an empty line is not sent", () => {
