@@ -39,8 +39,8 @@ fail() {
 [ -x "$tools/ax" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
 # FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
-harness="$test_bin harness::tests::fake_acp_agent --exact --nocapture --test-threads=1 script=auth-sign-in-link count=$marks"
-[ "$(wc -w <<< "$harness")" -eq 7 ] || fail "a path in the Harness line holds a space: $harness"
+harness="$root/scripts/scenarios/fixture-harness.sh $test_bin script=auth-sign-in-link count=$marks"
+[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \

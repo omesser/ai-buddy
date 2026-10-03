@@ -7,25 +7,24 @@ run one: set up, post the prompt, and wait for a go-ahead for that run.
 
 ## Run one
 
-Build both binaries first. That is setup, not the takeover.
+Print the scenario's header. That is setup, not the takeover:
 
 ```sh
-cargo build -p fidget
-cargo test -p fidget --no-run --message-format=json \
-  | jq -r 'select(.profile.test and .executable) | .executable'
+cargo run -p fidget-verify -- scenario thinking-row
 ```
 
-The second command prints the test binary. Its `harness::tests::fake_acp_agent`
-is the fixture Harness, and the scenario names a script for it.
-
-Run the scenario without `--go` to print its header. Post that as the takeover
-prompt. Once you have the go-ahead:
+Post the header as the takeover prompt. Once you have the go-ahead:
 
 ```sh
-scripts/scenarios/thinking-row.sh --go target/debug/fidget target/debug/deps/fidget-<hash>
+cargo run -p fidget-verify -- scenario thinking-row --go
 ```
 
-The exit code is the verdict: 0 passed, 1 failed, 2 printed the header.
+`--go` builds `target/debug/fidget`, and the test binary when the scenario's
+`Usage` line names one, then runs the script with them. The test binary's
+`harness::tests::fake_acp_agent` is the fixture Harness. Arguments after `--`
+go to the script after the binaries, as in `scenario hero-gif --go --
+--harness claude`. The exit code is `fidget-verify`'s: 0 passed, 1 failed, 2
+skipped or printed the header, 3 a tool error.
 
 `chat-header-narrow.sh` takes the same two binaries. It resizes Chat to 420,
 360 and 320 points and checks that the header keeps one row and never scrolls
@@ -76,7 +75,7 @@ account, the network, and you at the keyboard: the terminal prompts each click.
 It takes only the app binary:
 
 ```sh
-scripts/scenarios/codex-sign-in-link.sh --go target/debug/fidget
+cargo run -p fidget-verify -- scenario codex-sign-in-link --go
 ```
 
 codex runs against a fresh `CODEX_HOME` with file credential storage, so your
@@ -91,7 +90,7 @@ Google account, the network, and you at the keyboard. It takes the app binary
 and the folder you unzipped the `antigravity-acp` registry archive into:
 
 ```sh
-scripts/scenarios/antigravity-sign-in.sh --go target/debug/fidget ~/agy-acp
+cargo run -p fidget-verify -- scenario antigravity-sign-in --go -- ~/agy-acp
 ```
 
 The server runs against a fresh `GEMINI_HOME`, so your `~/.gemini` stays
