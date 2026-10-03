@@ -34,7 +34,7 @@ GPU compositing of the transparent overlay, the other suspect in #423, measured 
 | [#427](https://github.com/omesser/fidget/issues/427) WindowSource | Closed | Section below, [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). |
 | [#428](https://github.com/omesser/fidget/issues/428) mask rebuild | Open | Desktop numbers in the mask docs. This VM adds release per-call times. No `perf` flamegraph. |
 | [#424](https://github.com/omesser/fidget/issues/424) RSS | Open | macOS footprint in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md). This VM has one display. heaptrack was not installed. |
-| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS, Linux release, Linux ride, and Windows matrix tables are below. Crossing a display seam was not measured. |
+| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS, Linux release, Linux ride, Windows matrix, and a Windows dual-display seam ride are below. A display seam on Linux was not measured. |
 
 ## How a frame gets on screen
 
@@ -158,11 +158,25 @@ One armed gap exceeded 20 ms. The engine counter stayed at 62.1 Hz. Lag p50 is o
 | Walking | 1199 | 60 | 0 | 18 | 62.5 | 1249 at 16 ms, 62.5 Hz | 0 | 16 ms, 1 sample | 17.1 ms, 1 sample |
 | Walking plus one `yes` per core | 1199 | 60 | 0 | 15 | 62.5 | 1249 at 16 ms, 62.5 Hz | 1 at 6 ms, 166.7 Hz | 16 ms, 1 sample | 16.4 ms, 1 sample |
 
-Idle stayed mostly unarmed (19 restarts in 20 display frames) while the engine still ticked at 61.2 Hz. Walking and load held 60 fps on armed stretches with zero gaps over 20 ms. Lag p50 stayed one sample (16 ms) on both moving windows. This matrix did not ride a window and did not cross a display seam.
+Idle stayed mostly unarmed (19 restarts in 20 display frames) while the engine still ticked at 61.2 Hz. Walking and load held 60 fps on armed stretches with zero gaps over 20 ms. Lag p50 stayed one sample (16 ms) on both moving windows. This matrix did not ride a window. The seam ride is the next subsection.
 
 Armed-stretch histogram for the walking window, display frames then engine ticks. 0 to 10 ms is 0 and 0. 10 to 14 is 0 and 3. 14 to 18 is 1180 and 1231. 18 to 20 is 0 and 14. 20 to 25 is 0 and 1. 25 to 34 is 0 and 0. 34 to 50 is 0 and 0. 50 and above is 0 and 0.
 
 Armed-stretch histogram for the load window. 0 to 10 ms is 0 and 2. 10 to 14 is 0 and 14. 14 to 18 is 1183 and 1212. 18 to 20 is 0 and 9. 20 to 25 is 0 and 12. 25 to 34 is 0 and 1. 34 to 50 is 0 and 0. 50 and above is 0 and 0.
+
+#### Windows seam ride, #426
+
+Same release binary and host as the matrix above (`git_rev=b0f57a78`), two displays: `\\.\DISPLAY1` at (-1200, -209) 1200x1920 and primary `\\.\DISPLAY2` at (0, 0) 3440x1440, seam at x=0. Still BMO, the same weight rewrite the cadence script uses, `FIDGET_DIRECTOR=0`, `FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_CADENCE=1`, `FIDGET_INSTANCES=BMO`, scratch `APPDATA` / `USERPROFILE` / `HOME`. A WinForms perch 900 by 220 was placed under the primary-center spawn so the sprite landed `Perched`. After that, `SetWindowPos` stepped the perch 2 px about every 20 ms from the spawn under the left edge of the primary, across the seam, and about 520 px onto the left display, then reversed, for 60 s. That matches the Linux ride step and stays under the 1000 pt/s yank.
+
+The sample window held 1004 `hold#` frames and 3696 `Perched` frames. `pos()` x ran from -303 to 1720 (529 frames with x < 0, 177 with |x| ≤ 50), in 877 distinct `pos()` values. `scripts/frame-cadence.mjs` reduced that window. The numbers below are that printout.
+
+| Scenario | Display frames | Mean fps of armed stretches | Drops over 20 ms | Restarts | Engine Hz, loop counter | Moving ticks | Still ticks | Lag p50, moving | Lag p95, moving |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Riding across the display seam | 1850 | 58.8 | 28 | 482 | 61.6 | 1004 at 16.3 ms, 61.5 Hz | 2691 at 16.2 ms, 61.6 Hz | 89.7 ms, 1 sample | 115.7 ms, 1 sample |
+
+Armed-stretch histogram, display frames then engine ticks. 0 to 10 ms is 0 and 0. 10 to 14 is 0 and 32. 14 to 18 is 1338 and 3433. 18 to 20 is 0 and 212. 20 to 25 is 0 and 18. 25 to 34 is 14 and 0. 34 to 50 is 14 and 0. 50 and above is 0 and 0.
+
+Compared with the single-display walking matrix on the same machine (0 drops, 60 fps, lag p50 16 ms), this seam ride kept the engine near 61.6 Hz but armed display gaps over 20 ms rose to 28, mean armed fps fell to 58.8, and lag p50 rose to 89.7 ms. Restarts were 482 in 1850 display frames. A Linux seam was not measured.
 
 ## How to reproduce the Linux numbers
 
