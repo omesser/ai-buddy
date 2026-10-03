@@ -2456,6 +2456,7 @@ pub(crate) mod tests {
             BYO_HARNESS_ID,
             DIRECTOR_ID,
             HARNESS_COMMAND_ID,
+            HARNESS_MODEL_ID,
             HARNESS_ID,
             PI_PROJECT_MCP_ID,
             PROACTIVE_ID,

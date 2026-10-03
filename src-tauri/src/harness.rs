@@ -1603,8 +1603,7 @@ impl Session {
         Ok(wire)
     }
 
-    /// The harness model name from this session's settings file. Empty when
-    /// the file is missing or the field is blank.
+    /// Empty when this session's settings file is missing or the field is blank.
     fn harness_model_name(data: &Path) -> String {
         crate::settings::Settings::load(&crate::settings::settings_path(data)).harness_model
     }
@@ -1656,10 +1655,12 @@ impl Session {
                 return Err(self.refuse_login(&mut state));
             }
             Err(OpenError::Failed(why)) => {
-                // Chat reads `last_error`. A rejected model never reaches
-                // `session/prompt`, so the turn path that records
-                // `TurnError::Failed` does not run.
-                self.update_inspect(|inspect| inspect.last_error = Some(why.clone()));
+                // Chat reads these. A rejected model never reaches
+                // `session/prompt`, so the `TurnError::Failed` arm does not.
+                self.update_inspect(|inspect| {
+                    inspect.last_error = Some(why.clone());
+                    inspect.turn_failure = Some(why.clone());
+                });
                 return Err(format!("session/new: {why}"));
             }
         };
@@ -4808,6 +4809,11 @@ mod tests {
             "{:?}",
             session.inspect().last_error
         );
+        assert_eq!(
+            session.inspect().turn_failure.as_deref(),
+            session.inspect().last_error.as_deref(),
+            "Chat draws the Harness error from turn_failure"
+        );
         assert!(
             session.inspect().alive,
             "a rejected name must not kill the child"
@@ -4825,6 +4831,7 @@ mod tests {
         );
         assert_eq!(fx.count("config=llm=some-model"), 1);
         assert_eq!(session.inspect().last_error, None);
+        assert_eq!(session.inspect().turn_failure, None);
 
         session.drop_conversation("buddy-1");
         write_harness_model(&fx.dir, "");

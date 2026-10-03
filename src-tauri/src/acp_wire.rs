@@ -547,7 +547,7 @@ impl Wire {
     }
 
     /// `session/load` when `load` names one, falling back to `session/new`.
-    /// `model` is the harness model name. Empty leaves the harness's pick.
+    /// An empty `model` is not sent.
     pub fn open(
         &self,
         load: Option<String>,
