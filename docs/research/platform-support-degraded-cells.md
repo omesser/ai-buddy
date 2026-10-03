@@ -2,6 +2,8 @@
 
 Investigation of the four "degraded" cells in the README Platform Support table, per issue #1195.
 
+Line numbers are against `5dab4f7b`, not `main`.
+
 ## Summary
 
 | Cell | Current Behavior | Root Constraint | V1 Disposition |
