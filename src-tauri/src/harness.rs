@@ -3158,11 +3158,7 @@ mod tests {
                                 }}),
                             );
                             record(count, "asked");
-                        }
-                        "scenario-asking" => {
-                            chunk(&session, "fidget\nYou answered the question.");
-                            stop(&id, "end_turn");
-                            record(count, "replied");
+                            pending_prompt = Some(id);
                         }
                         "mcp-link-turn" if prompts == 1 => {
                             mcp_link(&session, None);
@@ -3218,11 +3214,16 @@ mod tests {
                         if script == "permission-after-work" {
                             thread::sleep(ASK_WORK);
                         }
-                        let option = message
-                            .pointer("/result/outcome/optionId")
-                            .and_then(Value::as_str)
-                            .unwrap_or("");
-                        chunk(&session, &format!("ok:{option}"));
+                        if script == "scenario-asking" {
+                            chunk(&session, "fidget\nYou answered the question.");
+                            record(count, "replied");
+                        } else {
+                            let option = message
+                                .pointer("/result/outcome/optionId")
+                                .and_then(Value::as_str)
+                                .unwrap_or("");
+                            chunk(&session, &format!("ok:{option}"));
+                        }
                         if let Some(id) = pending_prompt.take() {
                             stop(&id, "end_turn");
                         }
