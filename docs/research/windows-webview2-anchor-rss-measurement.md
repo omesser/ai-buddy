@@ -89,6 +89,21 @@ If the drop is small (<50 MB) with no process change, the WebView2 path is fine 
 
 Gray zone (50-200 MB drop or 1 process but <50 MB): discuss with Oded.
 
+## Results (DESKTOP-UQIE144, 2026-10-03)
+
+Measured tip `7190cd7c824f7329f4af5e1f8f1ead4648558076` (release fidget.exe, copied onto `target/debug/fidget.exe` because `scripts/bench-rss-windows.ps1` launches that path). One instance `bmo:One`, settle 5s, sample 30s, interval 2s. Homes: `C:/Temp/bench-home-baseline` and `C:/Temp/bench-home-control`. TSV: `C:/Temp/baseline-1218.tsv`, `C:/Temp/control-1218.tsv`.
+
+| run | processes | total WS median | min | max |
+| --- | ---: | ---: | ---: | ---: |
+| baseline (anchor on) | 9 (1 fidget + 8 msedgewebview2) | 567 MB | 560 MB | 582 MB |
+| control (`FIDGET_NO_ANCHOR=1`) | 8 (1 fidget + 7 msedgewebview2) | 483 MB | 479 MB | 498 MB |
+
+Control stderr included `anchor: skipped (FIDGET_NO_ANCHOR is set)`. Windows does not log a success line when the anchor is built; the extra WebView2 process is the baseline signal. Fidget itself stayed about 79 MB median in both runs. The process that disappeared was one msedgewebview2 at about 67 MB RSS median.
+
+Delta: **1 fewer process, 84 MB** (567 to 483).
+
+**Decision: gray.** The process drop matches an anchor WebView2, but 84 MB is inside the 50-200 MB gray band and well under the Linux #1212 bar (about 200+ MB and 1 process). Not a go for a native Windows button on that bar, and not a clean no-go either. Discuss with Oded before filing a native follow-up.
+
 ## Related
 
 - #645: parent perf investigation
