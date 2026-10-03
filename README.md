@@ -14,7 +14,7 @@
 
 # Fidget is a desktop pet that keeps you company, and pitches in when you ask
 
-An embodied AI that lives on your desktop. It walks, talks, naps and can assist in whatever you are up to. Pick it up, throw it around, let it nap, or talk to it. Attach the AI harness you already use, and it can do anything that an AI agent can.
+An AI character that lives on your screen. It walks, talks, naps, and can assist in whatever you are up to. Pick it up, throw it around, let it nap, or talk to it. Attach the AI harness you already use, and it can do anything that an AI agent can.
 
 Each character has a personality and a life of its own.
 
