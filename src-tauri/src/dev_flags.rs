@@ -77,8 +77,8 @@ static AUTH_RETRY_SECS: AtomicU64 = AtomicU64::new(0);
 static HARNESS_TURN_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 
 /// How hard the Completer is asked to think. A `Mutex<String>` because the
-/// value is any string a host takes, not a number. Blank is unset;
-/// `model::effort_for` turns unset into `low`, so storing the default here would make the placeholder a lie.
+/// value is any string a host takes, not a number. Blank is unset, and
+/// unset is omitted rather than stored as a default level.
 static REASONING_EFFORT: Mutex<String> = Mutex::new(String::new());
 
 /// Where the stdio MCP server is, as the variable or the file gives it.

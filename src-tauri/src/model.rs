@@ -99,9 +99,8 @@ const TURN_CEILING: u32 = 1024;
 /// instruction, not a default to improve on.
 const THINK_CEILING: u32 = 8192;
 
-/// What an unset reasoning-effort row sends. Not "send nothing":
-/// omitting the field is still reachable when a server refuses it
-/// and the session drops it.
+/// The low level. Tests and a host that has not refused the field use it
+/// as a concrete value. An unset row does not: that omits the field.
 const DEFAULT_EFFORT: &str = "low";
 
 /// Last user turn and the config that produced it. #18 displays this.
@@ -458,9 +457,9 @@ fn max_tokens_for() -> u32 {
 }
 
 /// The reasoning effort in force. Decided in `dev_flags::seed`, as the
-/// timeout and the cap are; blank there is unset, and unset is `low`.
-fn effort_for() -> String {
-    crate::dev_flags::director_reasoning_effort().unwrap_or_else(|| DEFAULT_EFFORT.to_string())
+/// timeout and the cap are. Blank there is unset, and unset is omitted.
+fn effort_for() -> Option<String> {
+    crate::dev_flags::director_reasoning_effort()
 }
 
 /// What an empty Model API timeout field means, in seconds.
@@ -474,10 +473,10 @@ pub(crate) fn max_tokens_placeholder() -> String {
     format!("{TURN_CEILING} ({THINK_CEILING} once the host marks thinking)")
 }
 
-/// What an empty reasoning-effort field means. One default here: the ask does
-/// not depend on where the Completer runs.
+/// What an empty reasoning-effort field means. Blank is unset on both
+/// Completers, so the field shows nothing rather than a level.
 pub(crate) fn effort_placeholder() -> String {
-    DEFAULT_EFFORT.to_string()
+    String::new()
 }
 
 /// What an empty wake-interval field means, in seconds. One default here:
@@ -556,8 +555,8 @@ pub struct Endpoint {
     cap_pinned: bool,
     /// How hard to ask this host to think, verbatim. Baked in here so a
     /// settings change reaches a running Director through `completer_retargets`.
-    /// Never empty: `effort_for` has already turned unset into `low`.
-    effort: String,
+    /// `None` omits `reasoning_effort` and `reasoning.effort`.
+    effort: Option<String>,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
     session: Mutex<Session>,
     /// Does this host stream? Starts optimistic and only ever falls, once a
@@ -638,7 +637,7 @@ impl Endpoint {
         } else {
             Wire::Whole
         };
-        let mut effort = self.takes_effort.load(Ordering::SeqCst);
+        let mut effort = self.takes_effort.load(Ordering::SeqCst) && self.effort.is_some();
         let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
         let mut reply = self.send(url, &snapshot, wire, effort, cap, instance);
         // A loop rather than one retry: three guarded fields, and a validator
@@ -667,7 +666,7 @@ impl Endpoint {
                 eprintln!(
                     "director: {}; retrying without {}",
                     unsent.why(),
-                    dropped_field(field, &self.effort)
+                    dropped_field(field, self.effort.as_deref().unwrap_or(""))
                 );
             }
             // A call dropped between two attempts must not become a fresh
@@ -765,7 +764,7 @@ impl Endpoint {
             self.wire_budget(),
             wire,
             effort,
-            &self.effort,
+            self.effort.as_deref(),
             cap,
         );
         let request = self
@@ -1273,7 +1272,7 @@ fn request_body(
     max_tokens: u32,
     wire: Wire,
     effort: bool,
-    level: &str,
+    level: Option<&str>,
     cap: bool,
 ) -> serde_json::Value {
     let input = if responses && session.len() == 1 {
@@ -1295,15 +1294,19 @@ fn request_body(
         )
     };
     let mut body = if responses {
-        serde_json::json!({
+        let mut responses_body = serde_json::json!({
             "model": model,
             "input": input,
             "max_output_tokens": max_tokens,
             "store": false,
-            // grok-4.6 defaults to high. Unguarded by `Field::Effort`, which
-            // looks for the chat-completions name. xAI accepts this spelling.
-            "reasoning": { "effort": level },
-        })
+        });
+        // grok-4.6 defaults to high. Unguarded by `Field::Effort`, which
+        // looks for the chat-completions name. xAI accepts this spelling.
+        // Unset omits the object. Sending `low` for a blank row was the bug.
+        if let Some(level) = level {
+            responses_body["reasoning"] = serde_json::json!({ "effort": level });
+        }
+        responses_body
     } else {
         let mut chat = serde_json::json!({
             "model": model,
@@ -1315,9 +1318,11 @@ fn request_body(
         chat[if cap { "max_tokens" } else { NEW_CAP }] = max_tokens.into();
         // Without it a reasoning model spends the token cap thinking before
         // writing any content. `Field::Effort` guards this, because not every
-        // server accepts the field.
+        // server accepts the field. A blank row never reaches that guard.
         if effort {
-            chat["reasoning_effort"] = serde_json::Value::String(level.to_string());
+            if let Some(level) = level {
+                chat["reasoning_effort"] = serde_json::Value::String(level.to_string());
+            }
         }
         chat
     };
@@ -2149,7 +2154,7 @@ pub(crate) mod tests {
             timeout: TIMEOUT,
             max_tokens: TURN_CEILING,
             cap_pinned: false,
-            effort: DEFAULT_EFFORT.to_string(),
+            effort: Some(DEFAULT_EFFORT.to_string()),
             session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
             takes_effort: AtomicBool::new(true),
@@ -2264,7 +2269,7 @@ pub(crate) mod tests {
         // whole-body, so the stub sees no field it objects to.
         let (url, seen) = server_refusing(Field::Stream);
         let endpoint = Endpoint {
-            effort: "max".to_string(),
+            effort: Some("max".to_string()),
             ..endpoint_at(&url)
         };
         endpoint.streams.store(false, Ordering::SeqCst);
@@ -3010,7 +3015,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Stream,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(streamed["stream"], true);
@@ -3021,7 +3026,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Stream,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(responses["stream"], true, "the Responses path streams too");
@@ -3033,7 +3038,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Whole,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert!(
@@ -3056,7 +3061,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Stream,
             true,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(asked["reasoning_effort"], "low");
@@ -3068,7 +3073,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Stream,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert!(
@@ -3083,7 +3088,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Whole,
             true,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert!(
@@ -3110,7 +3115,7 @@ pub(crate) mod tests {
                 TURN_CEILING,
                 Wire::Stream,
                 true,
-                level,
+                Some(level),
                 true,
             );
             assert_eq!(chat["reasoning_effort"], level);
@@ -3122,7 +3127,7 @@ pub(crate) mod tests {
                 TURN_CEILING,
                 Wire::Whole,
                 true,
-                level,
+                Some(level),
                 true,
             );
             assert_eq!(responses["reasoning"]["effort"], level);
@@ -3155,25 +3160,84 @@ pub(crate) mod tests {
         );
     }
 
-    /// Unset still sends `low`. Omitting the field leaves a reasoning
-    /// model on its default effort.
+    /// Blank and whitespace omit the field on both HTTP shapes. A picked
+    /// level is that string, not a default substituted for empty.
     #[test]
-    fn an_unset_effort_row_still_sends_low() {
+    fn an_unset_effort_omits_the_field_and_each_level_is_sent() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
         tests::with_env(None, None, None, || {
-            crate::dev_flags::seed(&crate::settings::Settings::default());
-            assert_eq!(effort_for(), "low");
+            for blank in ["", "   "] {
+                crate::dev_flags::seed(&crate::settings::Settings {
+                    director_reasoning_effort: blank.to_string(),
+                    ..crate::settings::Settings::default()
+                });
+                assert_eq!(effort_for(), None, "{blank:?}");
+                let level = effort_for();
+                let chat = request_body(
+                    "gpt-oss-20b",
+                    &session,
+                    false,
+                    TURN_CEILING,
+                    Wire::Stream,
+                    true,
+                    level.as_deref(),
+                    true,
+                );
+                assert!(
+                    chat.get("reasoning_effort").is_none(),
+                    "blank must not send reasoning_effort: {chat}"
+                );
+                let responses = request_body(
+                    "grok-4.6",
+                    &session,
+                    true,
+                    TURN_CEILING,
+                    Wire::Whole,
+                    true,
+                    level.as_deref(),
+                    true,
+                );
+                assert!(
+                    responses.get("reasoning").is_none(),
+                    "blank must not send reasoning.effort: {responses}"
+                );
+                assert!(responses.get("reasoning_effort").is_none());
+            }
 
-            crate::dev_flags::seed(&crate::settings::Settings {
-                director_reasoning_effort: "   ".to_string(),
-                ..crate::settings::Settings::default()
-            });
-            assert_eq!(effort_for(), "low", "whitespace is blank is unset");
-
-            crate::dev_flags::seed(&crate::settings::Settings {
-                director_reasoning_effort: "high".to_string(),
-                ..crate::settings::Settings::default()
-            });
-            assert_eq!(effort_for(), "high");
+            for level in ["low", "medium", "high"] {
+                crate::dev_flags::seed(&crate::settings::Settings {
+                    director_reasoning_effort: level.to_string(),
+                    ..crate::settings::Settings::default()
+                });
+                assert_eq!(effort_for().as_deref(), Some(level));
+                let sent = effort_for();
+                let chat = request_body(
+                    "gpt-oss-20b",
+                    &session,
+                    false,
+                    TURN_CEILING,
+                    Wire::Stream,
+                    true,
+                    sent.as_deref(),
+                    true,
+                );
+                assert_eq!(chat["reasoning_effort"], level);
+                let responses = request_body(
+                    "grok-4.6",
+                    &session,
+                    true,
+                    TURN_CEILING,
+                    Wire::Whole,
+                    true,
+                    sent.as_deref(),
+                    true,
+                );
+                assert_eq!(responses["reasoning"]["effort"], level);
+                assert!(responses.get("reasoning_effort").is_none());
+            }
             crate::dev_flags::seed(&crate::settings::Settings::default());
         });
     }
@@ -3194,7 +3258,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Stream,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(asked["max_tokens"], 1024);
@@ -3207,7 +3271,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Stream,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             false,
         );
         assert_eq!(
@@ -3226,7 +3290,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Whole,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(
@@ -3248,7 +3312,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Whole,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(body["input"], "wave");
@@ -3281,7 +3345,7 @@ pub(crate) mod tests {
             TURN_CEILING,
             Wire::Whole,
             false,
-            DEFAULT_EFFORT,
+            Some(DEFAULT_EFFORT),
             true,
         );
         assert_eq!(body["input"][2]["content"], "what just happened: thrown");
