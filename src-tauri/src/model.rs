@@ -101,6 +101,7 @@ const THINK_CEILING: u32 = 8192;
 
 /// The low level. Tests and a host that has not refused the field use it
 /// as a concrete value. An unset row does not: that omits the field.
+#[cfg(test)]
 const DEFAULT_EFFORT: &str = "low";
 
 /// Last user turn and the config that produced it. #18 displays this.
