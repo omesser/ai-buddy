@@ -3286,7 +3286,7 @@ mod tests {
 
     /// One launcher script for every Fixture in this test process. macOS vets
     /// the first exec of each new executable file, one file at a time, so a
-    /// script per Fixture queued parallel tests past the probe's 3 s.
+    /// script per Fixture queues parallel tests past the probe's 3 s.
     fn fake_agent_wrapper() -> &'static Path {
         static WRAPPER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         WRAPPER.get_or_init(|| {
@@ -3296,7 +3296,7 @@ mod tests {
                 .map_or("", |(_, rest)| rest)
                 .to_string()
                 + "::fake_acp_agent";
-            let dir = std::env::temp_dir().join(format!("fidget-harness-{}", uuid::Uuid::new_v4()));
+            let dir = std::env::temp_dir().join(format!("fidget-harness-launcher-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
 
             #[cfg(unix)]
@@ -7074,7 +7074,9 @@ mod tests {
             name: "no-output".into(),
             argv: vec![script.to_string_lossy().to_string()],
         };
-        match probe_launcher(&launch) {
+        // Its own new script queues at the same first-exec gate, so the budget
+        // is generous. A timeout here is not what this test asserts.
+        match probe_launcher_within(&launch, Duration::from_secs(30)) {
             ProbeOutcome::Unhealthy(failure) => {
                 assert_eq!(failure.reason, "produced no output");
                 assert_eq!(failure.output, "");
