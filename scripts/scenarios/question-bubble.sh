@@ -36,7 +36,7 @@ fail() {
   exit 1
 }
 
-[ -x "$tools/window-bounds" ] || swiftc -O "$root/scripts/scenarios/window-bounds.swift" -o "$tools/window-bounds"
+[ -x "$tools/window-id" ] || swiftc -O "$root/scripts/scenarios/window-id.swift" -o "$tools/window-id"
 [ -x "$tools/click-cursor" ] || swiftc -O "$root/scripts/click-cursor.swift" -o "$tools/click-cursor"
 [ -x "$tools/ax" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
@@ -68,9 +68,12 @@ wait_for() { # <seconds> <command...>
 wait_for 30 grep -qx asked "$marks" || fail "no wake reached the Harness; see $log"
 sleep 1
 
+# Overlay window is titled "Fidget" (build_overlay in src-tauri/src/main.rs).
+# Get window id and bounds for the Poke click.
+read -r id x y w h < <("$tools/window-id" -b "$pid" Fidget) || fail "no Fidget overlay window"
+
 # Capture the overlay before the Poke.
-read -r x y w h < <("$tools/window-bounds" "$pid" Overlay) || fail "no Overlay window"
-screencapture -x -o -R "$x,$y,$w,$h" "$out/before-poke.png"
+screencapture -x -o -l "$id" "$out/before-poke.png"
 
 # Send a Poke: one click on the sprite's center.
 cx=$((x + w / 2))
@@ -79,10 +82,10 @@ cy=$((y + h / 2))
 sleep 1
 
 # Capture the overlay after the Poke, showing the bubble.
-screencapture -x -o -R "$x,$y,$w,$h" "$out/after-poke.png"
+screencapture -x -o -l "$id" "$out/after-poke.png"
 
 # Check the bubble content via the Accessibility API.
-"$tools/ax" dump "$pid" Overlay > "$out/after-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/after-poke.ax.txt"
+"$tools/ax" dump "$pid" Fidget > "$out/after-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/after-poke.ax.txt"
 if grep -qF "Question for you in the chat" "$out/after-poke.ax.txt"; then
   echo "ok: bubble shows 'Question for you in the chat'"
 elif grep -qF "Question for you in the " "$out/after-poke.ax.txt"; then

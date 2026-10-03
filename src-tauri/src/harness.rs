@@ -6726,6 +6726,26 @@ mod tests {
         }
     }
 
+    /// `scripts/scenarios/question-bubble.sh` fixture. The first turn asks for
+    /// permission and the Harness waits on the answer, putting the Instance in
+    /// the awaiting-user state. The mark proves the ask is sent.
+    #[test]
+    fn scenario_asking_fixture_asks_for_permission() {
+        let (fx, session) = Fixture::new("scenario-asking");
+        let session = Arc::new(session);
+        let id = WOKEN.to_string();
+        let mut slots = crate::completer::Slots::new();
+        slots.wake(&id, harness_director(&session), woken(Happened::Chat("hi".into())));
+        let ask = fx.ask();
+        assert_eq!(fx.count("asked"), 1, "scenario-asking recorded the ask mark");
+        assert_eq!(ask.request.title, "May I proceed?");
+        session.answer_permission(&ask.request, "allow");
+        let answered = polled(&mut slots).expect("the first turn's answer");
+        assert_eq!(said(&answered), Some("fidget\nYou answered the question."));
+        assert_eq!(fx.count("replied"), 1);
+        session.shutdown();
+    }
+
     fn mcp_tmp(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "fidget-mcp-launch-{label}-{}",
