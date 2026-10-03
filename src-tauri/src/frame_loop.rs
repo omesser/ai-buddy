@@ -38,26 +38,6 @@ use super::{
 /// next moves. 250ms is under a hide-rule fade, so a launch-hidden Character still goes.
 const FRAME_RESEND: Duration = Duration::from_millis(250);
 
-/// Realtime while the sprite is moving, the fair policy again once it is still.
-#[cfg(any(test, target_os = "macos"))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FrameThreadPolicy {
-    TimeConstraint,
-    Standard,
-}
-
-/// Realtime when motion starts and the standard policy when it stops.
-/// Unchanged motion leaves the clock alone, so a perched sprite does not
-/// keep the realtime policy.
-#[cfg(any(test, target_os = "macos"))]
-fn policy_on_moving_change(was_moving: bool, moving: bool) -> Option<FrameThreadPolicy> {
-    match (was_moving, moving) {
-        (false, true) => Some(FrameThreadPolicy::TimeConstraint),
-        (true, false) => Some(FrameThreadPolicy::Standard),
-        _ => None,
-    }
-}
-
 /// One overlay's last applied shape: mask, x, y, facing, scale, and hotspot
 /// rectangles. Named because clippy's `type_complexity` rejects the tuple
 /// inline. Only X11 keeps one: XShape must not rebuild every tick.
@@ -210,10 +190,6 @@ pub(crate) fn run_frame_loop(
         let mut turn_started = Instant::now();
         let mut tick_deadline = turn_started;
         let mut moving = true;
-        // The thread starts on the standard policy, whatever `moving` says.
-        // The first sample installs the realtime clock, including a fall at launch.
-        #[cfg(target_os = "macos")]
-        let mut prev_moving = false;
         let mut time_since_launch = Duration::ZERO;
         let mut tour_triggered = false;
         let mut schedule_mode = scheduler::ScheduleMode::Active;
@@ -312,7 +288,13 @@ pub(crate) fn run_frame_loop(
                                 now,
                                 moving,
                             );
-                            thread::sleep(tick_deadline - now);
+                            // Still ticks keep the coalesced sleep, the slower
+                            // rate #183 relies on.
+                            if moving {
+                                platform::sleep_precisely(tick_deadline - now);
+                            } else {
+                                thread::sleep(tick_deadline - now);
+                            }
                         }
                         (scheduler::ScheduleMode::Idle, false) => {
                             // Hidden idle: uncapped deep sleep. Only non-input
@@ -2012,23 +1994,6 @@ pub(crate) fn run_frame_loop(
                         scheduler::ScheduleMode::Active
                     };
                     moving = any_moving;
-                    #[cfg(target_os = "macos")]
-                    {
-                        if let Some(policy) = policy_on_moving_change(prev_moving, moving) {
-                            let status = match policy {
-                                FrameThreadPolicy::TimeConstraint => {
-                                    platform::set_thread_time_constraint_policy()
-                                }
-                                FrameThreadPolicy::Standard => {
-                                    platform::set_thread_standard_policy()
-                                }
-                            };
-                            if status != 0 {
-                                eprintln!("frame loop: thread policy failed ({status})");
-                            }
-                        }
-                        prev_moving = moving;
-                    }
                     was_visible = presence.visible;
                 }
 
@@ -2636,21 +2601,5 @@ mod tests {
     fn two_clicks_farther_apart_than_the_interval_are_two_pokes() {
         let gesture = [click(), wait(700), click(), wait(700)].concat();
         assert_eq!(heard(&gesture), vec![Happened::Poke, Happened::Poke]);
-    }
-
-    /// Realtime for the moving stretch only. A perched sprite that stays
-    /// Active keeps the coalesced wake, so the policy has to come off again.
-    #[test]
-    fn the_time_constraint_lasts_only_for_the_moving_stretch() {
-        assert_eq!(
-            policy_on_moving_change(false, true),
-            Some(FrameThreadPolicy::TimeConstraint)
-        );
-        assert_eq!(
-            policy_on_moving_change(true, false),
-            Some(FrameThreadPolicy::Standard)
-        );
-        assert_eq!(policy_on_moving_change(true, true), None);
-        assert_eq!(policy_on_moving_change(false, false), None);
     }
 }
