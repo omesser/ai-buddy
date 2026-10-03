@@ -34,7 +34,7 @@ GPU compositing of the transparent overlay, the other suspect in #423, measured 
 | [#427](https://github.com/omesser/fidget/issues/427) WindowSource | Closed | Section below, [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). |
 | [#428](https://github.com/omesser/fidget/issues/428) mask rebuild | Open | Desktop numbers in the mask docs. This VM adds release per-call times. No `perf` flamegraph. |
 | [#424](https://github.com/omesser/fidget/issues/424) RSS | Open | macOS footprint in [memory-rss-and-multi-monitor.md](./memory-rss-and-multi-monitor.md). This VM has one display. heaptrack was not installed. |
-| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS tables below. Linux release tables in the measurement section. A Linux ride is in the riding capture. Crossing a display seam was not measured. Windows has `scripts/bench-frame-cadence-windows.ps1` and no numbers from a Windows machine. [#1263](https://github.com/omesser/fidget/pull/1263). |
+| [#426](https://github.com/omesser/fidget/issues/426) frame cadence | Open | macOS, Linux release, Linux ride, and Windows matrix tables are below. Crossing a display seam was not measured. |
 
 ## How a frame gets on screen
 
@@ -147,9 +147,22 @@ Armed-stretch histogram, display frames then engine ticks. 0 to 10 ms is 0 and 4
 
 One armed gap exceeded 20 ms. The engine counter stayed at 62.1 Hz. Lag p50 is one sample, 17 ms. Lag p95 is 114 ms at 1.07 samples. This is one glide on one software-rendered display. A display seam was not measured.
 
-### Windows harness, #426
+### Windows frame cadence, #426
 
-`scripts/bench-frame-cadence-windows.ps1` runs the same scenarios as `scripts/bench-frame-cadence-macos.sh`: `idle`, `idle-quiet`, `walking`, `load`, and `matrix`. It refuses to launch unless `FIDGET_BENCH_GREEN_LIGHT=1`, and it refuses to launch unless `OS` is `Windows_NT`. The report is `node scripts/frame-cadence.mjs` on the trace log. An operator builds `target\release\fidget.exe`, sets the green light, and runs `scripts\bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe` from the repo root. The tables the script prints are the measurement. No Windows machine ran it for this note, so there is no Windows histogram here.
+`scripts/bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe` with `FIDGET_BENCH_GREEN_LIGHT=1` on DESKTOP-UQIE144 (MS-7D25). The machine header printed `Microsoft Windows 11 Pro for Workstations`, refresh 59, 20 cpus, `git_rev=b0f57a78`. Release binary built from that tip. The tables below are the script printout. Nothing here was typed by hand from a different source.
+
+| Scenario | Display frames | Mean fps of armed stretches | Drops over 20 ms | Restarts | Engine Hz, loop counter | Moving ticks | Still ticks | Lag p50, moving | Lag p95, moving |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Idle, still Character | 20 | N/A | 0 | 19 | 61.2 | 0 | 1224 at 16.3 ms, 61.2 Hz | N/A | N/A |
+| Idle, `FIDGET_TRACE_FRAMES` off | 23 | 59.9 | 0 | 21 | 61.1 | untraced | untraced | N/A | N/A |
+| Walking | 1199 | 60 | 0 | 18 | 62.5 | 1249 at 16 ms, 62.5 Hz | 0 | 16 ms, 1 sample | 17.1 ms, 1 sample |
+| Walking plus one `yes` per core | 1199 | 60 | 0 | 15 | 62.5 | 1249 at 16 ms, 62.5 Hz | 1 at 6 ms, 166.7 Hz | 16 ms, 1 sample | 16.4 ms, 1 sample |
+
+Idle stayed mostly unarmed (19 restarts in 20 display frames) while the engine still ticked at 61.2 Hz. Walking and load held 60 fps on armed stretches with zero gaps over 20 ms. Lag p50 stayed one sample (16 ms) on both moving windows. This matrix did not ride a window and did not cross a display seam.
+
+Armed-stretch histogram for the walking window, display frames then engine ticks. 0 to 10 ms is 0 and 0. 10 to 14 is 0 and 3. 14 to 18 is 1180 and 1231. 18 to 20 is 0 and 14. 20 to 25 is 0 and 1. 25 to 34 is 0 and 0. 34 to 50 is 0 and 0. 50 and above is 0 and 0.
+
+Armed-stretch histogram for the load window. 0 to 10 ms is 0 and 2. 10 to 14 is 0 and 14. 14 to 18 is 1183 and 1212. 18 to 20 is 0 and 9. 20 to 25 is 0 and 12. 25 to 34 is 0 and 1. 34 to 50 is 0 and 0. 50 and above is 0 and 0.
 
 ## How to reproduce the Linux numbers
 
@@ -529,7 +542,7 @@ Linux and Windows in that file are short settles on other machines. The Grok Bot
 
 ## Frame cadence (#426)
 
-Linux release numbers from this VM are in the measurement section above. The tables here are the macOS release captures.
+Linux release numbers and the Windows matrix from DESKTOP-UQIE144 are in the measurement section above. The tables here are the macOS release captures.
 
 ### macOS
 
