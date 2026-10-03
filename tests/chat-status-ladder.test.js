@@ -1,6 +1,5 @@
-// The open ladder is the footer's own row and wraps within the footer.
-// A grid item blockifies inline-flex to flex, so display cannot prove the
-// ladder is outside the disclosure. Geometry and the parent do.
+// A flex item's computed display is flex wherever it sits, so the parent
+// element and the boxes are what prove the row.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -104,9 +103,13 @@ function measure() {
   function edges(bar) {
     const r = bar.getBoundingClientRect();
     const s = getComputedStyle(bar);
+    const padLeft = parseFloat(s.paddingLeft);
+    const padRight = parseFloat(s.paddingRight);
     return {
-      left: r.left + 16,
-      right: r.right - 16,
+      left: r.left + padLeft,
+      right: r.right - padRight,
+      padLeft,
+      padRight,
       top: r.top + parseFloat(s.borderTopWidth) + parseFloat(s.paddingTop),
       bottom: r.bottom - parseFloat(s.borderBottomWidth) - parseFloat(s.paddingBottom),
       rect: r,
@@ -143,9 +146,10 @@ function measure() {
     const l = ladder.getBoundingClientRect();
     const p = plain.getBoundingClientRect();
     const s = summary.getBoundingClientRect();
-    const row = Math.max(p.bottom, s.bottom) - Math.min(p.top, s.top);
     return {
       cells: list.map((el) => el.textContent),
+      padLeft: edge.padLeft,
+      padRight: edge.padRight,
       childIds: [...ladder.children].map((el) => el.id),
       cellsInside: rects.every((r) => r.right <= edge.right + 0.5),
       maxRightOverflow: round(Math.max(...rects.map((r) => r.right - edge.right))),
@@ -346,6 +350,8 @@ test(
       assert.equal(scene.collapsed.oneLine, true, why(theme, "collapsed", scene.collapsed));
 
       assert.deepEqual(scene.short.cells, SHORT_CELLS, why(theme, "short", scene.short));
+      assert.equal(scene.short.padLeft, 16, why(theme, "short", scene.short));
+      assert.equal(scene.short.padRight, 16, why(theme, "short", scene.short));
       assert.equal(scene.short.cellsInside, true, why(theme, "short", scene.short));
       assert.equal(scene.short.ladderMatches, true, why(theme, "short", scene.short));
       assert.equal(scene.short.ladderBelow, true, why(theme, "short", scene.short));

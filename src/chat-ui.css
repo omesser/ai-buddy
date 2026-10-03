@@ -1968,8 +1968,7 @@ body {
   color: var(--chat-ink-2);
 }
 
-/* Outside <details>: inside it, the disclosure sizes to one unwrapped line
-   and the footer clips the rest. Two lines, then the log has given enough. */
+/* Two lines at most. Opening Advanced takes that height from the log. */
 .bar .ladder {
   display: none;
   grid-column: 1 / -1;
