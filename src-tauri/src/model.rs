@@ -1521,12 +1521,14 @@ fn read_frames(
     use std::io::BufRead;
 
     let mut reader = std::io::BufReader::new(reader);
-    let mut content = String::new();
+    let mut content = crate::acp_wire::Answer::default();
     let mut line = String::new();
     let mut framed = false;
     let mut finished = false;
     let mut truncated = false;
-    let ended = |content: String, truncated: bool, thought: &str| {
+    let mut started = false;
+    let ended = |content: crate::acp_wire::Answer, truncated: bool, thought: &str| {
+        let content = content.finish();
         if truncated {
             Streamed::Truncated(classify_truncation(&content, !thought.trim().is_empty()))
         } else {
@@ -1564,7 +1566,19 @@ fn read_frames(
         let event = read_event(payload);
         finished |= event.finished;
         truncated |= event.truncated;
-        if let Some(chunk) = event.thought {
+        let mut chunk = event.thought.unwrap_or_default();
+        if let Some(delta) = event.delta {
+            if !started && !delta.is_empty() {
+                started = true;
+                // A Behavior name is one to three tokens, so the first token
+                // is roughly when the sprite could start moving.
+                if tracing() {
+                    eprintln!("director: first token");
+                }
+            }
+            chunk.push_str(&content.push(&delta));
+        }
+        if !chunk.is_empty() {
             thinking.push_str(&chunk);
             // The whole thought so far, by the same rule the ACP lane draws:
             // a chunk lands mid-sentence, and half a sentence on its own
@@ -1572,14 +1586,6 @@ fn read_frames(
             if let Some(text) = crate::acp_wire::thought_to_show(thinking) {
                 thought(text);
             }
-        }
-        if let Some(delta) = event.delta {
-            if content.is_empty() && !delta.is_empty() && tracing() {
-                // A Behavior name is one to three tokens, so the first token
-                // is roughly when the sprite could start moving.
-                eprintln!("director: first token");
-            }
-            content.push_str(&delta);
         }
     }
 }
@@ -1639,7 +1645,7 @@ fn read_event(payload: &str) -> Event {
             .map(str::to_string),
         // Two names for one field. `reasoning_content` (llama.cpp, oMLX,
         // SGLang, LM Studio for R1) and `reasoning` (vLLM, Ollama, gpt-oss).
-        // Responses types reasoning apart. Read the summary, not both streams.
+        // Responses types reasoning apart, raw or as a summary.
         // Anthropic types it apart too, one key along from `text_delta`. The
         // `content_block_start` that opens the run carries no text, so the
         // deltas are the whole of it.
@@ -1647,6 +1653,7 @@ fn read_event(payload: &str) -> Event {
             .as_str()
             .or_else(|| chunk["reasoning"].as_str())
             .or_else(|| typed("response.reasoning_summary_text.delta"))
+            .or_else(|| typed("response.reasoning_text.delta"))
             .or_else(|| {
                 (value["delta"]["type"] == "thinking_delta")
                     .then(|| value["delta"]["thinking"].as_str())
@@ -1671,7 +1678,10 @@ fn read_event(payload: &str) -> Event {
 fn content_from_body(body: &str) -> Result<String, String> {
     let value: serde_json::Value = serde_json::from_str(body).map_err(|error| error.to_string())?;
     if let Some(text) = value["choices"][0]["message"]["content"].as_str() {
-        return Ok(text.to_string());
+        // A tagged thought is dropped, as Anthropic's `thinking` below is.
+        let mut answer = crate::acp_wire::Answer::default();
+        answer.push(text);
+        return Ok(answer.finish());
     }
     if let Some(text) = value["output_text"]
         .as_str()
@@ -1680,7 +1690,7 @@ fn content_from_body(body: &str) -> Result<String, String> {
         return Ok(text.to_string());
     }
     if let Some(items) = value["output"].as_array() {
-        for item in items {
+        for item in items.iter().filter(|item| item["type"] != "reasoning") {
             if let Some(parts) = item["content"].as_array() {
                 for part in parts {
                     if let Some(text) = part["text"].as_str().filter(|text| !text.is_empty()) {
@@ -2115,6 +2125,38 @@ pub(crate) mod tests {
             }]
         }"#;
         assert_eq!(content_from_body(body).unwrap(), "stroll\nhey");
+    }
+
+    /// xAI puts a `reasoning` item ahead of the `message`. Its text is
+    /// thinking, and the message is the answer.
+    #[test]
+    fn a_responses_body_skips_the_reasoning_item() {
+        let body = r#"{
+            "output": [
+                {
+                    "type": "reasoning",
+                    "content": [{"type": "reasoning_text", "text": "They want the titles."}]
+                },
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "mutter\nFidget's in front."}]
+                }
+            ]
+        }"#;
+        assert_eq!(
+            content_from_body(body).unwrap(),
+            "mutter\nFidget's in front."
+        );
+    }
+
+    #[test]
+    fn a_chat_completion_body_drops_a_think_block() {
+        let body = r#"{"choices":[{"message":{"content":
+            "<think>They want the titles.</think>\nmutter\nFidget's in front."}}]}"#;
+        assert_eq!(
+            content_from_body(body).unwrap(),
+            "\nmutter\nFidget's in front."
+        );
     }
 
     #[test]
@@ -2591,6 +2633,11 @@ pub(crate) mod tests {
             read(r#"{"type":"response.reasoning_summary_text.delta","delta":"hmm"}"#),
             (Some("hmm".to_string()), None)
         );
+        // xAI and gpt-oss stream the raw reasoning rather than a summary.
+        assert_eq!(
+            read(r#"{"type":"response.reasoning_text.delta","delta":"hmm"}"#),
+            (Some("hmm".to_string()), None)
+        );
         // Anthropic types it apart one key along from its `text_delta`.
         assert_eq!(
             read(
@@ -2651,6 +2698,30 @@ pub(crate) mod tests {
                 ]
                 .map(str::to_string)
                 .to_vec()
+            )
+        );
+    }
+
+    /// A server that never typed its reasoning apart leaves `<think>` tags in
+    /// `content`, split wherever the chunks fall. The inside is drawn as a
+    /// thought and the reply is what follows the closing tag.
+    #[test]
+    fn a_think_tag_in_streamed_content_is_drawn_and_never_joins_the_reply() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"<th\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ink>They want\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\" the titles.</th\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ink>mutter\\nhey\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed_with_thoughts(sse),
+            (
+                Streamed::Complete("mutter\nhey".to_string()),
+                ["They want", "They want the titles.", ""]
+                    .map(str::to_string)
+                    .to_vec()
             )
         );
     }

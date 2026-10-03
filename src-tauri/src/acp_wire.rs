@@ -1368,7 +1368,7 @@ async fn turn(
         vec![ContentBlock::Text(TextContent::new(text.to_string()))],
     ));
     let mut finished = std::pin::pin!(sent.block_task());
-    let mut said = String::new();
+    let mut said = Answer::default();
     // Beside `said` and never inside it. The thought is kept only so a chunk
     // that arrives mid-sentence can be shown as the sentence it belongs to.
     // It dies with the turn.
@@ -1425,7 +1425,7 @@ async fn turn(
             response = &mut finished => {
                 end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 return match response {
-                    Ok(response) => outcome(response.stop_reason, said),
+                    Ok(response) => outcome(response.stop_reason, said.finish()),
                     Err(error) if auth_refused(&error) => Err(TurnError::AuthRequired),
                     Err(_) if cx.is_incoming_closed() => Err(TurnError::Lost),
                     Err(error) => Err(TurnError::Failed(error_text(error))),
@@ -1629,14 +1629,26 @@ fn elicitation_response(
 fn note_update(
     update: SessionUpdate,
     session: &SessionId,
-    said: &mut String,
+    said: &mut Answer,
     thought: &mut String,
     on_event: &OnEvent,
 ) {
+    let mut think = |text: &str| {
+        if text.is_empty() {
+            return;
+        }
+        thought.push_str(text);
+        if let Some(shown) = thought_to_show(thought) {
+            on_event(Event::Thought {
+                session: session.0.to_string(),
+                text: shown.to_string(),
+            });
+        }
+    };
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
-                said.push_str(&text.text);
+                think(&said.push(&text.text));
             }
         }
         // `fields.content` and `fields.locations` are dropped on both arms.
@@ -1673,13 +1685,7 @@ fn note_update(
         // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
-                thought.push_str(&text.text);
-                if let Some(shown) = thought_to_show(thought) {
-                    on_event(Event::Thought {
-                        session: session.0.to_string(),
-                        text: shown.to_string(),
-                    });
-                }
+                think(&text.text);
             }
         }
         _ => {}
@@ -1696,6 +1702,62 @@ pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
         None
     } else {
         Some(thought)
+    }
+}
+
+/// Answer text with its `<think>` and `<thinking>` blocks peeled off as it
+/// streams. The tags are how a server marks reasoning when it never opened a
+/// thought channel. Untagged text is the answer: nothing else marks a split.
+#[derive(Default)]
+pub(crate) struct Answer {
+    said: String,
+    /// A tail that may be the start of a tag, held until the next chunk says.
+    held: String,
+    thinking: bool,
+}
+
+const OPEN: [&str; 2] = ["<think>", "<thinking>"];
+const CLOSE: [&str; 2] = ["</think>", "</thinking>"];
+
+impl Answer {
+    /// Adds a chunk to the answer and returns the part that sat inside tags.
+    pub(crate) fn push(&mut self, chunk: &str) -> String {
+        let mut rest = std::mem::take(&mut self.held) + chunk;
+        let mut thought = String::new();
+        loop {
+            let tags = if self.thinking { CLOSE } else { OPEN };
+            let side = if self.thinking {
+                &mut thought
+            } else {
+                &mut self.said
+            };
+            let found = tags
+                .iter()
+                .filter_map(|tag| rest.find(tag).map(|at| (at, tag.len())))
+                .min();
+            let Some((at, len)) = found else {
+                let keep = tags
+                    .iter()
+                    .flat_map(|tag| (1..tag.len()).filter(|&k| rest.ends_with(&tag[..k])))
+                    .max()
+                    .unwrap_or(0);
+                self.held = rest.split_off(rest.len() - keep);
+                side.push_str(&rest);
+                return thought;
+            };
+            side.push_str(&rest[..at]);
+            rest.drain(..at + len);
+            self.thinking = !self.thinking;
+        }
+    }
+
+    /// The whole answer. A held tail that never became a tag is answer text,
+    /// unless it sits in a block that never closed.
+    pub(crate) fn finish(mut self) -> String {
+        if !self.thinking {
+            self.said.push_str(&self.held);
+        }
+        self.said
     }
 }
 
@@ -1878,7 +1940,7 @@ mod tests {
 
     fn drive(updates: Vec<SessionUpdate>) -> (String, Vec<Event>) {
         let (seen, on_event) = collector();
-        let mut said = String::new();
+        let mut said = Answer::default();
         let mut thought = String::new();
         for update in updates {
             note_update(
@@ -1890,7 +1952,7 @@ mod tests {
             );
         }
         let events = seen.lock().unwrap().clone();
-        (said, events)
+        (said.finish(), events)
     }
 
     fn thoughts(events: &[Event]) -> Vec<&str> {
@@ -2071,6 +2133,46 @@ mod tests {
     /// Chunks arrive as fragments. The open line is the tail of the thought
     /// so far, blank lines included: half a sentence on its own reads as
     /// nonsense, and a paragraph break is something the harness wrote.
+    fn message(text: &str) -> SessionUpdate {
+        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+            text,
+        ))))
+    }
+
+    /// A Harness that never opened `agent_thought_chunk` marks its reasoning
+    /// with `<think>` tags in the answer instead. The tag can split across
+    /// chunks, and the inside is a thought, never a line the character says.
+    #[test]
+    fn a_think_tag_in_the_answer_is_a_thought() {
+        let (said, events) = drive(vec![
+            message("<thin"),
+            message("king>They want the titles."),
+            message(" I'll look again.</think"),
+            message("ing>mutter\nFidget's in front."),
+        ]);
+        assert_eq!(said, "mutter\nFidget's in front.");
+        assert_eq!(
+            thoughts(&events),
+            [
+                "They want the titles.",
+                "They want the titles. I'll look again."
+            ]
+        );
+    }
+
+    /// Text that only looks like the start of a tag is the answer once the
+    /// next chunk shows it is not one. Untagged reasoning stays the answer.
+    #[test]
+    fn a_partial_tag_that_never_completes_stays_the_answer() {
+        let (said, events) = drive(vec![
+            message("They want <th"),
+            message("ree> titles.mutter"),
+            message(" <think"),
+        ]);
+        assert_eq!(said, "They want <three> titles.mutter <think");
+        assert!(events.is_empty());
+    }
+
     #[test]
     fn a_thought_shows_the_line_being_written() {
         let (_, events) = drive(vec![
