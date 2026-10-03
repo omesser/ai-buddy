@@ -956,11 +956,11 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::TextField {
                     id: DIRECTOR_MODEL_ID.to_string(),
                     label: Some(model_label),
-                    placeholder: "gpt-4o-mini".to_string(),
+                    placeholder: String::new(),
                     writes: TextField::DirectorModel,
                     frozen: model_frozen,
                     batched: true,
-                    help: Some("Blank is gpt-4o-mini on the Model API. A Harness sends nothing and keeps its own model.".to_string()),
+                    help: Some("Blank omits the model for both Completers. A name you type is what goes out.".to_string()),
                     disclosure: None,
                     status: model_status,
                 },

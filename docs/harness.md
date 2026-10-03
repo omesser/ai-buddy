@@ -47,7 +47,7 @@ Switches read the same words as the trace variables. Any other value is a typo: 
 |---|---|
 | `FIDGET_DIRECTOR_API_KEY` | Required for a remote provider. For a local server, set it only when the server requires auth. Empty or unset with a remote URL means Static only. |
 | `FIDGET_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
-| `FIDGET_DIRECTOR_MODEL` | Model name. On the Model API, blank resolves to `gpt-4o-mini`. On a Harness, blank sends nothing. A non-empty name is `session/set_config_option` on the first option whose category is `model`, when the Harness advertises one. |
+| `FIDGET_DIRECTOR_MODEL` | Model name. Blank or whitespace is unset for both Completers. The Model API omits `model`. A Harness sends nothing and keeps its own model. A non-empty name is that string on the HTTP body, and `session/set_config_option` on the first option whose category is `model`, when the Harness advertises one. |
 | `FIDGET_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even with a key; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
 | `FIDGET_DIRECTOR_TIMEOUT_SECS` | Timeout for one HTTP Completer request, then Static. Default 30 seconds. Raise it for a cold local server. A Harness turn uses `FIDGET_HARNESS_TURN_TIMEOUT`. |
 | `FIDGET_DIRECTOR_MAX_TOKENS` | Ceiling on one HTTP Completer turn. A safeguard against a model that will not stop, not a reply-length budget. Default 1024, or 8192 once the endpoint has been seen to mark its thinking (#606). A value here outranks both. A Harness decides its own reply length. |
@@ -63,7 +63,7 @@ Switches read the same words as the trace variables. Any other value is a typo: 
 
 ### Settings and Keyring
 
-Settings → AI persists base URL, model, and first wake interval, and stores the API key in the OS secret store. Blank model is `gpt-4o-mini` for the Model API and is not sent to a Harness. Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, Reasoning effort, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory. Blank effort is unset for both Completers.
+Settings → AI persists base URL, model, and first wake interval, and stores the API key in the OS secret store. Blank model is unset for both Completers. The Model API omits `model`, and a Harness does not send one. Settings → Development persists the Model API timeout and turn ceiling, blank-AI mode, Reasoning effort, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory. Blank effort is unset for both Completers.
 
 - A working-directory edit respawns the Harness, so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach.
 - Editing the Completer source or HTTP endpoint retargets the running Director with no restart. The session in flight is dropped; a streaming call closes its connection, so the old host stops generating.

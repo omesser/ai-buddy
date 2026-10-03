@@ -64,7 +64,6 @@ pub(crate) const REASONING_EFFORT: &str = "FIDGET_DIRECTOR_REASONING_EFFORT";
 pub(crate) const BLANK: &str = "FIDGET_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
-const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
 /// What one HTTP Completer turn is capped at when nothing else decides.
 ///
@@ -197,13 +196,14 @@ impl std::fmt::Debug for DirectorSettings {
 
 /// Env first, then persisted settings, then defaults. Does not write env.
 /// Empty env values fall through. An invalid env key still wins over a stored key.
+/// Blank or whitespace model is unset. Nothing fills a name in for it.
 pub fn resolve(
     persisted_base: &str,
     persisted_model: &str,
     stored_key: Option<&str>,
 ) -> DirectorSettings {
     let base_url = resolve_string(BASE_URL, persisted_base, DEFAULT_BASE);
-    let model = resolve_string(MODEL, persisted_model, DEFAULT_MODEL);
+    let model = env_or_file(MODEL, persisted_model).trim().to_string();
     let key = match key_from_env() {
         KeyRead::Unset => key_from_raw(stored_key),
         other => other,
@@ -1294,13 +1294,16 @@ fn request_body(
                 .collect(),
         )
     };
+    let model = model.trim();
     let mut body = if responses {
         let mut responses_body = serde_json::json!({
-            "model": model,
             "input": input,
             "max_output_tokens": max_tokens,
             "store": false,
         });
+        if !model.is_empty() {
+            responses_body["model"] = serde_json::Value::String(model.to_string());
+        }
         // grok-4.6 defaults to high. Unguarded by `Field::Effort`, which
         // looks for the chat-completions name. xAI accepts this spelling.
         // Unset omits the object. Sending `low` for a blank row was the bug.
@@ -1310,9 +1313,11 @@ fn request_body(
         responses_body
     } else {
         let mut chat = serde_json::json!({
-            "model": model,
             "messages": input,
         });
+        if !model.is_empty() {
+            chat["model"] = serde_json::Value::String(model.to_string());
+        }
         // Local servers still read `max_tokens`, and Ollama has no
         // `max_completion_tokens`. Leading with the new name would leave a
         // local reply uncapped. `Field::Cap` swaps it on refusal.
@@ -3159,6 +3164,73 @@ pub(crate) mod tests {
             "max_tokens, under max_completion_tokens",
             "the only field here whose retry still carries one"
         );
+    }
+
+    /// Blank and whitespace resolve to no model, and the HTTP body leaves
+    /// the field off. A typed name is that string, trimmed.
+    #[test]
+    fn a_blank_model_is_omitted_and_a_named_one_is_sent() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        with_env(None, None, None, || {
+            for blank in ["", "   "] {
+                let settings = resolve("https://api.openai.com", blank, Some("sk-test"));
+                assert_eq!(settings.model, "", "{blank:?}");
+                for responses in [false, true] {
+                    let body = request_body(
+                        &settings.model,
+                        &session,
+                        responses,
+                        TURN_CEILING,
+                        if responses { Wire::Whole } else { Wire::Stream },
+                        false,
+                        None,
+                        true,
+                    );
+                    assert!(
+                        body.get("model").is_none(),
+                        "blank must not send model: {blank:?} {body}"
+                    );
+                }
+            }
+            let named = resolve("https://api.openai.com", "  grok-4.6  ", Some("sk-test"));
+            assert_eq!(named.model, "grok-4.6");
+            let chat = request_body(
+                &named.model,
+                &session,
+                false,
+                TURN_CEILING,
+                Wire::Stream,
+                false,
+                None,
+                true,
+            );
+            assert_eq!(chat["model"], "grok-4.6");
+            let responses = request_body(
+                &named.model,
+                &session,
+                true,
+                TURN_CEILING,
+                Wire::Whole,
+                false,
+                None,
+                true,
+            );
+            assert_eq!(responses["model"], "grok-4.6");
+        });
+        with_env(None, None, Some("   "), || {
+            let settings = resolve("https://api.openai.com", "grok-4.6", Some("sk-test"));
+            assert_eq!(
+                settings.model, "",
+                "whitespace in the env is unset, not the file's name"
+            );
+        });
+        with_env(None, None, Some("gpt-4o"), || {
+            let settings = resolve("https://api.openai.com", "grok-4.6", Some("sk-test"));
+            assert_eq!(settings.model, "gpt-4o");
+        });
     }
 
     /// Blank and whitespace omit the field on both HTTP shapes. A picked

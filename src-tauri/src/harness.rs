@@ -1614,8 +1614,8 @@ impl Session {
         Ok(wire)
     }
 
-    /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Empty stays
-    /// empty: the HTTP fallback `gpt-4o-mini` is not a Harness request.
+    /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Blank stays
+    /// blank. `apply_completer` omits it, the same way HTTP omits `model`.
     fn completer_model(&self) -> String {
         let settings =
             crate::settings::Settings::load(&crate::settings::settings_path(self.data.as_path()));
