@@ -88,7 +88,7 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 | macOS overlay + physics + hit-test | `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh` |
 | macOS Poke (gesture verb) | `cargo run -p fidget-verify -- poke` — real click, asserts `verbs:.*Poke` |
 | macOS Summon (gesture verb) | `cargo run -p fidget-verify -- summon` — real double-click, asserts `verbs:.*Summon` |
-| macOS e2e scenario | `cargo run -p fidget-verify -- scenario <name>` prints the takeover header; `--go` runs it after the owner's go-ahead (`scripts/scenarios/README.md`) |
+| e2e scenario | `cargo run -p fidget-verify -- scenario <name>` prints this host's takeover header; `--go` runs `scripts/scenarios/<name>.sh` (macOS), `<name>.x11.sh`, or `<name>.win.ps1` after the owner's go-ahead (`scripts/scenarios/README.md`) |
 | Windows overlay | `.agents/skills/verify-fidget/helpers/drive-overlay-win.ps1` |
 | Windows Settings | `scripts/verify-settings-webview-phase2-win.ps1` (copy `$Out` into evidence after) |
 | Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (proves webview stacks above overlay) |

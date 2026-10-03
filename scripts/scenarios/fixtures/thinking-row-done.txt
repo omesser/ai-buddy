@@ -1,0 +1,3 @@
+frame|BMO|
+button|▸ Thinking|
+static|Hello|

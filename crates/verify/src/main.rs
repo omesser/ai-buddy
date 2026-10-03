@@ -53,10 +53,10 @@ enum Commands {
     Poke,
     /// Double-click the sprite for real; assert `verbs:.*Summon`.
     Summon,
-    /// Run one `scripts/scenarios/<name>.sh`. Without `--go`, print its
-    /// takeover header and skip.
+    /// Run one `scripts/scenarios` leaf for this host. Without `--go`, print
+    /// its takeover header and skip.
     Scenario {
-        /// The script's file name without `.sh`.
+        /// Scenario name. macOS is `<name>.sh`, X11 `<name>.x11.sh`, Windows `<name>.win.ps1`.
         name: String,
         /// The owner said go for this run: build the binaries and take over the GUI.
         #[arg(long)]

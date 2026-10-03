@@ -67,6 +67,30 @@ memory still land under the private `HOME`. Keep Chat open from the
 double-click on: the first-run gesture tour bubble fires 25 s after launch
 unless Chat is open.
 
+## Windows and X11
+
+`thinking-row` also has `thinking-row.x11.sh` and `thinking-row.win.ps1`.
+`fidget-verify scenario thinking-row` prints the leaf for this host. With
+`--go` it runs that leaf, or skips when this host has none (`hero-gif` is
+still macOS only).
+
+X11 reads the Chat window through AT-SPI (`scripts/ax-window-linux.py`) and
+needs `python3-pyatspi` plus `DISPLAY`. Windows reads it through UI Automation
+(`scripts/ax-window-win.ps1`). Both leaves assert the same two Thinking-row
+shapes as the macOS script.
+
+To check that assertion without a desktop, point the leaf at the two dumps in
+`fixtures/` and skip the launch:
+
+```sh
+FIDGET_SCENARIO_AX_OPEN=scripts/scenarios/fixtures/thinking-row-open.txt \
+FIDGET_SCENARIO_AX_DONE=scripts/scenarios/fixtures/thinking-row-done.txt \
+scripts/scenarios/thinking-row.x11.sh --go /bin/true /bin/true
+```
+
+That run does not prove the live window. A live `--go` still needs the
+go-ahead in `docs/agents/gui-takeover.md`.
+
 ## codex-sign-in-link
 
 `codex-sign-in-link.sh` checks the sign-in link against the real codex-acp,
