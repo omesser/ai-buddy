@@ -24,6 +24,9 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+$GlyphOpen = [string][char]0x25BE
+$GlyphDone = [string][char]0x25B8
+
 function Show-Header {
     $lines = Get-Content -LiteralPath $PSCommandPath
     $header = @()
@@ -70,8 +73,8 @@ $open = $env:FIDGET_SCENARIO_AX_OPEN
 $done = $env:FIDGET_SCENARIO_AX_DONE
 if ($open -or $done) {
     if (-not $open -or -not $done) { Fail "set both FIDGET_SCENARIO_AX_OPEN and FIDGET_SCENARIO_AX_DONE" }
-    Assert-Row $open "▾" "open"
-    Assert-Row $done "▸" "done"
+    Assert-Row $open $GlyphOpen "open"
+    Assert-Row $done $GlyphDone "done"
     Write-Output "PASS: fixture dumps"
     exit 0
 }
@@ -128,12 +131,12 @@ try {
         if ($LASTEXITCODE -ne 0) { Fail "$Name`: UI Automation dump failed; see $dump" }
         Assert-Row $dump $Glyph $Name
     }
-    Capture "mid-thought" "▾"
+    Capture "mid-thought" $GlyphOpen
     if (-not (Wait-For 15 { Select-String -LiteralPath $marks -Pattern '^replied$' -Quiet })) {
         Fail "no reply; see $log"
     }
     Start-Sleep -Milliseconds 1500
-    Capture "after-reply" "▸"
+    Capture "after-reply" $GlyphDone
     Write-Output "PASS: evidence in $out"
 } finally {
     if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }

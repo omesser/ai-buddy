@@ -44,8 +44,9 @@ assert_row() { # <file> <glyph> <label>
 }
 
 if [ -n "${FIDGET_SCENARIO_AX_OPEN:-}" ] || [ -n "${FIDGET_SCENARIO_AX_DONE:-}" ]; then
-  [ -n "${FIDGET_SCENARIO_AX_OPEN:-}" ] && [ -n "${FIDGET_SCENARIO_AX_DONE:-}" ] \
-    || fail "set both FIDGET_SCENARIO_AX_OPEN and FIDGET_SCENARIO_AX_DONE"
+  if [ -z "${FIDGET_SCENARIO_AX_OPEN:-}" ] || [ -z "${FIDGET_SCENARIO_AX_DONE:-}" ]; then
+    fail "set both FIDGET_SCENARIO_AX_OPEN and FIDGET_SCENARIO_AX_DONE"
+  fi
   assert_row "$FIDGET_SCENARIO_AX_OPEN" "▾" "open"
   assert_row "$FIDGET_SCENARIO_AX_DONE" "▸" "done"
   echo "PASS: fixture dumps"
@@ -56,7 +57,7 @@ if [ -z "${DISPLAY:-}" ]; then
   echo "SKIP: DISPLAY is unset. X11 thinking-row needs a session, or set FIDGET_SCENARIO_AX_OPEN and FIDGET_SCENARIO_AX_DONE." >&2
   exit 2
 fi
-python3 -c 'import pyatspi' >/dev/null 2>&1 || {
+python3 -c 'import pyatspi' > /dev/null 2>&1 || {
   echo "SKIP: python3-pyatspi is not installed." >&2
   exit 2
 }
@@ -92,8 +93,8 @@ wait_for() {
 
 capture() { # <name> <glyph>
   local dump="$out/$1.ax.txt"
-  python3 "$root/scripts/ax-window-linux.py" dump "$pid" BMO > "$dump" 2>"$out/$1.err" \
-    || fail "$1: AT-SPI dump failed; see $out/$1.err"
+  python3 "$root/scripts/ax-window-linux.py" dump "$pid" BMO > "$dump" 2> "$out/$1.err" ||
+    fail "$1: AT-SPI dump failed; see $out/$1.err"
   assert_row "$dump" "$2" "$1"
 }
 
