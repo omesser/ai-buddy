@@ -149,7 +149,7 @@ One armed gap exceeded 20 ms. The engine counter stayed at 62.1 Hz. Lag p50 is o
 
 ### Windows frame cadence, #426
 
-`scripts/bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe` with `FIDGET_BENCH_GREEN_LIGHT=1` on DESKTOP-UQIE144 (MS-7D25). The machine header printed `Microsoft Windows 11 Pro for Workstations`, refresh 59, 20 cpus, `git_rev=b0f57a78`. Release binary built from that tip. The tables below are the script printout. Nothing here was typed by hand from a different source.
+`scripts/bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe` with `FIDGET_BENCH_GREEN_LIGHT=1` on DESKTOP-UQIE144 (MS-7D25). The machine header printed `Microsoft Windows 11 Pro for Workstations`, refresh 59, 20 cpus, `git_rev=b0f57a78`. Release binary built from that tip. The tables below were read from the script printout and placed in the Linux column layout. They are not the raw printout.
 
 | Scenario | Display frames | Mean fps of armed stretches | Drops over 20 ms | Restarts | Engine Hz, loop counter | Moving ticks | Still ticks | Lag p50, moving | Lag p95, moving |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -158,7 +158,7 @@ One armed gap exceeded 20 ms. The engine counter stayed at 62.1 Hz. Lag p50 is o
 | Walking | 1199 | 60 | 0 | 18 | 62.5 | 1249 at 16 ms, 62.5 Hz | 0 | 16 ms, 1 sample | 17.1 ms, 1 sample |
 | Walking plus one `yes` per core | 1199 | 60 | 0 | 15 | 62.5 | 1249 at 16 ms, 62.5 Hz | 1 at 6 ms, 166.7 Hz | 16 ms, 1 sample | 16.4 ms, 1 sample |
 
-Idle stayed mostly unarmed (19 restarts in 20 display frames) while the engine still ticked at 61.2 Hz. Walking and load held 60 fps on armed stretches with zero gaps over 20 ms. Lag p50 stayed one sample (16 ms) on both moving windows. This matrix did not ride a window. The seam ride is the next subsection.
+Idle stayed mostly unarmed (19 restarts in 20 display frames) while the engine still ticked at 61.2 Hz. Walking and load held 60 fps on armed stretches with zero armed display gaps over 20 ms. Engine ticks still stretch: walking has 1 tick from 20 to 25 ms; load has 12 from 20 to 25 ms and 1 from 25 to 34 ms. Lag p50 stayed one sample (16 ms) on both moving windows. This matrix did not ride a window. The seam ride is the next subsection.
 
 Armed-stretch histogram for the walking window, display frames then engine ticks. 0 to 10 ms is 0 and 0. 10 to 14 is 0 and 3. 14 to 18 is 1180 and 1231. 18 to 20 is 0 and 14. 20 to 25 is 0 and 1. 25 to 34 is 0 and 0. 34 to 50 is 0 and 0. 50 and above is 0 and 0.
 
@@ -168,7 +168,7 @@ Armed-stretch histogram for the load window. 0 to 10 ms is 0 and 2. 10 to 14 is 
 
 Same release binary and host as the matrix above (`git_rev=b0f57a78`), two displays: `\\.\DISPLAY1` at (-1200, -209) 1200x1920 and primary `\\.\DISPLAY2` at (0, 0) 3440x1440, seam at x=0. Still BMO, the same weight rewrite the cadence script uses, `FIDGET_DIRECTOR=0`, `FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_CADENCE=1`, `FIDGET_INSTANCES=BMO`, scratch `APPDATA` / `USERPROFILE` / `HOME`. A WinForms perch 900 by 220 was placed under the primary-center spawn so the sprite landed `Perched`. After that, `SetWindowPos` stepped the perch 2 px about every 20 ms from the spawn under the left edge of the primary, across the seam, and about 520 px onto the left display, then reversed, for 60 s. That matches the Linux ride step and stays under the 1000 pt/s yank.
 
-The sample window held 1004 `hold#` frames and 3696 `Perched` frames. `pos()` x ran from -303 to 1720 (529 frames with x < 0, 177 with |x| ≤ 50), in 877 distinct `pos()` values. `scripts/frame-cadence.mjs` reduced that window. The numbers below are that printout.
+The sample window held 1004 `hold#` frames and 3696 `Perched` frames. `pos()` x ran from -303 to 1720 (529 frames with x < 0, 177 with |x| ≤ 50), in 877 distinct `pos()` values. `scripts/frame-cadence.mjs` reduced that window. The numbers below were read from that printout and placed in the Linux column layout. They are not the raw printout. The 1850 display frames are the analyzer's pooled count across every overlay in the window (two series), not one overlay alone; armed gaps plus restarts equal display frames minus 2.
 
 | Scenario | Display frames | Mean fps of armed stretches | Drops over 20 ms | Restarts | Engine Hz, loop counter | Moving ticks | Still ticks | Lag p50, moving | Lag p95, moving |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -556,7 +556,7 @@ Linux and Windows in that file are short settles on other machines. The Grok Bot
 
 ## Frame cadence (#426)
 
-Linux release numbers and the Windows matrix from DESKTOP-UQIE144 are in the measurement section above. The tables here are the macOS release captures.
+Linux release numbers, the Windows matrix from DESKTOP-UQIE144, and the Windows dual-monitor seam ride are in the measurement section above. The tables here are the macOS release captures.
 
 ### macOS
 
@@ -647,6 +647,6 @@ Each frame is matched to the Engine state traced at or before its latest arrival
 **Limits.**
 
 - One machine, 60 Hz panels. A ProMotion display would show 8.3 ms deltas.
-- This macOS capture did not ride a window, and it did not cross the seam between its two displays. The Linux ride is in the measurement section above. A seam is still unmeasured.
+- This macOS capture did not ride a window, and it did not cross the seam between its two displays. The Linux ride and the Windows dual-monitor seam ride are in the measurement section above. A Linux seam is still unmeasured.
 - The trace records the first Instance only.
-- The analyzer pools every overlay's frames into one count. A sprite straddling a seam draws on two overlays, so a seam ride would be double-counted; none was measured.
+- The analyzer pools every overlay's frames into one count. A sprite straddling a seam draws on two overlays, so those frames are two series in one total. The Windows seam ride's 1850 display frames are that pooled count, not one overlay alone; armed gaps plus restarts equal frames minus 2. A Linux seam is still unmeasured.
