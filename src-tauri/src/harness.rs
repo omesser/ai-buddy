@@ -4823,6 +4823,11 @@ mod tests {
             0,
             "the rejection happens before the turn"
         );
+        assert_eq!(
+            fx.count("close"),
+            1,
+            "the rejected session is not left open"
+        );
 
         write_harness_model(&fx.dir, "some-model");
         assert_eq!(

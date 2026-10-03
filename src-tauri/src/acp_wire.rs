@@ -1242,6 +1242,9 @@ async fn open(
     } else {
         None
     };
+    // A loaded id is already on disk. A new one is not stored unless the
+    // model is accepted, so a rejection has to close what it just created.
+    let created = loaded.is_none();
     let (session_id, options) = match loaded {
         Some(opened) => opened,
         None => cx
@@ -1259,7 +1262,15 @@ async fn open(
                 }
             })?,
     };
-    apply_harness_model(cx, &session_id, model, options.as_deref()).await?;
+    if let Err(error) = apply_harness_model(cx, &session_id, model, options.as_deref()).await {
+        if created && !matches!(error, OpenError::Lost) {
+            let _ = cx
+                .send_request(CloseSessionRequest::new(session_id))
+                .block_task()
+                .await;
+        }
+        return Err(error);
+    }
     Ok(session_id)
 }
 
