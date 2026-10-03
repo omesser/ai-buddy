@@ -50,6 +50,13 @@ once. The landing's copy and the capture are unit-tested, not checked here.
 The menu bar icon takes one real click; Chat… and Codex go through AXPress,
 with a click at the control's centre only if AXPress is refused.
 
+`landing-link-click.sh` takes only the app binary: it picks Codex with no
+`npx` on `PATH`, so no Harness runs. It opens Chat from the menu bar icon,
+checks that the "Codex needs `npx`" landing draws `npx` and the install link as
+their own elements, then clicks the link. A recording `open` on `PATH` takes
+the hand-off, so the check is that exactly `https://nodejs.org/` reached it and
+that Chat still shows the landing. No browser opens.
+
 `hero-gif.sh` takes the same two binaries and records the display for 45 s
 while you throw, poke, double-click and chat with the Character for the README
 hero. Its `--crop` pass re-encodes the saved recording to an MP4 beside it,
