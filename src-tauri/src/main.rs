@@ -3948,6 +3948,11 @@ fn anchor_position_locked(flags: u32, nomove: u32) -> bool {
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use gtk::prelude::*;
 
+    if std::env::var("FIDGET_NO_ANCHOR").is_ok() {
+        eprintln!("anchor: skipped (FIDGET_NO_ANCHOR is set)");
+        return Ok(());
+    }
+
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("Fidget");
     window.set_resizable(false);
@@ -3995,6 +4000,11 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
 /// it parked and opens Settings on a taskbar click.
 #[cfg(target_os = "windows")]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("FIDGET_NO_ANCHOR").is_ok() {
+        eprintln!("anchor: skipped (FIDGET_NO_ANCHOR is set)");
+        return Ok(());
+    }
+
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
         .title("Fidget")
