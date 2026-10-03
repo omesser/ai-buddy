@@ -41,13 +41,13 @@ fail() {
 [ -x "$tools/ax" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
 # FIDGET_HARNESS splits on whitespace, so no path in it may hold a space.
-harness="$test_bin harness::tests::fake_acp_agent --exact --nocapture --test-threads=1 script=scenario-asking count=$marks"
-[ "$(wc -w <<< "$harness")" -eq 7 ] || fail "a path in the Harness line holds a space: $harness"
+harness="$root/scripts/scenarios/fixture-harness.sh $test_bin script=scenario-asking count=$marks"
+[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \
   FIDGET_DIRECTOR_WAKE_SECS=6 \
-  FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 \
+  FIDGET_DIRECTOR_API_KEY=x FIDGET_CAPTURABLE=1 FIDGET_TRACE_FRAMES=1 \
   FIDGET_CHARACTER=bmo FIDGET_CHARACTERS="$root/characters" \
   "$bin" > "$log" 2>&1 &
 pid=$!
@@ -68,21 +68,18 @@ wait_for() { # <seconds> <command...>
 wait_for 30 grep -qx asked "$marks" || fail "no wake reached the Harness; see $log"
 sleep 1
 
-# Overlay window is titled "Fidget" (build_overlay in src-tauri/src/main.rs).
-# Get window id and bounds for the Poke click.
-read -r id x y w h < <("$tools/window-id" -b "$pid" Fidget) || fail "no Fidget overlay window"
-
-# Capture the overlay before the Poke.
-screencapture -x -o -l "$id" "$out/before-poke.png"
+# The overlay spans the display, so its centre is not the sprite. The newest
+# frame trace line says where the sprite is drawn, in global points.
+read -r sw sh < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1) || fail "no sprite size in $log"
+read -r sx sy < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
+rect="$((sx - sw)),$((sy - 2 * sh)),$((3 * sw)),$((3 * sh))"
+screencapture -x -R "$rect" "$out/before-poke.png"
 
 # Send a Poke: one click on the sprite's center.
-cx=$((x + w / 2))
-cy=$((y + h / 2))
-"$tools/click-cursor" "$cx" "$cy" 1 > "$out/poke.txt" 2>&1 || fail "could not click the sprite; see $out/poke.txt"
+"$tools/click-cursor" "$((sx + sw / 2))" "$((sy + sh / 2))" 1 > "$out/poke.txt" 2>&1 || fail "could not click the sprite; see $out/poke.txt"
+wait_for 3 grep -q '^verbs: .*Poke' "$log" || fail "the click did not land as a Poke; see $log"
 sleep 1
-
-# Capture the overlay after the Poke, showing the bubble.
-screencapture -x -o -l "$id" "$out/after-poke.png"
+screencapture -x -R "$rect" "$out/after-poke.png"
 
 # Check the bubble content via the Accessibility API.
 "$tools/ax" dump "$pid" Fidget > "$out/after-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/after-poke.ax.txt"
