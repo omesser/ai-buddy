@@ -4948,7 +4948,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// `some-model` goes out on the model option. Blank sends nothing.
+    /// `some-model` is set on the model option. Blank leaves the model unset.
     #[test]
     fn a_named_model_is_sent_and_a_blank_one_is_not() {
         crate::model::tests::with_env(None, None, None, || {

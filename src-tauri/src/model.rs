@@ -196,7 +196,7 @@ impl std::fmt::Debug for DirectorSettings {
 
 /// Env first, then persisted settings, then defaults. Does not write env.
 /// Empty env values fall through. An invalid env key still wins over a stored key.
-/// Blank or whitespace model is unset. Nothing fills a name in for it.
+/// Blank or whitespace leaves the model unset. No default name is inserted.
 pub fn resolve(
     persisted_base: &str,
     persisted_model: &str,
@@ -474,8 +474,8 @@ pub(crate) fn max_tokens_placeholder() -> String {
     format!("{TURN_CEILING} ({THINK_CEILING} once the host marks thinking)")
 }
 
-/// What an empty reasoning-effort field means. Blank is unset on both
-/// Completers, so the field shows nothing rather than a level.
+/// Empty reasoning-effort field. Leave blank to leave effort unset.
+/// The field shows no level.
 pub(crate) fn effort_placeholder() -> String {
     String::new()
 }
@@ -3166,7 +3166,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// Blank and whitespace resolve to no model, and the HTTP body leaves
+    /// Blank and whitespace leave the model unset, and the HTTP body leaves
     /// the field off. A typed name is that string, trimmed.
     #[test]
     fn a_blank_model_is_omitted_and_a_named_one_is_sent() {

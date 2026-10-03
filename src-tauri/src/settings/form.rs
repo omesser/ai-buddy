@@ -960,7 +960,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorModel,
                     frozen: model_frozen,
                     batched: true,
-                    help: Some("Blank omits the model for both Completers. A name you type is what goes out.".to_string()),
+                    help: Some("Leave blank to leave the model unset on HTTP and on a Harness. A typed name is sent as the model.".to_string()),
                     disclosure: None,
                     status: model_status,
                 },
@@ -1579,7 +1579,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to send nothing: the Model API omits the field, and a Harness does not call session/set_config_option. low, medium, and high are what every documented host takes, and anything else typed there is sent verbatim. A Harness applies a value to the option advertised as thought_level, or as model_config when that is the one it has.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to leave effort unset: HTTP omits the field, and a Harness does not call session/set_config_option. The picker lists low, medium, and high. Other typed values are sent as written. On a Harness the value is set on thought_level, or on model_config if that is what the Harness lists.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,
@@ -1630,7 +1630,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorReasoningEffort,
                     frozen: effort_frozen,
                     batched: false,
-                    help: Some("Blank sends nothing. A value is sent verbatim to the active Completer.".to_string()),
+                    help: Some("Leave blank to omit effort. A typed value is sent as written to the Completer in use.".to_string()),
                     disclosure: None,
                     status: effort_status,
                 },
