@@ -312,14 +312,14 @@ STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"fidget"' > "$OUT/lsappinfo.txt"
 
-# A region around the sprite, never a whole display: evidence can end up on a
-# public PR, and the rest of the screen is the owner's. Whether the sprite
-# shows in it depends on FIDGET_CAPTURABLE.
-echo "Capturing a screenshot around the sprite..."
+# The sprite's own box, never a whole display: evidence can end up on a public
+# PR, and the rest of the screen is the owner's. Whether the sprite shows in it
+# depends on FIDGET_CAPTURABLE.
+echo "Capturing a screenshot of the sprite..."
 read -r SW SH < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$OUT/app.log" | head -1)
 read -r SX SY < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$OUT/app.log" | tail -1)
 if [ -n "${SW:-}" ] && [ -n "${SX:-}" ]; then
-  screencapture -x -R "$((SX - SW)),$((SY - SH)),$((3 * SW)),$((3 * SH))" "$OUT/sprite.png" 2> /dev/null ||
+  screencapture -x -R "$SX,$SY,$SW,$SH" "$OUT/sprite.png" 2> /dev/null ||
     echo "  (capture failed - is Screen Recording granted to your terminal?)"
 else
   echo "  (no sprite position in the frame trace, so no screenshot)"
